@@ -1,0 +1,29 @@
+--- v2player.cpp
++++ v2player.cpp
+@@ -2,6 +2,7 @@
+ // (v2load) + forked engine (v2core) + sequencer (v2seq).
+ 
+ #include "v2redux.h"
++#include <cstdlib>
+ #include "v2eras.h"
+ #include "v2load.h"
+ #include "v2seq.h"
+@@ -165,6 +166,18 @@
+   return (long long)smp * 1000 / 44100;
+ }
+ 
++//YOYOFR (rewamp)
++long long Player::lastEventMs() const
++{
++  if (!impl_->opened) return 0;
++  sS32 *tl = nullptr;
++  const sU32 n = const_cast<V2MPlayer &>(impl_->seq).CalcPositions(&tl);
++  long long ms = 0;
++  if (tl && n > 0) ms = (long long)tl[2 * (n - 1)];
++  free(tl);
++  return ms;
++}
++
+ void Player::getChannelLevels(float *dest16)
+ {
+   if (!impl_->opened) {

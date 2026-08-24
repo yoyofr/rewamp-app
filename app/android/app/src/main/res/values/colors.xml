@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#160A1E</color>
+    <!-- Launch background: shown behind Flutter while it initializes (NormalTheme)
+         so nothing flashes white between the system splash and the first frame. -->
+    <color name="splash_bg">#160A1E</color>
+</resources>

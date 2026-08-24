@@ -1,0 +1,24 @@
+diff --git a/soundlib/Sndmix.cpp b/soundlib/Sndmix.cpp
+index 34fbb1b6f..70363cb7f 100644
+--- a/soundlib/Sndmix.cpp
++++ b/soundlib/Sndmix.cpp
+@@ -1984,6 +1984,19 @@ void CSoundFile::ProcessRamping(ModChannel &chn) const
+ 		}
+ 		const bool enableCustomRamp = (instrRampLength > 0);
+ 
++		// rewamp: on 16-bit-tempo modules a tick is a HANDFUL of samples and
++		// rows re-trigger every channel, so any ramp longer than a tick never
++		// completes - it amplitude-modulates the whole mix at the row rate
++		// (a loud steady whine at ~1 kHz on "Haesslich"), while no ramp at
++		// all leaves the tick-rate steps unsmoothed (a 16 kHz whistle 20 dB
++		// above XMPlay's render). Capping the ramp to the tick keeps both
++		// numbers down: the ramp completes inside the tick that caused it.
++		// Gated on absurdly short ticks - a normal module never has any.
++		if(m_PlayState.m_nSamplesPerTick < 64 && rampLength > (int32)m_PlayState.m_nSamplesPerTick)
++		{
++			rampLength = globalRampLength = std::max((int32)m_PlayState.m_nSamplesPerTick, (int32)1);
++		}
++
+ 		if(!rampLength)
+ 		{
+ 			rampLength = 1;

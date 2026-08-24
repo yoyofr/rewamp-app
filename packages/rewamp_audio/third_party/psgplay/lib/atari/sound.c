@@ -1,0 +1,237 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (C) 2020 Fredrik Noring
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "toslibc/asm/machine.h"
+
+#include "internal/compare.h"
+#include "internal/macro.h"
+
+#include "atari/bus.h"
+#include "atari/device.h"
+#include "atari/irq.h"
+#include "atari/glue.h"
+#include "atari/machine.h"
+#include "atari/mfp.h"
+#include "atari/mmu.h"
+#include "atari/ram.h"
+#include "atari/sound.h"
+
+#define SOUND_FREQUENCY (ATARI_STE_EXT_OSC / 4)
+
+#define SOUND_EVENT_FREQUENCY 100		/* 10 ms */
+#define SOUND_EVENT_CYCLES (SOUND_FREQUENCY / SOUND_EVENT_FREQUENCY)
+
+static char *sound_register_name(uint32_t reg)
+{
+	switch (reg) {
+#define SOUND_REG_NAME(register_, symbol_, label_, description_)	\
+	case register_: return #symbol_;
+CF300588_SOUND_REGS(SOUND_REG_NAME)
+	default:
+		return "";
+	}
+}
+
+static inline struct cf300588_sound_cycle cf300588_sound_cycle_from_device(
+	struct device_cycle cycle)
+{
+	return cf300588_sound_cycle_cd(cycle.c, 1 /* FIXME */);
+}
+
+static void request_event(struct machine *machine, const struct device *device,
+	struct device_cycle sound_cycle, struct cf300588_sound_event event)
+{
+	if (event.cycle.c)
+		request_device_event(machine, device, (struct device_cycle) {
+			/* FIXME: Avoid max */
+			.c = max(event.cycle.c, sound_cycle.c + 1)
+		});
+
+	request_device_event(machine, device, (struct device_cycle) {
+			.c = sound_cycle.c + SOUND_EVENT_CYCLES
+		});
+
+	for (size_t i = 1; i < event.sint.count; i++)
+		dma_sound_active(machine, event.sint.active ^ (i & 1));
+	dma_sound_active(machine, event.sint.active);
+}
+
+static void sound_event(struct machine *machine, const struct device *device,
+	const struct device_cycle sound_cycle)
+{
+	struct cf300588_sound_module *cf300588 = &machine->sound.cf300588;
+	struct cf300588_sound_cycle module_cycle =
+		cf300588_sound_cycle_from_device(sound_cycle);
+	struct cf300588_sound_sample buffer8[1024];
+
+	const struct cf300588_sound_dma_region dma_region =
+		cf300588->port.dma(cf300588);
+	const struct ram_map_ro ram_map =
+		ram_map_ro(machine, dma_region.size, dma_region.addr);
+	const struct cf300588_sound_dma_map dma_map = {
+		.size = ram_map.size,
+		.addr = ram_map.addr,
+		.p = ram_map.p,
+	};
+	const struct cf300588_sound_samples samples8 = {
+		.size = ARRAY_SIZE(buffer8),
+		.sample = buffer8,
+	};
+	size_t n;
+
+	while ((n = cf300588->port.sample(cf300588,
+			module_cycle, samples8, dma_map)))
+		if (machine->sound.output.sample) {
+			struct sound_sample buffer16[ARRAY_SIZE(buffer8)];
+
+			for (size_t i = 0; i < n; i++)
+				buffer16[i] = (struct sound_sample) {
+					.left  = 256 * buffer8[i].left,
+					.right = 256 * buffer8[i].right
+				};
+
+			machine->sound.output.sample(buffer16, n,
+					machine->sound.output.sample_arg);
+		}
+
+	request_event(machine, device, sound_cycle,
+		cf300588->port.event(cf300588, module_cycle));
+}
+
+static uint8_t sound_rd_u8(struct machine *machine, const struct device *device,
+	uint32_t dev_address)
+{
+	struct cf300588_sound_module *cf300588 = &machine->sound.cf300588;
+	const struct device_cycle sound_cycle = device_cycle(machine, device);
+	struct cf300588_sound_cycle module_cycle =
+		cf300588_sound_cycle_from_device(sound_cycle);
+	const uint32_t reg = dev_address >> 1;
+
+	if ((dev_address & 1) == 0)
+		return 0;
+
+	sound_event(machine, device, sound_cycle);
+
+	return cf300588->port.rd_da(cf300588, module_cycle, reg);
+}
+
+static uint16_t sound_rd_u16(struct machine *machine, const struct device *device,
+	uint32_t dev_address)
+{
+	return sound_rd_u8(machine, device, dev_address + 1);
+}
+
+static void sound_wr_u8(struct machine *machine, const struct device *device,
+	uint32_t dev_address, uint8_t val)
+{
+	struct cf300588_sound_module *cf300588 = &machine->sound.cf300588;
+	const struct device_cycle sound_cycle = device_cycle(machine, device);
+	struct cf300588_sound_cycle module_cycle =
+		cf300588_sound_cycle_from_device(sound_cycle);
+	const uint32_t reg = dev_address >> 1;
+
+	if ((dev_address & 1) == 0)
+		return;
+
+	if (reg == 0 && (val & 0x10))
+		machine->sound.output.record(sound_cycle.c / 8,
+				machine->sound.output.record_arg);
+
+	sound_event(machine, device, sound_cycle);
+
+	request_event(machine, device, sound_cycle,
+		cf300588->port.wr_da(cf300588, module_cycle, reg, val));
+}
+
+static void sound_wr_u16(struct machine *machine, const struct device *device,
+	uint32_t dev_address, uint16_t data)
+{
+	sound_wr_u8(machine, device, dev_address + 1, data);
+}
+
+static size_t sound_id_u8(struct machine *machine, const struct device *device,
+	uint32_t dev_address, char *buf, size_t size)
+{
+	struct cf300588_sound_module *cf300588 = &machine->sound.cf300588;
+	const uint32_t reg = dev_address >> 1;
+
+	if ((dev_address & 1) == 0 || ARRAY_SIZE(cf300588->state.regs.reg) <= reg)
+		snprintf(buf, size, "%2u", dev_address);
+	else
+		snprintf(buf, size, "%s", sound_register_name(reg));
+
+	return strlen(buf);
+}
+
+static size_t sound_id_u16(struct machine *machine, const struct device *device,
+	uint32_t dev_address, char *buf, size_t size)
+{
+	return sound_id_u8(machine, device, dev_address + 1, buf, size);
+}
+
+static void sound_reset(struct machine *machine, const struct device *device)
+{
+	struct cf300588_sound_module *cf300588 = &machine->sound.cf300588;
+	const struct device_cycle sound_cycle = device_cycle(machine, device);
+
+	struct cf300588_sound_cycle module_cycle =
+		cf300588_sound_cycle_from_device(sound_cycle);
+
+	*cf300588 = cf300588_sound_init(module_cycle);
+
+	request_event(machine, device, sound_cycle,
+			(struct cf300588_sound_event) { });
+}
+
+void sound_sample(struct machine *machine,
+	sound_sample_f sample, void *sample_arg)
+{
+	machine->sound.output.sample = sample;
+	machine->sound.output.sample_arg = sample_arg;
+}
+
+void record_sample(struct machine *machine,
+	record_sample_f record, void *record_arg)
+{
+	machine->sound.output.record = record;
+	machine->sound.output.record_arg = record_arg;
+}
+
+void sound_check(struct machine *machine, uint32_t bus_address)
+{
+	struct cf300588_sound_module *cf300588 = &machine->sound.cf300588;
+
+	if (!cf300588->port.wr_ar(cf300588, bus_address, 4 /* FIXME */))
+		return;
+
+	extern const struct device sound_device;
+	const struct device *device = &sound_device;
+
+	sound_event(machine, device, device_cycle(machine, device));
+}
+
+const struct device sound_device = {
+	.name = "snd",
+	.clk = {
+		.frequency = SOUND_FREQUENCY,
+		.divisor = 1
+	},
+	.bus = {
+		.address = 0xff8900,
+		.size = 34,
+	},
+	.reset = sound_reset,
+	.event = sound_event,
+	.rd_u8  = sound_rd_u8,
+	.rd_u16 = sound_rd_u16,
+	.wr_u8  = sound_wr_u8,
+	.wr_u16 = sound_wr_u16,
+	.id_u8  = sound_id_u8,
+	.id_u16 = sound_id_u16,
+};

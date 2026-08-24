@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Developer ID export options for scripts/release_macos_dmg.sh.
+
+  method=developer-id is the one that matters: xcodebuild then RE-SIGNS the
+  whole bundle from the archive — the app, the ANGLE dylibs, the ffmpeg-kit
+  frameworks, every nested Mach-O — with the Developer ID Application
+  certificate, hardened runtime and a secure timestamp. Doing it by hand with
+  codesign is possible but has to walk the bundle inner-out and would still
+  miss the Developer ID provisioning profile the sandbox + keychain-access-
+  groups entitlement needs embedded; signingStyle=automatic gets Xcode to
+  create and embed it.
+
+  destination=export writes the .app to disk instead of uploading it — the
+  notarization is driven by the script, on the DMG, so one submission covers
+  both the app inside it and the disk image itself.
+-->
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>developer-id</string>
+	<key>destination</key>
+	<string>export</string>
+	<key>teamID</key>
+	<string>ZV46EUY73C</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<!-- Symbols go to Apple with the notarization, not with the app. -->
+	<key>uploadSymbols</key>
+	<false/>
+</dict>
+</plist>

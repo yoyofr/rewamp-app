@@ -1,0 +1,638 @@
+diff --git a/emu/cores/fmopn.c b/emu/cores/fmopn.c
+index d67da82..362ffee 100644
+--- a/emu/cores/fmopn.c
++++ b/emu/cores/fmopn.c
+@@ -166,6 +166,11 @@
+ #include "../EmuHelper.h"
+ #include "../logging.h"
+ 
++//TODO:  MODIZER changes start / YOYOFR
++#include "../../../../../src/ModizerVoicesData.h"
++//TODO:  MODIZER changes end / YOYOFR
++
++
+ #ifndef SNDDEV_SELECT
+ #define SNDDEV_YM2203
+ #define SNDDEV_YM2608
+@@ -617,6 +622,8 @@ typedef struct
+ 	UINT8   kcode;      /* key code:                        */
+ 	UINT32  block_fnum; /* current blk/fnum value for this slot (can be different betweeen slots of one channel in 3slot mode) */
+ 	UINT8   Muted;
++    //YOYOFR
++    UINT8   keyonff_triggered;
+ } FM_CH;
+ 
+ 
+@@ -770,6 +777,10 @@ INLINE void FM_IRQMASK_SET(FM_ST *ST,int flag)
+ INLINE void FM_KEYON(FM_OPN *OPN, FM_CH *CH , int s )
+ {
+ 	FM_SLOT *SLOT = &CH->SLOT[s];
++    
++    //YOYOFR
++    CH->keyonff_triggered=1;
++    //YOYOFR
+ 
+ 	// Note by Valley Bell:
+ 	//  I assume that the CSM mode shouldn't affect channels
+@@ -808,6 +819,10 @@ INLINE void FM_KEYON(FM_OPN *OPN, FM_CH *CH , int s )
+ INLINE void FM_KEYOFF(FM_OPN *OPN, FM_CH *CH , int s )
+ {
+ 	FM_SLOT *SLOT = &CH->SLOT[s];
++    
++    //YOYOFR
++    CH->keyonff_triggered=1;
++    //YOYOFR
+ 
+ 	if (SLOT->key && (!OPN->SL3.key_csm || CH != &OPN->P_CH[2]))
+ 	{
+@@ -850,6 +865,10 @@ INLINE void FM_KEYOFF(FM_OPN *OPN, FM_CH *CH , int s )
+ INLINE void FM_KEYON_CSM(FM_OPN *OPN, FM_CH *CH , int s )
+ {
+ 	FM_SLOT *SLOT = &CH->SLOT[s];
++    
++    //YOYOFR
++    CH->keyonff_triggered=1;
++    //YOYOFR
+ 
+ 	if (!SLOT->key && !OPN->SL3.key_csm)
+ 	{
+@@ -882,6 +901,11 @@ INLINE void FM_KEYON_CSM(FM_OPN *OPN, FM_CH *CH , int s )
+ 
+ INLINE void FM_KEYOFF_CSM(FM_CH *CH , int s )
+ {
++    
++    //YOYOFR
++    CH->keyonff_triggered=1;
++    //YOYOFR
++    
+ 	FM_SLOT *SLOT = &CH->SLOT[s];
+ 	if (!SLOT->key)
+ 	{
+@@ -2374,7 +2398,68 @@ void ym2203_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 	cch[0]   = &F2203->CH[0];
+ 	cch[1]   = &F2203->CH[1];
+ 	cch[2]   = &F2203->CH[2];
+-
++    
++    //TODO:  MODIZER changes start / YOYOFR
++    //search first voice linked to current chip
++    int m_voice_ofs=-1;
++    int m_total_channels=3;
++    //YOYOFR/rewamp: m_voice_current_total DOIT être posé même à length==0.
++    //  Le lecteur VGM parcourt les devices LIÉS (ici SSG du YM2203) et fait
++    //  `pairedOfs += m_voice_current_total` APRÈS chaque lien. C'est un global,
++    //  jamais remis à zéro par lien: laissé sous le `if (length)`, un bloc où le
++    //  resampler appelle ce coeur avec 0 échantillon (Resmpl_Exec_LinearDown
++    //  passe `smpNext - smpLast`, qui vaut 0 quand la fraction n'a pas avancé)
++    //  laissait la valeur du DERNIER coeur rendu — 4, celle de emu2149 — donc
++    //  le SSG écrivait à base+4..base+6 au lieu de base+3..base+5. Avec 6 voies
++    //  allouées pour un YM2203, m_voice_buff[base+6] est NULL: segfault du fil
++    //  producteur, quelques secondes après le début (il faut qu'un bloc tombe
++    //  à 0). Seul site de l'arbre où l'assignation était sous ce garde.
++    m_voice_current_total=m_total_channels;
++    if (length)
++    for (int ii=0;ii<=SOUND_MAXVOICES_BUFFER_FX-m_total_channels;ii++) {
++        if (m_voice_ChipID[ii]==m_voice_current_system) {
++            m_voice_ofs=ii+(m_voice_current_systemSub?m_voice_current_systemPairedOfs:0);
++            break;
++        }
++    }
++    //printf("opn:%d / %lf delta:%lf\n",OPN->ST.rate,OPN->ST.freqbase,DELTAT->freqbase);
++    int64_t smplIncr;
++    if (!m_voice_current_samplerate) {
++        m_voice_current_samplerate=44100;
++        //printf("voice sample rate null\n");
++    }
++    if (length) smplIncr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
++    //TODO:  MODIZER changes end / YOYOFR
++    
++    //YOYOFR
++    static INT32 old_out_fm[3]; //YOYOFR
++    if (m_voice_ofs>=0) {
++        for (int ii=0;ii<3;ii++) {
++            if (!(cch[ii]->Muted)) {
++                if (cch[ii]->block_fnum==0) {
++                    if ((OPN->out_fm[ii]!=old_out_fm[ii])) {
++                        vgm_last_note[ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
++                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
++                        int newvol=cch[ii]->keyonff_triggered+1;
++                        cch[ii]->keyonff_triggered=0;
++                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
++                    }
++                } else {
++                    if ((OPN->out_fm[ii]!=old_out_fm[ii])) {
++                        int freq=(cch[ii]->block_fnum)&0x7FF;
++                        int octave=((cch[ii]->block_fnum)>>11)&0x7;
++                        vgm_last_note[ii+m_voice_ofs]=(freq<<octave)*110.0f/1081.0f; //1148.0f;
++                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
++                        int newvol=cch[ii]->keyonff_triggered+1;
++                        cch[ii]->keyonff_triggered=0;
++                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
++                    }
++                }
++            }
++            old_out_fm[ii]=OPN->out_fm[ii];
++        }
++    }
++    //YOYOFR
+ 
+ 	/* refresh PG and EG */
+ 	refresh_fc_eg_chan( OPN, cch[0] );
+@@ -2421,6 +2506,24 @@ void ym2203_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 		chan_calc(OPN, cch[0], 0 );
+ 		chan_calc(OPN, cch[1], 1 );
+ 		chan_calc(OPN, cch[2], 2 );
++        
++        //TODO:  MODIZER changes start / YOYOFR
++        if (m_voice_ofs>=0) {
++            for (int jj=0;jj<3;jj++) {
++                int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+jj];
++                int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+jj]+smplIncr);
++                if (ofs_end>ofs_start)
++                for (;;) {
++                    m_voice_buff[m_voice_ofs+jj][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((OPN->out_fm[jj]>>7));
++                    ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++                    if (ofs_start>=ofs_end) break;
++                }
++                m_voice_current_ptr[m_voice_ofs+jj]=ofs_end;
++            }
++        }
++        //TODO:  MODIZER changes end / YOYOFR
++        
++        
+ 
+ 		/* advance envelope generator */
+ 		OPN->eg_timer += OPN->eg_timer_add;
+@@ -3034,6 +3137,75 @@ void ym2608_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 	cch[3]   = &F2608->CH[3];
+ 	cch[4]   = &F2608->CH[4];
+ 	cch[5]   = &F2608->CH[5];
++    
++    //TODO:  MODIZER changes start / YOYOFR
++    //search first voice linked to current chip
++    int m_voice_ofs=-1;
++    int m_total_channels=13;
++    for (int ii=0;ii<=SOUND_MAXVOICES_BUFFER_FX-m_total_channels;ii++) {
++        if (m_voice_ChipID[ii]==m_voice_current_system) {
++            m_voice_ofs=ii+(m_voice_current_systemSub?m_voice_current_systemPairedOfs:0);
++            m_voice_current_total=m_total_channels;
++            break;
++        }
++    }
++    //printf("opn:%d / %lf delta:%lf\n",OPN->ST.rate,OPN->ST.freqbase,DELTAT->freqbase);
++    if (!m_voice_current_samplerate) {
++        m_voice_current_samplerate=44100;
++        //printf("voice sample rate null\n");
++    }
++    int64_t smplIncr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
++    //TODO:  MODIZER changes end / YOYOFR
++    
++    //YOYOFR
++    static INT32 old_out_fm[6]; //YOYOFR
++    if (m_voice_ofs>=0) {
++        for (int ii=0;ii<6;ii++) {
++            if (!(cch[ii]->Muted)) {
++                if (cch[ii]->block_fnum==0) {
++                    if ((out_fm[ii]!=old_out_fm[ii])) {
++                        vgm_last_note[ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
++                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
++                        int newvol=cch[ii]->keyonff_triggered+1;
++                        cch[ii]->keyonff_triggered=0;
++                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
++                    }
++                } else {
++                    if ((out_fm[ii]!=old_out_fm[ii])) {
++                        int freq=(cch[ii]->block_fnum)&0x7FF;
++                        int octave=((cch[ii]->block_fnum)>>11)&0x7;
++                        vgm_last_note[ii+m_voice_ofs]=(freq<<octave)*110.0f/1081.0f; //1148.0f;
++                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
++                        int newvol=cch[ii]->keyonff_triggered+1;
++                        cch[ii]->keyonff_triggered=0;
++                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
++                    }
++                }
++            }
++            old_out_fm[ii]=out_fm[ii];
++        }
++        //Rythm box - 6 channels
++        for (int ii=0;ii<6;ii++) {
++            if ( (!(F2608->adpcm[ii].Muted)) && (F2608->adpcm[ii].flag) ) {
++                if (F2608->adpcm[ii].vol_mul && F2608->adpcm[ii].start ) {
++                    vgm_last_note[6+ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
++                    vgm_last_instr[6+ii+m_voice_ofs]=6+ii+m_voice_ofs;//F2610->adpcm[ii].start;
++                    int newvol=1+(F2608->adpcm[ii].now_step==0?1:0);
++                    vgm_last_vol[6+ii+m_voice_ofs]=newvol;
++                }
++            }
++        }
++        //ADPCM - 1 channel
++        if( (DELTAT->portstate&0x80) && (! F2608->MuteDeltaT) ) {
++            if (DELTAT->volume) {
++                int freq=DELTAT->delta;
++                vgm_last_note[12+m_voice_ofs]=220.0f*(55555.0f * ((double)(DELTAT->delta) / 65535.0f))/22050.0f; //using A3 / 22Khz
++                vgm_last_instr[12+m_voice_ofs]=12+m_voice_ofs;//DELTAT->start;
++                int newvol=1;
++                vgm_last_vol[12+m_voice_ofs]=newvol;
++            }
++        }
++    }
+ 
+ 	/* refresh PG and EG */
+ 	refresh_fc_eg_chan( OPN, cch[0] );
+@@ -3152,6 +3324,29 @@ void ym2608_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 			/* buffering */
+ 			bufL[i] = lt;
+ 			bufR[i] = rt;
++            
++            //TODO:  MODIZER changes start / YOYOFR
++            if (m_voice_ofs>=0) {
++                int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+0];
++                int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+0]+smplIncr);
++                if (ofs_end>ofs_start)
++                for (;;) {
++                    for (int jj=0;jj<6;jj++) {
++                        m_voice_buff[m_voice_ofs+jj][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((out_fm[jj]>>6));
++                        
++                        if( F2608->adpcm[jj].flag ) {
++                            m_voice_buff[m_voice_ofs+jj+6][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((F2608->adpcm[jj].adpcm_out>>4));
++                        }
++                    }
++                    
++                    if( DELTAT->portstate&0x80 && ! F2608->MuteDeltaT ) m_voice_buff[m_voice_ofs+12][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8(((OPN->out_delta[OUTD_LEFT]  + OPN->out_delta[OUTD_CENTER] + OPN->out_delta[OUTD_RIGHT])>>14));
++                    
++                    ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++                    if (ofs_start>=ofs_end) break;
++                }
++                for (int jj=0;jj<13;jj++) m_voice_current_ptr[m_voice_ofs+jj]=ofs_end;
++            }
++            //TODO:  MODIZER changes end / YOYOFR
+ 		}
+ 
+ 		/* CSM mode: if CSM Key ON has occured, CSM Key OFF need to be sent       */
+@@ -3606,6 +3801,25 @@ void ym2610_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 	DEV_SMPL  *bufL,*bufR;
+ 	FM_CH   *cch[4];
+ 	INT32 *out_fm = OPN->out_fm;
++    
++    //TODO:  MODIZER changes start / YOYOFR
++    //search first voice linked to current chip
++    int m_voice_ofs=-1;
++    int m_total_channels=11;
++    for (int ii=0;ii<=SOUND_MAXVOICES_BUFFER_FX-m_total_channels;ii++) {
++        if (m_voice_ChipID[ii]==m_voice_current_system) {
++            m_voice_ofs=ii+(m_voice_current_systemSub?m_voice_current_systemPairedOfs:0);
++            m_voice_current_total=m_total_channels;
++            break;
++        }
++    }
++    if (!m_voice_current_samplerate) {
++        m_voice_current_samplerate=44100;
++        //printf("voice sample rate null\n");
++    }
++    //printf("opn:%d / %lf delta:%lf\n",OPN->ST.rate,OPN->ST.freqbase,DELTAT->freqbase);
++    int64_t smplIncr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
++    //TODO:  MODIZER changes end / YOYOFR
+ 
+ 	/* buffer setup */
+ 	if (buffer != NULL)
+@@ -3622,6 +3836,60 @@ void ym2610_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 	cch[1] = &F2610->CH[2];
+ 	cch[2] = &F2610->CH[4];
+ 	cch[3] = &F2610->CH[5];
++    
++    //YOYOFR
++    static INT32 old_out_fm[4]; //YOYOFR
++    if (m_voice_ofs>=0) {
++        for (int ii=0;ii<4;ii++) {
++            if (!(cch[ii]->Muted)) {
++                if (cch[ii]->block_fnum==0) {
++                    if ((out_fm[ii]!=old_out_fm[ii])) {
++                        vgm_last_note[ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
++                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
++                        int newvol=cch[ii]->keyonff_triggered+1;
++                        cch[ii]->keyonff_triggered=0;
++                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
++                    }
++                } else {
++                    if ((out_fm[ii]!=old_out_fm[ii])) {
++                        int freq=(cch[ii]->block_fnum)&0x7FF;
++                        int octave=((cch[ii]->block_fnum)>>11)&0x7;
++                        vgm_last_note[ii+m_voice_ofs]=(freq<<octave)*110.0f/1081.0f; //1148.0f;
++                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
++                        int newvol=cch[ii]->keyonff_triggered+1;
++                        cch[ii]->keyonff_triggered=0;
++                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
++                    }
++                }
++            }
++        }
++        old_out_fm[0]=out_fm[1];
++        old_out_fm[1]=out_fm[2];
++        old_out_fm[2]=out_fm[4];
++        old_out_fm[3]=out_fm[5];
++        //ADPCM-A
++        for (int ii=0;ii<6;ii++) {
++            if ( (!(F2610->adpcm[ii].Muted)) && (F2610->adpcm[ii].flag) ) {
++                if (F2610->adpcm[ii].vol_mul && F2610->adpcm[ii].start ) {
++                    vgm_last_note[4+ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
++                    vgm_last_instr[4+ii+m_voice_ofs]=4+ii+m_voice_ofs;//F2610->adpcm[ii].start;
++                    int newvol=1+(F2610->adpcm[ii].now_step==0?1:0);
++                    vgm_last_vol[4+ii+m_voice_ofs]=newvol;
++                }
++            }
++        }
++        //ADPCM-B
++        if( (DELTAT->portstate&0x80) && (! F2610->MuteDeltaT) ) {
++            if (DELTAT->volume) {
++                int freq=DELTAT->delta;
++                vgm_last_note[10+m_voice_ofs]=220.0f*(55555.0f * ((double)(DELTAT->delta) / 65535.0f))/22050.0f; //using A3 / 22Khz
++                vgm_last_instr[10+m_voice_ofs]=10+m_voice_ofs;//DELTAT->start;
++                int newvol=1;
++                vgm_last_vol[10+m_voice_ofs]=newvol;
++            }
++        }
++    }
++    //YOYOFR
+ 
+ #ifdef YM2610B_WARNING
+ #define FM_KEY_IS(SLOT) ((SLOT)->key)
+@@ -3663,6 +3931,9 @@ void ym2610_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 		update_ssg_eg_channel(&cch[2]->SLOT[SLOT1]);
+ 		update_ssg_eg_channel(&cch[3]->SLOT[SLOT1]);
+ 	}
++    
++    
++    
+ 
+ 	/* buffering */
+ 	for(i=0; i < length ; i++)
+@@ -3741,6 +4012,36 @@ void ym2610_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 			/* buffering */
+ 			bufL[i] = lt;
+ 			bufR[i] = rt;
++            
++            //TODO:  MODIZER changes start / YOYOFR
++            if (m_voice_ofs>=0) {
++                int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+0];
++                int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+0]+smplIncr);
++                if (ofs_end>ofs_start)
++                for (;;) {
++                    INT32 val= (out_fm[1] & OPN->pan[2]) + (out_fm[1] & OPN->pan[3]);
++                    m_voice_buff[m_voice_ofs+0][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((val>>7));
++                    val= (out_fm[2] & OPN->pan[4]) + (out_fm[2] & OPN->pan[5]);
++                    m_voice_buff[m_voice_ofs+1][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((val>>7));
++                    val= (out_fm[4] & OPN->pan[8]) + (out_fm[4] & OPN->pan[9]);
++                    m_voice_buff[m_voice_ofs+2][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((val>>7));
++                    val= (out_fm[5] & OPN->pan[10]) + (out_fm[5] & OPN->pan[11]);
++                    m_voice_buff[m_voice_ofs+3][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((val>>7));
++                    
++                    for (int jj=0;jj<6;jj++) {
++                        if( F2610->adpcm[jj].flag ) {
++                            m_voice_buff[m_voice_ofs+jj+4][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((F2610->adpcm[jj].adpcm_out>>6));
++                        }
++                    }
++                    
++                    if( DELTAT->portstate&0x80 && ! F2610->MuteDeltaT ) m_voice_buff[m_voice_ofs+10][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((F2610->deltaT.adpcml)>>15);
++                    
++                    ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++                    if (ofs_start>=ofs_end) break;
++                }
++                for (int jj=0;jj<11;jj++) m_voice_current_ptr[m_voice_ofs+jj]=ofs_end;
++            }
++            //TODO:  MODIZER changes end / YOYOFR
+ 		}
+ 
+ 		/* CSM mode: if CSM Key ON has occured, CSM Key OFF need to be sent       */
+@@ -3801,6 +4102,75 @@ void ym2610b_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 	cch[3] = &F2610->CH[3];
+ 	cch[4] = &F2610->CH[4];
+ 	cch[5] = &F2610->CH[5];
++    
++    //TODO:  MODIZER changes start / YOYOFR
++    //search first voice linked to current chip
++    int m_voice_ofs=-1;
++    int m_total_channels=13;
++    for (int ii=0;ii<=SOUND_MAXVOICES_BUFFER_FX-m_total_channels;ii++) {
++        if (m_voice_ChipID[ii]==m_voice_current_system) {
++            m_voice_ofs=ii+(m_voice_current_systemSub?m_voice_current_systemPairedOfs:0);
++            m_voice_current_total=m_total_channels;
++            break;
++        }
++    }
++    if (!m_voice_current_samplerate) {
++        m_voice_current_samplerate=44100;
++        //printf("voice sample rate null\n");
++    }
++    //printf("opn:%d / %lf delta:%lf\n",OPN->ST.rate,OPN->ST.freqbase,DELTAT->freqbase);
++    int64_t smplIncr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
++    //TODO:  MODIZER changes end / YOYOFR
++    
++    //YOYOFR
++    static INT32 old_out_fm[6]; //YOYOFR
++    if (m_voice_ofs>=0) {
++        for (int ii=0;ii<6;ii++) {
++            if (!(cch[ii]->Muted)) {
++                if (cch[ii]->block_fnum==0) {
++                    if ((out_fm[ii]!=old_out_fm[ii])) {
++                        vgm_last_note[ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
++                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
++                        int newvol=cch[ii]->keyonff_triggered+1;
++                        cch[ii]->keyonff_triggered=0;
++                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
++                    }
++                } else {
++                    if ((out_fm[ii]!=old_out_fm[ii])) {
++                        int freq=(cch[ii]->block_fnum)&0x7FF;
++                        int octave=((cch[ii]->block_fnum)>>11)&0x7;
++                        vgm_last_note[ii+m_voice_ofs]=(freq<<octave)*110.0f/1081.0f; //1148.0f;
++                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
++                        int newvol=cch[ii]->keyonff_triggered+1;
++                        cch[ii]->keyonff_triggered=0;
++                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
++                    }
++                }
++            }
++            old_out_fm[ii]=out_fm[ii];
++        }
++        //ADPCM-A
++        for (int ii=0;ii<6;ii++) {
++            if ( (!(F2610->adpcm[ii].Muted)) && (F2610->adpcm[ii].flag) ) {
++                if (F2610->adpcm[ii].vol_mul && F2610->adpcm[ii].start ) {
++                    vgm_last_note[6+ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
++                    vgm_last_instr[6+ii+m_voice_ofs]=6+ii+m_voice_ofs;//F2610->adpcm[ii].start;
++                    int newvol=1+(F2610->adpcm[ii].now_step==0?1:0);
++                    vgm_last_vol[6+ii+m_voice_ofs]=newvol;
++                }
++            }
++        }
++        //ADPCM-B
++        if( (DELTAT->portstate&0x80) && (! F2610->MuteDeltaT) ) {
++            if (DELTAT->volume) {
++                int freq=DELTAT->delta;
++                vgm_last_note[12+m_voice_ofs]=220.0f*(55555.0f * ((double)(DELTAT->delta) / 65535.0f))/22050.0f; //using A3 / 22Khz
++                vgm_last_instr[12+m_voice_ofs]=12+m_voice_ofs;//DELTAT->start;
++                int newvol=1;
++                vgm_last_vol[12+m_voice_ofs]=newvol;
++            }
++        }
++    }
+ 
+ 	/* refresh PG and EG */
+ 	refresh_fc_eg_chan( OPN, cch[0] );
+@@ -3919,6 +4289,31 @@ void ym2610b_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 			/* buffering */
+ 			bufL[i] = lt;
+ 			bufR[i] = rt;
++            
++            //TODO:  MODIZER changes start / YOYOFR
++            if (m_voice_ofs>=0) {
++                int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+0];
++                int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+0]+smplIncr);
++                if (ofs_end>ofs_start)
++                for (;;) {
++                    
++                    for (int jj=0;jj<6;jj++) {
++                        INT32 val=(out_fm[jj] & OPN->pan[jj*2]) + (out_fm[jj] & OPN->pan[jj*2+1]);
++                        m_voice_buff[m_voice_ofs+jj][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((val>>7));
++                        
++                        if( F2610->adpcm[jj].flag ) {
++                            m_voice_buff[m_voice_ofs+jj+6][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((F2610->adpcm[jj].adpcm_out>>6));
++                        }
++                    }
++                    
++                    if( DELTAT->portstate&0x80 && ! F2610->MuteDeltaT ) m_voice_buff[m_voice_ofs+12][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8( (F2610->deltaT.adpcml)>>15 );
++                    
++                    ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++                    if (ofs_start>=ofs_end) break;
++                }
++                for (int jj=0;jj<11;jj++) m_voice_current_ptr[m_voice_ofs+jj]=ofs_end;
++            }
++            //TODO:  MODIZER changes end / YOYOFR
+ 		}
+ 
+ 		/* CSM mode: if CSM Key ON has occured, CSM Key OFF need to be sent       */
+@@ -4371,6 +4766,8 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 	INT32 dacout;
+ 	FM_CH   *cch[6];
+ 	INT32 lt,rt;
++    static INT32 old_out_fm[6]; //YOYOFR
++    static UINT8 old_dacen; //YOYOFR
+ 
+ 	/* set buffer */
+ 	if (buffer != NULL)
+@@ -4417,14 +4814,32 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 	refresh_fc_eg_chan( OPN, cch[5] );
+ 	if (! length)
+ 	{
+-		update_ssg_eg_channel(&cch[0]->SLOT[SLOT1]);
+-		update_ssg_eg_channel(&cch[1]->SLOT[SLOT1]);
+-		update_ssg_eg_channel(&cch[2]->SLOT[SLOT1]);
+-		update_ssg_eg_channel(&cch[3]->SLOT[SLOT1]);
+-		update_ssg_eg_channel(&cch[4]->SLOT[SLOT1]);
+-		update_ssg_eg_channel(&cch[5]->SLOT[SLOT1]);
++        /* update SSG-EG output */
++        update_ssg_eg_channel(&cch[0]->SLOT[SLOT1]);
++        update_ssg_eg_channel(&cch[1]->SLOT[SLOT1]);
++        update_ssg_eg_channel(&cch[2]->SLOT[SLOT1]);
++        update_ssg_eg_channel(&cch[3]->SLOT[SLOT1]);
++        update_ssg_eg_channel(&cch[4]->SLOT[SLOT1]);
++        update_ssg_eg_channel(&cch[5]->SLOT[SLOT1]);
+ 	}
+ 
++    //TODO:  MODIZER changes start / YOYOFR
++    //search first voice linked to current chip
++    int m_voice_ofs=-1;
++    int m_total_channels=6;
++    for (int ii=0;ii<=SOUND_MAXVOICES_BUFFER_FX-m_total_channels;ii++) {
++        if (m_voice_ChipID[ii]==m_voice_current_system) {
++            m_voice_ofs=ii+(m_voice_current_systemSub?m_voice_current_systemPairedOfs:0);
++            m_voice_current_total=m_total_channels;
++            break;
++        }
++    }
++    if (!m_voice_current_samplerate) {
++        m_voice_current_samplerate=44100;
++        //printf("voice sample rate null\n");
++    }
++    int64_t smplIncr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
++    //TODO:  MODIZER changes end / YOYOFR
+ 
+ 	/* buffering */
+ 	for(i=0; i < length ; i++)
+@@ -4474,7 +4889,7 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 		{
+ 			OPN->eg_timer -= OPN->eg_timer_overflow;
+ 			OPN->eg_cnt++;
+-
++            
+ 			advance_eg_channel(OPN, &cch[0]->SLOT[SLOT1]);
+ 			advance_eg_channel(OPN, &cch[1]->SLOT[SLOT1]);
+ 			advance_eg_channel(OPN, &cch[2]->SLOT[SLOT1]);
+@@ -4496,6 +4911,22 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 		else if (out_fm[4] < -8192) out_fm[4] = -8192;
+ 		if (out_fm[5] > 8191) out_fm[5] = 8191;
+ 		else if (out_fm[5] < -8192) out_fm[5] = -8192;
++        
++        //TODO:  MODIZER changes start / YOYOFR
++        if (m_voice_ofs>=0) {
++            int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+0];
++            int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+0]+smplIncr);
++            if (ofs_end>ofs_start)
++            for (;;) {
++                for (int jj=0;jj<6;jj++) m_voice_buff[m_voice_ofs+jj][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((out_fm[jj]>>6));
++                
++                
++                ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++                if (ofs_start>=ofs_end) break;
++            }
++            for (int jj=0;jj<6;jj++) m_voice_current_ptr[m_voice_ofs+jj]=ofs_end;
++        }
++        //YOYOFR
+ 
+ 		/* 6-channels mixing  */
+ 		lt  = ((out_fm[0]>>0) & OPN->pan[0]);
+@@ -4555,6 +4986,44 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ 			OPN->SL3.key_csm = 0;
+ 		}
+ 	}
++    
++    //YOYOFR
++    if (m_voice_ofs>=0)
++        for (int ii=0;ii<6;ii++) {
++            if (!(cch[ii]->Muted) ) {
++                if (cch[ii]->block_fnum==0) {
++                   if ((out_fm[ii]!=old_out_fm[ii])) {
++                        vgm_last_note[ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
++                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
++                        if ((ii==5)&&(F2612->dacen)) {
++                            if (!old_dacen) {
++                                vgm_last_vol[ii+m_voice_ofs]=2;
++                            } else vgm_last_vol[ii+m_voice_ofs]=1;
++                        } else {
++                            int newvol=cch[ii]->keyonff_triggered+1;
++                            cch[ii]->keyonff_triggered=0;
++                            if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
++                        }
++                    }
++                } else {
++                    if ((out_fm[ii]!=old_out_fm[ii])) {
++                        int freq=(cch[ii]->block_fnum)&0x7FF;
++                        int octave=((cch[ii]->block_fnum)>>11)&0x7;
++                        vgm_last_note[ii+m_voice_ofs]=(freq<<octave)*110.0f/1081.0f; //1148.0f;
++                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
++                        int newvol=cch[ii]->keyonff_triggered+1;
++                        cch[ii]->keyonff_triggered=0;
++                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
++                    }
++                }
++            }
++        }
++    
++    for (int ii=0;ii<6;ii++) {
++        old_out_fm[ii]=out_fm[ii];
++        old_dacen=F2612->dacen;
++    }
++    //YOYOFR
+ 
+ 	/* timer B control */
+ 	INTERNAL_TIMER_B(&OPN->ST,length)

@@ -1,0 +1,43 @@
+--- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/src/rconv/psg_rconv.h	2026-07-06 09:48:52
++++ src/rconv/psg_rconv.h	2026-07-06 09:44:22
+@@ -1,14 +1,14 @@
+-#ifndef _PSG_RCONV_H_
+-#define _PSG_RCONV_H_
++#ifndef _PSGKSS_RCONV_H_
++#define _PSGKSS_RCONV_H_
+ 
+-#include "emu2149/emu2149.h"
++#include "emu2149/kss_emu2149.h"
+ 
+ #ifdef __cplusplus
+ extern "C"
+ {
+ #endif
+ 
+-  typedef struct __PSG_RateConv {
++  typedef struct __PSGKSS_RateConv {
+     double timer;
+     double f_ratio;
+     int16_t *sinc_table;
+@@ -20,14 +20,14 @@
+ 
+     uint8_t quality;
+ 
+-    PSG *psg;
+-  } PSG_RateConv;
++    PSGKSS *psg;
++  } PSGKSS_RateConv;
+ 
+-  PSG_RateConv *PSG_RateConv_new(void);
+-  void PSG_RateConv_reset(PSG_RateConv *conv, PSG * psg, uint32_t f_out);
+-  void PSG_RateConv_setQuality(PSG_RateConv *conv, uint8_t quality);
+-  int16_t PSG_RateConv_calc(PSG_RateConv *conv);
+-  void PSG_RateConv_delete(PSG_RateConv *conv);
++  PSGKSS_RateConv *PSGKSS_RateConv_new(void);
++  void PSGKSS_RateConv_reset(PSGKSS_RateConv *conv, PSGKSS * psg, uint32_t f_out);
++  void PSGKSS_RateConv_setQuality(PSGKSS_RateConv *conv, uint8_t quality);
++  int16_t PSGKSS_RateConv_calc(PSGKSS_RateConv *conv);
++  void PSGKSS_RateConv_delete(PSGKSS_RateConv *conv);
+ 
+ #ifdef __cplusplus
+ }

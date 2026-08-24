@@ -1,0 +1,11 @@
+*.iml
+.gradle
+/local.properties
+/.idea/workspace.xml
+/.idea/libraries
+.DS_Store
+/build
+/captures
+.cxx
+# Prebuilt FFmpeg shared libs copied from ffmpeg-kit (regenerated, not vendored).
+/src/main/jniLibs/

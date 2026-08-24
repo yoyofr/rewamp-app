@@ -1,0 +1,99 @@
+diff --git a/emu/cores/ics2115.c b/emu/cores/ics2115.c
+index 8e7cf34..aeabb4a 100644
+--- a/emu/cores/ics2115.c
++++ b/emu/cores/ics2115.c
+@@ -29,6 +29,23 @@
+ #include "../EmuHelper.h"
+ #include "ics2115.h"
+ 
++//TODO:  MODIZER changes start / YOYOFR
++#include "../../../../../src/ModizerVoicesData.h"
++//Le décalage de voix est recalculé DANS fill_output plutôt que passé par un
++//statique: fill_output est appelée une fois par voix, et un statique ferait
++//collision si deux ICS2115 jouaient dans le même fichier.
++static int rewamp_ics_voice_ofs(void) {
++    for (int ii=0;ii<=SOUND_MAXVOICES_BUFFER_FX-32;ii++)
++        if (m_voice_ChipID[ii]==m_voice_current_system)
++            return ii+(m_voice_current_systemSub?m_voice_current_systemPairedOfs:0);
++    return -1;
++}
++static int64_t rewamp_ics_incr(void) {
++    if (!m_voice_current_samplerate) m_voice_current_samplerate=44100;
++    return (int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
++}
++//TODO:  MODIZER changes end / YOYOFR
++
+ 
+ // ======================> ics2115_device
+ 
+@@ -653,6 +670,10 @@ static UINT8 fill_output(ics2115_state *chip, ics2115_voice *voice, UINT32 sampl
+ 	UINT32 i;
+ 	UINT8 irq_invalid = 0;
+ 	UINT16 e;
++	//YOYOFR
++	const int m_voice_ofs = rewamp_ics_voice_ofs();
++	const int vidx = (int)(voice - chip->voice);
++	const int64_t smplIncr = rewamp_ics_incr();
+ 	// measured from hardware
+ 	switch (voice->vol.mode & 0x3)
+ 	{
+@@ -691,6 +712,19 @@ static UINT8 fill_output(ics2115_state *chip, ics2115_voice *voice, UINT32 sampl
+ 		{
+ 			loutput[i] += (sample * vleft) >> 15;
+ 			routput[i] += (sample * vright) >> 15;
++			//YOYOFR
++			if (m_voice_ofs>=0 && vidx<32) {
++				int64_t o=m_voice_current_ptr[m_voice_ofs+vidx];
++				int64_t en=o+smplIncr;
++				for (; o<en; o+=(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT))
++					m_voice_buff[m_voice_ofs+vidx][(o>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8(((sample*vleft)>>15)>>8);
++				m_voice_current_ptr[m_voice_ofs+vidx]=en;
++				//YOYOFR: `acc += fc<<2` et l'adresse est acc>>12, donc lecture
++				//1x quand fc vaut 1024 — convention « 1x = LA4 ».
++				if (voice->osc.fc) vgm_last_note[vidx+m_voice_ofs]=440.0*(double)voice->osc.fc/1024.0;
++				vgm_last_vol[vidx+m_voice_ofs]=1;
++				vgm_last_instr[vidx+m_voice_ofs]=vidx+m_voice_ofs;
++			}
+ 		}
+ 
+ 		if (playing(voice))
+@@ -715,6 +749,19 @@ static void ics2115_update(void *param, UINT32 samples, DEV_SMPL **outputs)
+ 	if (chip->rom == NULL)
+ 		return;
+ 
++	//TODO:  MODIZER changes start / YOYOFR
++	//Rattrapage: une voix hors de active_osc, ou simplement à l'arrêt, n'écrit
++	//RIEN dans fill_output. Sans ce filet son tracé resterait gelé au lieu de
++	//retomber à plat. On vise la même tête d'écriture pour les 32.
++	const int m_voice_ofs = rewamp_ics_voice_ofs();
++	const int64_t smplIncr = rewamp_ics_incr();
++	m_voice_current_total = 32;   //INCONDITIONNEL, cf. YM2203/SSG
++	int64_t vtarget[32];
++	if (m_voice_ofs>=0)
++		for (int v=0; v<32; v++)
++			vtarget[v] = m_voice_current_ptr[m_voice_ofs+v] + smplIncr*(int64_t)samples;
++	//TODO:  MODIZER changes end / YOYOFR
++
+ 	irq_invalid = 0;
+ 	for (osc = 0; osc <= chip->active_osc; osc++)
+ 	{
+@@ -759,6 +806,19 @@ static void ics2115_update(void *param, UINT32 samples, DEV_SMPL **outputs)
+ #endif
+ 	}
+ 
++	//TODO:  MODIZER changes start / YOYOFR
++	//Toute voix restée en deçà de la cible n'a rien joué: on la remplit de
++	//silence jusqu'à la même tête d'écriture que les autres.
++	if (m_voice_ofs>=0)
++		for (int v=0; v<32; v++) {
++			int64_t o=m_voice_current_ptr[m_voice_ofs+v];
++			if (o>=vtarget[v]) continue;
++			for (; o<vtarget[v]; o+=(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT))
++				m_voice_buff[m_voice_ofs+v][(o>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=0;
++			m_voice_current_ptr[m_voice_ofs+v]=vtarget[v];
++		}
++	//TODO:  MODIZER changes end / YOYOFR
++
+ #ifdef ICS2115_DEBUG
+ 	logerror("|");
+ #endif

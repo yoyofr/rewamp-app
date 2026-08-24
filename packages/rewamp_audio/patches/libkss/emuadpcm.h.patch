@@ -1,0 +1,41 @@
+--- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/modules/emu8950/emuadpcm.h	2026-07-06 09:48:52
++++ modules/emu8950/emuadpcm.h	2026-07-06 09:44:22
+@@ -1,9 +1,9 @@
+-#ifndef _EMUADPCM_H_
+-#define _EMUADPCM_H_
++#ifndef _EMUADPCMKSS_H_
++#define _EMUADPCMKSS_H_
+ 
+ #include <stdint.h>
+ 
+-typedef struct __OPL_ADPCM {
++typedef struct __OPLKSS_ADPCM {
+   uint32_t clk;
+ 
+   uint8_t reg[0x20];
+@@ -25,15 +25,15 @@
+   int32_t output[2];
+   uint32_t diff;
+ 
+-} OPL_ADPCM;
++} OPLKSS_ADPCM;
+ 
+-OPL_ADPCM *OPL_ADPCM_new(uint32_t clk);
+-void OPL_ADPCM_reset(OPL_ADPCM *);
+-void OPL_ADPCM_delete(OPL_ADPCM *);
+-void OPL_ADPCM_writeReg(OPL_ADPCM *, uint32_t reg, uint32_t val);
+-int16_t OPL_ADPCM_calc(OPL_ADPCM *);
+-uint8_t OPL_ADPCM_status(OPL_ADPCM *);
+-void OPL_ADPCM_resetStatus(OPL_ADPCM *);
+-void OPL_ADPCM_writeRAM(OPL_ADPCM *, uint32_t start, uint32_t length, const uint8_t *data);
+-void OPL_ADPCM_writeROM(OPL_ADPCM *, uint32_t start, uint32_t length, const uint8_t *data);
++OPLKSS_ADPCM *OPLKSS_ADPCM_new(uint32_t clk);
++void OPLKSS_ADPCM_reset(OPLKSS_ADPCM *);
++void OPLKSS_ADPCM_delete(OPLKSS_ADPCM *);
++void OPLKSS_ADPCM_writeReg(OPLKSS_ADPCM *, uint32_t reg, uint32_t val);
++int16_t OPLKSS_ADPCM_calc(OPLKSS_ADPCM *);
++uint8_t OPLKSS_ADPCM_status(OPLKSS_ADPCM *);
++void OPLKSS_ADPCM_resetStatus(OPLKSS_ADPCM *);
++void OPLKSS_ADPCM_writeRAM(OPLKSS_ADPCM *, uint32_t start, uint32_t length, const uint8_t *data);
++void OPLKSS_ADPCM_writeROM(OPLKSS_ADPCM *, uint32_t start, uint32_t length, const uint8_t *data);
+ #endif

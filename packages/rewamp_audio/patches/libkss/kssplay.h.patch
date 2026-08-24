@@ -1,0 +1,41 @@
+--- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/src/kssplay.h	2026-07-06 09:48:51
++++ src/kssplay.h	2026-07-06 09:44:22
+@@ -8,6 +8,7 @@
+ #include "filters/rc_filter.h"
+ #include "kss/kss.h"
+ #include "rconv/psg_rconv.h"
++
+ #include "vm/vm.h"
+ 
+ #ifdef __cplusplus
+@@ -44,9 +45,9 @@
+   int32_t device_pan[KSS_DEVICE_MAX];
+   uint32_t device_type[KSS_DEVICE_MAX];
+   FIR *device_fir[2][KSS_DEVICE_MAX];
+-  RCF *rcf[2];
+-  DCF *dcf[2];
+-  uint32_t lastout[2];
++  RCF *rcf[2+41]; //YOYOFR, max 41 voices
++  DCF *dcf[2+41]; //YOYOFR, max 41 voices
++  int32_t lastout[2]; //YOYOFR
+ 
+   uint32_t fade;
+   uint32_t fade_step;
+@@ -61,7 +62,7 @@
+   int scc_disable;
+   int opll_stereo;
+ 
+-  PSG_RateConv *psg_rconv;
++  PSGKSS_RateConv *psg_rconv;
+ };
+ 
+ /**
+@@ -89,7 +90,7 @@
+  * sng[3]   :NOISE
+  *
+  * dac[0]: 1-bit DAC
+- * dac[1]: SCC 8-bit DAC
++ * dac[1]: SCCKSS 8-bit DAC
+  */
+ typedef struct tagKSSPLAY_PER_CH_OUT {
+   int16_t psg[3];

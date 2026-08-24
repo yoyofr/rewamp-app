@@ -1,0 +1,139 @@
+/**
+* 
+* @file
+*
+* @brief  TurboSound chip implementation
+*
+* @author vitamin.caig@gmail.com
+*
+**/
+
+//TODO:  MODIZER changes start / YOYOFR
+#include "ModizerVoicesData.h"
+//TODO:  MODIZER changes end / YOYOFR
+
+
+//local includes
+#include "psg.h"
+#include "soundchip.h"
+//library includes
+#include <devices/turbosound.h>
+//boost includes
+#include <boost/make_shared.hpp>
+
+namespace Devices
+{
+namespace TurboSound
+{
+  class PSG
+  {
+  public:
+    explicit PSG(const AYM::MultiVolumeTable& table)
+      : Chip0(table)
+      , Chip1(table)
+    {
+      //YOYOFR (rewamp): the second chip owns voices 3..5, and it has to be told
+      //once here — the renderer's m_voicesForceOfs is only set while GetLevels()
+      //runs, which is not when registers arrive.
+      Chip0.SetVoiceOfs(0);
+      Chip1.SetVoiceOfs(3);
+    }
+
+    void SetDutyCycle(uint_t value, uint_t mask)
+    {
+      Chip0.SetDutyCycle(value, mask);
+      Chip1.SetDutyCycle(value, mask);
+    }
+
+    void Reset()
+    {
+      Chip0.Reset();
+      Chip1.Reset();
+    }
+
+    void SetNewData(const Registers& data)
+    {
+      Chip0.SetNewData(data[0]);
+      Chip1.SetNewData(data[1]);
+    }
+
+    void Tick(uint_t ticks)
+    {
+      Chip0.Tick(ticks);
+      Chip1.Tick(ticks);
+    }
+      
+      Sound::Sample GetLevelsChan(int chan) const
+      {
+          using namespace Sound;
+          
+        Sample s;
+          if (chan<3) {
+              s = Chip0.GetLevelsChan(chan);
+          } else {
+              s = Chip1.GetLevelsChan(chan);
+          }
+          
+          return s;
+      }
+
+    Sound::Sample GetLevels() const
+    {
+      using namespace Sound;
+        
+        m_voicesForceOfs=0;
+        m_voice_current_total=3;
+      const Sample s0 = Chip0.GetLevels();
+        
+        m_voicesForceOfs=3;
+        m_voice_current_total=3;
+      const Sample s1 = Chip1.GetLevels();
+        m_voicesForceOfs=0;
+        m_voice_current_total=6;
+      return Sound::Sample::FastAdd(s0, s1);
+    }
+
+    void GetState(MultiChannelState& state) const
+    {
+      Chip0.GetState(state);
+      Chip1.GetState(state);
+    }
+  private:
+    AYM::PSG Chip0;
+    AYM::PSG Chip1;
+  };
+
+  struct Traits
+  {
+    typedef DataChunk DataChunkType;
+    typedef PSG PSGType;
+    typedef Chip ChipBaseType;
+    static const uint_t VOICES = TurboSound::VOICES;
+  };
+
+  class HalfLevelMixer : public MixerType
+  {
+  public:
+    explicit HalfLevelMixer(MixerType::Ptr delegate)
+      : Delegate(delegate)
+      , DelegateRef(*Delegate)
+    {
+    }
+
+    virtual Sound::Sample ApplyData(const MixerType::InDataType& in) const
+    {
+      const Sound::Sample out = DelegateRef.ApplyData(in);
+      return Sound::Sample(out.Left() / 2, out.Right() / 2);
+    }
+  private:
+    const MixerType::Ptr Delegate;
+    const MixerType& DelegateRef;
+  };
+
+  Chip::Ptr CreateChip(ChipParameters::Ptr params, MixerType::Ptr mixer, Sound::Receiver::Ptr target)
+  {
+    const MixerType::Ptr halfMixer = boost::make_shared<HalfLevelMixer>(mixer);
+    return boost::make_shared<AYM::SoundChip<Traits> >(params, halfMixer, target);
+  }
+}
+}

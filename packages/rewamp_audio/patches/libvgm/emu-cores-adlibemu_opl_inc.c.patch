@@ -1,0 +1,392 @@
+diff --git a/emu/cores/adlibemu_opl_inc.c b/emu/cores/adlibemu_opl_inc.c
+index 9824a63..719d943 100644
+--- a/emu/cores/adlibemu_opl_inc.c
++++ b/emu/cores/adlibemu_opl_inc.c
+@@ -39,6 +39,11 @@
+ #include "../snddef.h"
+ #include "adlibemu_opl_inc.h"
+ 
++//TODO:  MODIZER changes start / YOYOFR
++#include "../../../../../src/ModizerVoicesData.h"
++//TODO:  MODIZER changes end / YOYOFR
++
++
+ 
+ //static fltype recipsamp;	// inverse of sampling rate		// moved to OPL_DATA
+ static Bit16s wavtable[WAVEPREC*3];	// wave form table
+@@ -1160,26 +1165,120 @@ UINT8 ADLIBEMU(reg_read)(void *chip, UINT8 port)
+ 
+ 
+ // be careful with this
+-// uses cptr and chanval, outputs into outbufl/outbufr
++// uses cptr and chanval, outputs into outbufl(/outbufr)
+ // for opl3 check if opl3-mode is enabled (which uses stereo panning)
+-// 
++//
+ // Changes by Valley Bell:
+-//	- Changed to always output to both channels
+-//	- added parameter "chn" to fix panning for 4-op channels and the Rhythm Cymbal
++//    - Changed to always output to both channels
++//    - added parameter "chn" to fix panning for 4-op channels and the Rhythm Cymbal
+ #undef CHANVAL_OUT
+ #if defined(OPLTYPE_IS_OPL3)
+-#define CHANVAL_OUT(chn)								\
+-	if (OPL->adlibreg[0x105]&1) {						\
+-		outbufl[i] += chanval*cptr[chn].left_pan;		\
+-		outbufr[i] += chanval*cptr[chn].right_pan;	\
+-	} else {										\
+-		outbufl[i] += chanval;						\
+-		outbufr[i] += chanval;						\
+-	}
++#define CHANVAL_OUT(chn,channel,shift)                                \
++    if (OPL->adlibreg[0x105]&1) {                        \
++        outbufl[i] += chanval*cptr[chn].left_pan;        \
++        outbufr[i] += chanval*cptr[chn].right_pan;    \
++/*TODO:  MODIZER changes start / YOYOFR */    \
++OPL->chan_out[channel]+=chanval*(cptr[chn].left_pan+cptr[chn].right_pan);\
++if (m_voice_ofs>=0) {     \
++    int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+channel]+i*smplIncr;     \
++    int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+channel]+(i+1)*smplIncr);     \
++if (ofs_end>ofs_start)     \
++    for (;;) {     \
++        m_voice_buff[m_voice_ofs+channel][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8(((int)(chanval*(cptr[chn].left_pan+cptr[chn].right_pan))>>shift));     \
++        ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;     \
++        if (ofs_start>=ofs_end) break;     \
++    }     \
++}     \
++/*TODO:  MODIZER changes end / YOYOFR*/     \
++    } else {                                        \
++        outbufl[i] += chanval;                        \
++        outbufr[i] += chanval;                        \
++/*TODO:  MODIZER changes start / YOYOFR */    \
++OPL->chan_out[channel]+=chanval;\
++if (m_voice_ofs>=0) {     \
++    int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+channel]+i*smplIncr;     \
++    int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+channel]+(i+1)*smplIncr);     \
++if (ofs_end>ofs_start)     \
++    for (;;) {     \
++        m_voice_buff[m_voice_ofs+channel][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8(((int)(chanval)>>shift));     \
++        ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;     \
++        if (ofs_start>=ofs_end) break;     \
++    }     \
++}     \
++/*TODO:  MODIZER changes end / YOYOFR*/     \
++    }
++
++#define CHANVAL_OUT_ADD(chn,channel,shift)                                \
++    if (OPL->adlibreg[0x105]&1) {                        \
++        outbufl[i] += chanval*cptr[chn].left_pan;        \
++        outbufr[i] += chanval*cptr[chn].right_pan;    \
++/*TODO:  MODIZER changes start / YOYOFR */    \
++OPL->chan_out[channel]+=chanval*(cptr[chn].left_pan+cptr[chn].right_pan);\
++if (m_voice_ofs>=0) {     \
++    int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+channel]+i*smplIncr;     \
++    int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+channel]+(i+1)*smplIncr);     \
++if (ofs_end>ofs_start)     \
++    for (;;) {     \
++        m_voice_buff[m_voice_ofs+channel][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=((int)(m_voice_buff[m_voice_ofs+channel][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)])+LIMIT8(((int)(chanval*(cptr[chn].left_pan+cptr[chn].right_pan))>>shift)))>>1;     \
++        ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;     \
++        if (ofs_start>=ofs_end) break;     \
++    }     \
++}     \
++/*TODO:  MODIZER changes end / YOYOFR*/     \
++    } else {                                        \
++        outbufl[i] += chanval;                        \
++        outbufr[i] += chanval;                        \
++/*TODO:  MODIZER changes start / YOYOFR */    \
++OPL->chan_out[channel]+=chanval;\
++if (m_voice_ofs>=0) {     \
++    int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+channel]+i*smplIncr;     \
++    int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+channel]+(i+1)*smplIncr);     \
++if (ofs_end>ofs_start)     \
++    for (;;) {     \
++        m_voice_buff[m_voice_ofs+channel][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=((int)(m_voice_buff[m_voice_ofs+channel][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)])+LIMIT8(((int)(chanval)>>shift)))>>1;     \
++        ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;     \
++        if (ofs_start>=ofs_end) break;     \
++    }     \
++}     \
++/*TODO:  MODIZER changes end / YOYOFR*/     \
++    }
++
++
+ #else
+-#define CHANVAL_OUT(chn)								\
+-	outbufl[i] += chanval;							\
+-	outbufr[i] += chanval;
++#define CHANVAL_OUT(chn,channel,shift)                                \
++    outbufl[i] += chanval;                            \
++    outbufr[i] += chanval;                            \
++/*TODO:  MODIZER changes start / YOYOFR */    \
++OPL->chan_out[channel]+=chanval;\
++if (m_voice_ofs>=0) {     \
++    int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+channel]+i*smplIncr;     \
++    int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+channel]+(i+1)*smplIncr);     \
++    if (ofs_end>ofs_start)     \
++        for (;;) {     \
++            m_voice_buff[m_voice_ofs+channel][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8(((int)(chanval)>>(shift+1)));     \
++            ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;     \
++            if (ofs_start>=ofs_end) break;     \
++        }     \
++}
++/*TODO:  MODIZER changes end / YOYOFR*/
++
++#define CHANVAL_OUT_ADD(chn,channel,shift)                                \
++    outbufl[i] += chanval;                            \
++    outbufr[i] += chanval;                            \
++/*TODO:  MODIZER changes start / YOYOFR */    \
++OPL->chan_out[channel]+=chanval;\
++if (m_voice_ofs>=0) {     \
++    int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+channel]+i*smplIncr;     \
++    int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+channel]+(i+1)*smplIncr);     \
++    if (ofs_end>ofs_start)     \
++        for (;;) {     \
++            m_voice_buff[m_voice_ofs+channel][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=((int)(m_voice_buff[m_voice_ofs+channel][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)])+LIMIT8(((int)(chanval)>>(shift+1))))>>1;     \
++            ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;     \
++            if (ofs_start>=ofs_end) break;     \
++        }     \
++}
++/*TODO:  MODIZER changes end / YOYOFR*/
++
+ #endif
+ 
+ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+@@ -1207,6 +1306,72 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ #if defined(OPLTYPE_IS_OPL3)
+ 	if ((OPL->adlibreg[0x105]&1)==0) max_channel = NUM_CHANNELS/2;
+ #endif
++    
++    //TODO:  MODIZER changes start / YOYOFR
++    //search first voice linked to current chip
++    int m_voice_ofs=-1;
++    int m_total_channels=max_channel;
++    for (int ii=0;ii<=SOUND_MAXVOICES_BUFFER_FX-m_total_channels;ii++) {
++        if (m_voice_ChipID[ii]==m_voice_current_system) {
++            m_voice_ofs=ii+(m_voice_current_systemSub?m_voice_current_systemPairedOfs:0);
++            m_voice_current_total=m_total_channels;
++            break;
++        }
++    }
++    //printf("opn:%d / %lf delta:%lf\n",OPN->ST.rate,OPN->ST.freqbase,DELTAT->freqbase);
++    if (!m_voice_current_samplerate) {
++        m_voice_current_samplerate=44100;
++        //printf("voice sample rate null\n");
++    }
++    int64_t smplIncr;
++    if (m_voice_current_samplerate) smplIncr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
++    //TODO:  MODIZER changes end / YOYOFR
++    
++    //YOYOFR
++    static INT32 old_out_fm[NUM_CHANNELS]; //YOYOFR
++    if (m_voice_ofs>=0) {
++        for (int ii=0;ii<max_channel;ii++) {
++            if (!(OPL->MuteChn[ii])) {
++                // frequency
++                int idx=(ii%9)+(ii/9)*0x100;
++                int64_t frn = ((((Bit32u)OPL->adlibreg[ARC_KON_BNUM+idx])&3)<<8) + (Bit32u)OPL->adlibreg[ARC_FREQ_NUM+idx];
++                // block number/octave
++                int64_t oct = ((((Bit32u)OPL->adlibreg[ARC_KON_BNUM+idx])>>2)&7);
++                int keyon=((((Bit32u)OPL->adlibreg[ARC_KON_BNUM+idx])>>5)&1);
++                
++                if (ii < 9)
++                    cptr = &OPL->op[ii];
++                else
++                    cptr = &OPL->op[ii+9];    // second set is operator18-operator35
++                if ((cptr->op_state!=OF_TYPE_OFF)&&(cptr->op_state!=OF_TYPE_REL)) keyon=1;
++                
++                
++                if (keyon) {
++                    if (!(frn)) {
++                        //if ((OPL->chan_out[ii] !=old_out_fm[ii]))
++                        {
++                            vgm_last_note[ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
++                            vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
++                            int newvol=keyon;//chip->P_CH[ii].keyon_triggered;//+1;
++                            vgm_last_vol[ii+m_voice_ofs]=newvol;
++                        }
++                    } else {
++                        //if ((OPL->chan_out[ii]!=old_out_fm[ii]))
++                        {
++                            int64_t note=frn*(1<<oct)/2*(OPL->chip_clock)/72/(1<<19);
++                            
++                            vgm_last_note[ii+m_voice_ofs]=note;
++                            vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
++                            int newvol=keyon;//chip->P_CH[ii].keyon_triggered;//+1;
++                            vgm_last_vol[ii+m_voice_ofs]=newvol;
++                        }
++                    }
++                }
++                old_out_fm[ii]=OPL->chan_out[ii];
++            }
++        }
++    }
++    //YOYOFR
+ 	
+ 	if (! numsamples)
+ 	{
+@@ -1301,7 +1466,9 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 						operator_output(&cptr[9],0,tremval1[i]);
+ 						
+ 						chanval = cptr[9].cval*2;
+-						CHANVAL_OUT(0)
++                        if (! (OPL->MuteChn[6]) ) {
++                            CHANVAL_OUT(0,6,4+1)
++                        }
+ 					}
+ 				}
+ 			}
+@@ -1349,7 +1516,9 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 						operator_output(&cptr[9],cptr[0].cval*FIXEDPT,tremval2[i]);
+ 						
+ 						chanval = cptr[9].cval*2;
+-						CHANVAL_OUT(0)
++                        if (! (OPL->MuteChn[6]) ) {
++                            CHANVAL_OUT(0,6,4+1)
++                        }
+ 					}
+ 				}
+ 			}
+@@ -1382,7 +1551,9 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 					opfuncs[cptr[0].op_state](&cptr[0]);		//TomTom
+ 					operator_output(&cptr[0],0,tremval3[i]);
+ 					chanval = cptr[0].cval*2;
+-					CHANVAL_OUT(0)
++                    if (! (OPL->MuteChn[8]) ) {
++                        CHANVAL_OUT(0,8,4+1)
++                    }
+ 				}
+ 			}
+ 
+@@ -1465,10 +1636,23 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 					//chanval = (OPL->op[7].cval + OPL->op[7+9].cval + OPL->op[8+9].cval)*2;
+ 					//CHANVAL_OUT(0)
+ 					// fix panning of the snare -Valley Bell
+-					chanval = (OPL->op[7].cval + OPL->op[7+9].cval)*2;
+-					CHANVAL_OUT(7)
+-					chanval = OPL->op[8+9].cval*2;
+-					CHANVAL_OUT(8)
++                    /*chanval = (OPL->op[7].cval + OPL->op[7+9].cval)*2;
++                    CHANVAL_OUT(7,0)
++                    chanval = OPL->op[8+9].cval*2;
++                    CHANVAL_OUT(8,0)*/
++                    
++                    chanval = (OPL->op[7].cval)*2;
++                    if (! (OPL->MuteChn[7]) ) {
++                        CHANVAL_OUT(7,7,4+1)
++                    }
++                    chanval = (OPL->op[7+9].cval)*2;
++                    if (! (OPL->MuteChn[7]) ) {
++                        CHANVAL_OUT_ADD(7,7,4+1)
++                    }
++                    chanval = OPL->op[8+9].cval*2;
++                    if (! (OPL->MuteChn[8]) ) {
++                        CHANVAL_OUT_ADD(8,8,4+1)
++                    }
+ 				}
+ 			}
+ 		}
+@@ -1536,7 +1720,7 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 								operator_output(&cptr[0],(cptr[0].lastcval+cptr[0].cval)*cptr[0].mfbi/2,tremval1[i]);
+ 
+ 								chanval = cptr[0].cval;
+-								CHANVAL_OUT(3)	// Note: Op 1 of 4, so it needs to use the panning bits of Op 4 (Ch+3)
++                                CHANVAL_OUT(3,cur_ch,4+1)	// Note: Op 1 of 4, so it needs to use the panning bits of Op 4 (Ch+3)
+ 							}
+ 						}
+ 
+@@ -1573,7 +1757,7 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 								operator_output(&cptr[3],cptr[9].cval*FIXEDPT,tremval2[i]);
+ 
+ 								chanval = cptr[3].cval;
+-								CHANVAL_OUT(3)
++                                CHANVAL_OUT(3,cur_ch,4+1)
+ 							}
+ 						}
+ 
+@@ -1594,7 +1778,7 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 								operator_output(&cptr[3+9],0,tremval1[i]);
+ 
+ 								chanval = cptr[3+9].cval;
+-								CHANVAL_OUT(3)
++                                CHANVAL_OUT(3,cur_ch,4+1)
+ 							}
+ 						}
+ 					}
+@@ -1626,7 +1810,7 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 								operator_output(&cptr[0],(cptr[0].lastcval+cptr[0].cval)*cptr[0].mfbi/2,tremval1[i]);
+ 
+ 								chanval = cptr[0].cval;
+-								CHANVAL_OUT(3)
++                                CHANVAL_OUT(3,cur_ch,4+1)
+ 							}
+ 						}
+ 
+@@ -1670,7 +1854,7 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 								operator_output(&cptr[3+9],cptr[3].cval*FIXEDPT,tremval3[i]);
+ 
+ 								chanval = cptr[3+9].cval;
+-								CHANVAL_OUT(3)
++                                CHANVAL_OUT(3,cur_ch,4+1)
+ 							}
+ 						}
+ 					}
+@@ -1720,7 +1904,7 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 					operator_output(&cptr[9],0,tremval2[i]);
+ 
+ 					chanval = cptr[9].cval + cptr[0].cval;
+-					CHANVAL_OUT(0)
++                    CHANVAL_OUT(0,cur_ch,4+1)
+ 				}
+ 			}
+ 			else
+@@ -1773,7 +1957,7 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 								operator_output(&cptr[9],cptr[0].cval*FIXEDPT,tremval2[i]);
+ 
+ 								chanval = cptr[9].cval;
+-								CHANVAL_OUT(3)
++                                CHANVAL_OUT(3,cur_ch,4+1)
+ 							}
+ 						}
+ 
+@@ -1802,7 +1986,7 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 								operator_output(&cptr[3+9],cptr[3].cval*FIXEDPT,tremval2[i]);
+ 
+ 								chanval = cptr[3+9].cval;
+-								CHANVAL_OUT(3)
++                                CHANVAL_OUT(3,cur_ch,4+1)
+ 							}
+ 						}
+ 
+@@ -1868,7 +2052,7 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 								operator_output(&cptr[3+9],cptr[3].cval*FIXEDPT,tremval4[i]);
+ 
+ 								chanval = cptr[3+9].cval;
+-								CHANVAL_OUT(3)
++                                CHANVAL_OUT(3,cur_ch,4+1)
+ 							}
+ 						}
+ 					}
+@@ -1918,15 +2102,22 @@ void ADLIBEMU(getsample)(void *chip, UINT32 numsamples, DEV_SMPL** sndptr)
+ 					operator_output(&cptr[9],cptr[0].cval*FIXEDPT,tremval2[i]);
+ 
+ 					chanval = cptr[9].cval;
+-					CHANVAL_OUT(0)
++                    CHANVAL_OUT(0,cur_ch,4+1)
+ 				}
+ 			}
+ 		}
+ 
+ 		outbufl += endsamples;
+ 		outbufr += endsamples;
++        
++        //YOYOFR
++        for (int i=0;i<max_channel;i++) {
++            int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+i]+smplIncr*endsamples);
++            m_voice_current_ptr[m_voice_ofs+i]=ofs_end;
++        }
++        //YOYOFR
+ 	}
+-
++    
+ 	for (i=0;i<numsamples;i++)
+ 	{
+ 		sndptr[0][i] = (sndptr[0][i] * OPL->master_vol_l) >> 12;

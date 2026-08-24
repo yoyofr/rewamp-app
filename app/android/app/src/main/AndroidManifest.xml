@@ -1,0 +1,102 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- audio_service: foreground media-playback service for lock-screen controls -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Android 13+ (API 33): the media-playback notification (lock-screen +
+         shade controls) is silently suppressed without this permission. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <application
+        android:label="rewamp"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:localeConfig="@xml/locales_config"
+        android:networkSecurityConfig="@xml/network_security_config">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- audio_service: media-browser foreground service + media-button receiver -->
+        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService"/>
+            </intent-filter>
+        </service>
+        <receiver
+            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- Impeller opt-out (Skia/GL) — REQUIRED, do not flip to true.
+             EXPERIMENT 2026-07-06: with Impeller ON + the SurfaceView hybrid-
+             composition PlatformView, the black-frame strobe RETURNS (Impeller
+             composites that layer differently, undoing the hybrid-composition fix).
+             EXPERIMENT 2026-07-07: retried Impeller=true paired with
+             kVizForceTextureOnAndroid=true (viz_platform_view.dart), routing the
+             viz through the Flutter Texture/SurfaceProducer path instead of
+             SurfaceView. Strobe gone either way (Impeller or Skia) with the Texture
+             path, BUT on-device comparison found it noticeably less smooth than
+             SurfaceView+Skia regardless of backend — the Texture path pulls viz
+             frames back through Flutter's own raster-thread scheduling and a
+             cross-GPU-context buffer import, both avoided entirely by SurfaceView's
+             direct SurfaceFlinger composition. Conclusion: SurfaceView+Skia stays
+             the setup; kVizForceTextureOnAndroid is kept (default false) only as a
+             quick toggle for future re-tests. -->
+        <!-- RETEST 2026-07-31 (branche feat/liquid-glass-chrome): rallumé pour
+             que le kit « liquid glass » atteigne son chemin natif, qui est
+             Impeller-only. Le motif de la désactivation était le strobe une
+             frame sur deux avec la SurfaceView du visualiseur (mesuré le
+             2026-07-06, Flutter d'alors) — À REVÉRIFIER sur cette version avant
+             d'envisager de garder ce réglage. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="true" />
+
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Route picker: resolve SystemUI's Media Output dialog receiver
+             (package-visibility rules would hide it from
+             queryBroadcastReceivers otherwise, and the picker would always
+             fall back to the Settings panel). -->
+        <package android:name="com.android.systemui"/>
+    </queries>
+</manifest>

@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  package="com.modizer.rewamp.rewamp_audio">
+
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+  <application>
+    <service
+      android:name="com.modizer.rewamp.rewamp_audio.RewampAudioService"
+      android:foregroundServiceType="mediaPlayback"
+      android:exported="false" />
+  </application>
+
+</manifest>

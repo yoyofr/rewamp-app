@@ -1,0 +1,406 @@
+# Plancher iOS 15 depuis la beta 2 (ASC 90068: obligatoire au printemps 2027;
+# iOS 15 couvre les mêmes appareils que 13). Aligné avec le pbxproj du Runner
+# et le podspec de rewamp_audio — les trois doivent bouger ensemble.
+platform :ios, '15.0'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+ENV['REWAMP_WITH_OPENMPT']    = '1'
+ENV['REWAMP_WITH_VGM']        = '1'
+ENV['REWAMP_WITH_GME']        = '1'
+ENV['REWAMP_WITH_ANGLE']      = '1'   # informational: the pod builds ANGLE unconditionally
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  use_frameworks!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+
+    # Pods hérités de planchers plus bas → alignés sur le nôtre (sinon Xcode
+    # avertit et le linker peut viser un runtime plus vieux que le Runner).
+    target.build_configurations.each do |config|
+      if config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f < 15.0
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      end
+    end
+
+    # NB permission_handler / ASC 90683: la plupart des plugins iOS de ce
+    # projet passent par Swift Package Manager, PAS par CocoaPods (le lock ne
+    # porte que rewamp_audio + flutter_secure_storage) — le strip classique par
+    # macros GCC_PREPROCESSOR_DEFINITIONS sur permission_handler_apple serait
+    # un no-op ici. La référence à CLLocationManager reste donc dans le binaire
+    # et la réponse au 90683 est la purpose string dans Runner/Info.plist.
+
+    # libzxtune bundles boost 1.57 (std::auto_ptr etc., removed in C++17). The pod
+    # compiles globally at c++17 (libvgm/viz need it), so force the zxtune wrapper
+    # TUs (Classes/zxtune_cores/*.cpp) down to gnu++14 with a per-file flag — it is
+    # appended last on the clang line and overrides the target's std. Skip the .c
+    # wrappers (lhasa/z80ex/zlib): -std=gnu++14 is invalid for C.
+    if target.name == 'rewamp_audio'
+      # UADE include paths are scoped per-file (NOT pod-wide): src/include/ holds
+      # generic-named headers (memory.h, audio.h, custom.h, …) that would shadow
+      # system/other-plugin headers for every TU. Applied only to uade_cores/*.
+      uade_root = '$(PODS_TARGET_SRCROOT)/../third_party/uade'
+      uade_inc = %W[
+        #{uade_root}/src #{uade_root}/src/include
+        #{uade_root}/src/frontends/common #{uade_root}/src/frontends/include
+        #{uade_root}/amigasrc/score
+        #{uade_root}/libzakalwe/include #{uade_root}/bencodetools/include
+      ].map { |d| "-I#{d}" }.join(' ')
+
+      # MACLib (Monkey's Audio) include dirs likewise scoped to mac_cores/*:
+      # src/Shared holds generic-named headers (config.h, MD5.h, All.h) that
+      # would break libarchive's config.h include-order trick pod-wide.
+      mac_root = '$(PODS_TARGET_SRCROOT)/../third_party/monkeyaudio/mac-master'
+      mac_inc = "-I#{mac_root}/src/Shared -I#{mac_root}/src/MACLib"
+
+      # melonDS quote-includes generic header names ("types.h", "version.h",
+      # "Utils.h", "blip-buf/…") that clash pod-wide with gsf/v2m/etc. -iquote is
+      # searched before all -I for quote-includes, so vio2sf finds ITS own headers.
+      # Scoped to Classes/vio2sf_cores/* only (the flat + src dirs are NOT pod-wide).
+      vio_root = '$(PODS_TARGET_SRCROOT)/../third_party/vio2sf'
+      # -w silences warnings for the vendored melonDS TUs (the pod builds -Werror
+      # on a few; upstream melonDS trips them). The plugin's own TU is a separate
+      # wrapper (Classes/rewamp_vio2sf_plugin_impl.cpp), so it keeps warnings.
+      # melonDS bundles Shay Green's blip_buf, whose symbols collide with furnace's
+      # copy at link time (ld64 has no --allow-multiple-definition). Namespace
+      # melonDS's blip API to vio2sf_blip_* — scoped to vio2sf TUs so furnace keeps
+      # the originals; decl+def+call all rename consistently.
+      vio_blip = %w[new delete set_rates clear clocks_needed end_frame
+                    samples_avail read_samples add_delta add_delta_fast]
+                 .map { |f| "-Dblip_#{f}=vio2sf_blip_#{f}" }.join(' ')
+      vio_inc = %W[
+        -w
+        -iquote #{vio_root}/include/vio2sf
+        -iquote #{vio_root}/src/vio2sf/melonDS
+        -iquote #{vio_root}/src/vio2sf
+      ].join(' ') + ' ' + vio_blip
+
+      # AdPlug: src/ has generic header names (player.h, opl.h, debug.h, version.h,
+      # database.h) → scope its include dirs per-file (NOT pod-wide). stricmp is a
+      # Windows-ism used in composer.h → map to strcasecmp (AdPlug's own CMake does
+      # this on non-Windows). -w silences the vendored code's noisy warnings.
+      adplug_root = '$(PODS_TARGET_SRCROOT)/../third_party/adplug'
+      adplug_inc = "-w -I#{adplug_root}/src -I#{adplug_root}/libbinio -Dstricmp=strcasecmp"
+
+      # libkss: src/ has generic header names (kss.h, vm.h, filter.h, detect.h,
+      # mmap.h) → scope its include dirs per-file (NOT pod-wide). -Isrc/-Imodules
+      # resolve the sub-dir-qualified quote-includes ("kss/kss.h", "emu2149/…",
+      # "drivers/…"); same-dir includes resolve from each real file's location.
+      kss_root = '$(PODS_TARGET_SRCROOT)/../third_party/libkss'
+      # libkss's bundled Mamiya kmz80 core shares 11 unprefixed C symbols with
+      # nez's wkmz80 (kmevent_* + kmz80_ot_*) → duplicate-symbol link error.
+      # Namespace libkss's to kss_* (scoped to kss_cores; nez keeps the originals).
+      # Kept in sync with cmake rewamp_add_kss(). See the kss-integration memory.
+      kss_kmz80_defs = %w[
+        kmevent_alloc kmevent_free kmevent_gettimer kmevent_init kmevent_process
+        kmevent_reset kmevent_setevent kmevent_settimer KMEVENT_FLAG
+        kmz80_ot_cbxx kmz80_ot_xx
+      ].map { |s| "-D#{s}=kss_#{s}" }.join(' ')
+      kss_inc = %W[
+        -w -I#{kss_root}/src -I#{kss_root}/src/kss -I#{kss_root}/src/vm
+        -I#{kss_root}/src/filters -I#{kss_root}/src/rconv -I#{kss_root}/modules
+      ].join(' ') + ' ' + kss_kmz80_defs
+
+      # SNSF (snsf9x): the tree carries convert.h, port.h, memmap.h, apu.h,
+      # messages.h and XSFCommon.h — all far too generic to expose pod-wide, so
+      # its ONE include dir is scoped per-file. snsf9x and libgme are BOTH blargg
+      # codebases: `resampler`/`Resampler`/`blargg_vector` collide (the three renames
+      # from Modizer's snsf.xcodeproj, which only sets them in its Debug config —
+      # needed in every config), and so does `SPC_Filter`, with the exact same
+      # capitalization as libgme's — a FOURTH rename Modizer never needed, having
+      # never linked the two engines into one binary. Kept in sync with
+      # cmake rewamp_add_snsf(). gnu++14, as that project uses.
+      snsf_root = '$(PODS_TARGET_SRCROOT)/../third_party/snsf'
+      snsf_inc = "-w -I#{snsf_root} -DHAVE_STDINT_H " \
+                 '-Dresampler=SNSF_resampler -DResampler=SNSF_Resampler ' \
+                 '-Dblargg_vector=SNSF_blargg_vector ' \
+                 '-DSPC_Filter=SNSF_SPC_Filter -std=gnu++14'
+
+      # WonderSwan (beetle-wswan): every internal include is relative except
+      # <boolean.h>/<retro_inline.h>, but the compat headers at the tree root
+      # (settings.h, state.h, video.h) carry names fluidlite/libzxtune/sunvox
+      # also use → the two dirs are scoped here, never pod-wide.
+      ws_root = '$(PODS_TARGET_SRCROOT)/../third_party/wonderswan'
+      ws_inc = "-I#{ws_root} -I#{ws_root}/include"
+
+      # HighlyQuixotic: every header in this dir is generic (z80.h clashes
+      # with libzxtune's devices/z80.h, qsound.h clashes with furnace's two
+      # copies, emuconfig.h clashes with highlyexp's own) → scope per-file.
+      # Full isolation while debugging the QSF silent-hang issue (see
+      # highlyquixotic-qsf-hang): every non-static symbol across
+      # qsound.c/z80.c/kabuki.c/hq_qsound_ctr.c gets an hqx_ prefix,
+      # verified exhaustively via `nm` on the compiled objects. Superset of
+      # Modizer's own qsoundc_*/device_*_qsound_ctr HQ* renames.
+      hq_root = '$(PODS_TARGET_SRCROOT)/../third_party/highlyquixotic'
+      hq_defs = %w[
+        z80_break=hqx_z80_break z80_clear_state=hqx_z80_clear_state
+        z80_execute=hqx_z80_execute z80_get_state_size=hqx_z80_get_state_size
+        z80_getpc=hqx_z80_getpc z80_init=hqx_z80_init
+        z80_set_advance_callback=hqx_z80_set_advance_callback
+        z80_set_memory_maps=hqx_z80_set_memory_maps
+        z80_setirq=hqx_z80_setirq z80_setnmi=hqx_z80_setnmi
+        kabuki_decode=hqx_kabuki_decode
+        qsound_clear_state=hqx_qsound_clear_state
+        qsound_execute=hqx_qsound_execute
+        qsound_get_odometer=hqx_qsound_get_odometer
+        qsound_get_qmix_state=hqx_qsound_get_qmix_state
+        qsound_get_r3000_state=hqx_qsound_get_r3000_state
+        qsound_get_state_size=hqx_qsound_get_state_size
+        qsound_get_z80_state=hqx_qsound_get_z80_state
+        qsound_getpc=hqx_qsound_getpc qsound_getversion=hqx_qsound_getversion
+        qsound_init=hqx_qsound_init
+        qsound_map_op_entries=hqx_qsound_map_op_entries
+        qsound_map_read_entries=hqx_qsound_map_read_entries
+        qsound_map_write_entries=hqx_qsound_map_write_entries
+        qsound_set_kabuki_key=hqx_qsound_set_kabuki_key
+        qsound_set_rates=hqx_qsound_set_rates
+        qsound_set_sample_rom=hqx_qsound_set_sample_rom
+        qsound_set_z80_rom=hqx_qsound_set_z80_rom
+        device_get_qsound_ctr_state_size=hqx_device_get_qsound_ctr_state_size
+        device_reset_qsound_ctr=hqx_device_reset_qsound_ctr
+        device_start_qsound_ctr=hqx_device_start_qsound_ctr
+        device_stop_qsound_ctr=hqx_device_stop_qsound_ctr
+        qsoundc_alloc_rom=hqx_qsoundc_alloc_rom qsoundc_r=hqx_qsoundc_r
+        qsoundc_set_mute_mask=hqx_qsoundc_set_mute_mask
+        qsoundc_update=hqx_qsoundc_update qsoundc_w=hqx_qsoundc_w
+        qsoundc_write_data=hqx_qsoundc_write_data
+        qsoundc_write_rom=hqx_qsoundc_write_rom
+      ].map { |s| "-D#{s}" }.join(' ')
+      hq_inc = "-I#{hq_root} #{hq_defs}"
+
+      # highlytheoritical: headers are generic (m68k.h/m68kcpu.h/etc clash
+      # with SNDH's own separate Musashi vendor copy) AND the m68k_*/m68ki_*
+      # symbols need renaming so as not to link-clash with THAT copy either
+      # (two independently-vendored instances of the same upstream Musashi
+      # API surface). Kept in sync with cmake rewamp_add_highlytheoritical().
+      ht_root = '$(PODS_TARGET_SRCROOT)/../third_party/highlytheoritical'
+      ht_m68k_defs = %w[
+        m68k_set_irq m68k_execute m68k_pulse_reset m68k_init
+        m68ki_build_opcode_table m68ki_shift_8_table m68ki_shift_16_table
+        m68ki_shift_32_table m68ki_exception_cycle_table
+        m68ki_ea_idx_cycle_table m68ki_instruction_jump_table m68ki_cycles
+      ].map { |s| "-D#{s}=ht_#{s}" }.join(' ')
+      ht_inc = "-I#{ht_root} -I#{ht_root}/m68k -DLSB_FIRST #{ht_m68k_defs}"
+
+      # psgplay: a THIRD Musashi in the same binary (AtariAudio has one,
+      # highlytheoritical a second), plus its own generic header names
+      # (m68k/m68k.h, atari/*.h, internal/*.h) — so BOTH the include dirs and
+      # the m68k_*/m68ki_* renames are per-file, never pod-wide. The rename set
+      # is the measured intersection of psgplay's exported symbols with the
+      # ones already in librewamp_audio, which is why fifo_read/fifo_write are
+      # in it too. Kept in sync with cmake REWAMP_PSGPLAY_RENAMES.
+      psg_root = '$(PODS_TARGET_SRCROOT)/../third_party/psgplay'
+      psg_defs = %w[
+        m68k_context_size m68k_cycles_remaining m68k_cycles_run
+        m68k_end_timeslice m68k_execute m68k_get_context m68k_get_reg
+        m68k_get_virq m68k_init m68k_modify_timeslice m68k_pulse_halt
+        m68k_pulse_reset m68k_read_memory_16 m68k_read_memory_32
+        m68k_read_memory_8 m68k_set_bkpt_ack_callback
+        m68k_set_cmpild_instr_callback m68k_set_context m68k_set_cpu_type
+        m68k_set_fc_callback m68k_set_illg_instr_callback
+        m68k_set_instr_hook_callback m68k_set_int_ack_callback m68k_set_irq
+        m68k_set_pc_changed_callback m68k_set_reg m68k_set_reset_instr_callback
+        m68k_set_rte_instr_callback m68k_set_tas_instr_callback m68k_set_virq
+        m68k_write_memory_16 m68k_write_memory_32 m68k_write_memory_8
+        m68k_clear_timeslice m68ki_build_opcode_table m68ki_cpu_names
+        m68ki_ea_idx_cycle_table m68ki_exception_cycle_table
+        m68ki_shift_16_table m68ki_shift_32_table m68ki_shift_8_table
+        m68ki_instruction_jump_table fifo_read fifo_write
+      ].map { |s| "-D#{s}=psg_#{s}" }.join(' ')
+      psg_inc = "-w -I#{psg_root}/include -I#{psg_root}/lib/cf2149/include " \
+                "-I#{psg_root}/lib/cf68901/include -I#{psg_root}/lib/cf300588/include " \
+                "-I#{psg_root}/lib/toslibc/include #{psg_defs}"
+
+      # sc68: "config.h" (tree-root pre-baked) and io68's "default.h" are the
+      # most collision-prone header names in the pod -> everything per-file.
+      # HAVE_CONFIG_H must NOT go pod-wide either (libarchive/liblzma TUs
+      # resolve "config.h" to THEIR OWN via include-order). EMU68_MONOLITIC is
+      # mandatory for lines68.c; REWAMP_SC68 turns on the scope plumbing +
+      # rewamp mute patches (also needed by the plugin TU for sc68.h's
+      # guarded declarations).
+      sc68_root = '$(PODS_TARGET_SRCROOT)/../third_party/sc68'
+      sc68_inc = %W[
+        -w -DHAVE_CONFIG_H -DEMU68_MONOLITIC -DREWAMP_SC68
+        -I#{sc68_root} -I#{sc68_root}/file68 -I#{sc68_root}/file68/sc68
+        -I#{sc68_root}/file68/src -I#{sc68_root}/libsc68
+        -I#{sc68_root}/libsc68/sc68 -I#{sc68_root}/libsc68/emu68
+        -I#{sc68_root}/libsc68/io68 -I#{sc68_root}/unice68
+      ].join(' ')
+
+      # SunVox: SunDog's header names (file.h/log.h/main.h/memory.h/sound.h/
+      # time.h/net.h/misc.h/video.h) are the most collision-prone in the pod →
+      # ALL include dirs per-file to Classes/sunvox_cores/* (NOT pod-wide). The
+      # plugin TU (same dir) reaches the unique sunvox.h via the headers dir.
+      # Headless defines live inside each generated wrapper (podspec).
+      sunvox_root = '$(PODS_TARGET_SRCROOT)/../third_party/sunvox'
+      sunvox_inc = %W[
+        -w
+        -I#{sunvox_root}/lib_sundog -I#{sunvox_root}/lib_sunvox
+        -I#{sunvox_root}/lib_dsp -I#{sunvox_root}/lib_flac/libFLAC
+        -I#{sunvox_root}/lib_vorbis/tremor -I#{sunvox_root}/lib_mp3
+        -I#{sunvox_root}/sunvox_lib/headers
+      ].join(' ')
+
+      # projectM: src/ and vendor/ carry generic header names (Shader.hpp,
+      # Factory.cpp, a compiler/filesystem layer) that shadow other plugins'
+      # headers pod-wide. Scope the include dirs per-file to
+      # Classes/projectm_cores/* (NOT pod-wide). -w silences the vendored noise.
+      pm_root = '$(PODS_TARGET_SRCROOT)/../third_party/projectm'
+      # projectM's sources include <GLES3/gl3.h> (Renderer/OpenGL.h, SOIL2). On
+      # iOS those headers live INSIDE the MetalANGLE xcframework, whose slice
+      # CocoaPods copies to PODS_XCFRAMEWORKS_BUILD_DIR before compiling. Point
+      # -I at its Headers root so the plain <GLES3/...> spelling resolves (the
+      # rest of our GL code uses the framework form, <MetalANGLE-ios13/GLES3/…>,
+      # which we can't impose on the vendored tree).
+      mangle_inc = '-I$(PODS_XCFRAMEWORKS_BUILD_DIR)/rewamp_audio/MetalANGLE-ios13.framework/Headers'
+      pm_inc = %W[
+        -w #{mangle_inc}
+        -I#{pm_root}/src/api/include -I#{pm_root}/src/playlist/api
+        -I#{pm_root}/src/libprojectM -I#{pm_root}/src/libprojectM/MilkdropPreset
+        -I#{pm_root}/vendor -I#{pm_root}/vendor/projectm-eval
+        -I#{pm_root}/vendor/projectm-eval/projectm-eval
+        -I#{pm_root}/vendor/projectm-eval/projectm-eval/api
+        -I#{pm_root}/vendor/hlslparser/src -I#{pm_root}/vendor/SOIL2/src
+        -I#{pm_root}/vendor/glm
+      ].join(' ')
+
+      # EUP (eupmini): Nuked-OPN2/mame YM2612 symbols clash with libvgm's own
+      # Nuked-OPN2 → 56 -D renames (kept in sync with cmake rewamp_add_eup()),
+      # plus the generic-name include dirs (stdtype.h/snddef.h/mamedef.h/opn2.h).
+      eup_root = '$(PODS_TARGET_SRCROOT)/../third_party/eupmini'
+      eup_renames = '-Ddevice_reset_ym2612=eup_device_reset_ym2612 -Ddevice_start_ym2612=eup_device_start_ym2612 -Ddevice_stop_ym2612=eup_device_stop_ym2612 -DOPN2_ChGenerate=eup_OPN2_ChGenerate -DOPN2_ChOutput=eup_OPN2_ChOutput -DOPN2_Clock=eup_OPN2_Clock -DOPN2_DoIO=eup_OPN2_DoIO -DOPN2_DoRegWrite=eup_OPN2_DoRegWrite -DOPN2_DoTimerA=eup_OPN2_DoTimerA -DOPN2_DoTimerB=eup_OPN2_DoTimerB -DOPN2_EnvelopeADSR=eup_OPN2_EnvelopeADSR -DOPN2_EnvelopeGenerate=eup_OPN2_EnvelopeGenerate -DOPN2_EnvelopePrepare=eup_OPN2_EnvelopePrepare -DOPN2_EnvelopeSSGEG=eup_OPN2_EnvelopeSSGEG -DOPN2_FMGenerate=eup_OPN2_FMGenerate -DOPN2_FMPrepare=eup_OPN2_FMPrepare -DOPN2_GenerateResampled=eup_OPN2_GenerateResampled -DOPN2_GenerateStream=eup_OPN2_GenerateStream -DOPN2_KeyOn=eup_OPN2_KeyOn -DOPN2_PhaseCalcIncrement=eup_OPN2_PhaseCalcIncrement -DOPN2_PhaseGenerate=eup_OPN2_PhaseGenerate -DOPN2_Read=eup_OPN2_Read -DOPN2_ReadIRQPin=eup_OPN2_ReadIRQPin -DOPN2_ReadTestPin=eup_OPN2_ReadTestPin -DOPN2_Reset=eup_OPN2_Reset -DOPN2_SetChipType=eup_OPN2_SetChipType -DOPN2_SetMute=eup_OPN2_SetMute -DOPN2_SetOptions=eup_OPN2_SetOptions -DOPN2_SetTestPin=eup_OPN2_SetTestPin -DOPN2_UpdateLFO=eup_OPN2_UpdateLFO -DOPN2_Write=eup_OPN2_Write -DOPN2_WriteBuffered=eup_OPN2_WriteBuffered -Dym2612_control_port_a_w=eup_ym2612_control_port_a_w -Dym2612_control_port_b_w=eup_ym2612_control_port_b_w -Dym2612_data_port_a_r=eup_ym2612_data_port_a_r -Dym2612_data_port_a_w=eup_ym2612_data_port_a_w -Dym2612_data_port_b_r=eup_ym2612_data_port_b_r -Dym2612_data_port_b_w=eup_ym2612_data_port_b_w -Dym2612_init=eup_ym2612_init -Dym2612_r=eup_ym2612_r -Dym2612_read=eup_ym2612_read -Dym2612_reset_chip=eup_ym2612_reset_chip -Dym2612_set_log_cb=eup_ym2612_set_log_cb -Dym2612_set_mute_mask=eup_ym2612_set_mute_mask -Dym2612_set_mutemask=eup_ym2612_set_mutemask -Dym2612_set_options=eup_ym2612_set_options -Dym2612_setoptions=eup_ym2612_setoptions -Dym2612_shutdown=eup_ym2612_shutdown -Dym2612_status_port_a_r=eup_ym2612_status_port_a_r -Dym2612_status_port_b_r=eup_ym2612_status_port_b_r -Dym2612_stream_update=eup_ym2612_stream_update -Dym2612_timer_over=eup_ym2612_timer_over -Dym2612_update_one=eup_ym2612_update_one -Dym2612_update_request=eup_ym2612_update_request -Dym2612_w=eup_ym2612_w -Dym2612_write=eup_ym2612_write'
+      eup_inc = "-w -I#{eup_root}/eupmini -I#{eup_root}/mame -I#{eup_root}/Nuked-OPN2 " \
+                '-DSNDDEV_SELECT -DSNDDEV_YM2612 -DNO_DEBUG_LOGS -DHAVE_LIMITS_H ' \
+                '-DHAVE_STDINT_H ' + eup_renames
+
+      # FMP (libfmpmini): libopna/fmdriver/common have generic header names
+      # (opna.h/ppz8.h/fmdriver.h/s98gen.h/opnatimer.h), included both
+      # root-relative and same-dir → all four dirs scoped here. Kept in sync
+      # with cmake rewamp_add_fmp().
+      fmp_root = '$(PODS_TARGET_SRCROOT)/../third_party/fmpmini'
+      fmp_inc = "-w -I#{fmp_root} -I#{fmp_root}/libopna -I#{fmp_root}/fmdriver -I#{fmp_root}/common"
+
+      # MDX (mdxplay): version.h/mdx.h/pcm8.h + freeverb's comb.hpp/tuning.h are
+      # all far too generic for a pod-wide path → scope here. The renames give
+      # this engine its own seek_needed/decode_pos_ms/PLAYBACK_FREQ instead of
+      # sharing rewamp_plugin_gsf.cpp's (VBA defines the first two too). Kept in
+      # sync with cmake rewamp_add_mdx().
+      mdx_root = '$(PODS_TARGET_SRCROOT)/../third_party/mdxplay'
+      mdx_inc = "-w -I#{mdx_root} -I#{mdx_root}/freeverb " \
+                '-Dseek_needed=mdx_seek_needed -Ddecode_pos_ms=mdx_decode_pos_ms ' \
+                '-DPLAYBACK_FREQ=mdx_playback_freq'
+
+      # PMD (libpmdmini): pmdwin/ and ymfm/ have very generic header names
+      # (table.h, util.h, opna.h, ifileio.h, portability_*.h) and include each
+      # other across dirs → scope both here, NOT pod-wide (the podspec only adds
+      # src/, which holds pmdmini.h alone). ymfm needs gnu++20 (what Modizer's
+      # own libpmdmini.xcodeproj builds it at); kept in sync with cmake
+      # rewamp_add_pmd()'s cxx_std_20.
+      # Furnace vendors its OWN copy of ymfm → rename this one's namespace or
+      # the link dies on 120 duplicate ymfm::* symbols (every use here is
+      # qualified `ymfm::`; #include "ymfm.h" is a quoted string, which the
+      # preprocessor does not macro-expand). Kept in sync with cmake
+      # rewamp_add_pmd(). Same precedent as the kss/kmz80 rename above.
+      pmd_root = '$(PODS_TARGET_SRCROOT)/../third_party/pmdmini/src'
+      pmd_inc = "-w -I#{pmd_root} -I#{pmd_root}/pmdwin -I#{pmd_root}/ymfm -Dymfm=pmd_ymfm"
+
+      target.source_build_phase.files.each do |bf|
+        path = bf.file_ref.respond_to?(:path) ? bf.file_ref.path.to_s : ''
+        if path.include?('zxtune_cores') && path.end_with?('.cpp', '.cc')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} -std=gnu++14".strip }
+        elsif path.include?('vio2sf_cores')
+          # Scope melonDS's generic-name headers here (via -iquote); C++ TUs also
+          # get gnu++17 (melonDS is normally built with extensions on). The .c
+          # wrappers (fatfs/blip-buf/sha1/aes/xxhash) get the includes but not -std.
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          std = path.end_with?('.cpp', '.cc') ? ' -std=gnu++17' : ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{vio_inc}#{std}".strip }
+        elsif path.include?('uade_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{uade_inc}".strip }
+        elsif path.include?('mac_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{mac_inc}".strip }
+        elsif path.include?('adplug_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{adplug_inc}".strip }
+        elsif path.include?('kss_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{kss_inc}".strip }
+        elsif path.include?('wonderswan_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{ws_inc}".strip }
+        elsif path.include?('highlyquixotic_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{hq_inc}".strip }
+        elsif path.include?('highlytheoritical_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{ht_inc}".strip }
+        elsif path.include?('psgplay_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{psg_inc}".strip }
+        elsif path.include?('sc68_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{sc68_inc}".strip }
+        elsif path.include?('sunvox_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          # SunDog's file_apple.mm / sound_ios.mm are MRC (NSAutoreleasePool,
+          # explicit -release); CocoaPods defaults ObjC to ARC → compile those
+          # two per-file without ARC.
+          arc = (path.include?('file_apple') || path.include?('sound_ios')) ? ' -fno-objc-arc' : ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{sunvox_inc}#{arc}".strip }
+        elsif path.include?('eup_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{eup_inc}".strip }
+        elsif path.include?('fmp_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{fmp_inc}".strip }
+        elsif path.include?('mdx_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{mdx_inc}".strip }
+        elsif path.include?('pmd_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{pmd_inc} -std=gnu++20".strip }
+        elsif path.include?('projectm_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{pm_inc}".strip }
+        elsif path.include?('snsf_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{snsf_inc}".strip }
+        end
+      end
+    end
+  end
+end

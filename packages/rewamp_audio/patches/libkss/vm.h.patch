@@ -1,0 +1,52 @@
+--- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/src/vm/vm.h	2026-07-06 09:48:51
++++ src/vm/vm.h	2026-07-06 09:44:22
+@@ -1,9 +1,9 @@
+ #ifndef _VM_H_
+ #define _VM_H_
+ 
+-#include "emu2149/emu2149.h"
+-#include "emu2212/emu2212.h"
+-#include "emu2413/emu2413.h"
++#include "emu2149/kss_emu2149.h"
++#include "emu2212/kss_emu2212.h"
++#include "emu2413/kss_emu2413.h"
+ #include "emu8950/emu8950.h"
+ #include "emu76489/emu76489.h"
+ #include "kmz80/kmz80.h"
+@@ -54,10 +54,10 @@
+   int32_t DA1; /* 1bit D/A (I/O mapped 0xAA) */
+   int32_t DA8; /* 8bit D/A (memory mapped 0x5000 - 0x5FFF) */
+ 
+-  PSG *psg;
+-  SCC *scc;
+-  OPLL *opll;
+-  OPL *opl;
++  PSGKSS *psg;
++  SCCKSS *scc;
++  OPLLKSS *opll;
++  OPLKSS *opl;
+   SNG *sng;
+ 
+   void *fp;
+@@ -72,8 +72,8 @@
+ 
+ enum { VM_MAIN_SLOT = 0, VM_BANK_SLOT = 1 };
+ 
+-enum { VM_PSG_AUTO = 0, VM_PSG_AY, VM_PSG_YM };
+-enum { VM_SCC_AUTO = 0, VM_SCC_STANDARD, VM_SCC_ENHANCED };
++enum { VM_PSGKSS_AUTO = 0, VM_PSGKSS_AY, VM_PSGKSS_YM };
++enum { VM_SCCKSS_AUTO = 0, VM_SCCKSS_STANDARD, VM_SCCKSS_ENHANCED };
+ enum { VM_OPLL_2413 = 0, VM_OPLL_VRC7, VM_OPLL_281B };
+ enum { VM_OPL_PANA = 0, VM_OPL_TOSH, VM_OPL_PHIL };
+ 
+@@ -89,8 +89,8 @@
+ void VM_set_clock(VM *vm, uint32_t clock, double vsync_freq);
+ void VM_set_wioproc(VM *vm, uint32_t a, VM_WIOPROC p);
+ 
+-void VM_set_PSG_type(VM *vm, uint32_t psg_type);
+-void VM_set_SCC_type(VM *vm, uint32_t scc_type);
++void VM_set_PSGKSS_type(VM *vm, uint32_t psg_type);
++void VM_set_SCCKSS_type(VM *vm, uint32_t scc_type);
+ void VM_set_OPLL_type(VM *vm, uint32_t opll_type);
+ void VM_set_OPL_type(VM *vm, uint32_t opl_type);
+ 

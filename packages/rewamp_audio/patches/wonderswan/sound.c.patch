@@ -1,0 +1,90 @@
+--- third_party/wonderswan/wswan/sound.c.orig	2026-07-26 16:26:59
++++ third_party/wonderswan/wswan/sound.c	2026-07-26 17:59:14
+@@ -26,6 +26,10 @@
+ 
+ #include "../include/blip/Blip_Buffer.h"
+ 
++/* rewamp: per-voice oscilloscope/notes capture + per-voice mute. Everything
++ * lives in the header; the call sites below are the only edits to this file. */
++#include "../rewamp_wswan_capture.h"
++
+ static Blip_Synth WaveSynth;
+ 
+ static Blip_Buffer sbuf[2];
+@@ -63,6 +67,7 @@
+     int sample = (((wsRAM[((SampleRAMPos << 6) + (sample_pos[ch] >> 1) + (ch << 4)) ] >> ((sample_pos[ch] & 1) ? 4 : 0)) & 0x0F));    \
+     sample_cache[ch][0] = sample * ((volume[ch] >> 4) & 0x0F);        \
+     sample_cache[ch][1] = sample * ((volume[ch] >> 0) & 0x0F);        \
++    ws_cap_tone(ch, sample, volume[ch], sample_cache[ch]);            \
+    }
+ 
+ #define MK_SAMPLE_CACHE_NOISE	\
+@@ -70,6 +75,7 @@
+     int sample = ((nreg & 1) ? 0xF : 0x0);	\
+     sample_cache[ch][0] = sample * ((volume[ch] >> 4) & 0x0F);        \
+     sample_cache[ch][1] = sample * ((volume[ch] >> 0) & 0x0F);        \
++    ws_cap_noise(sample, volume[ch], sample_cache[ch]);               \
+    }
+ 
+ #define MK_SAMPLE_CACHE_VOICE \
+@@ -78,6 +84,7 @@
+     int half = sample >> 1; \
+     sample_cache[ch][0] = (voice_volume & 4) ? sample : (voice_volume & 8) ? half : 0; \
+     sample_cache[ch][1] = (voice_volume & 1) ? sample : (voice_volume & 2) ? half : 0; \
++    ws_cap_voice(sample, sample_cache[ch]); \
+    }
+ 
+ #define SYNCSAMPLE(wt)	\
+@@ -87,6 +94,7 @@
+     Blip_Synth_offset(&WaveSynth, wt, right - last_val[ch][1], &sbuf[1]);	\
+     last_val[ch][0] = left;	\
+     last_val[ch][1] = right;	\
++    ws_cap_commit(wt);	\
+    }
+ 
+ #define SYNCSAMPLE_NOISE(wt) SYNCSAMPLE(wt)
+@@ -209,6 +217,8 @@
+ 
+       left  = (HVoiceChanCtrl & 0x40) ? sample : 0;
+       right = (HVoiceChanCtrl & 0x20) ? sample : 0;
++
++      ws_cap_hyper(v30mz_timestamp, sample, &left, &right);
+ 
+       Blip_Synth_offset(&WaveSynth, v30mz_timestamp, left - last_hv_val[0], &sbuf[0]);
+       Blip_Synth_offset(&WaveSynth, v30mz_timestamp, right - last_hv_val[0], &sbuf[1]);
+@@ -345,6 +355,12 @@
+       FrameCount = Blip_Buffer_read_samples(&sbuf[1], *SoundBuf + 1, *SoundBufSize);
+    }
+ 
++   /* rewamp: square every scope slot up to this frame's sample count, then
++    * refresh the notes state from the register file. */
++   ws_cap_frame(FrameCount);
++   ws_cap_notes(period, volume, control, noise_control, voice_volume,
++                HVoiceCtrl, HVoiceChanCtrl);
++
+    last_ts = 0;
+ 
+    return(FrameCount);
+@@ -375,6 +391,7 @@
+       Blip_Buffer_bass_freq(&sbuf[i], 20);
+    }
+ 
++   ws_cap_set_rate(44100);   /* rewamp */
+    RedoVolume();
+ }
+ 
+@@ -393,6 +410,7 @@
+    for(i = 0; i < 2; i++)
+       Blip_Buffer_set_sample_rate(&sbuf[i], rate ? rate : 44100, 60);
+ 
++   ws_cap_set_rate(rate ? (int)rate : 44100);   /* rewamp */
+    return(true);
+ }
+ 
+@@ -477,4 +495,6 @@
+ 
+    for(y = 0; y < 2; y++)
+       Blip_Buffer_clear(&sbuf[y], 1);
++
++   ws_cap_reset();   /* rewamp */
+ }

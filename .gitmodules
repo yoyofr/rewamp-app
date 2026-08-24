@@ -1,0 +1,11 @@
+[submodule "packages/rewamp_audio/third_party/libopenmpt"]
+	path = packages/rewamp_audio/third_party/libopenmpt
+	url = https://github.com/OpenMPT/openmpt.git
+	ignore = dirty
+[submodule "packages/rewamp_audio/third_party/vgmstream"]
+	path = packages/rewamp_audio/third_party/vgmstream
+	url = https://github.com/vgmstream/vgmstream
+[submodule "packages/rewamp_audio/third_party/libvgm/libvgm"]
+	path = packages/rewamp_audio/third_party/libvgm/libvgm
+	url = https://github.com/ValleyBell/libvgm.git
+	ignore = dirty

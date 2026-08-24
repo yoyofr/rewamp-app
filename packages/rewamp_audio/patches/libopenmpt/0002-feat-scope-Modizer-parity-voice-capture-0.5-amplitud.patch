@@ -1,0 +1,72 @@
+From 905560e66cd46b8a48ffe7439ae06dc7acea775f Mon Sep 17 00:00:00 2001
+From: yoyofr <ymagnien@gmail.com>
+Date: Thu, 2 Jul 2026 11:25:44 +0200
+Subject: [PATCH 2/2] =?UTF-8?q?feat(scope):=20Modizer-parity=20voice=20cap?=
+ =?UTF-8?q?ture=20=E2=80=94=200.5=20amplitude=20scale=20(Fastmix),=20OPL?=
+ =?UTF-8?q?=20per-voice=20capture=20(opal)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ soundlib/Fastmix.cpp |  2 +-
+ soundlib/opal.h      | 22 +++++++++++++++++++++-
+ 2 files changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/soundlib/Fastmix.cpp b/soundlib/Fastmix.cpp
+index b3cb1f8..28c1193 100644
+--- a/soundlib/Fastmix.cpp
++++ b/soundlib/Fastmix.cpp
+@@ -496,7 +496,7 @@ bool CSoundFile::MixChannel(int count, ModChannel &chn, CHANNELINDEX channel, bo
+                         int val;
+                         for (int ii=0;ii<nSmpCount;ii++) {
+                             val=(pbuffer[ii*2]+pbuffer[ii*2+1])-m_voice_buff_accumul_temp[0][ii&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)];
+-                            m_voice_buff[chn_idx][((m_voice_current_ptr[chn_idx]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT))&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8( val>>19 );
++                            m_voice_buff[chn_idx][((m_voice_current_ptr[chn_idx]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT))&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8( (val>>19)*0.5 );
+                             m_voice_current_ptr[chn_idx]+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
+                         }
+                     }
+diff --git a/soundlib/opal.h b/soundlib/opal.h
+index b10ad28..ca61d83 100644
+--- a/soundlib/opal.h
++++ b/soundlib/opal.h
+@@ -19,7 +19,11 @@
+ 
+ */
+ 
+-
++//TODO:  MODIZER changes start / YOYOFR
++extern "C" {
++#include "../../../src/ModizerVoicesData.h"
++}
++//TODO:  MODIZER changes end / YOYOFR
+ 
+ #include <cstdint>
+ #include "../common/mptBaseUtils.h"
+@@ -599,7 +603,23 @@ void Opal::Output(int16_t &left, int16_t &right) {
+ 
+         leftmix += chanleft;
+         rightmix += chanright;
++
++        //TODO:  MODIZER changes start / YOYOFR
++        int chn_idx=i%m_genNumVoicesChannels;
++        if (chn_idx<SOUND_MAXVOICES_BUFFER_FX && m_voice_buff[chn_idx]!=NULL) {
++            m_voice_buff[chn_idx][((m_voice_current_ptr[chn_idx]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT))&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]+=LIMIT8( (chanleft+chanright)>>6 );
++        }
++        //TODO:  MODIZER changes end / YOYOFR
++    }
++
++    //TODO:  MODIZER changes start / YOYOFR
++    for (int chn_idx=0;chn_idx<m_genNumVoicesChannels;chn_idx++) {
++        if (chn_idx<SOUND_MAXVOICES_BUFFER_FX) {
++            m_voice_current_ptr[chn_idx]+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++            if (m_voice_current_ptr[chn_idx]>(SOUND_BUFFER_SIZE_SAMPLE*4*2<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)) m_voice_current_ptr[chn_idx]-=(SOUND_BUFFER_SIZE_SAMPLE*4*2<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT);
++        }
+     }
++    //TODO:  MODIZER changes end / YOYOFR
+ 
+     // Clamp
+     if (leftmix < -0x8000)
+-- 
+2.45.0
+

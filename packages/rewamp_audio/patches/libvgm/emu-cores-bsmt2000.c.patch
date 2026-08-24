@@ -1,0 +1,102 @@
+diff --git a/emu/cores/bsmt2000.c b/emu/cores/bsmt2000.c
+index 3bd6f21..909735b 100644
+--- a/emu/cores/bsmt2000.c
++++ b/emu/cores/bsmt2000.c
+@@ -41,6 +41,10 @@
+ #include "../logging.h"
+ #include "bsmt2000.h"
+ 
++//TODO:  MODIZER changes start / YOYOFR
++#include "../../../../../src/ModizerVoicesData.h"
++//TODO:  MODIZER changes end / YOYOFR
++
+ /* ==== Constants ==== */
+ 
+ #define BSMT2000_CLOCK        24000000    /* default 24MHz clock */
+@@ -499,6 +503,26 @@ static void bsmt2000_update(void *param, UINT32 samples, DEV_SMPL **outputs)
+     memset(left, 0, length * sizeof(left[0]));
+     memset(right, 0, length * sizeof(right[0]));
+ 
++    //TODO:  MODIZER changes start / YOYOFR
++    //La boucle de voix est EXTERNE ici (chaque voix parcourt tout le bloc),
++    //donc on écrit l'oscilloscope dans la boucle de chaque voix, puis on
++    //rattrape les voix qui n'ont RIEN joué — sans ce rattrapage leur tracé
++    //resterait figé sur sa dernière image au lieu de retomber à plat.
++    int m_voice_ofs=-1;
++    int m_total_channels=BSMT2000_MAX_VOICES;
++    UINT8 vran[BSMT2000_MAX_VOICES];
++    for (int ii=0;ii<=SOUND_MAXVOICES_BUFFER_FX-m_total_channels;ii++) {
++        if (m_voice_ChipID[ii]==m_voice_current_system) {
++            m_voice_ofs=ii+(m_voice_current_systemSub?m_voice_current_systemPairedOfs:0);
++            break;
++        }
++    }
++    m_voice_current_total=m_total_channels;   //INCONDITIONNEL, cf. YM2203/SSG
++    if (!m_voice_current_samplerate) m_voice_current_samplerate=44100;
++    int64_t smplIncr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
++    memset(vran, 0, sizeof(vran));
++    //TODO:  MODIZER changes end / YOYOFR
++
+     // PCM voices
+     for (v = 0; v < chip->voices; v++)
+     {
+@@ -536,6 +560,15 @@ static void bsmt2000_update(void *param, UINT32 samples, DEV_SMPL **outputs)
+             }
+             left[samp]  += (sample * lvol) >> 16;
+             right[samp] += (sample * rvol) >> 16;
++            //YOYOFR
++            if (m_voice_ofs>=0) {
++                int64_t o=m_voice_current_ptr[m_voice_ofs+v];
++                int64_t e=o+smplIncr;
++                for (; o<e; o+=(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT))
++                    m_voice_buff[m_voice_ofs+v][(o>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8(((sample*lvol)>>16)>>6);
++                m_voice_current_ptr[m_voice_ofs+v]=e;
++                vran[v]=1;
++            }
+             pos += rate;
+             if (pos >= voice->loop_stop_position)
+                 pos += voice->loop_start_position - voice->loop_stop_position;
+@@ -562,6 +595,16 @@ static void bsmt2000_update(void *param, UINT32 samples, DEV_SMPL **outputs)
+                 UINT32 oldpos = pos;
+                 left[samp]  += (chip->adpcm_current * (lvol * 2)) >> 16;
+                 right[samp] += (chip->adpcm_current * (rvol * 2)) >> 16;
++                //YOYOFR
++                if (m_voice_ofs>=0) {
++                    int vi=BSMT2000_ADPCM_INDEX;
++                    int64_t o=m_voice_current_ptr[m_voice_ofs+vi];
++                    int64_t e=o+smplIncr;
++                    for (; o<e; o+=(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT))
++                        m_voice_buff[m_voice_ofs+vi][(o>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8(((chip->adpcm_current*(lvol*2))>>16)>>6);
++                    m_voice_current_ptr[m_voice_ofs+vi]=e;
++                    vran[vi]=1;
++                }
+ 
+                 pos += rate;
+                 if ((oldpos ^ pos) & 0x8000)
+@@ -594,6 +637,26 @@ static void bsmt2000_update(void *param, UINT32 samples, DEV_SMPL **outputs)
+         }
+     }
+ 
++    //TODO:  MODIZER changes start / YOYOFR
++    //Voix qui n'ont rien joué: avancer LEUR tête d'écriture du même nombre
++    //d'échantillons, en écrivant du silence. Sinon le tracé reste gelé.
++    if (m_voice_ofs>=0)
++        for (v = 0; v < m_total_channels; v++) {
++            if (vran[v]) {
++                //YOYOFR: `pos += rate` avec l'index en pos>>16, donc lecture 1x
++                //quand rate vaut 65536 — convention « 1x = LA4 ».
++                UINT32 r=chip->voice[v].adjusted_rate;
++                if (r) vgm_last_note[v+m_voice_ofs]=440.0*(double)r/65536.0;
++                vgm_last_vol[v+m_voice_ofs]=1; vgm_last_instr[v+m_voice_ofs]=v+m_voice_ofs; continue;
++            }
++            int64_t o=m_voice_current_ptr[m_voice_ofs+v];
++            int64_t e=o+smplIncr*length;
++            for (; o<e; o+=(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT))
++                m_voice_buff[m_voice_ofs+v][(o>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=0;
++            m_voice_current_ptr[m_voice_ofs+v]=e;
++        }
++    //TODO:  MODIZER changes end / YOYOFR
++
+     // Output clamp and write
+     for (samp = 0; samp < length; samp++) {
+         INT32 l = left[samp];

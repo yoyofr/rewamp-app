@@ -1,0 +1,89 @@
+diff --git a/emu/cores/sameboy_apu.c b/emu/cores/sameboy_apu.c
+index ece0a8a..3fb12c3 100644
+--- a/emu/cores/sameboy_apu.c
++++ b/emu/cores/sameboy_apu.c
+@@ -16,6 +16,10 @@
+ #include "../RatioCntr.h"
+ 
+ #include "sameboy_apu.h"
++
++//TODO:  MODIZER changes start / YOYOFR
++#include "../../../../../src/ModizerVoicesData.h"
++//TODO:  MODIZER changes end / YOYOFR
+ #include "sameboy_apu_private.h"
+ #include "gbintf.h"
+ 
+@@ -2262,6 +2266,24 @@ static void gb_sameboy_update(void *chip, UINT32 samples, DEV_SMPL **outputs)
+ 	GB_gameboy_t *gb = (GB_gameboy_t *)chip;
+ 	UINT32 i;
+ 
++	//TODO:  MODIZER changes start / YOYOFR
++	//search first voice linked to current chip
++	int m_voice_ofs=-1;
++	int m_total_channels=4;
++	for (int ii=0;ii<=SOUND_MAXVOICES_BUFFER_FX-m_total_channels;ii++) {
++		if (m_voice_ChipID[ii]==m_voice_current_system) {
++			m_voice_ofs=ii+(m_voice_current_systemSub?m_voice_current_systemPairedOfs:0);
++			break;
++		}
++	}
++	//INCONDITIONNEL: le lecteur accumule `pairedOfs += m_voice_current_total`
++	//après chaque device lié et ne remet jamais ce global à zéro (cf. le
++	//plantage YM2203/SSG du 2026-08-21).
++	m_voice_current_total=m_total_channels;
++	if (!m_voice_current_samplerate) m_voice_current_samplerate=44100;
++	int64_t smplIncr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
++	//TODO:  MODIZER changes end / YOYOFR
++
+ 	for (i = 0; i < samples; i++)
+ 	{
+ 		RC_STEP(&gb->cycleCntr);
+@@ -2270,6 +2292,48 @@ static void gb_sameboy_update(void *chip, UINT32 samples, DEV_SMPL **outputs)
+ 
+ 		outputs[0][i] = gb->apu_output.output.left;
+ 		outputs[1][i] = gb->apu_output.output.right;
++
++		//TODO:  MODIZER changes start / YOYOFR
++		if (m_voice_ofs>=0)
++			for (int jj=0;jj<4;jj++) {
++				//channel_output[] est la contribution AVANT le facteur CH_STEP
++				//et avant le passe-haut, donc déjà à l'échelle 0..120 du coeur
++				//MAME — même cadrage que gb_mame.c, pas de décalage à faire.
++				int val=(gb->apu_output.channel_output[jj].left+gb->apu_output.channel_output[jj].right)/2;
++				int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+jj];
++				int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+jj]+smplIncr);
++				if (ofs_end>ofs_start)
++					for (;;) {
++						m_voice_buff[m_voice_ofs+jj][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8(val);
++						ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++						if (ofs_start>=ofs_end) break;
++					}
++				m_voice_current_ptr[m_voice_ofs+jj]=ofs_end;
++
++				//YOYOFR: note une fois par bloc. sample_length porte la valeur
++				//11 bits des registres NRx3/NRx4, d'où f = 131072/(2048-x).
++				//Le bruit (voie 3) n'a pas de hauteur exploitable: on ne publie
++				//que son volume, sinon on inventerait une note.
++				if (i==0 && gb->apu.is_active[jj] && !gb->apu_output.channel_muted[jj]) {
++					int len=-1, vol=0;
++					switch (jj) {
++						case 0: len=gb->apu.square_channels[0].sample_length;
++								vol=gb->apu.square_channels[0].current_volume; break;
++						case 1: len=gb->apu.square_channels[1].sample_length;
++								vol=gb->apu.square_channels[1].current_volume; break;
++						case 2: len=gb->apu.wave_channel.sample_length;
++								vol=gb->apu.wave_channel.enable?1:0;           break;
++						case 3: len=-1;
++								vol=gb->apu.noise_channel.current_volume;      break;
++					}
++					if (vol && len>=0 && len<0x7FF) {
++						vgm_last_note[jj+m_voice_ofs]=131072.0/(2048-len);
++						vgm_last_instr[jj+m_voice_ofs]=jj+m_voice_ofs;
++						vgm_last_vol[jj+m_voice_ofs]=1;
++					}
++				}
++			}
++		//TODO:  MODIZER changes end / YOYOFR
+ 	}
+ }
+ 

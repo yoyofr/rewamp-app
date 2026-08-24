@@ -1,0 +1,7 @@
+/tos.h
+
+# rewamp: chez l'amont ces fichiers sont GÉNÉRÉS (toolchain m68k, script,
+# git describe). Chez nous ils sont VENDORÉS pré-générés, donc ce sont des
+# SOURCES: sans ces négations, `git add -A` les saute en silence et un clone
+# frais ne compile pas psgplay. Constaté sur le premier build Linux.
+!tos.h

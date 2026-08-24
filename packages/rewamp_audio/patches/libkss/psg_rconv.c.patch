@@ -1,0 +1,135 @@
+--- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/src/rconv/psg_rconv.c	2026-07-06 09:48:52
++++ src/rconv/psg_rconv.c	2026-07-06 09:44:22
+@@ -3,6 +3,11 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ 
++//TODO:  MODIZER changes start / YOYOFR
++#include "../../../../src/ModizerVoicesData.h"
++//TODO:  MODIZER changes end / YOYOFR
++
++
+ #include "psg_rconv.h"
+ 
+ #ifndef INLINE
+@@ -42,13 +47,13 @@
+ static double sinc(double x) { return (x == 0.0 ? 1.0 : sin(_PI_ * x) / (_PI_ * x)); }
+ static double windowed_sinc(double x) { return blackman(0.5 + 0.5 * x / (LW / 2)) * sinc(x); }
+ 
+-static void reset(PSG_RateConv *conv) {
++static void reset(PSGKSS_RateConv *conv) {
+   conv->timer = 0;
+   memset(conv->buf, 0, sizeof(conv->buf[0]) * LW);
+ }
+ 
+-PSG_RateConv *PSG_RateConv_new(void) {
+-  PSG_RateConv *conv = malloc(sizeof(PSG_RateConv));
++PSGKSS_RateConv *PSGKSS_RateConv_new(void) {
++  PSGKSS_RateConv *conv = malloc(sizeof(PSGKSS_RateConv));
+ 
+   conv->buf = malloc(sizeof(conv->buf[0]) * LW);
+   conv->sinc_table = malloc(sizeof(conv->sinc_table[0]) * SINC_RESO * LW / 2);
+@@ -59,24 +64,24 @@
+   return conv;
+ }
+ 
+-void update_psg_rate_quality(PSG_RateConv *conv) {
++void update_psg_rate_quality(PSGKSS_RateConv *conv) {
+   if (conv->psg != NULL) {
+     switch (conv->quality) {
+     case 0:
+       // low (no interporation)
+-      PSG_setRate(conv->psg, (uint32_t)conv->f_out);
+-      PSG_setQuality(conv->psg, 0);
++      PSGKSS_setRate(conv->psg, (uint32_t)conv->f_out);
++      PSGKSS_setQuality(conv->psg, 0);
+       break;
+     case 1:
+       // mid (light-weight interporation)
+-      PSG_setRate(conv->psg, (uint32_t)conv->f_out);
+-      PSG_setQuality(conv->psg, 1);
++      PSGKSS_setRate(conv->psg, (uint32_t)conv->f_out);
++      PSGKSS_setQuality(conv->psg, 1);
+       break;
+     case 2:
+     default:
+       // high (sinc interporation)
+-      PSG_setQuality(conv->psg, 0);
+-      PSG_setRate(conv->psg, (uint32_t)conv->f_inp);
++      PSGKSS_setQuality(conv->psg, 0);
++      PSGKSS_setRate(conv->psg, (uint32_t)conv->f_inp);
+       break;
+     }
+   }
+@@ -91,7 +96,7 @@
+  * - 1: mid quality (mean interporation)
+  * - 2: best quality (sinc interporation, default)
+  */
+-void PSG_RateConv_setQuality(PSG_RateConv *conv, uint8_t quality) {
++void PSGKSS_RateConv_setQuality(PSGKSS_RateConv *conv, uint8_t quality) {
+   if (conv->quality != quality) {
+     conv->quality = quality;
+     update_psg_rate_quality(conv);
+@@ -99,10 +104,10 @@
+ }
+ 
+ /**
+- * @param psg PSG object. The object must be initialized before calling this method.
++ * @param psg PSGKSS object. The object must be initialized before calling this method.
+  * @param f_out output sample rate
+  */
+-void PSG_RateConv_reset(PSG_RateConv *conv, PSG *psg, uint32_t f_out) {
++void PSGKSS_RateConv_reset(PSGKSS_RateConv *conv, PSGKSS *psg, uint32_t f_out) {
+ 
+   double f_inp = psg->clk / (psg->clk_div ? 16 : 8);
+   double f_ratio = f_inp / f_out;
+@@ -139,7 +144,7 @@
+ }
+ 
+ /* put original data to this converter at f_inp. */
+-static void putData(PSG_RateConv *conv, int16_t data) {
++static void putData(PSGKSS_RateConv *conv, int16_t data) {
+   int16_t *buf = conv->buf;
+   for (int i = 0; i < LW - 1; i++) {
+     buf[i] = buf[i + 1];
+@@ -149,7 +154,7 @@
+ 
+ /* get resampled data from this converter at f_out. */
+ /* this function must be called f_out times per f_inp times of putData calls. */
+-static int16_t getData(PSG_RateConv *conv) {
++static int16_t getData(PSGKSS_RateConv *conv) {
+   int16_t *buf = conv->buf;
+   conv->timer += conv->f_ratio;
+   const double dn = conv->timer - floor(conv->timer);
+@@ -162,7 +167,7 @@
+   return sum >> SINC_AMP_BITS;
+ }
+ 
+-void PSG_RateConv_delete(PSG_RateConv *conv) {
++void PSGKSS_RateConv_delete(PSGKSS_RateConv *conv) {
+   if (conv != NULL) {
+     free(conv->buf);
+     free(conv->sinc_table);
+@@ -170,14 +175,17 @@
+   }
+ }
+ 
+-int16_t PSG_RateConv_calc(PSG_RateConv *conv) {
++int16_t PSGKSS_RateConv_calc(PSGKSS_RateConv *conv) {
++    //YOYOFR
++    m_voice_current_rateratio=conv->f_ratio;
++    //YOYOFR
+   if (conv->quality < 2) {
+-    return PSG_calc(conv->psg);
++    return PSGKSS_calc(conv->psg);
+   }
+   while (conv->f_inp > conv->out_time) {
+     conv->out_time += conv->f_out;
+-    putData(conv, PSG_calc(conv->psg));
++    putData(conv, PSGKSS_calc(conv->psg));
+   }
+   conv->out_time -= conv->f_inp;
+   return getData(conv);
+-}
+\ No newline at end of file
++}

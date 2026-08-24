@@ -1,0 +1,233 @@
+--- third_party/libkss/upstream/modules/emu2149/kss_emu2149.c	2026-07-06 09:48:52
++++ third_party/libkss/modules/emu2149/kss_emu2149.c	2026-07-06 13:34:24
+@@ -13,8 +13,13 @@
+  */
+ #include <stdlib.h>
+ #include <string.h>
+-#include "emu2149.h"
++#include "kss_emu2149.h"
+ 
++//TODO:  MODIZER changes start / YOYOFR
++#include "../../../../src/ModizerVoicesData.h"
++//TODO:  MODIZER changes end / YOYOFR
++
++
+ static uint32_t voltbl[2][32] = {
+   /* YM2149 - 32 steps */
+   {0x00, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03, 0x04, 0x05, 0x06, 0x07, 0x09,
+@@ -36,7 +41,7 @@
+ #define GETA_BITS 24
+ 
+ static void
+-internal_refresh (PSG * psg)
++internal_refresh (PSGKSS * psg)
+ {
+   uint32_t f_master = psg->clk;
+   
+@@ -59,7 +64,7 @@
+ }
+ 
+ void 
+-PSG_setClock(PSG *psg, uint32_t clock)
++PSGKSS_setClock(PSGKSS *psg, uint32_t clock)
+ {
+   if (psg->clk != clock) {
+     psg->clk = clock;
+@@ -68,7 +73,7 @@
+ }
+ 
+ void 
+-PSG_setClockDivider(PSG *psg, uint8_t enable)
++PSGKSS_setClockDivider(PSGKSS *psg, uint8_t enable)
+ {
+   if (psg->clk_div != enable) {
+     psg->clk_div = enable;  
+@@ -77,7 +82,7 @@
+ }
+ 
+ void
+-PSG_setRate (PSG * psg, uint32_t rate)
++PSGKSS_setRate (PSGKSS * psg, uint32_t rate)
+ {
+   uint32_t r = rate ? rate : 44100;
+   if (psg->rate != r) {
+@@ -87,7 +92,7 @@
+ }
+ 
+ void
+-PSG_setQuality (PSG * psg, uint8_t q)
++PSGKSS_setQuality (PSGKSS * psg, uint8_t q)
+ {
+   if (psg->quality != q) {
+     psg->quality = q;
+@@ -95,27 +100,27 @@
+   }
+ }
+ 
+-PSG *
+-PSG_new (uint32_t clock, uint32_t rate)
++PSGKSS *
++PSGKSS_new (uint32_t clock, uint32_t rate)
+ {
+-  PSG *psg;
++  PSGKSS *psg;
+ 
+-  psg = (PSG *) calloc (1, sizeof (PSG));
++  psg = (PSGKSS *) calloc (1, sizeof (PSGKSS));
+   if (psg == NULL)
+     return NULL;
+ 
+-  PSG_setVolumeMode(psg, 0);
++  PSGKSS_setVolumeMode(psg, 0);
+   psg->clk = clock;
+   psg->clk_div = 0;
+   psg->rate = rate ? rate : 44100;
+   psg->quality = 0;
+   internal_refresh(psg);
+-  PSG_setMask(psg, 0x00);
++  PSGKSS_setMask(psg, 0x00);
+   return psg;
+ }
+ 
+ void
+-PSG_setVolumeMode (PSG * psg, int type)
++PSGKSS_setVolumeMode (PSGKSS * psg, int type)
+ {
+   switch (type)
+   {
+@@ -132,7 +137,7 @@
+ }
+ 
+ uint32_t
+-PSG_setMask (PSG *psg, uint32_t mask)
++PSGKSS_setMask (PSGKSS *psg, uint32_t mask)
+ {
+   uint32_t ret = 0;
+   if(psg)
+@@ -144,7 +149,7 @@
+ }
+ 
+ uint32_t
+-PSG_toggleMask (PSG *psg, uint32_t mask)
++PSGKSS_toggleMask (PSGKSS *psg, uint32_t mask)
+ {
+   uint32_t ret = 0;
+   if(psg)
+@@ -156,7 +161,7 @@
+ }
+ 
+ void
+-PSG_reset (PSG * psg)
++PSGKSS_reset (PSGKSS * psg)
+ {
+   int i;
+ 
+@@ -192,34 +197,34 @@
+ }
+ 
+ void
+-PSG_delete (PSG * psg)
++PSGKSS_delete (PSGKSS * psg)
+ {
+   free (psg);
+ }
+ 
+ uint8_t
+-PSG_readIO (PSG * psg)
++PSGKSS_readIO (PSGKSS * psg)
+ {
+   return (uint8_t) (psg->reg[psg->adr]);
+ }
+ 
+ uint8_t
+-PSG_readReg (PSG * psg, uint32_t reg)
++PSGKSS_readReg (PSGKSS * psg, uint32_t reg)
+ {
+   return (uint8_t) (psg->reg[reg & 0x1f]);
+ }
+ 
+ void
+-PSG_writeIO (PSG * psg, uint32_t adr, uint32_t val)
++PSGKSS_writeIO (PSGKSS * psg, uint32_t adr, uint32_t val)
+ {
+   if (adr & 1)
+-    PSG_writeReg (psg, psg->adr, val);
++    PSGKSS_writeReg (psg, psg->adr, val);
+   else
+     psg->adr = val & 0x1f;
+ }
+ 
+ static inline void
+-update_output (PSG * psg)
++update_output (PSGKSS * psg)
+ {
+ 
+   int i, noise;
+@@ -305,7 +310,7 @@
+       continue;
+     }
+ 
+-    if (psg->mask & PSG_MASK_CH(i)) 
++    if (psg->mask & PSGKSS_MASK_CH(i)) 
+     {
+       psg->ch_out[i] = 0;
+       continue;
+@@ -326,13 +331,39 @@
+ }
+ 
+ static inline int16_t 
+-mix_output(PSG *psg) 
++mix_output(PSGKSS *psg) 
+ {
+-  return (int16_t)(psg->ch_out[0] + psg->ch_out[1] + psg->ch_out[2]);
++    
++    //TODO:  MODIZER changes start / YOYOFR
++    int64_t smplIncr=(int64_t)(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_rateratio;
++    if (m_voicesForceOfs>=0) {
++        int val=0;
++        for (int i = 0; i < 3; i++) {
++            if (!(generic_mute_mask&((int64_t)1<<(m_voicesForceOfs+i)))) val=(((psg->ch_out[i])>>5)+m_voice_buff_adjustement)>>1;
++            else val=0;
++            int64_t ofs_start=m_voice_current_ptr[m_voicesForceOfs+i];
++            int64_t ofs_end=ofs_start+smplIncr;
++            for (;;) {
++                int old_val=m_voice_buff[m_voicesForceOfs+i][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)];
++                if (abs(old_val)<abs(val)) m_voice_buff[m_voicesForceOfs+i][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8(val);
++                ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++                if (ofs_start>=ofs_end) break;
++            }
++            while ((ofs_end>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)>=SOUND_BUFFER_SIZE_SAMPLE*4*2) ofs_end-=(SOUND_BUFFER_SIZE_SAMPLE*4*2<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT);
++            m_voice_current_ptr[m_voicesForceOfs+i]=ofs_end;
++        }
++    }
++    //TODO:  MODIZER changes end / YOYOFR
++    
++    int16_t out=0;
++    for (int i=0;i<3;i++)
++        if (!(generic_mute_mask&((int64_t)1<<(m_voicesForceOfs+i)))) out+=psg->ch_out[i];
++    
++  return out;
+ }
+ 
+ int16_t
+-PSG_calc (PSG * psg)
++PSGKSS_calc (PSGKSS * psg)
+ {
+   if (!psg->quality) 
+   {
+@@ -355,7 +386,7 @@
+ }
+ 
+ void
+-PSG_writeReg (PSG * psg, uint32_t reg, uint32_t val)
++PSGKSS_writeReg (PSGKSS * psg, uint32_t reg, uint32_t val)
+ {
+   int c;
+ 
+@@ -418,4 +449,4 @@
+   }
+ 
+   return;
+-}
+\ No newline at end of file
++}

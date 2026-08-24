@@ -1,0 +1,39 @@
+name: rewamp_audio
+description: Rewamp audio engine — Flutter FFI bindings to the miniaudio C backend.
+version: 0.0.1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        ffiPlugin: true
+        pluginClass: RewampAudioPlugin
+        package: com.modizer.rewamp.rewamp_audio
+      ios:
+        ffiPlugin: true
+        pluginClass: RewampAudioPlugin
+      linux:
+        ffiPlugin: true
+        # pluginClass en PLUS de ffiPlugin: le moteur reste ouvert par Dart en
+        # FFI (librewamp_audio.so), mais publier une texture GL demande le
+        # FlTextureRegistrar, qui n'est remis qu'à un vrai plugin de plateforme.
+        pluginClass: RewampAudioPlugin
+      macos:
+        ffiPlugin: true
+        pluginClass: RewampAudioPlugin
+      windows:
+        ffiPlugin: true
+
+dependencies:
+  flutter:
+    sdk: flutter
+  ffi: ^2.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  ffigen: ^9.0.0

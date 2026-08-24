@@ -1,0 +1,15 @@
+ossupport.c
+uadeipc.c
+uadeutils.c
+unixatomic.c
+sd-sound.[ch]
+gencpu
+uadecore
+compat.[ch]
+cpudefs.c
+cpuemu.c
+cpustbl.c
+cputbl.h
+build68k
+*.a
+Makefile

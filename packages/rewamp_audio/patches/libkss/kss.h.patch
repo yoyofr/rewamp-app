@@ -1,0 +1,11 @@
+--- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/src/kss/kss.h	2026-07-06 09:48:52
++++ src/kss/kss.h	2026-07-06 09:44:22
+@@ -46,7 +46,7 @@
+   uint32_t size;                /* the size of KSS binary */
+   uint8_t *extra;               /* Infomation text for KSS info dialog */
+ 
+-  int kssx; /* 0:KSCC, 1:KSSX */
++  int kssx; /* 0:KSCCKSS, 1:KSSX */
+   int mode; /* 0:MSX 1:SMS 2:GG */
+ 
+   int fmpac;

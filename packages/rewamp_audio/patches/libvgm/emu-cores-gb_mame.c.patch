@@ -1,0 +1,121 @@
+diff --git a/emu/cores/gb_mame.c b/emu/cores/gb_mame.c
+index e7d9507..439947b 100644
+--- a/emu/cores/gb_mame.c
++++ b/emu/cores/gb_mame.c
+@@ -66,6 +66,10 @@ TODO:
+ #include "gbintf.h"
+ #include "gb_mame.h"
+ 
++//TODO:  MODIZER changes start / YOYOFR
++#include "../../../../../src/ModizerVoicesData.h"
++//TODO:  MODIZER changes end / YOYOFR
++
+ 
+ static UINT8 gb_wave_r(void *chip, UINT8 offset);
+ static void gb_wave_w(void *chip, UINT8 offset, UINT8 data);
+@@ -1100,9 +1104,31 @@ static void gameboy_update(void *chip, UINT32 samples, DEV_SMPL **outputs)
+ 	DEV_SMPL sample, left, right;
+ 	UINT32 i;
+ 
++	//TODO:  MODIZER changes start / YOYOFR
++	//search first voice linked to current chip
++	int m_voice_ofs=-1;
++	int m_total_channels=4;
++	int chanout[4];
++	for (int ii=0;ii<=SOUND_MAXVOICES_BUFFER_FX-m_total_channels;ii++) {
++		if (m_voice_ChipID[ii]==m_voice_current_system) {
++			m_voice_ofs=ii+(m_voice_current_systemSub?m_voice_current_systemPairedOfs:0);
++			break;
++		}
++	}
++	//INCONDITIONNEL: le lecteur fait `pairedOfs += m_voice_current_total` après
++	//chaque device LIÉ, et ce global n'est jamais remis à zéro entre deux liens.
++	//Le laisser sous une condition fait hériter le total du dernier coeur rendu
++	//et décale l'écriture d'oscilloscope hors des voies allouées (cf. le
++	//plantage YM2203/SSG du 2026-08-21).
++	m_voice_current_total=m_total_channels;
++	if (!m_voice_current_samplerate) m_voice_current_samplerate=44100;
++	int64_t smplIncr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
++	//TODO:  MODIZER changes end / YOYOFR
++
+ 	for (i = 0; i < samples; i++)
+ 	{
+ 		left = right = 0;
++		chanout[0]=chanout[1]=chanout[2]=chanout[3]=0;   //YOYOFR
+ 
+ 		RC_STEP(&gb->cycleCntr);
+ 		gb_update_state(gb, RC_GET_VAL(&gb->cycleCntr));
+@@ -1117,6 +1143,8 @@ static void gameboy_update(void *chip, UINT32 samples, DEV_SMPL **outputs)
+ 				left += sample;
+ 			if (gb->snd_control.chan_right[0])
+ 				right += sample;
++			//YOYOFR
++			if (gb->snd_control.chan_left[0] || gb->snd_control.chan_right[0]) chanout[0]=sample;
+ 		}
+ 
+ 		/* Mode 2 - Wave with Envelope */
+@@ -1127,6 +1155,8 @@ static void gameboy_update(void *chip, UINT32 samples, DEV_SMPL **outputs)
+ 				left += sample;
+ 			if (gb->snd_control.chan_right[1])
+ 				right += sample;
++			//YOYOFR
++			if (gb->snd_control.chan_left[1] || gb->snd_control.chan_right[1]) chanout[1]=sample;
+ 		}
+ 
+ 		/* Mode 3 - Wave patterns from WaveRAM */
+@@ -1137,6 +1167,8 @@ static void gameboy_update(void *chip, UINT32 samples, DEV_SMPL **outputs)
+ 				left += sample;
+ 			if (gb->snd_control.chan_right[2])
+ 				right += sample;
++			//YOYOFR
++			if (gb->snd_control.chan_left[2] || gb->snd_control.chan_right[2]) chanout[2]=sample;
+ 		}
+ 
+ 		/* Mode 4 - Noise with Envelope */
+@@ -1147,6 +1179,8 @@ static void gameboy_update(void *chip, UINT32 samples, DEV_SMPL **outputs)
+ 				left += sample;
+ 			if (gb->snd_control.chan_right[3])
+ 				right += sample;
++			//YOYOFR
++			if (gb->snd_control.chan_left[3] || gb->snd_control.chan_right[3]) chanout[3]=sample;
+ 		}
+ 
+ 		/* Adjust for master volume */
+@@ -1160,6 +1194,37 @@ static void gameboy_update(void *chip, UINT32 samples, DEV_SMPL **outputs)
+ 		/* Update the buffers */
+ 		outputs[0][i] = left;
+ 		outputs[1][i] = right;
++
++		//TODO:  MODIZER changes start / YOYOFR
++		if (m_voice_ofs>=0)
++			for (int jj=0;jj<4;jj++) {
++				int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+jj];
++				int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+jj]+smplIncr);
++				if (ofs_end>ofs_start)
++					for (;;) {
++						m_voice_buff[m_voice_ofs+jj][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8( chanout[jj]>>0 );
++						ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++						if (ofs_start>=ofs_end) break;
++					}
++				m_voice_current_ptr[m_voice_ofs+jj]=ofs_end;
++
++				//YOYOFR: note prise une fois par bloc. L'amont a remplacé
++				//snd_1..snd_4 par le tableau snd[], donc le switch à quatre
++				//branches d'avant devient cet accès indexé.
++				if (i==0) {
++					const struct SOUND* sc=&gb->snd[jj];
++					int vol=(jj==2)?1:sc->envelope_value;   //l'onde n'a pas d'enveloppe
++					//⚠️ 2048, pas 2028: le registre de fréquence GB fait 11 bits
++					//et f = 131072/(2048-x). L'ancienne capture écrivait 2028,
++					//une coquille qui décalait toutes les notes GB.
++					if (sc->on && !sc->Muted && sc->frequency && vol) {
++						vgm_last_note[jj+m_voice_ofs]=131072.0/(2048-sc->frequency);
++						vgm_last_instr[jj+m_voice_ofs]=jj+m_voice_ofs;
++						vgm_last_vol[jj+m_voice_ofs]=1;
++					}
++				}
++			}
++		//TODO:  MODIZER changes end / YOYOFR
+ 	}
+ 
+ 	gb->snd_regs[NR52] = (gb->snd_regs[NR52]&0xf0) | gb->snd[0].on | (gb->snd[1].on << 1) | (gb->snd[2].on << 2) | (gb->snd[3].on << 3);

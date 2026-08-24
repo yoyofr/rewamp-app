@@ -1,0 +1,75 @@
+diff --git a/emu/cores/msm5232.c b/emu/cores/msm5232.c
+index 2e759f3..e406101 100644
+--- a/emu/cores/msm5232.c
++++ b/emu/cores/msm5232.c
+@@ -23,6 +23,10 @@
+ #include "emutypes.h"
+ #include "msm5232.h"
+ 
++//TODO:  MODIZER changes start / YOYOFR
++#include "../../../../../src/ModizerVoicesData.h"
++//TODO:  MODIZER changes end / YOYOFR
++
+ #define MSM5232_NUM_CHANNELS 8
+ #define MSM5232_NUM_OUTPUTS 11
+ #define CLOCK_RATE_DIVIDER 16
+@@ -521,6 +525,24 @@ static void device_update_msm5232(void* info, UINT32 samples, DEV_SMPL** outputs
+ 	DEV_SMPL* outR = outputs[1];
+ 	UINT32 i;
+ 
++	//TODO:  MODIZER changes start / YOYOFR
++	//Les 11 "voies" du MSM5232 sont ses 11 SORTIES (8 taps de groupe, 2 solo,
++	//1 bruit), pas ses 8 oscillateurs — c'est ce que compte MSM5232_NUM_OUTPUTS
++	//et donc ce que l'oscilloscope doit montrer.
++	int m_voice_ofs=-1;
++	int m_total_channels=11;
++	int chanout[11];
++	for (int ii=0;ii<=SOUND_MAXVOICES_BUFFER_FX-m_total_channels;ii++) {
++		if (m_voice_ChipID[ii]==m_voice_current_system) {
++			m_voice_ofs=ii+(m_voice_current_systemSub?m_voice_current_systemPairedOfs:0);
++			break;
++		}
++	}
++	m_voice_current_total=m_total_channels;   //INCONDITIONNEL, cf. YM2203/SSG
++	if (!m_voice_current_samplerate) m_voice_current_samplerate=44100;
++	int64_t smplIncr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
++	//TODO:  MODIZER changes end / YOYOFR
++
+ 	for (i = 0; i < samples; i++) {
+ 		MSM5232_GROUP_OUT group1, group2;
+ 		INT32 g1o2, g1o4, g1o8, g1o16, g2o2, g2o4, g2o8, g2o16, so8, so16, nout;
+@@ -555,6 +577,34 @@ static void device_update_msm5232(void* info, UINT32 samples, DEV_SMPL** outputs
+ 
+ 		outL[i] = mix;
+ 		outR[i] = mix;
++
++		//TODO:  MODIZER changes start / YOYOFR
++		if (m_voice_ofs>=0) {
++			chanout[0]=g1o2;  chanout[1]=g1o4;  chanout[2]=g1o8;  chanout[3]=g1o16;
++			chanout[4]=g2o2;  chanout[5]=g2o4;  chanout[6]=g2o8;  chanout[7]=g2o16;
++			chanout[8]=so8;   chanout[9]=so16;  chanout[10]=nout;
++			for (int jj=0;jj<11;jj++) {
++				int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+jj];
++				int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+jj]+smplIncr);
++				if (ofs_end>ofs_start)
++					for (;;) {
++						m_voice_buff[m_voice_ofs+jj][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8(chanout[jj]>>6);
++						ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++						if (ofs_start>=ofs_end) break;
++					}
++				m_voice_current_ptr[m_voice_ofs+jj]=ofs_end;
++				//YOYOFR: volume seulement, et c'est correct ici. La convention
++				//« lecture 1x = LA4 » vise les puces à ÉCHANTILLONS; le MSM5232
++				//est un générateur de tons d'orgue, et chacune de ses 11 sorties
++				//MÉLANGE quatre voix à des pieds différents. Une sortie n'a donc
++				//pas UNE hauteur, et en publier une serait inventer.
++				if (i==0 && chanout[jj]) {
++					vgm_last_instr[jj+m_voice_ofs]=jj+m_voice_ofs;
++					vgm_last_vol[jj+m_voice_ofs]=1;
++				}
++			}
++		}
++		//TODO:  MODIZER changes end / YOYOFR
+ 	}
+ }
+ 

@@ -1,0 +1,93 @@
+diff --git a/src/compiler/translator/msl/RewritePipelines.cpp b/src/compiler/translator/msl/RewritePipelines.cpp
+index d45be1a2f4..c63a0dbf95 100644
+--- a/src/compiler/translator/msl/RewritePipelines.cpp
++++ b/src/compiler/translator/msl/RewritePipelines.cpp
+@@ -200,9 +200,12 @@ class GeneratePipelineStruct : private TIntermRebuild
+             mInfo.pipelineStruct.external = &pipelineStruct;
+         }
+ 
+-        if (mPipeline.type == Pipeline::Type::FragmentOut &&
+-            mCompiler.hasPixelLocalStorageUniforms() &&
+-            mCompiler.getPixelLocalStorageType() == ShPixelLocalStorageType::FramebufferFetch)
++        // rewamp patch: build the LastFragmentOut ([[color(N)]] input) struct
++        // whenever the fragment pipeline has EvqFragmentInOut fields — they come
++        // either from ANGLE_shader_pixel_local_storage (rewritten planes) or
++        // directly from GL_EXT_shader_framebuffer_fetch `inout` user outputs.
++        // Previously gated on PLS uniforms only, which left EXT shaders broken.
++        if (mPipeline.type == Pipeline::Type::FragmentOut)
+         {
+             auto &fields = *new TFieldList();
+             for (const TField *field : mInfo.pipelineStruct.external->fields())
+@@ -213,12 +216,15 @@ class GeneratePipelineStruct : private TIntermRebuild
+                                                 kNoSourceLoc, field->symbolType()));
+                 }
+             }
+-            TStructure *extraStruct =
+-                new TStructure(&mSymbolTable, ImmutableString("LastFragmentOut"), &fields,
+-                               SymbolType::AngleInternal);
+-            seq.push_back(
+-                new TIntermDeclaration{&CreateStructTypeVariable(mSymbolTable, *extraStruct)});
+-            mInfo.pipelineStruct.externalExtra = extraStruct;
++            if (!fields.empty())
++            {
++                TStructure *extraStruct =
++                    new TStructure(&mSymbolTable, ImmutableString("LastFragmentOut"), &fields,
++                                   SymbolType::AngleInternal);
++                seq.push_back(
++                    new TIntermDeclaration{&CreateStructTypeVariable(mSymbolTable, *extraStruct)});
++                mInfo.pipelineStruct.externalExtra = extraStruct;
++            }
+         }
+ 
+         root.insertChildNodes(FindMainIndex(&root), seq);
+@@ -441,10 +447,11 @@ class PipelineFunctionEnv
+                 ASSERT(func.getReturnType().getBasicType() == TBasicType::EbtVoid);
+                 newFunc = &CloneFunctionAndChangeReturnType(mSymbolTable, nullptr, func,
+                                                             *mPipelineStruct.external);
++                // rewamp patch: keyed off the LastFragmentOut struct built above
++                // (any EvqFragmentInOut fields — PLS planes or EXT framebuffer-
++                // fetch `inout` outputs), not just PLS uniforms.
+                 if (mPipeline.type == Pipeline::Type::FragmentOut &&
+-                    mCompiler.hasPixelLocalStorageUniforms() &&
+-                    mCompiler.getPixelLocalStorageType() ==
+-                        ShPixelLocalStorageType::FramebufferFetch)
++                    mPipelineStruct.externalExtra != nullptr)
+                 {
+                     // Add an input argument to main() that contains the current framebuffer
+                     // attachment values, for loading pixel local storage.
+@@ -844,10 +851,10 @@ class UpdatePipelineFunctions : private TIntermRebuild
+                     newBody->appendStatement(assignNode);
+                 }
+             }
++            // rewamp patch: same key as above — LastFragmentOut exists (PLS or
++            // EXT framebuffer-fetch inout outputs).
+             else if (mPipeline.type == Pipeline::Type::FragmentOut &&
+-                     mCompiler.hasPixelLocalStorageUniforms() &&
+-                     mCompiler.getPixelLocalStorageType() ==
+-                         ShPixelLocalStorageType::FramebufferFetch)
++                     mPipelineMainLocalVar.externalExtra != nullptr)
+             {
+                 ASSERT(mPipelineMainLocalVar.externalExtra);
+                 auto &lastFragmentOut = *mPipelineMainLocalVar.externalExtra;
+diff --git a/src/libANGLE/renderer/metal/DisplayMtl.mm b/src/libANGLE/renderer/metal/DisplayMtl.mm
+index 662e1aba7f..9cf26bd192 100644
+--- a/src/libANGLE/renderer/metal/DisplayMtl.mm
++++ b/src/libANGLE/renderer/metal/DisplayMtl.mm
+@@ -1085,6 +1085,17 @@ bool IsMetalDisplayAvailable()
+     mNativeExtensions.blendFuncExtendedEXT = true;
+     mNativeCaps.maxDualSourceDrawBuffers   = 1;
+ 
++    // GL_EXT_shader_framebuffer_fetch (rewamp patch): Apple GPUs support
++    // programmable blending — reading the framebuffer as a [[color(N)]]
++    // fragment-function argument — which is exactly what the MSL translator
++    // already emits for EvqFragmentInOut outputs (the PLS FramebufferFetch
++    // path). Tile memory makes it coherent, so expose the coherent extension.
++    // See the matching gate change in msl/RewritePipelines.cpp.
++    if (!mFeatures.disableProgrammableBlending.enabled && supportsAppleGPUFamily(1))
++    {
++        mNativeExtensions.shaderFramebufferFetchEXT = true;
++    }
++
+     // GL_ANGLE_shader_pixel_local_storage.
+     if (!mFeatures.disableProgrammableBlending.enabled && supportsAppleGPUFamily(1))
+     {

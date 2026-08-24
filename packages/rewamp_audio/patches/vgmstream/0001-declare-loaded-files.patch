@@ -1,0 +1,36 @@
+diff --git a/src/base/streamfile_stdio.c b/src/base/streamfile_stdio.c
+index cbf05aef..20bef874 100644
+--- a/src/base/streamfile_stdio.c
++++ b/src/base/streamfile_stdio.c
+@@ -361,6 +361,20 @@ static FILE* fopen_win(const char* path, const char* mode) {
+ }
+ #endif
+ 
++/* YOYOFR (rewamp): every disk file vgmstream reads passes through here — the one
++ * we asked for and every companion a format pulls in behind it, which for a
++ * .txtp is the whole point of the format. The ⓘ panel lists what was really
++ * opened, and that only works if each loader DECLARES it (guessing from the name
++ * does not work: a .txtp names files that share nothing with it).
++ *
++ * Declared locally rather than included: vgmstream is a PREBUILT static library
++ * on Apple (scripts/build_vgmstream_*.sh) and builds through its own cmake, so
++ * putting our src/ on its header path would mean touching three build systems
++ * for one call. The registry ignores what it cannot stat and drops duplicates,
++ * so calling it on every open is safe — a speculative companion that does not
++ * exist leaves no trace. */
++extern void rewamp_loaded_files_add(const char* path);
++
+ static STREAMFILE* open_stdio_streamfile_buffer(const char* const filename, size_t bufsize) {
+     FILE* infile = NULL;
+     STREAMFILE* sf = NULL;
+@@ -375,8 +389,10 @@ static STREAMFILE* open_stdio_streamfile_buffer(const char* const filename, size
+     sf = open_stdio_streamfile_buffer_by_file(infile, filename, bufsize);
+     if (!sf) {
+         if (infile) fclose(infile);
++        return NULL;
+     }
+ 
++    rewamp_loaded_files_add(filename);   /* YOYOFR (rewamp) */
+     return sf;
+ }
+ 

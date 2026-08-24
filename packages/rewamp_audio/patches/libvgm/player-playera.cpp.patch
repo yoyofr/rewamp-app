@@ -1,0 +1,41 @@
+diff --git a/player/playera.cpp b/player/playera.cpp
+index 6434a7b..1de3bff 100644
+--- a/player/playera.cpp
++++ b/player/playera.cpp
+@@ -9,6 +9,11 @@
+ 
+ #include "playera.hpp"
+ 
++//TODO:  MODIZER changes start / YOYOFR
++#include "../../../../src/ModizerVoicesData.h"
++//TODO:  MODIZER changes end / YOYOFR
++
++
+ static void SampleConv_toU8(void* buffer, INT32 value)
+ {
+ 	value >>= 16;	// 24 bit -> 8 bit
+@@ -628,7 +633,23 @@ UINT32 PlayerA::Render(UINT32 bufSize, void* data)
+ 		_outSmplPack(&bData[(curSmpl * 2 + 0) * _outSmplSize1], fnlSmpl.L);
+ 		_outSmplPack(&bData[(curSmpl * 2 + 1) * _outSmplSize1], fnlSmpl.R);
+ 	}
+-	
++    
++    //YOYOFR
++    if (basePbSmpl >= _fadeSmplStart) {
++        const int nv = (m_genNumVoicesChannels < SOUND_MAXVOICES_BUFFER_FX)
++                           ? m_genNumVoicesChannels : SOUND_MAXVOICES_BUFFER_FX;
++        for (int j = 0; j < nv; j++) {
++            // m_genNumVoicesChannels is a GLOBAL shared by every engine, while
++            // the buffers are allocated per track by rewamp_channel_data_reset:
++            // a stale (larger) count from a previous track would walk into NULL
++            // slots. Cheap guard, hoisted out of the sample loop.
++            signed char* vb = m_voice_buff[j];
++            if (!vb) continue;
++            for (int i = 0; i < smplCount; i++)
++                vb[i] = LIMIT8(((int)(vb[i]) * curVolume) >> VOL_BITS);
++        }
++    }
++    //YOYOFR
+ 	return curSmpl * _outSmplSizeA;
+ }
+ 

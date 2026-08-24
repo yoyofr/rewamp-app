@@ -1,0 +1,86 @@
+diff --git a/emu/cores/k007232.c b/emu/cores/k007232.c
+index 3705c22..ee01c98 100644
+--- a/emu/cores/k007232.c
++++ b/emu/cores/k007232.c
+@@ -46,6 +46,10 @@
+ #include "../EmuHelper.h"
+ #include "k007232.h"
+ 
++//TODO:  MODIZER changes start / YOYOFR
++#include "../../../../../src/ModizerVoicesData.h"
++//TODO:  MODIZER changes end / YOYOFR
++
+ #define K007232_PCM_MAX   2
+ #define K007232_CLOCKDIV  128
+ #define K007232_ADDR_MASK 0x1FFFF
+@@ -216,8 +220,25 @@ static void k007232_update(void* chip, UINT32 samples, DEV_SMPL **outputs)
+ 		return;
+ 	}
+ 
++	//TODO:  MODIZER changes start / YOYOFR
++	//search first voice linked to current chip
++	int m_voice_ofs=-1;
++	int m_total_channels=K007232_PCM_MAX;
++	int chanout[K007232_PCM_MAX];
++	for (int ii=0;ii<=SOUND_MAXVOICES_BUFFER_FX-m_total_channels;ii++) {
++		if (m_voice_ChipID[ii]==m_voice_current_system) {
++			m_voice_ofs=ii+(m_voice_current_systemSub?m_voice_current_systemPairedOfs:0);
++			break;
++		}
++	}
++	m_voice_current_total=m_total_channels;   //INCONDITIONNEL, cf. YM2203/SSG
++	if (!m_voice_current_samplerate) m_voice_current_samplerate=44100;
++	int64_t smplIncr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
++	//TODO:  MODIZER changes end / YOYOFR
++
+ 	for (j = 0; j < samples; j++) {
+ 		INT32 lsum = 0, rsum = 0;
++		for (int kk=0;kk<K007232_PCM_MAX;kk++) chanout[kk]=0;   //YOYOFR
+ 		for (i = 0; i < K007232_PCM_MAX; i++) {
+ 			K007232_Channel* ch = &c->channel[i];
+ 			if (ch->play && !ch->mute) {
+@@ -232,6 +253,7 @@ static void k007232_update(void* chip, UINT32 samples, DEV_SMPL **outputs)
+ 				out = (value & 0x7F) - 0x40;
+ 				lsum += out * ch->vol[0];
+ 				rsum += out * ch->vol[1];
++				chanout[i]=out;   //YOYOFR: échantillon PCM brut, -64..63
+ 
+ 				ch->counter -= 32;
+ 				while (ch->counter < 0 && ch->play) {
+@@ -254,6 +276,36 @@ static void k007232_update(void* chip, UINT32 samples, DEV_SMPL **outputs)
+ 		}
+ 		outputs[0][j] = lsum;
+ 		outputs[1][j] = rsum;
++
++		//TODO:  MODIZER changes start / YOYOFR
++		if (m_voice_ofs>=0)
++			for (int jj=0;jj<K007232_PCM_MAX;jj++) {
++				int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+jj];
++				int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+jj]+smplIncr);
++				if (ofs_end>ofs_start)
++					for (;;) {
++						m_voice_buff[m_voice_ofs+jj][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8(chanout[jj]);
++						ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++						if (ofs_start>=ofs_end) break;
++					}
++				m_voice_current_ptr[m_voice_ofs+jj]=ofs_end;
++
++				//YOYOFR: convention des puces à ÉCHANTILLONS — lecture à
++				//vitesse 1x = LA4 (440 Hz). Ici `counter -= 32` par échantillon
++				//et la recharge vaut `0x1000 - step`, donc l'adresse avance une
++				//fois tous les (0x1000-step)/32 échantillons: 1x quand ce
++				//dénominateur vaut 32.
++				if (j==0) {
++					const K007232_Channel* ch=&c->channel[jj];
++					if (ch->play && !ch->mute) {
++						int den=0x1000-ch->step;
++						if (den>0) vgm_last_note[jj+m_voice_ofs]=440.0*32.0/den;
++						vgm_last_instr[jj+m_voice_ofs]=jj+m_voice_ofs;
++						vgm_last_vol[jj+m_voice_ofs]=1;
++					}
++				}
++			}
++		//TODO:  MODIZER changes end / YOYOFR
+ 	}
+ }
+ 

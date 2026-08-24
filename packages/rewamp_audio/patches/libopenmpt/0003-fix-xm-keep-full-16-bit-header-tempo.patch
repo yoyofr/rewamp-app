@@ -1,0 +1,21 @@
+diff --git a/soundlib/Load_xm.cpp b/soundlib/Load_xm.cpp
+index b13143453..235e99d88 100644
+--- a/soundlib/Load_xm.cpp
++++ b/soundlib/Load_xm.cpp
+@@ -695,7 +695,15 @@ bool CSoundFile::ReadXM(FileReader &file, ModLoadingFlags loadFlags)
+ 	if(fileHeader.speed)
+ 		Order().SetDefaultSpeed(fileHeader.speed);
+ 	if(fileHeader.tempo)
+-		Order().SetDefaultTempo(Clamp(TEMPO(fileHeader.tempo, 0), ModSpecs::xmEx.GetTempoMin(), ModSpecs::xmEx.GetTempoMax()));
++	{
++		// rewamp: keep the FULL 16-bit tempo range. XMPlay accepts any 16-bit
++		// BPM (this file's own saver notes it below), and sample-precise
++		// tempo tricks rely on it — "Haesslich" declares 39293 BPM, which the
++		// ModSpecs clamp (max 1000) silently rewrote into a wrong-speed song.
++		// Playback is safe: the default tempo never passes through
++		// SetTempo(), and XM tempo EFFECTS are 8-bit anyway.
++		Order().SetDefaultTempo(Clamp(TEMPO(fileHeader.tempo, 0), ModSpecs::xmEx.GetTempoMin(), TEMPO(uint16_max, 0)));
++	}
+ 
+ 	m_SongFlags.reset();
+ 	m_SongFlags.set(SONG_LINEARSLIDES, (fileHeader.flags & XMFileHeader::linearSlides) != 0);

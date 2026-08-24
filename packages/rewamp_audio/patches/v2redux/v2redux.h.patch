@@ -1,0 +1,18 @@
+--- v2redux.h
++++ v2redux.h
+@@ -125,6 +125,15 @@
+   // synth reset -- call play() before the next render(). 0 if nothing is open.
+   long long lengthMs() const;
+ 
++  //YOYOFR (rewamp): instant du DERNIER événement de séquence, en ms.
++  // lengthMs() rend la fin de la SÉQUENCE, qui peut se trouver très loin après
++  // la dernière note — mesuré sur fr019: audio à 1 min, puis silence complet de
++  // 10 à 67 min, et lengthMs() annonce 67 min. Ceci est la fin MUSICALE, et
++  // c'est ce qu'un lecteur doit afficher et où il doit s'arrêter.
++  // Comme lengthMs(), implique une remise à zéro du synthé: appeler play()
++  // avant le prochain render(). 0 si rien n'est ouvert.
++  long long lastEventMs() const;
++
+   // Per-channel output peak (0..~1+) into dest[0..15], measured since the last
+   // call and then cleared (read-and-clear). Reflects each channel's loudness in
+   // the mix, independent of its mute state. Display-only.

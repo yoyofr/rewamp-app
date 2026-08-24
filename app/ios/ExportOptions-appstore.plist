@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  App Store Connect / TestFlight export options for
+  scripts/release_ios_testflight.sh.
+
+  method=app-store-connect re-signs the archive with the Apple Distribution
+  certificate and the App Store provisioning profile. signingStyle=automatic
+  lets Xcode create and refresh that profile — the alternative is naming a
+  profile here and re-editing this file every time it expires.
+
+  uploadSymbols=true sends the dSYMs with the build: without them the crash
+  reports in Organizer stay at raw addresses, and a native-heavy app (the
+  whole C/C++ engine) is exactly the case where that matters.
+-->
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>destination</key>
+	<string>export</string>
+	<key>teamID</key>
+	<string>ZV46EUY73C</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>uploadSymbols</key>
+	<true/>
+	<!-- Bitcode has been dead since Xcode 14; leaving it on makes newer
+	     toolchains warn on every export. -->
+	<key>uploadBitcode</key>
+	<false/>
+	<!-- Sans ça, l'export "app-store-connect" AUTO-INCRÉMENTE CFBundleVersion
+	     dès qu'ASC connaît déjà le numéro (build 5 uploadé → IPA exporté en 6),
+	     court-circuitant pubspec — la SEULE autorité sur le numéro de build ici
+	     (règle: un numéro se dépense dans pubspec, jamais en silence à
+	     l'export; le garde-fou du script compare et refuse). -->
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+</dict>
+</plist>

@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (C) 2021 Fredrik Noring
+ */
+
+#ifndef ATARI_TRACE_H
+#define ATARI_TRACE_H
+
+#include <stdio.h>
+#include <stdint.h>
+
+#define TRACE_DEVICE(dev)						\
+	dev(all, ALL,  0)						\
+	dev(wch, WCH,  1)						\
+	dev(cpu, CPU,  2)						\
+	dev(reg, REG,  3)						\
+	dev(dma, DMA,  6)						\
+	dev(psg, PSG,  6)						\
+	dev(snd, SND,  7)						\
+	dev(mfp, MFP,  8)						\
+	dev(ram, RAM,  9)						\
+	dev(rom, ROM, 10)						\
+	dev(zro, ZRO, 11)
+
+enum trace_device {
+	TRACE_DEVICE_NONE = 0,
+#define TRACE_DEVICE_ENUM(symbol_, label_, id_)				\
+	TRACE_DEVICE_##label_ = !id_ ? -1 : 1 << (id_ - 1),
+TRACE_DEVICE(TRACE_DEVICE_ENUM)
+};
+
+#define TRACE_ENABLE(trace_mode_, label_)				\
+	((trace_mode_)->m & TRACE_DEVICE_ ## label_)
+
+struct trace_mode {
+	uint32_t m;
+	FILE *file;
+	const char *output;
+};
+
+#endif /* ATARI_TRACE_H */

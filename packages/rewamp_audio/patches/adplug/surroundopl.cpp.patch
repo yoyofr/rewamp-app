@@ -1,0 +1,31 @@
+--- third_party/adplug/upstream/surroundopl.cpp	2026-07-05 17:21:16
++++ third_party/adplug/src/surroundopl.cpp	2026-07-05 13:55:57
+@@ -23,6 +23,11 @@
+  * Please give credit if you use this algorithm elsewhere :-)
+  */
+ 
++//TODO:  MODIZER changes start / YOYOFR
++#include "../../../src/ModizerVoicesData.h"
++//TODO:  MODIZER changes end / YOYOFR
++
++
+ #include <math.h> // for pow()
+ #include "surroundopl.h"
+ #include "debug.h"
+@@ -68,8 +73,15 @@
+ 		this->rbuf = new short[this->bufsize];
+ 	}
+ 
+-	this->oplA.opl->update(this->lbuf, samples);
++    //YOYOFR
++    m_voice_current_system=1;
++    this->oplA.opl->update(this->lbuf, samples);
++    //YOYOFR to skip the second update / oscilloscope view
++    m_voice_current_system=0;
++    //YOYOFR
+ 	this->oplB.opl->update(this->rbuf, samples);
++    
++    
+ 
+ 	// Copy the two mono OPL buffers into the stereo buffer
+ 	for (int i = 0; i < samples; i++) {

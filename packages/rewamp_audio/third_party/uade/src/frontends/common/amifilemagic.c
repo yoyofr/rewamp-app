@@ -1,0 +1,1432 @@
+/*
+ Copyright (C) 2000-2005  Heikki Orsila
+ Copyright (C) 2000-2005  Michael Doering
+
+ This module is dual licensed under the GNU GPL and the Public Domain.
+ Hence you may use _this_ module (not another code module) in any way you
+ want in your projects.
+
+ About security:
+
+ This module tries to avoid any buffer overruns by not copying anything but
+ hard coded strings (such as "FC13"). This doesn't
+ copy any data from modules to program memory. Any memory writing with
+ non-hard-coded data is an error by assumption. This module will only
+ determine the format of a given module.
+
+ Occasional memory reads over buffer ranges can occur, but they will of course
+ be fixed when spotted :P The worst that can happen with reading over the
+ buffer range is a core dump :)
+
+ TODO: Add ProRunner 1.0 detection. At offset 0x438 string "SNT."
+*/
+
+#include <uade/amifilemagic.h>
+#include <uade/ossupport.h>
+#include <uade/uade.h>
+#include <uade/uadeutils.h>
+#include <uade/unixsupport.h>
+
+#include <assert.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+
+#define WAV_HEADER_LEN 44
+
+enum {
+	/* 0 for undefined */
+	MOD_UNDEFINED = 0,
+	/* 1 for a Soundtracker2.5/Noisetracker 1.0 */
+	MOD_SOUNDTRACKER25_NOISETRACKER10,
+	/* 2 for a Noisetracker 1.2 */
+	MOD_NOISETRACKER12,
+	/* 3 for a Noisetracker 2.0 */
+	MOD_NOISETRACKER20,
+	/* 4 for a Startrekker 4ch */
+	MOD_STARTREKKER4,
+	/* 5 for a Startrekker 8ch */
+	MOD_STARTREKKER8,
+	/* 6 for Audiosculpture 4 ch/fm */
+	MOD_AUDIOSCULPTURE4,
+	/* 7 for Audiosculpture 8 ch/fm */
+	MOD_AUDIOSCULPTURE8,
+	/* 8 for a Protracker */
+	MOD_PROTRACKER,
+	/* 9 for a Fasttracker. */
+	MOD_FASTTRACKER,
+	/* 10 for a Noisetracker (M&K!) */
+	MOD_NOISETRACKER,
+	/* 11 for a PTK Compatible */
+	MOD_PTK_COMPATIBLE,
+	/* 12 for a Soundtracker 31 instr. with repl in bytes */
+	MOD_SOUNDTRACKER24,
+};
+
+
+#define S15_HEADER_LENGTH 600
+#define S31_HEADER_LENGTH 1084
+
+
+static int chk_id_offset(unsigned char *buf, size_t bufsize,
+			 const char *patterns[], const size_t offset,
+			 char *pre);
+
+
+/* Do not use '\0'. They won't work in patterns */
+static const char *offset_0000_patterns[] = {
+  /* Pairs of values: string id marker, string file extension */
+  "DIGI Booster", "DIGI",	/* Digibooster */
+  "OKTASONG", "OKT",		/* Oktalyzer */
+  "SYNTRACKER", "SYNMOD",	/* Syntracker */
+  "OBISYNTHPACK", "OSP",	/* Synthpack */
+  "SOARV1.0", "SA",		/* Sonic Arranger */
+  "AON4", "AON4",              /* Art Of Noise (4ch) */
+  "AON8", "AON8",              /* Art Of Noise (8ch) */
+  "ARP.", "MTP2",       	/* HolyNoise / Major Tom */
+  "AmBk", "ABK",		/* Amos ABK */
+  "FUCO", "BSI",		/* FutureComposer BSI */
+  "MMU2", "DSS",		/* DSS */
+  "GLUE", "GLUE",		/* GlueMon */
+  "ISM!", "IS",			/* In Stereo */
+  "IS20", "IS20",		/* In Stereo 2 */
+  "SMOD", "FC13",		/* FC 1.3 */
+  "FC14", "FC14",		/* FC 1.4 */
+  "MMDC", "MMDC",		/* Med packer */
+  "MSOB", "MSO",		/* Medley */
+  "MODU", "NTP",		/* Novotrade */
+/* HIPPEL-ST CONFLICT: "COSO", "SOC",*/		/* Hippel Coso */
+  "BeEp", "JAM",		/* Jamcracker */
+  "ALL ", "DM1",		/* Deltamusic 1 */
+  "YMST", "YM",			/* MYST ST-YM */
+  "AMC ", "AMC",		/* AM-Composer */
+  "P40A", "P40A",		/* The Player 4.0a */
+  "P40B", "P40B",		/* The Player 4.0b */
+  "P41A", "P41A",		/* The Player 4.1a */
+  "P50A", "P50A",               /* The Player 5.0a */
+  "P60A", "P60A",		/* The Player 6.0a */
+  "P61A", "P61A",		/* The Player 6.1a */
+  "SNT!", "PRU2",		/* Prorunner 2 */
+  "MEXX_TP2", "TP2",		/* Tracker Packer 2 */
+  "CPLX_TP3", "TP3",		/* Tracker Packer 3 */
+  "MEXX", "TP1",		/* Tracker Packer 2 */
+  "PM40", "PM40",		/* Promizer 4.0 */
+  "FC-M", "FC-M",		/* FC-M */
+  "E.M.S. V6.", "EMSV6",	/* EMS version 6 */
+  "MCMD", "MCMD_org",		/* 0x00 MCMD format */
+  "STP3", "STP3",		/* Soundtracker Pro 2 */
+  "MTM", "MTM",			/* Multitracker */
+  "Extended Module:", "XM",	/* Fasttracker2 */
+  "MLEDMODL", "ML",		/* Musicline Editor */
+  "FTM", "FTM",			/* Face The Music */
+  "MXTX", "MXTX",		/* Maxtrax*/
+  "M1.0", "FUZZ",		/* Fuzzac*/
+  "MSNG", "TPU",		/* Dirk Bialluch*/
+  "YM!", "",                    /* stplay -- intentionally sabotaged */
+  "ST1.2 ModuleINFO", "",       /* Startrekker AM .NT -- intentionally sabotaged */
+  "AudioSculpture10", "",       /* Audiosculpture .AS -- intentionally sabotaged */
+  "MSXS", "MXP",		/* Music-X Player*/
+  "COMP", "NPP",		/* Nick Pelling Packer*/
+  "AN COOL", "TCB",		/* TCB Tracker*/
+  "TMK", "TMK",			/* TMK Format*/
+  "MSNG", "TPU",		/* TPU Format*/
+  "SymM", "SYMMOD",		/* Symphonie not supported yet */
+  NULL, NULL
+};
+
+struct binary_pattern {
+	size_t off;
+	size_t len;
+	const char *pattern;
+	int not_bad_value;
+	unsigned char bad_value;
+};
+
+static const struct binary_pattern aprosys_pattern[] = {
+	{.off = 0, .len = 11, .pattern = "ADRVPACK\x00\x00\x00"},
+	{.off = 11, .len = 1, .not_bad_value = 1, .bad_value = 0},
+	{.len = 0},
+};
+
+static const char *offset_0024_patterns[] = {
+  /* ID: Prefix: Desc: */
+  "UNCLEART", "DL",		/* Dave Lowe WT */
+  "DAVELOWE", "DL_deli",	/* Dave Lowe Deli */
+  "J.FLOGEL", "JMF",		/* Janko Mrsic-Flogel */
+  "BEATHOVEN", "BSS",		/* BSS */
+  "FREDGRAY", "GRAY",		/* Fred Gray */
+  "H.DAVIES", "HD",		/* Howie Davies */
+  "RIFFRAFF", "RIFF",		/* Riff Raff */
+  "!SOPROL!", "SPL",		/* Soprol */
+  "F.PLAYER", "FP",		/* F.Player */
+  "S.PHIPPS", "CORE",		/* Core Design */
+  "DAGLISH!", "BDS",		/* Benn Daglish */
+  NULL, NULL
+};
+
+
+static const char *offset_0026_patterns[] = {
+  /* ID: Prefix: Desc: */
+    "JOSEPH", "RJ",		/* Richard Joseph (alt/ST)*/
+    NULL, NULL
+};
+
+
+// TODO: Complete list from amifilemagic.
+//       offset_0000_patterns and offset_0024_patterns have been input.
+static struct uade_ext_to_format_version etf[] = {
+	{.file_ext = "abk", .format = "Amos ABK"},
+	{.file_ext = "ahx", .format = "AHX"},
+	{.file_ext = "amc", .format = "A.M.Composer"},
+	{.file_ext = "aon4", .format = "Art Of Noise (4 ch)"},
+	{.file_ext = "aon8", .format = "Art Of Noise (8 ch)"},
+	{.file_ext = "aps", .format = "AProSys"},
+	{.file_ext = "bds", .format = "Benn Daglish"},
+	{.file_ext = "bsi", .format = "Future Composer (BSI)"},
+	{.file_ext = "bss", .format = "Beathoven Synthesizer"},
+	{.file_ext = "core", .format = "Core Design"},
+	{.file_ext = "cust", .format = "Custom"},
+	{.file_ext = "dl", .format = "Dave Lowe"},
+	{.file_ext = "dl_deli", .format = "Dave Lowe"},
+	{.file_ext = "dln", .format = "Dave Lowe New"},
+	{.file_ext = "dm1", .format = "Delta Music", .version = "1"},
+	{.file_ext = "dm2", .format = "Delta Music", .version = "2"},
+	{.file_ext = "digi", .format = "DigiBooster"},
+	{.file_ext = "dss", .format = "DSS"},
+	{.file_ext = "dw", .format = "David Whittaker"},
+	// Note: ems is not recognized yet
+	// {.file_ext = "ems", .format = "Editeur Musical Sequentiel"},
+	{.file_ext = "emsv6", .format = "Editeur Musical Sequentiel",
+	 .version = "6"},
+	{.file_ext = "fc13", .format = "Future Composer", .version = "1.3"},
+	{.file_ext = "fc14", .format = "Future Composer", .version = "1.4"},
+	{.file_ext = "fc-m", .format = "FC-M Packer"},
+	{.file_ext = "fp", .format = "Future Player"},
+	{.file_ext = "ftm", .format = "Face The Music"},
+	{.file_ext = "fuzz", .format = "Fuzzac Packer"},
+	{.file_ext = "glue", .format = "GlueMon"},
+	{.file_ext = "gray", .format = "Fred Gray"},
+	{.file_ext = "hd", .format = "Howie Davies"},
+	{.file_ext = "is", .format = "In Stereo", .version = "1"},
+	{.file_ext = "is20", .format = "In Stereo", .version = "2"},
+	{.file_ext = "jam", .format = "JamCracker"},
+	{.file_ext = "jmf", .format = "Janko Mrsic-Flogel"},
+	{.file_ext = "mxtx", .format = "Maxtrax"},
+	{.file_ext = "mcmd_org", .format = "MCMD"},
+	{.file_ext = "mmdc", .format = "MED Packer"},
+	{.file_ext = "ml", .format = "Musicline Editor"},
+
+	// Pro/Sound/NoiseTracker and variants
+	{.file_ext = "mod_adsc4", .format = "Audio Sculpture (4 ch)"},
+	{.file_ext = "mod_adsc8", .format = "Audio Sculpture (8 ch)"},
+	{.file_ext = "mod_ntk", .format = "NoiseTracker", .version = "1.x"},
+	{.file_ext = "mod_ntkamp", .format = "NoiseTracker"},
+	{.file_ext = "mod_ntk1", .format = "NoiseTracker", .version = "1.2"},
+	{.file_ext = "mod_ntk2", .format = "NoiseTracker", .version = "2.0"},
+	{.file_ext = "mod", .format = "ProTracker"},
+	{.file_ext = "mod_flt4", .format = "StarTrekker (4 ch)"},
+	{.file_ext = "mod_flt8", .format = "StarTrekker (8 ch)"},
+	{.file_ext = "mod_doc", .format = "SoundTracker", .version = "2.4"},
+
+	{.file_ext = "mso", .format = "Medley"},
+	// Note: Check spelling of MultiTracker, find modules
+	{.file_ext = "mtm", .format = "MultiTracker"},
+	{.file_ext = "mtp2", .format = "Major Tom's Player"},  // Major Tom
+	{.file_ext = "ntp", .format = "NovoTrade Packer"},
+	{.file_ext = "okt", .format = "Oktalyzer"},
+	{.file_ext = "osp", .format = "Synth Pack"},
+	{.file_ext = "p40a", .format = "The Player", .version = "4.0a"},
+	{.file_ext = "p40b", .format = "The Player", .version = "4.0b"},
+	{.file_ext = "p41a", .format = "The Player", .version = "4.1a"},
+	{.file_ext = "p50a", .format = "The Player", .version = "5.0a"},
+	{.file_ext = "p60a", .format = "The Player", .version = "6.0a"},
+	{.file_ext = "p61a", .format = "The Player", .version = "6.1a"},
+	// Note: pm1 is not recognized yet
+	// {.file_ext = "pm1", .format = "Promizer"},
+	{.file_ext = "pm20", .format = "Promizer", .version = "2.0"},
+	{.file_ext = "pm40", .format = "Promizer", .version = "4.0"},
+	// Note: pru1 is not recognized yet
+	{.file_ext = "pru1", .format = "ProRunner", .version = "1.0"},
+	{.file_ext = "pru2", .format = "ProRunner", .version = "2.0"},
+	{.file_ext = "riff", .format = "Riff Raff"},
+	{.file_ext = "sa", .format = "Sonic Arranger"},
+	{.file_ext = "spl", .format = "Sound Programming Language"},
+	{.file_ext = "stp3", .format = "Soundtracker pro II"},
+	{.file_ext = "synmod", .format = "Syntracker"},
+	{.file_ext = "tp1", .format = "Tracker Packer", .version = "1"},
+	{.file_ext = "tp2", .format = "Tracker Packer", .version = "2"},
+	{.file_ext = "tp3", .format = "Tracker Packer", .version = "3"},
+	{.file_ext = "tpu", .format = "Dirk Bialluch"},
+	{.file_ext = NULL},
+};
+
+
+const struct uade_ext_to_format_version *uade_file_ext_to_format_version(
+	const struct uade_detection_info *info)
+{
+	size_t i;
+	if (info == NULL)
+		return NULL;
+	const char *file_ext = info->ext;
+	for (i = 0;; i++) {
+		if (etf[i].file_ext == NULL)
+			break;
+		if (strcasecmp(etf[i].file_ext, file_ext) == 0)
+			return &etf[i];
+	}
+	return NULL;
+}
+
+/* check for 'pattern' in 'buf'.
+   the 'pattern' must lie inside range [0, maxlen) in the buffer.
+   returns true if pattern is at buf[offset], otherwrise false
+ */
+static int patterntest(const unsigned char *buf, const char *pattern,
+		       const size_t offset, const size_t bytes,
+		       const size_t maxlen)
+{
+  if ((offset + bytes) <= maxlen)
+	  return memcmp(buf + offset, pattern, bytes) == 0;
+
+  return 0;
+}
+
+static int check_binary_pattern(unsigned char *buf, size_t bufsize,
+				const struct binary_pattern patterns[])
+{
+	size_t i;
+	for (i = 0; patterns[i].len != 0; i++) {
+		if (patterns[i].not_bad_value) {
+			size_t max_off = patterns[i].off + patterns[i].len;
+			size_t j;
+			if (max_off > bufsize)
+				return 0;
+			for (j = patterns[i].off; j < max_off; j++) {
+				if (buf[j] == patterns[i].bad_value)
+					return 0;
+			}
+		} else if (!patterntest(buf, patterns[i].pattern,
+					patterns[i].off, patterns[i].len,
+					bufsize)) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int tronictest(unsigned char *buf, size_t bufsize)
+{
+  size_t a = read_be_u16(&buf[0x02]) + read_be_u16(&buf[0x06]) +
+             read_be_u16(&buf[0x0a]) + read_be_u16(&buf[0x0e]) + 0x10;
+
+  if (((a + 2) >= bufsize) || (a & 1))
+    return 0;			/* size  & btst #0, d1; */
+
+  a = read_be_u16(&buf[a]) + a;
+  if (((a + 8) >= bufsize) || (a & 1))
+    return 0;			/*size & btst #0,d1 */
+
+  if (read_be_u32(&buf[a + 4]) != 0x5800b0)
+    return 0;
+
+  return 1;
+}
+
+static int sid1test(unsigned char *buf, size_t bufsize, size_t realfilesize, char *pre)
+{
+  /* Check for sidmon 1*/
+  int a_null = 0, d_one = 0;
+  
+  for (d_one = 0; d_one <= 0x100; d_one +=2) {
+         a_null = read_be_u16(&buf[d_one]);
+         if (a_null == 0x41fa) {
+            if (d_one < realfilesize - 2 &&    //sanity check
+                d_one < bufsize - 2) {      //sanity check
+                a_null = d_one + 2 + read_be_u16(&buf[d_one + 2]);
+                if (a_null < bufsize - 32) {  //sanity check
+                  if (patterntest(buf, " SID-MON BY R.v.VLIET  (c) 1988 ", a_null , 32, bufsize) ||
+                      patterntest(buf, " Ripped with SCX Ripper ", a_null, 24, bufsize)) {
+                        strcpy(pre, "SID1");	/* check for text pattern at pointer[a_null]  + 2 */
+                        return 1;
+                        }
+                    }
+                }
+            }
+        }
+        /* kyzer's cleaned up sid1 check for Sid1 without text patterns */
+        if ((read_be_u32(&buf[0]) == 0x08F90001 &&
+             read_be_u32(&buf[4]) == 0x00BB41FA &&
+            (read_be_u16(&buf[0x25c]) == 0x4E75 ||
+             read_be_u16(&buf[0x25c]) == 0x4E79)) ||
+            (read_be_u16(&buf[0]) == 0x41FA &&
+             read_be_u32(&buf[4]) == 0xD1E8FFD4 &&
+             read_be_u16(&buf[8]) == 0x43FA &&
+             read_be_u16(&buf[12]) == 0x2288)) {
+                strcpy(pre, "SID1");	/* most likely a SidMon1 */
+                return 1;
+            }
+    return 0;
+}
+
+static int tfmxtest(unsigned char *buf, size_t bufsize, char *pre)
+{
+  if (bufsize <= 0x208)
+    return 0;
+
+  if (strncmp((char *) buf, "TFHD", 4) == 0) {
+    if (buf[0x8] == 0x01) {
+      strcpy(pre, "TFHD1.5");	/* One File TFMX format by Alexis NASR */
+      return 1;
+    } else if (buf[0x8] == 0x02) {
+      strcpy(pre, "TFHDPro");
+      return 1;
+    } else if (buf[0x8] == 0x03) {
+      strcpy(pre, "TFHD7V");
+      return 1;
+    }
+  }
+
+  if (memcmp(buf, "TFMX-SONG ",       10) == 0 || /* Most TFMX songs */
+      memcmp(buf, "TFMX_SONG ",       10) == 0 || /* REMOVEME (nothing matches this) */
+      memcmp(buf, "TFMX \0\0\1",       8) == 0 || /* exception: Rock 'n Roll */
+      memcmp(buf, "tfmxsong\0\0\0\2", 12) == 0)   /* exception: Masterblazer */
+  {{
+      strcpy(pre, "MDAT");	/*default TFMX: TFMX Pro */
+
+      if (memcmp(&buf[16], "(Empty)         ", 16) == 0 || /* most TFMX 1.x tunes */
+          memcmp(&buf[16], "0/SB Absolute! (", 16) == 0 || /* exception: ERN0/SB tunes */
+          memcmp(&buf[16], "0=endgegner     ", 16) == 0 || /* exception: Lethal Zone */
+          memcmp(&buf[16], "                ", 16) == 0 || /* exception: The Curse of Ra */
+          memcmp(&buf[16], "Date : 17.10.90 ", 16) == 0 || /* exception: Masterblazer loader & title/hiscore */
+          memcmp(&buf[16], "Date : 14.10.90 ", 16) == 0 || /* exception: Masterblazer ingame/race */
+          buf[4] == ' ') {                                 /* exception: Rock 'n Roll */
+
+	if (read_be_u32(&buf[464]) == 0x00000000) {
+	/* mark as TFMX V1.x, EXCEPT for some known TFMX Pro tunes that made it here */
+	  uint16_t x = read_be_u16(&buf[14]);
+	  if (!((x == 0x0e60) || /* z-out title */
+	        (x == 0x0860 && bufsize > 4645 && read_be_u16(&buf[4644]) == 0x090c) || /* metal law */
+	        (x == 0x0b20 && bufsize > 5121 && read_be_u16(&buf[5120]) == 0x8c26) || /* bug bomber */
+	        (x == 0x0920 && bufsize > 3977 && read_be_u16(&buf[3876]) == 0x9305))) { /* metal preview */
+	    strcpy(pre, "TFMX1.5");	/*TFMX 1.0 - 1.6 */
+	  }
+	}
+	return 1;
+	
+     } else if (((read_be_u16(&buf[0x0e])  == 0x08b0) &&	/*BMWi*/
+		  (read_be_u16(&buf[0x140]) == 0x000b) &&	/*End Trackstep 1st Subsong*/
+		  (read_be_u16(&buf[0x1d2]) == 0x0200) &&	/*Trackstep datas*/
+		  (read_be_u32(&buf[0x200]) == 0xff000000) &&	/*First effect*/
+		  (read_be_u32(&buf[0x204]) == 0x01f4ff00)) ||
+		 (((read_be_u16(&buf[0x0e])  == 0x0ab0 &&	/*BC Kid Title*/
+		  (read_be_u16(&buf[0x140]) == 0x0015)) || 	/*End Trackstep 1st Subsong*/
+		 ((read_be_u16(&buf[0x0e])  == 0x0b00) &&	/*BC Kid Title (alt)*/
+		  (read_be_u16(&buf[0x140]) == 0x0016))) && 	/*End Trackstep 1st Subsong*/
+		  ((read_be_u16(&buf[0x1d2]) == 0x0200) &&	/*Trackstep datas*/
+		  (read_be_u32(&buf[0x200]) == 0xeffe0003) &&	/*First effect*/
+		  (read_be_u32(&buf[0x204]) == 0x000d0000)))) {
+	strcpy(pre, "TFMX7V");	/* "special cases TFMX 7V */
+	return 1;
+
+      } else {
+	int e, i, s, t;
+
+	/* Trackstep datas offset */
+	s = read_be_u32(&buf[0x1d0]);
+	if (s == 0x00000000) {
+	  /* unpacked */
+	  s = 0x00000800;
+	}
+
+	for (i = 0; i < 0x3d; i += 2) {
+	  if (read_be_u16(&buf[0x140 + i]) != 0x0000) { /* subsong */
+	    /* Start of subsongs Trackstep data :) */
+	    t = read_be_u16(&buf[0x100 + i]) * 16 + s;
+	    /* End of subsongs Trackstep data :) */
+	    e = read_be_u16(&buf[0x140 + i]) * 16 + s;
+	    if (e < bufsize) {
+	      for (; t < e && (t + 6) < bufsize; t += 2) {
+		if (read_be_u16(&buf[t]) == 0xeffe &&
+		    read_be_u32(&buf[t + 2]) == 0x0003ff00 &&
+		    buf[t + 6] == 0x00) {
+		  strcpy(pre, "TFMX7V");	/*TFMX 7V */
+		  return 1;
+		}
+	      }
+	    }
+	  }
+	}
+	s = 0x00000000;
+	e = read_be_u32(&buf[0x01d4]);
+	t = read_be_u32(&buf[0x01d8]);
+	if (t < bufsize-4) {
+	  if (t == 0x00000000) {
+	    /* unpacked */
+	    e = read_be_u32(&buf[0x000007fc]);	//direct end to instr. at 7fc (2044)
+	    t = 0x00000600;			//offset to offset of instr. at 600 (1536)	    
+	    }
+	    t =  read_be_u32(&buf[t]);		//real offset to instr data at buf[t]
+	    for (i =0; t < e && t < bufsize+4; t +=4) {
+	      if (buf [t] > 63) {
+	        strcpy(pre, "MDST");	/*TFMX ST */
+	        return 1;
+	        }
+	      }
+	  }
+	}
+    }
+  }
+  return 0;
+}
+
+/* Calculate Module length:	Just need at max 1084	*/
+/*				data in buf for a 	*/
+/*				succesful calculation	*/
+/* returns:				 		*/
+/* 		 -1 for no mod				*/
+/*		 1 for a mod with good length		*/
+static size_t modlentest(unsigned char *buf, size_t bufsize, size_t filesize,
+			 int header)
+{
+  int i;
+  int no_of_instr;
+  int smpl = 0;
+  int plist;
+  int maxpattern = 0;
+
+  if (header > bufsize)
+    return -1;			/* no mod */
+
+  if (header == S15_HEADER_LENGTH)   {
+    no_of_instr = 15;
+    plist = header - 128;
+  } else if (header == S31_HEADER_LENGTH) {
+    no_of_instr = 31;
+    plist = header - 4 - 128;
+  } else {
+    return -1;
+  }
+
+  for (i = 0; i < 128; i++) {
+    if (buf[plist + i] > maxpattern)
+      maxpattern = buf[plist + i];
+  }
+
+  if (maxpattern > 100)
+    return -1;
+
+  for (i = 0; i < no_of_instr; i++)
+    smpl += 2 * read_be_u16(&buf[42 + i * 30]);	/* add sample length in bytes*/
+
+  return header + (maxpattern + 1) * 1024 + smpl;
+}
+
+
+static int modparsing(unsigned char *buf, size_t bufsize, size_t header,
+		       int max_pattern, int pfx[], int pfxarg[], int pnote[])
+{
+  int offset, res = 1;
+  int i, j, fx, note;
+  unsigned char fxarg;
+  
+  pnote[0]=0;
+
+  for (i = 0; i < max_pattern; i++) {
+    for (j = 0; j < (1024/4); j++) {
+      offset = header + i * 1024 + j * 4;
+
+      if ((offset + 4) > bufsize) {
+        fprintf(stderr, "uade: mod pattern beyond file size: %d > %zd\n", offset+4, bufsize);
+        return res;
+      }
+
+      fx = buf[offset + 2] & 0x0f;
+      fxarg = buf[offset + 3];
+      note = ((buf[offset] & 0x0f) * 256) + buf[offset+1];
+
+      if ((i > 0 || j > 0) && note > 0 && (note < 57 || note > 1712)) { // possibly UNIC tracker
+        //fprintf(stderr, "uade: mod note period beyond octaves 0 to 4: (%d/%d) %x - %4d\n", i, j, offset, note );
+        pnote[0] += 1;
+        res = 0;
+      } else if ((i > 0 || j > 0) && note > 0 && (note < 113 || note > 856 )) { // possibly PC tracker
+        //fprintf(stderr, "uade: mod note period beyond Amiga limit: (%d/%d) %x - %4d\n", i, j, offset, note );
+        pnote[0] += 1;
+      }
+
+      if (fx == 0) {
+	if (fxarg != 0 )
+	  pfx[fx] += 1;
+	pfxarg[fx] = (pfxarg[fx] > fxarg) ? pfxarg[fx] : fxarg;
+
+      } else if (1 <= fx && fx <= 13) {
+	pfx[fx] +=1;
+	pfxarg[fx] = (pfxarg[fx] > fxarg) ? pfxarg[fx] : fxarg;
+
+      } else if (fx == 14) {
+	pfx[((fxarg >> 4) & 0x0f) + 16] +=1;
+
+      } else if (fx == 15) {
+	if (fxarg > 0x1f)
+	  pfx[14] +=1;
+	else
+	  pfx[15] +=1;
+	pfxarg[15] = (pfxarg[15] > fxarg) ? pfxarg[15] : fxarg;
+      }
+    }
+  }
+  return res;
+}
+
+/* check if a file with extension ".nt" or ".as" also exists */
+static int has_as_or_nt_file(const char *path) {
+    char *exts[] = {".nt", ".NT", ".as", ".AS"};
+    size_t pathlen = strlen(path);
+    char *namebuf = malloc(pathlen + 4);
+    FILE *fh;
+    int i, file_found = 0;
+
+    if (namebuf) {
+        strcpy(namebuf, path);
+        for (i = 0; i < sizeof(exts)/sizeof(*exts); i++) {
+            strcpy(&namebuf[pathlen], exts[i]);
+            fh = fopen(namebuf, "rb");
+            if (fh) {
+                fclose(fh);
+                file_found = 1;
+                break;
+            }
+        }
+        free(namebuf);
+    }
+    return file_found;
+}
+
+static int mod32check(unsigned char *buf, size_t bufsize, size_t realfilesize,
+		      const char *path, int verbose)
+{
+	/* mod patterns at file offset 0x438 */
+	char *mod_patterns[] = { "M.K.", ".M.K", NULL};
+	/* startrekker patterns at file offset 0x438 */
+	char *startrekker_patterns[] = { "FLT4", "FLT8", "EXO4", "EXO8", NULL};
+
+	int max_pattern = 0, patterns_ok;
+	int i, j, ret;
+	int pfx[32];
+	int pfxarg[32];
+	int pnote[1];
+
+	/* instrument var */
+	int vol, slen, srep, sreplen;
+
+	int has_slen_sreplen_zero = 0; /* sreplen empty of non looping instrument */
+	int no_slen_sreplen_zero = 0; /* sreplen */
+
+	int has_slen_sreplen_one = 0;
+	int no_slen_sreplen_one = 0;
+
+	int finetune_used = 0;
+
+	size_t calculated_size;
+
+	/* Special cases first */
+	if (patterntest(buf, "M&K!", (S31_HEADER_LENGTH - 4), 4, bufsize) ||
+	    patterntest(buf, "FEST", (S31_HEADER_LENGTH - 4), 4, bufsize))
+		return MOD_NOISETRACKER; /* Noisetracker (M&K!) or His Masters Noise */
+  
+	if (patterntest(buf, "M!K!", (S31_HEADER_LENGTH - 4), 4, bufsize))
+		return MOD_PROTRACKER; /* Protracker (100 patterns) */
+
+	if (patterntest(buf, "N.T.", (S31_HEADER_LENGTH - 4), 4, bufsize))
+		return MOD_NOISETRACKER20;
+
+	for (i = 0; startrekker_patterns[i]; i++) {
+		if (patterntest(buf, startrekker_patterns[i], (S31_HEADER_LENGTH - 4), 4,
+				bufsize)) {
+			if (has_as_or_nt_file(path)) {
+				if (buf[0x43b] == '4') {
+					ret = MOD_AUDIOSCULPTURE4;	/* Startrekker 4 AM / ADSC */
+				} else { 		
+					ret = MOD_AUDIOSCULPTURE8;	/* Startrekker 8 AM / ADSC */	
+				}
+			} else {
+				if (buf[0x43b] == '4') {
+					ret = MOD_STARTREKKER4;	/* Startrekker 4ch */
+				} else { 		
+					ret = MOD_STARTREKKER8;	/* Startrekker 8ch */	
+				}
+			}
+			return ret;
+		}
+	}
+
+	calculated_size = modlentest(buf, bufsize, realfilesize, S31_HEADER_LENGTH);
+
+	if (calculated_size == -1)
+		return MOD_UNDEFINED;
+
+
+	for (i = 0; mod_patterns[i]; i++) {
+		if (patterntest(buf, mod_patterns[i], S31_HEADER_LENGTH - 4, 4, bufsize)) {
+			/* Seems to be a generic M.K. MOD */
+			if (calculated_size != realfilesize) {
+				fprintf(stderr,
+					"uade: mod32check - file size is %zd but the calculated size is %zd (%s)\n",
+					realfilesize, calculated_size, path);
+			}
+
+			if (calculated_size > realfilesize) {
+				fprintf(stderr,
+					"uade: mod32check - file seems truncated and may be played incorrectly (%s)\n",
+					path);
+			} else if (calculated_size < realfilesize) {
+				fprintf(stderr,
+					"uade: mod32check - file has trailing garbage behind the actual module data (%s)\n",
+					path);
+			}
+			
+			/* parse instruments */
+			for (i = 0; i < 31; i++) {
+				vol = buf[45 + i * 30];
+				slen = ((buf[42 + i * 30] << 8) + buf[43 + i * 30]) * 2;
+				srep = ((buf[46 + i * 30] << 8) + buf[47 + i * 30]) *2;
+				sreplen = ((buf[48 + i * 30] << 8) + buf[49 + i * 30]) * 2;
+				/* fprintf (stderr, "%d, slen: %d, %d (srep %d, sreplen %d), vol: %d\n",i, slen, srep+sreplen,srep, sreplen, vol); */
+
+				if (vol > 64)
+					return MOD_UNDEFINED;
+
+				if (buf[44 + i * 30] != 0) {
+					if (buf[44+i*30] > 15) {
+						return MOD_UNDEFINED;
+					} else {
+						finetune_used++;
+					}
+				}
+
+				if (slen > 0 && (srep + sreplen) > slen) {
+					/* Old Noisetracker /Soundtracker with repeat offset in bytes */
+					return MOD_SOUNDTRACKER24;
+				}
+
+				if (srep == 0) {
+					if (slen > 0) {
+						if (sreplen == 2) {
+							has_slen_sreplen_one++;
+						}
+						if (sreplen == 0) {
+							has_slen_sreplen_zero++;
+						}
+					} else {
+						if (sreplen > 0) {
+							no_slen_sreplen_one++;
+						} else {
+							no_slen_sreplen_zero++;
+						}
+					}
+				}
+			}
+
+			for (i = 0; i < 128; i++) {
+				if (buf[1080 - 130 + 2 + i] > max_pattern)
+					max_pattern = buf[1080 - 130 + 2 + i];
+			}
+      
+			if (max_pattern > 100) {
+				/* pattern number can only be  0 <-> 100 for mod*/
+				return MOD_UNDEFINED;
+			}
+
+			memset (pfx, 0, sizeof (pfx));
+			memset (pfxarg, 0, sizeof (pfxarg));
+			memset (pnote, 0, sizeof (pnote));
+			patterns_ok = modparsing(buf, bufsize, S31_HEADER_LENGTH-4, max_pattern, pfx, pfxarg, pnote);
+
+			/*
+			 * Check mod FX being used:
+			 *
+			 * DOC Soundtracker 2.x(2.5):	0,1,2(3,4)	    a,b,c,d,e,f
+			 * Noisetracker 1.x:		0,1,2,3,4	    a,b,c,d,e,f
+			 * Noisetracker 2.x:		0,1,2,3,4,5,6       a,b,c,d,e,f
+			 * Protracker:			0,1,2,3,4,5,6,7   9,a,b,c,d,e,f	+e##
+			 * PC tracker:			0,1,2,3,4,5,6,7,8,9,a,b,c,d,e,f +e##
+			 */
+
+			// allow one weird noteperiod to reduce false positives (corrupted modules/bad rips?)
+			if (pnote[0] > 1 && patterns_ok) {
+				fprintf(stderr, "uade: mod32check - rejected, file uses extended note periods (%s)\n", path);
+				return MOD_FASTTRACKER; // M.K. but noteperiods are beyond HW limit. Most likely Fasttracker
+			}
+
+			for (j = 17; j <= 31; j++) {
+				if (pfx[j] != 0 || finetune_used > 0) /* Extended fx used */ {
+					if (buf[0x3b7] != 0x7f && buf[0x3b7] != 0x78) {
+						return MOD_PTK_COMPATIBLE; /* Protracker compatible Fasttracker */
+					} else {
+						return MOD_PROTRACKER; /* Protracker*/
+					}
+				}
+			}
+
+			if ((buf[0x3b7] == 0x7f) &&
+			    (has_slen_sreplen_zero <= has_slen_sreplen_one) &&
+			    (no_slen_sreplen_zero <=no_slen_sreplen_one))
+				return MOD_PROTRACKER; /* Protracker */
+
+			if (buf[0x3b7] >0x7f)
+				return MOD_PTK_COMPATIBLE; /* Protracker compatible */
+
+			if ((buf[0x3b7] == 0) &&
+			    (has_slen_sreplen_zero >  has_slen_sreplen_one) &&
+			    (no_slen_sreplen_zero > no_slen_sreplen_one)) {
+				if (pfx[0x10] == 0 && pnote[0] <= 1) {
+					/* probl. Fastracker or Protracker compatible */
+					return MOD_PTK_COMPATIBLE;
+				}
+			}
+	    
+			if (pfx[0x05] != 0 || pfx[0x06] != 0 || pfx[0x07] != 0 || pfx[0x09] != 0) {
+				/* Protracker compatible */
+				return MOD_PTK_COMPATIBLE;
+			}
+
+			if ((buf[0x3b7] > 0 && buf[0x3b7] <= buf[0x3b6]) &&
+			    (has_slen_sreplen_zero <= has_slen_sreplen_one) &&
+			    (no_slen_sreplen_zero == 1) &&
+			    (no_slen_sreplen_zero <= no_slen_sreplen_one))    
+				return MOD_NOISETRACKER12; // Noisetracker 1.2
+
+			/*
+			 * Removed because of
+			 * https://gitlab.com/uade-music-player/uade/-/issues/74
+			 *
+			 * if ((buf[0x3b7] < 0x80) &&
+			 *    (has_slen_sreplen_zero <= has_slen_sreplen_one) &&
+			 *    (no_slen_sreplen_zero <=no_slen_sreplen_one)) {
+			 *	return MOD_NOISETRACKER20; // Noisetracker 2.x
+			 * }
+			 */
+
+			if ((buf[0x3b7] < 0x80) &&
+			    (pfx[0x0e] == 0) &&
+			    (has_slen_sreplen_zero <= has_slen_sreplen_one) &&
+			    (no_slen_sreplen_zero >=no_slen_sreplen_one))    
+				return MOD_SOUNDTRACKER25_NOISETRACKER10; // Noisetracker 1.x
+
+			return MOD_PTK_COMPATIBLE; // Protracker compatible
+		}
+	}
+
+	return MOD_UNDEFINED;
+}
+
+
+static int mod15check(unsigned char *buf, size_t bufsize, size_t realfilesize,
+		      const char *path)
+/* pattern parsing based on Sylvain 'Asle' Chipaux'	*/
+/* Modinfo-V2						*/
+/*							*/
+/* returns:	 0 for an undefined mod 		*/
+/* 		 1 for a DOC Soundtracker mod		*/
+/*		 2 for a Ultimate ST mod		*/
+/*		 3 for a Mastersoundtracker		*/
+/*		 4 for a SoundtrackerV2.0 -V4.0		*/
+{
+  int i = 0, j = 0;
+  int slen = 0;
+  int srep = 0;
+  int sreplen = 0;
+  int vol = 0;
+
+  int noof_slen_zero_sreplen_zero = 0;
+  int noof_slen_zero_vol_zero = 0;
+  int srep_bigger_slen = 0;
+  int srep_bigger_ffff = 0;
+  int st_xy = 0;
+  
+  int max_pattern = 1, patterns_ok;
+  int pfx[32];
+  int pfxarg[32];
+  int pnote[1];
+
+  size_t calculated_size;
+
+  /* sanity checks */
+  if (bufsize < 0x1f3)
+    return 0;			/* file too small */
+
+  if (bufsize < 2648+4 || realfilesize <2648+4) /* size 1 pattern + 1x 4 bytes Instrument :) */
+    return 0;
+
+  calculated_size = modlentest(buf, bufsize, realfilesize, S15_HEADER_LENGTH);
+
+  if (calculated_size == -1)
+    return 0; /* modlentest failed */
+
+  if (calculated_size != realfilesize) {
+      fprintf(stderr, "uade: mod15check - file size is %zd but calculated size for a mod file is %zd (%s).\n", realfilesize, calculated_size, path);
+  }
+
+  if (calculated_size > realfilesize) {
+      fprintf(stderr, "uade: mod15check - file is truncated and won't get played (%s)\n", path);
+      return 0;
+  }
+
+  // allow some garbage but not too much (to avoid false positives for some tracker packed mods)
+  if (calculated_size + 100 < realfilesize) {
+      fprintf(stderr, "uade: mod15check - rejected for too much trailing garbage (%s)\n", path);
+      return 0;
+  }
+
+  if (calculated_size < realfilesize) {
+      fprintf(stderr, "uade: mod15check - file has trailing garbage behind the actual module data. Please fix it. (%s)\n", path);
+  }
+
+
+
+  /* check for 15 instruments */
+  if (buf[0x1d6] != 0x00 && buf[0x1d6] < 0x81 && buf[0x1f3] !=1) {
+    for (i = 0; i < 128; i++) {	/* pattern list table: 128 posbl. entries */
+      max_pattern=(buf[600 - 130 + 2 + i] > max_pattern) ? buf[600 - 130 + 2 + i] : max_pattern;
+    }
+    if (max_pattern > 63)
+      return 0;   /* pattern number can only be  0 <-> 63 for mod15 */
+  } else {
+    return 0;
+  }
+
+  /* parse instruments */
+  for (i = 0; i < 15; i++) {
+    vol = buf[45 + i * 30];
+    slen = ((buf[42 + i * 30] << 8) + buf[43 + i * 30]) * 2;
+    srep = ((buf[46 + i * 30] << 8) + buf[47 + i * 30]);
+    sreplen = ((buf[48 + i * 30] << 8) + buf[49 + i * 30]) * 2;
+    /* fprintf (stderr, "%d, slen: %d, %d (srep %d, sreplen %d), vol: %d\n",i, slen, srep+sreplen,srep, sreplen, vol); */
+
+    if (vol > 64 && buf[44+i*30] != 0) return 0; /* vol and finetune */
+
+    if (slen == 0) {
+
+      if (vol == 0)
+	noof_slen_zero_vol_zero++;
+
+      if (sreplen == 0 )
+	noof_slen_zero_sreplen_zero++;
+
+    } else {
+      if ((srep+sreplen) > slen)
+	srep_bigger_slen++;
+    }
+       	
+    /* slen < 9999 */
+    slen = (buf[42 + i * 30] << 8) + buf[43 + i * 30];
+    if (slen <= 9999) {
+      /* repeat offset + repeat size*2 < word size */
+      srep = ((buf[48 + i * 30] << 8) + buf[49 + i * 30]) * 2 +
+	((buf[46 + i * 30] << 8) + buf[47 + i * 30]);
+      if (srep > 0xffff) srep_bigger_ffff++;
+    }
+
+    if  (buf[25+i*30] ==':' && buf [22+i*30] == '-' &&
+	 ((buf[20+i*30] =='S' && buf [21+i*30] == 'T') ||
+	  (buf[20+i*30] =='s' && buf [21+i*30] == 't'))) st_xy++;
+  }
+
+  /* parse pattern data -> fill pfx[] with number of times fx being used*/
+  memset (pfx, 0, sizeof (pfx));
+  memset (pfxarg, 0, sizeof (pfxarg));
+  memset (pnote, 0, sizeof (pnote));
+
+  patterns_ok = modparsing(buf, bufsize, S15_HEADER_LENGTH, max_pattern, pfx, pfxarg, pnote);
+
+  /* and now for let's see if we can spot the mod */
+
+/* FX used:					  */
+/* Ultimate ST:			0,1,2		  */
+/* MasterSoundtracker:		0,1,2,    c,  e,f */
+/* DOC-Soundtracker V2.2:	0,1,2,a,b,c,d,e,f */
+/* Soundtracker I-VI		0,1,2,3,4,5,6,7,8,9,a,b,c,d,e,f*/
+
+  if (pnote[0] > 1 && patterns_ok) return 0; // notes beyond the Amiga HW limit?
+
+  /* Check for fx used between 0x3 <-> 0xb for some weird ST II-IV mods */ 
+  for (j = 0x5; j < 0xa; j++) {
+    if (pfx[j] != 0)
+      return 4; /* ST II-IV */
+  }
+
+  for (j = 0x0c; j < 0x11; j++) {
+    if (pfx[j] != 0) {
+
+      if (pfx[0x0d] != 0 && pfxarg[0x0d] != 0)
+	return 4; /* ST II-IV */
+
+      if (pfx[0x0b] != 0 || pfx[0x0d] != 0 || pfx[0x0a]!= 0 ) {
+	return 1;	/* DOC ST */
+      } else {
+	if (pfxarg[1] > 0xe || pfxarg[2] > 0xe)
+	  return 1;	/* DOC ST */
+
+	return 3;	/* Master ST */
+      }
+    }
+  }
+
+  /* pitchbend out of range ? */
+  if ((pfxarg[1] > 0 && pfxarg[1] < 0x1f) ||
+      (pfxarg[2] > 0 && pfxarg [2] < 0x1f) ||
+      pfx [0] >2) return 1; // ST style Arpeggio, Pitchbends ???
+  
+  if (pfx[1] > 0 || pfx[2] > 0)
+    return 2; /* nope UST like fx */
+
+  /* the rest of the files has no fx. so check instruments */
+  if (st_xy != 0 && noof_slen_zero_vol_zero == 0 &&
+      noof_slen_zero_sreplen_zero == 0 && buf[0x1d7] == 120) {
+    return 3;
+  }
+
+  /* no fx, no loops... let's simply guess :)*/
+  if (srep_bigger_slen == 0 && srep_bigger_ffff == 0 &&
+      ((st_xy != 0 && buf[0x1d7] != 120 ) || st_xy == 0))
+    return 2;
+
+  return 3; /* anything is played as normal soundtracker */
+}
+
+/* Reject WAV files so that uadefs doesn't cause bad behaviour */
+static int is_wav_file(unsigned char *buf, size_t size)
+{
+	if (size < WAV_HEADER_LEN)
+		return 0;
+
+	if (memcmp(buf, "RIFF", 4))
+		return 0;
+
+	if (memcmp(buf + 8, "WAVEfmt ", 8))
+		return 0;
+
+	if (memcmp(buf + 36, "data", 4))
+		return 0;
+
+	return 1;
+}
+
+void uade_filemagic(unsigned char *buf, size_t bufsize, char *pre,
+		    size_t realfilesize, const char *path, int verbose)
+{
+  /* char filemagic():
+     detects formats like e.g.: tfmx1.5, hip, hipc, fc13, fc1.4      
+     - tfmx 1.5 checking based on both tfmx DT and tfmxplay by jhp, 
+     and the EP by Don Adan/WT.
+     - tfmx 7v checking based on info by don adan, the amore file
+     ripping description and jhp's desc of the tfmx format.
+     - other checks based on e.g. various player sources from Exotica 
+     or by checking bytes with a hexeditor
+     by far not complete...
+
+     NOTE: Those Magic ID checks are quite lame compared to the checks the
+     amiga replayer do... well, after all we are not ripping. so they
+     have to do at the moment :)
+   */
+
+  int i, modtype, t;
+
+  struct modtype {
+    int e;
+    char *str;
+  };
+
+  struct modtype mod32types[] = {
+    {.e = MOD_SOUNDTRACKER25_NOISETRACKER10, .str = "MOD_NTK"},
+    {.e = MOD_NOISETRACKER12, .str = "MOD_NTK1"},
+    {.e = MOD_NOISETRACKER20, .str = "MOD_NTK2"},
+    {.e = MOD_STARTREKKER4, .str = "MOD_FLT4"},
+    {.e = MOD_STARTREKKER8, .str = "MOD_FLT8"},
+    {.e = MOD_AUDIOSCULPTURE4, .str = "MOD_ADSC4"},
+    {.e = MOD_AUDIOSCULPTURE8, .str = "MOD_ADSC8"},
+    {.e = MOD_PROTRACKER, .str = "MOD"},
+    {.e = MOD_FASTTRACKER, .str = "MOD_PC"},
+    {.e = MOD_NOISETRACKER, .str = "MOD_NTKAMP"},
+    {.e = MOD_PTK_COMPATIBLE, .str = "MOD_COMP"},
+    {.e = MOD_SOUNDTRACKER24, .str = "MOD_DOC"},
+    {.str = NULL}
+  };
+
+  struct modtype mod15types[] = {
+    {.e = 1, .str = "MOD15"},
+    {.e = 2, .str = "MOD15_UST"},
+    {.e = 3, .str = "MOD15_MST"},
+    {.e = 4, .str = "MOD15_ST-IV"},
+    {.str = NULL}
+  };
+
+  /* Mark format unknown by default */
+  pre[0] = 0;
+
+  if (is_wav_file(buf, bufsize)) {
+    strcpy(pre, "reject");
+    return;
+  }
+
+  modtype = mod32check(buf, bufsize, realfilesize, path, verbose);
+  if (modtype != MOD_UNDEFINED) {
+    for (t = 0; mod32types[t].str != NULL; t++) {
+      if (modtype == mod32types[t].e) {
+	strcpy(pre, mod32types[t].str);
+	return;
+      }
+    }
+  }
+
+  /* 0x438 == S31_HEADER_LENGTH - 4 */
+  if (bufsize > 0x43b && (((buf[0x438] >= '0' && buf[0x438] <= '9')
+       && (buf[0x439] >= '0' && buf[0x439] <= '9') && buf[0x43a] == 'C'
+       && buf[0x43b] == 'H') || ((buf[0x438] >= '0' && buf[0x438] <= '9')
+				 && buf[0x439] == 'C' && buf[0x43a] == 'H'
+				 && buf[0x43b] == 'N')
+      || (buf[0x438] == 'T' && buf[0x439] == 'D' && buf[0x43a] == 'Z')
+      || (buf[0x438] == 'O' && buf[0x439] == 'C' && buf[0x43a] == 'T'
+	  && buf[0x43b] == 'A') || (buf[0x438] == 'C' && buf[0x439] == 'D'
+				    && buf[0x43a] == '8'
+				    && buf[0x43b] == '1'))) {
+    strcpy(pre, "MOD_PC");	/*Multichannel Tracker */
+
+  } else if (buf[0x2c] == 'S' && buf[0x2d] == 'C' && buf[0x2e] == 'R'
+	     && buf[0x2f] == 'M') {
+    strcpy(pre, "S3M");		/*Scream Tracker */
+    
+  } else if ((buf[0] == 0x60 && buf[2] == 0x60 && buf[4] == 0x48
+	      && buf[5] == 0xe7) || (buf[0] == 0x60 && buf[2] == 0x60
+				     && buf[4] == 0x41 && buf[5] == 0xfa)
+	     || (buf[0] == 0x60 && buf[1] == 0x00 && buf[4] == 0x60
+		 && buf[5] == 0x00 && buf[8] == 0x48 && buf[9] == 0xe7)
+	     || (buf[0] == 0x60 && buf[1] == 0x00 && buf[4] == 0x60
+		 && buf[5] == 0x00 && buf[8] == 0x60 && buf[9] == 0x00
+		 && buf[12] == 0x60 && buf[13] == 0x00 && buf[16] == 0x48
+		 && buf[17] == 0xe7)) {
+    strcpy(pre, "SOG");		/* Hippel */
+    
+  } else if (bufsize > 0x34f && buf[0x348] == '.' && buf[0x349] == 'Z' && buf[0x34A] == 'A'
+	     && buf[0x34B] == 'D' && buf[0x34c] == 'S' && buf[0x34d] == '8'
+	     && buf[0x34e] == '9' && buf[0x34f] == '.') {
+    strcpy(pre, "MKII");	/* Mark II */
+
+  } else if (read_be_u16(&buf[0x00])  == 0x2b7c &&
+	     read_be_u16(&buf[0x08])  == 0x2b7c &&
+	     read_be_u16(&buf[0x10])  == 0x2b7c &&
+	     read_be_u16(&buf[0x18])  == 0x2b7c &&
+	     read_be_u32(&buf[0x20]) == 0x303c00ff &&
+	     read_be_u32(&buf[0x24]) == 0x32004eb9 &&
+	     read_be_u16(&buf[0x2c])  == 0x4e75)	{
+    strcpy(pre, "JPO");	/* Steve Turner*/
+  } else if (sid1test(buf, bufsize, realfilesize, pre)) {
+    /* is sid1, nothing to do here ('pre' set in sid1test() */
+
+  } else if (buf[0] == 0x4e && buf[1] == 0xfa &&
+	     buf[4] == 0x4e && buf[5] == 0xfa &&
+	     buf[8] == 0x4e && buf[9] == 0xfa &&
+	     buf[2] == 0x00 && buf[6] == 0x06 && buf[10] == 0x07) {
+	     if (buf[3] == 0x2a && buf[7] == 0xfc && buf[11] == 0x7c) {
+	        strcpy(pre, "SA_old");
+	    } else if (buf[3] == 0x1a && buf[7] == 0xc6 && buf[11] == 0x3a) {
+	        strcpy(pre, "SA");
+	    }
+
+  } else if (buf[0] == 0x4e && buf[1] == 0xfa &&
+	     buf[4] == 0x4e && buf[5] == 0xfa &&
+	     buf[8] == 0x4e && buf[9] == 0xfa &&
+	     buf[0xc] == 0x4e && buf[0xd] == 0xfa) {
+    for (i = 0x10; i < 256; i = i + 2) {
+      if (buf[i + 0] == 0x4e && buf[i + 1] == 0x75 && buf[i + 2] == 0x47
+	  && buf[i + 3] == 0xfa && buf[i + 12] == 0x4e && buf[i + 13] == 0x75) {
+	strcpy(pre, "FRED");	/* FRED */
+	break;
+      }
+    }
+
+  } else if ((patterntest(buf, "sa-team 89", 0x16c, 10, bufsize))&&
+	     (patterntest(buf, "dynamite89", 0x234, 10, bufsize))){
+	      strcpy(pre, "MA");		/*Music Assembler */
+
+  } else if (buf[0] == 0x00 && buf[1] == 0x00 &&
+	     buf[2] == 0x00 && buf[3] == 0x28 &&
+	     (buf[7] >= 0x34 && buf[7] <= 0x64) &&
+	     buf[0x20] == 0x21 && (buf[0x21] == 0x54 || buf[0x21] == 0x44)
+	     && buf[0x22] == 0xff && buf[0x23] == 0xff) {
+    strcpy(pre, "SA-P");	/*SonicArranger Packed */
+
+
+  } else if (buf[0] == 0x4e && buf[1] == 0xfa &&
+	     buf[4] == 0x4e && buf[5] == 0xfa &&
+	     buf[8] == 0x4e && buf[9] == 0xfa) {
+    t = ((buf[2] * 256) + buf[3]);
+    if (t < bufsize - 9) {
+      if (buf[2 + t] == 0x4b && buf[3 + t] == 0xfa &&
+	  buf[6 + t] == 0x08 && buf[7 + t] == 0xad && buf[8 + t] == 0x00
+	  && buf[9 + t] == 0x00) {
+	strcpy(pre, "MON");	/*M.O.N */
+      }
+    }
+
+  } else if (buf[0] == 0x02 && buf[1] == 0x39 &&
+	     buf[2] == 0x00 && buf[3] == 0x01 &&
+	     buf[8] == 0x66 && buf[9] == 0x02 &&
+	     buf[10] == 0x4e && buf[11] == 0x75 &&
+	     buf[12] == 0x78 && buf[13] == 0x00 &&
+	     buf[14] == 0x18 && buf[15] == 0x39) {
+    strcpy(pre, "MON_old");	/*M.O.N_old */
+
+  } else if (buf[0] == 0x48 && buf[1] == 0xe7 && buf[2] == 0xf1
+	     && buf[3] == 0xfe && buf[4] == 0x61 && buf[5] == 0x00) {
+    t = ((buf[6] * 256) + buf[7]);
+    if (t < (bufsize - 17)) {
+      for (i = 0; i < 10; i = i + 2) {
+	if (buf[6 + t + i] == 0x47 && buf[7 + t + i] == 0xfa) {
+	  strcpy(pre, "DW");	/*Whittaker Type1... FIXME: incomplete */
+	}
+      }
+    }
+
+  } else if (buf[0] == 0x13 && buf[1] == 0xfc &&
+	     buf[2] == 0x00 && buf[3] == 0x40 &&
+	     buf[8] == 0x4e && buf[9] == 0x71 &&
+	     buf[10] == 0x04 && buf[11] == 0x39 &&
+	     buf[12] == 0x00 && buf[13] == 0x01 &&
+	     buf[18] == 0x66 && buf[19] == 0xf4 &&
+	     buf[20] == 0x4e && buf[21] == 0x75 &&
+	     buf[22] == 0x48 && buf[23] == 0xe7 &&
+	     buf[24] == 0xff && buf[25] == 0xfe) {
+    strcpy(pre, "EX");		/*Fashion Tracker */
+
+/* Magic ID */
+  } else if (buf[0x3a] == 'S' && buf[0x3b] == 'I' && buf[0x3c] == 'D' &&
+	     buf[0x3d] == 'M' && buf[0x3e] == 'O' && buf[0x3f] == 'N' &&
+	     buf[0x40] == ' ' && buf[0x41] == 'I' && buf[0x42] == 'I') {
+    strcpy(pre, "SID2");	/* SidMon II */
+
+  } else if (buf[0x28] == 'R' && buf[0x29] == 'O' && buf[0x2a] == 'N' &&
+	     buf[0x2b] == '_' && buf[0x2c] == 'K' && buf[0x2d] == 'L' &&
+	     buf[0x2e] == 'A' && buf[0x2f] == 'R' && buf[0x30] == 'E' &&
+	     buf[0x31] == 'N') {
+    strcpy(pre, "CM");		/* Ron Klaren (CustomMade) */
+
+  } else if (buf[0x3e] == 'A' && buf[0x3f] == 'C' && buf[0x40] == 'T'
+	     && buf[0x41] == 'I' && buf[0x42] == 'O' && buf[0x43] == 'N'
+	     && buf[0x44] == 'A' && buf[0x45] == 'M') {
+    strcpy(pre, "AST");		/*Actionanamics */
+
+  } else if (buf[26] == 'V' && buf[27] == '.' && buf[28] == '2') {
+    strcpy(pre, "BP");		/* Soundmon V2 */
+
+  } else if (buf[26] == 'V' && buf[27] == '.' && buf[28] == '3') {
+    strcpy(pre, "BP3");		/* Soundmon V2.2 */
+
+  } else if (buf[60] == 'S' && buf[61] == 'O' && buf[62] == 'N'
+	     && buf[63] == 'G') {
+    strcpy(pre, "SFX13");	/* Sfx 1.3-1.8 */
+
+  } else if (bufsize > 127 && buf[124] == 'S' && buf[125] == 'O' && buf[126] == '3'
+	     && buf[127] == '1') {
+    strcpy(pre, "SFX20");	/* Sfx 2.0 */
+
+  } else if (buf[0x1a] == 'E' && buf[0x1b] == 'X' && buf[0x1c] == 'I'
+	     && buf[0x1d] == 'T') {
+    strcpy(pre, "AAM");		/*Audio Arts & Magic */
+  } else if (buf[8] == 'E' && buf[9] == 'M' && buf[10] == 'O'
+	     && buf[11] == 'D' && buf[12] == 'E' && buf[13] == 'M'
+	     && buf[14] == 'I' && buf[15] == 'C') {
+    strcpy(pre, "EMOD");	/* EMOD */
+
+    /* HIP7 ID Check at offset 0x04 */
+  } else if (patterntest(buf, " **** Player by Jochen Hippel 1990 **** ",
+			 0x04, 40, bufsize)) {
+    strcpy(pre, "S7G");	/* HIP7 */
+
+    /* Magic ID at Offset 0x00 */
+  } else if (buf[0] == 'M' && buf[1] == 'M' && buf[2] == 'D') {
+    if (buf[0x3] >= '0' && buf[0x3] < '4') {
+      /*move.l mmd_songinfo(a0),a1 */
+      int s = (buf[8] << 24) + (buf[9] << 16) + (buf[0xa] << 8) + buf[0xb] + 768;
+      if (s < bufsize) {
+        int8_t flags = buf[s - 1] & 0xFF;
+        int8_t flags2 = buf[s] & 0xFF;
+        // tst.b msng_flags2(a0) ; mixing?
+        if (flags2 < 0) {
+          strcpy(pre, "MMD3");
+        // btst #6, msng_flags(a0)  ; 5-8 channel?
+        } else if (flags & (1 << 6)) {
+          strcpy(pre, "OCTAMED");
+        } else {
+          strcpy(pre, "MED");
+        }
+      }
+    }
+
+    /* all TFMX format tests here */
+  } else if (tfmxtest(buf, bufsize, pre)) {
+    /* is TFMX, nothing to do here ('pre' set in tfmxtest() */
+
+  } else if (buf[0] == 'T' && buf[1] == 'H' && buf[2] == 'X') {
+    if ((buf[3] == 0x00) || (buf[3] == 0x01)) {
+      strcpy(pre, "AHX");	/* AHX */
+    }
+
+  } else if (buf[1] == 'M' && buf[2] == 'U' && buf[3] == 'G'
+	     && buf[4] == 'I' && buf[5] == 'C' && buf[6] == 'I'
+	     && buf[7] == 'A' && buf[8] == 'N') {
+    if (buf[9] == '2') {
+      strcpy(pre, "MUG2");	/* Digimugi2 */
+    } else {
+      strcpy(pre, "MUG");	/* Digimugi */
+    }
+
+  } else if (buf[0] == 'L' && buf[1] == 'M' && buf[2] == 'E' && buf[3] == 0x00) {
+    strcpy(pre, "LME");		/* LegLess */
+
+  } else if (buf[0] == 'P' && buf[1] == 'S' && buf[2] == 'A' && buf[3] == 0x00) {
+    strcpy(pre, "PSA");		/* PSA */
+
+  } else if ((buf[0] == 'S' && buf[1] == 'y' && buf[2] == 'n' && buf[3] == 't'
+	      && buf[4] == 'h' && buf[6] == '.' && buf[8] == 0x00)
+	     && (buf[5] > '1' && buf[5] < '4')) {
+    strcpy(pre, "SYN");		/* Synthesis */
+
+  } else if (bufsize > 0xbc9 && buf[0xbc6] == '.' && buf[0xbc7] == 'F' && buf[0xbc8] == 'N'
+	     && buf[0xbc9] == 'L') {
+    strcpy(pre, "DM2");		/* Delta 2.0 */
+
+  } else if (buf[0] == 'R' && buf[1] == 'J' && buf[2] == 'P') {
+
+    if (buf[4] == 'S' && buf[5] == 'M' && buf[6] == 'O' && buf[7] == 'D') {
+      strcpy(pre, "RJP");	/* Vectordean (Richard Joseph Player) */
+    } else {
+      strcpy(pre, "");		/* but don't play .ins files */
+    }
+  } else if (buf[0] == 'F' && buf[1] == 'O' && buf[2] == 'R' && buf[3] == 'M') {
+    if (buf[8] == 'S' && buf[9] == 'M' && buf[10] == 'U' && buf[11] == 'S') {
+      strcpy(pre, "SMUS");	/* Sonix */
+    }
+    // } else if (buf[0x00] == 0x00 && buf[0x01] == 0xfe &&
+    //            buf[0x30] == 0x00 && buf[0x31] == 0x00 && buf[0x32] == 0x01 && buf[0x33] == 0x40 &&
+    //          realfilesize > 332 ) {
+    //         }
+    //         strcpy (pre, "SMUS");              /* Tiny Sonix*/
+
+  } else if (tronictest(buf, bufsize)) {
+    strcpy(pre, "TRONIC");	/* Tronic */
+
+  } else if (check_binary_pattern(buf, bufsize, aprosys_pattern)) {
+	  strcpy(pre, "APS");  /* AProSys */
+
+    /* magic ids of some modpackers */
+  } else if (bufsize > 0x43b && buf[0x438] == 'P' && buf[0x439] == 'W' && buf[0x43a] == 'R'
+	     && buf[0x43b] == 0x2e) {
+    strcpy(pre, "PPK");		/*Polkapacker */
+
+  } else if (bufsize > 0x103 && buf[0x100] == 'S' && buf[0x101] == 'K' && buf[0x102] == 'Y'
+	     && buf[0x103] == 'T') {
+    strcpy(pre, "SKT");		/*Skytpacker */
+
+  } else if (bufsize > 0x5bb && ((buf[0x5b8] == 'I' && buf[0x5b9] == 'T' && buf[0x5ba] == '1'
+	      && buf[0x5bb] == '0') || (buf[0x5b8] == 'M' && buf[0x5b9] == 'T'
+					&& buf[0x5ba] == 'N'
+					&& buf[0x5bb] == 0x00))) {
+    strcpy(pre, "ICE");		/*Ice/Soundtracker 2.6 */
+
+  } else if (bufsize > 0x3bb && buf[0x3b8] == 'K' && buf[0x3b9] == 'R' && buf[0x3ba] == 'I'
+	     && buf[0x3bb] == 'S') {
+    strcpy(pre, "KRIS");	/*Kristracker */
+
+  /* generic ID Check at offset 0x00 */
+  } else if (chk_id_offset(buf, bufsize, offset_0000_patterns, 0x00, pre)) {
+  /* generic ID Check at offset 0x24 */
+  } else if (chk_id_offset(buf, bufsize, offset_0024_patterns, 0x24, pre)) {
+  /* generic ID Check at offset 0x26 */
+  } else if (chk_id_offset(buf, bufsize, offset_0026_patterns, 0x26, pre)) {
+  
+  } else if (buf[0] == 'X' && buf[1] == 'P' && buf[2] == 'K' && buf[3] == 'F' &&
+	     read_be_u32(&buf[4]) + 8 == realfilesize &&
+	     buf[8] == 'S' && buf[9] == 'Q' && buf[10] == 'S' && buf[11] == 'H') {
+    fprintf(stderr,
+	    "uade: The file is SQSH packed. Please depack first. "
+	    "You may use, for example, amigadepacker: "
+	    "https://gitlab.com/heikkiorsila/amigadepacker");
+    strcpy(pre, "packed");
+
+  } else if ((modtype = mod15check(buf, bufsize, realfilesize, path)) != 0) {
+    for (t = 0; mod15types[t].str != NULL; t++) {
+      if (modtype == mod15types[t].e) {
+	strcpy(pre, mod15types[t].str);
+	return;
+      }
+    }
+
+    /* Custom file check */
+  } else if (buf[0] == 0x00 && buf[1] == 0x00 && buf[2] == 0x03
+	     && buf[3] == 0xf3) {
+	  /* CUSTOM */
+	  i = (buf[0x0b] * 4) + 0x1c;	/* beginning of first chunk */
+
+    if (i < bufsize - 0x42) {
+
+      t = 0;
+      /* unfort. we can't always assume: moveq #-1,d0 rts before "delirium" */
+      /* search 0x40 bytes from here, (enough?) */
+      while ((buf[i + t + 0] != 'D' && buf[i + t + 1] != 'E'
+	      && buf[i + t + 2] != 'L' && buf[i + t + 3] != 'I')
+	     && (t < 0x40)) {
+	t++;
+      }
+
+      if (t < 0x40) {
+	/* longword after Delirium is rel. offset from first chunk 
+	   where "hopefully" the delitags are */
+	int s = (buf[i + t + 10] * 256) + buf[i + t + 11] + i;	/* 64K */
+	if (s < bufsize - 0x33) {
+	  for (i = 0; i < 0x30; i = i + 4) {
+	    if (buf[i + s + 0] == 0x80 && buf[i + s + 1] == 0x00 &&
+		buf[i + s + 2] == 0x44 && buf[i + s + 3] == 0x55) {
+	      strcpy(pre, "CUST");	/* CUSTOM */
+	      break;
+	    }
+	  }
+	}
+      }
+    }
+
+  } else if (buf[12] == 0x00) {
+    int s = (buf[12] * 256 + buf[13] + 1) * 14;
+    if (s < (bufsize - 91)) {
+      if (buf[80 + s] == 'p' && buf[81 + s] == 'a' && buf[82 + s] == 't'
+	  && buf[83 + s] == 't' && buf[87 + s] == 32 && buf[88 + s] == 'p'
+	  && buf[89 + s] == 'a' && buf[90 + s] == 't' && buf[91 + s] == 't') {
+	strcpy(pre, "PUMA");	/* Pumatracker */
+      }
+    }
+  }
+}
+
+
+/*
+ * We are currently stupid and check only for a few magic IDs at the offsets
+ * chk_id_offset returns 1 on success and sets the right prefix/extension
+ * in pre
+ *
+ * TODO: more and less easy check for the rest of the 52 trackerclones
+ */
+static int chk_id_offset(unsigned char *buf, size_t bufsize,
+			 const char *patterns[], const size_t offset,
+			 char *pre)
+{
+	int i;
+	for (i = 0; patterns[i]; i = i + 2) {
+		if (patterntest(buf, patterns[i], offset, strlen(patterns[i]),
+				bufsize)) {
+			/* match found */
+			strcpy(pre, patterns[i + 1]);
+			return 1;
+		}
+	}
+	return 0;
+}

@@ -1,0 +1,15 @@
+diff --git a/emu/cores/ym3438_int.h b/emu/cores/ym3438_int.h
+index d8633d3..6a4df4b 100644
+--- a/emu/cores/ym3438_int.h
++++ b/emu/cores/ym3438_int.h
+@@ -73,6 +73,10 @@ typedef struct
+     Bit32u cycles;
+     Bit32u channel;
+     Bit16s mol, mor;
++    
++    
++    Bit32s chan_out[6]; //YOYOFR
++    
+     /* IO */
+     Bit16u write_data;
+     Bit8u write_a;

@@ -1,0 +1,5 @@
+820e47e23dee69f0b87e24a74c153ced1c7bd9bf
+# libkss 1.2.0 (digital-sound-antiques/libkss).
+# Submodules (emu2149/emu2212/emu2413/emu8950/emu76489/kmz80/drivers) are pinned
+# by this commit; `git submodule update --init --recursive` resolves them.
+# 1.2.1 exists upstream (emu2149 issue-5 fix) — bump via `sync_libkss.sh 1.2.1`.

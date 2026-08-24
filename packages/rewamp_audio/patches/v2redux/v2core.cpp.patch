@@ -1,0 +1,72 @@
+--- v2core.cpp
++++ v2core.cpp
+@@ -1,3 +1,11 @@
++//TODO:  MODIZER changes start / YOYOFR
++// rewamp: les visualiseurs lisent des globales partagées (oscilloscope par
++// voix, note par voix). Deux écritures, toutes deux DISPLAY-ONLY et hors du
++// contrat de déterminisme: elles lisent le bus de canal et n'y reviennent
++// jamais. Même convention que tous les autres moteurs du projet.
++#include "ModizerVoicesData.h"
++#include <cmath>
++//TODO:  MODIZER changes end / YOYOFR
+ #include "v2core.h"
+ #include "v2eras.h"
+ #include "v2math.h"
+@@ -3399,6 +3407,29 @@
+       }
+       pk *= chgain;
+       if (pk > inst->chanPeak[chanIndex]) inst->chanPeak[chanIndex] = pk;
++
++      //YOYOFR (rewamp): oscilloscope par voix. Même signal que le mètre
++      //ci-dessus — la contribution post-FX de ce canal — décimée en 8 bits dans
++      //l'anneau que le plugin dimensionne AVANT le premier rendu. L'anneau est
++      //circulaire: le lecteur doit l'être aussi, sinon la trace se met à plat
++      //après chaque bouclage. Le rendu est déjà à 44100, donc 1:1.
++      if (chanIndex < SOUND_MAXVOICES_BUFFER_FX && m_voice_buff[chanIndex])
++      {
++        const sInt mask = SOUND_BUFFER_SIZE_SAMPLE * 4 * 2 - 1;
++        int64_t ptr = m_voice_current_ptr[chanIndex];
++        for (sInt i = 0; i < nsamples; i++)
++        {
++          const sF32 mono = (chan[i].l + chan[i].r) * 0.5f * chgain;
++          int v = (int)(mono * 127.0f);
++          if (v > 127) v = 127; else if (v < -128) v = -128;
++          m_voice_buff[chanIndex][(ptr >> MODIZER_OSCILLO_OFFSET_FIXEDPOINT) & mask] =
++              (signed char)v;
++          ptr += 1 << MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++        }
++        while ((ptr >> MODIZER_OSCILLO_OFFSET_FIXEDPOINT) >= SOUND_BUFFER_SIZE_SAMPLE * 4 * 2)
++          ptr -= (int64_t)(SOUND_BUFFER_SIZE_SAMPLE * 4 * 2) << MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++        m_voice_current_ptr[chanIndex] = ptr;
++      }
+     }
+ 
+     // Muted channels render fully (above) but feed NO output bus -- not the main
+@@ -3871,6 +3902,16 @@
+           // and note on!
+           storeV2Values(usevoice);
+           voicesw[usevoice].noteOn(cmd[0], cmd[1]);
++          //YOYOFR (rewamp): hauteur affichée. La note MIDI est ce que le
++          //séquenceur demande — plus juste que relire un oscillateur, dont la
++          //fréquence porte aussi le vibrato et le glide. `pow` est admis ici:
++          //cette écriture ne retourne JAMAIS dans le chemin audio, elle ne
++          //touche donc pas le contrat de déterminisme (comme le peak-mètre).
++          if (chan < SOUND_MAXVOICES_BUFFER_FX)
++          {
++            vgm_last_note[chan] =
++                (unsigned int)(440.0 * std::pow(2.0, ((double)cmd[0] - 69.0) / 12.0));
++          }
+           // (era <v1 mid-frame note-on voice/chorus phase is now handled
+           // structurally by renderSubFrame -- the partial chunk after this
+           // event renders the new voice + its channel FX naturally. The earlier
+@@ -3882,6 +3923,10 @@
+ 
+       case 0: // Note off
+         COVER("MIDI note off");
++        //YOYOFR (rewamp): éteindre la hauteur affichée. Sans ça une note tenue
++        //reste à l'écran pour toujours. La note qui DÉCROÎT sans note-off est
++        //couverte côté plugin, qui efface dès que le canal ne produit plus rien.
++        if (chan < SOUND_MAXVOICES_BUFFER_FX) vgm_last_note[chan] = 0;
+         if (chan == CHANS-1)
+           ronanCBNoteOff(&ronan);
+ 

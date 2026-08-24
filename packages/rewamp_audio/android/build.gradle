@@ -1,0 +1,80 @@
+group 'com.modizer.rewamp.rewamp_audio'
+version '1.0-SNAPSHOT'
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'com.modizer.rewamp.rewamp_audio'
+    compileSdk 35
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_11.toString()
+    }
+
+    defaultConfig {
+        minSdk 26
+        targetSdk 35
+        // JNI-called Kotlin methods must survive R8 in the APP's release build.
+        consumerProguardFiles 'consumer-rules.pro' 
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_shared',
+                          '-DREWAMP_WITH_OPENMPT=ON',
+                          '-DREWAMP_WITH_VGM=ON'
+                // 64-BIT ONLY, and it is a feature decision, not a build one.
+                // Only android-arm64 and android-x86_64 ffmpeg-kit slices are
+                // vendored, and CMakeLists.txt leaves REWAMP_FFMPEG_DIR unset
+                // for every other ABI — so an armeabi-v7a build links fine and
+                // runs fine (no ffmpeg DT_NEEDED at all) but silently loses the
+                // vgmstream formats whose codec goes through FFmpeg, since our
+                // config also turns vgmstream's own MPEG/Vorbis/G719 off in
+                // favour of it. Shipping a variant that is quietly degraded on
+                // a handful of formats costs more in support than not shipping
+                // it: a 64-bit phone gets the arm64 slice anyway, and only
+                // 32-bit-ONLY devices (pre-2018, low end) would have taken it.
+                abiFilters 'arm64-v8a', 'x86_64'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "CMakeLists.txt"
+        }
+    }
+}
+
+// FFmpeg (ffmpeg-kit prebuilt) — package the per-ABI .so into jniLibs so the
+// DT_NEEDED entries linked by CMake (cmake/rewamp.cmake vgmstream block) resolve
+// at runtime. Only 64-bit slices are vendored (arm64/x86_64); ffmpeg-kit's dir
+// names (android-arm64/android-x86_64) are remapped to Android ABI names.
+def copyFfmpegLibs = tasks.register('copyFfmpegLibs', Copy) {
+    def ffk = file("${projectDir}/../third_party/ffmpeg-kit")
+    def abiMap = ['android-arm64': 'arm64-v8a', 'android-x86_64': 'x86_64']
+    into "${projectDir}/src/main/jniLibs"
+    abiMap.each { srcAbi, dstAbi ->
+        def libDir = file("${ffk}/${srcAbi}/ffmpeg/lib")
+        if (libDir.exists()) {
+            from(libDir) {
+                include '*.so'
+                into dstAbi
+            }
+        }
+    }
+}
+tasks.matching { it.name == 'preBuild' }.configureEach { dependsOn copyFfmpegLibs }

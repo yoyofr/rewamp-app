@@ -1,0 +1,140 @@
+From cf05cbca51f5d04dea9057d7b71257b6c2e111d7 Mon Sep 17 00:00:00 2001
+From: yoyofr <ymagnien@gmail.com>
+Date: Tue, 23 Jun 2026 14:34:29 +0200
+Subject: [PATCH 1/2] feat(oscilloscope): add
+ openmpt_module_get_current_channel_note API + per-channel note capture
+
+Exposes nNote from ModChannel via a new C API function (Modizer-style),
+returning the current MIDI note scaled by 1<<10. Reverts direct Fastmix.cpp
+note capture in favour of the plugin layer polling this API after each render.
+
+---
+ libopenmpt/libopenmpt.h        |  6 ++++++
+ libopenmpt/libopenmpt_c.cpp    |  9 +++++++++
+ libopenmpt/libopenmpt_impl.cpp |  8 ++++++++
+ libopenmpt/libopenmpt_impl.hpp |  1 +
+ soundlib/Fastmix.cpp           | 26 ++++++++++++++++++++++++++
+ 5 files changed, 50 insertions(+)
+
+diff --git a/libopenmpt/libopenmpt.h b/libopenmpt/libopenmpt.h
+index 486cada..be5b718 100644
+--- a/libopenmpt/libopenmpt.h
++++ b/libopenmpt/libopenmpt.h
+@@ -1242,6 +1242,12 @@ LIBOPENMPT_API int32_t openmpt_module_get_current_playing_channels( openmpt_modu
+  * \remarks The returned value is solely based on the note velocity and does not take the actual waveform of the playing sample into account.
+  */
+ LIBOPENMPT_API float openmpt_module_get_current_channel_vu_mono( openmpt_module * mod, int32_t channel );
++/*! \brief Get the current note playing on a channel, scaled by 1<<10.
++ * \param mod The module handle to work on.
++ * \param channel The channel index (0-based).
++ * \return Note value * 1024, where note 1=C-0. Returns 0 if no note is active.
++ */
++LIBOPENMPT_API int32_t openmpt_module_get_current_channel_note( openmpt_module * mod, int32_t channel );
+ /*! \brief Get an approximate indication of the channel volume on the front-left speaker.
+  *
+  * \param mod The module handle to work on.
+diff --git a/libopenmpt/libopenmpt_c.cpp b/libopenmpt/libopenmpt_c.cpp
+index e61bff2..4ab2400 100644
+--- a/libopenmpt/libopenmpt_c.cpp
++++ b/libopenmpt/libopenmpt_c.cpp
+@@ -1074,6 +1074,15 @@ float openmpt_module_get_current_channel_vu_mono( openmpt_module * mod, int32_t
+ 	}
+ 	return 0.0;
+ }
++int32_t openmpt_module_get_current_channel_note( openmpt_module * mod, int32_t channel ) {
++	try {
++		openmpt::interface::check_soundfile( mod );
++		return mod->impl->get_current_channel_note( channel );
++	} catch ( ... ) {
++		openmpt::report_exception( __func__, mod );
++	}
++	return 0;
++}
+ float openmpt_module_get_current_channel_vu_left( openmpt_module * mod, int32_t channel ) {
+ 	try {
+ 		openmpt::interface::check_soundfile( mod );
+diff --git a/libopenmpt/libopenmpt_impl.cpp b/libopenmpt/libopenmpt_impl.cpp
+index 4b826fc..e951752 100644
+--- a/libopenmpt/libopenmpt_impl.cpp
++++ b/libopenmpt/libopenmpt_impl.cpp
+@@ -1383,6 +1383,14 @@ float module_impl::get_current_channel_vu_mono( std::int32_t channel ) const {
+ 	const float right = m_sndFile->m_PlayState.Chn[channel].nRightVU * (1.0f/128.0f);
+ 	return std::sqrt(left*left + right*right);
+ }
++std::int32_t module_impl::get_current_channel_note( std::int32_t channel ) const {
++	if ( channel < 0 || channel >= m_sndFile->GetNumChannels() ) {
++		return 0;
++	}
++	const std::uint8_t note = m_sndFile->m_PlayState.Chn[channel].nNote;
++	if ( note < 1 || note > 120 ) return 0;
++	return (std::int32_t)note << 10;
++}
+ float module_impl::get_current_channel_vu_left( std::int32_t channel ) const {
+ 	if ( channel < 0 || channel >= m_sndFile->GetNumChannels() ) {
+ 		return 0.0f;
+diff --git a/libopenmpt/libopenmpt_impl.hpp b/libopenmpt/libopenmpt_impl.hpp
+index 7e5faac..082aa5b 100644
+--- a/libopenmpt/libopenmpt_impl.hpp
++++ b/libopenmpt/libopenmpt_impl.hpp
+@@ -235,6 +235,7 @@ public:
+ 	std::int32_t get_current_row() const;
+ 	std::int32_t get_current_playing_channels() const;
+ 	float get_current_channel_vu_mono( std::int32_t channel ) const;
++	std::int32_t get_current_channel_note( std::int32_t channel ) const;
+ 	float get_current_channel_vu_left( std::int32_t channel ) const;
+ 	float get_current_channel_vu_right( std::int32_t channel ) const;
+ 	float get_current_channel_vu_rear_left( std::int32_t channel ) const;
+diff --git a/soundlib/Fastmix.cpp b/soundlib/Fastmix.cpp
+index fe3c3ab..b3cb1f8 100644
+--- a/soundlib/Fastmix.cpp
++++ b/soundlib/Fastmix.cpp
+@@ -16,6 +16,12 @@
+ // - Loop wraparound works pretty well in general, but not at the start of bidi samples.
+ // - The loop lookahead stuff might still fail for samples with backward loops.
+ 
++//TODO:  MODIZER changes start / YOYOFR
++extern "C" {
++#include "../../../src/ModizerVoicesData.h"
++}
++//TODO:  MODIZER changes end / YOYOFR
++
+ #include "stdafx.h"
+ #include "Sndfile.h"
+ #include "MixerLoops.h"
+@@ -468,6 +474,14 @@ bool CSoundFile::MixChannel(int count, ModChannel &chn, CHANNELINDEX channel, bo
+ 				chn.nROfs = -*(pbufmax - 2);
+ 				chn.nLOfs = -*(pbufmax - 1);
+ 
++                //TODO:  MODIZER changes start / YOYOFR
++                if (m_voice_buff_accumul_temp[0]!=NULL) {
++                    for (int ii=0;ii<nSmpCount;ii++) {
++                        m_voice_buff_accumul_temp[0][ii&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=(pbuffer[ii*2]+pbuffer[ii*2+1]);
++                    }
++                }
++                //TODO:  MODIZER changes end / YOYOFR
++
+ #ifdef MPT_BUILD_DEBUG
+ 				SamplePosition targetpos = chn.position + chn.increment * nSmpCount;
+ #endif
+@@ -476,6 +490,18 @@ bool CSoundFile::MixChannel(int count, ModChannel &chn, CHANNELINDEX channel, bo
+ 				MPT_ASSERT(chn.position.GetUInt() == targetpos.GetUInt());
+ #endif
+ 
++                //TODO:  MODIZER changes start / YOYOFR
++                int chn_idx=channel;
++                    if (chn_idx<SOUND_MAXVOICES_BUFFER_FX && m_voice_buff[chn_idx]!=NULL && m_voice_buff_accumul_temp[0]!=NULL) {
++                        int val;
++                        for (int ii=0;ii<nSmpCount;ii++) {
++                            val=(pbuffer[ii*2]+pbuffer[ii*2+1])-m_voice_buff_accumul_temp[0][ii&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)];
++                            m_voice_buff[chn_idx][((m_voice_current_ptr[chn_idx]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT))&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8( val>>19 );
++                            m_voice_current_ptr[chn_idx]+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
++                        }
++                    }
++                //TODO:  MODIZER changes end / YOYOFR
++
+ 				chn.nROfs += *(pbufmax - 2);
+ 				chn.nLOfs += *(pbufmax - 1);
+ 				pbuffer = pbufmax;
+-- 
+2.45.0
+

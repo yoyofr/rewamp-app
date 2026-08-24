@@ -1,0 +1,28 @@
+PODS:
+  - Flutter (1.0.0)
+  - flutter_secure_storage (6.0.0):
+    - Flutter
+  - rewamp_audio (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
+  - rewamp_audio (from `.symlinks/plugins/rewamp_audio/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  flutter_secure_storage:
+    :path: ".symlinks/plugins/flutter_secure_storage/ios"
+  rewamp_audio:
+    :path: ".symlinks/plugins/rewamp_audio/ios"
+
+SPEC CHECKSUMS:
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_secure_storage: 1ed9476fba7e7a782b22888f956cce43e2c62f13
+  rewamp_audio: b1feb9b88ad13d0bb8f05a1aeed2b3bddfbc09f3
+
+PODFILE CHECKSUM: 07422f2f84535492eaee148a8abeafccc8ac776f
+
+COCOAPODS: 1.17.0

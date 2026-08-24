@@ -1,0 +1,11 @@
+--- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/src/kss/mgs2kss.c	2026-07-06 09:48:52
++++ src/kss/mgs2kss.c	2026-07-06 09:44:22
+@@ -27,7 +27,7 @@
+     /* SAVE MIB POINTER TO WORK AREA */
+     0xDD, 0x22, 0xF0, 0x7F, /* LD (07FF0H),IX */
+ 
+-    /* FORCE ACTIVATE SCC(MEGAROM MODE) */
++    /* FORCE ACTIVATE SCCKSS(MEGAROM MODE) */
+     0xAF,             /* XOR A */
+     0x32, 0xFE, 0xBF, /* LD (0BFFEH), A */
+     0x3E, 0x3F,       /* LD A, 03FH */

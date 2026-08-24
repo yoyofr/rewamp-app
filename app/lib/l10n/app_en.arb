@@ -1,0 +1,2243 @@
+{
+  "@@locale": "en",
+  "navHome": "Home",
+  "navSearch": "Search",
+  "navLibrary": "Library",
+  "noFileSelected": "No file selected",
+  "openFile": "Open file",
+  "pickerLabelAudio": "Audio",
+  "formatNotSupported": "Format not supported",
+  "playbackFormatUnsupported": "Unsupported format: {file} (.{ext})",
+  "playbackFileMissing": "Not on this device: {file}",
+  "@playbackFileMissing": {
+    "placeholders": {
+      "file": {
+        "type": "String"
+      }
+    }
+  },
+  "playbackFileGone": "File no longer on the server: {file}",
+  "@playbackFileGone": {
+    "placeholders": {
+      "file": {
+        "type": "String"
+      }
+    }
+  },
+  "@playbackFormatUnsupported": {
+    "placeholders": {
+      "file": {
+        "type": "String"
+      },
+      "ext": {
+        "type": "String"
+      }
+    }
+  },
+  "failedToLoadFile": "Failed to load file",
+  "libraryEmptyHint": "Your artists, albums and playlists\nwill appear here.",
+  "libraryPlaylists": "Playlists",
+  "libraryArtists": "Artists",
+  "libraryAlbums": "Albums",
+  "libraryTracks": "Tracks",
+  "libraryFavorites": "Favorites",
+  "libraryFavoritesSubtitle": "Auto-playlist of your favorite tracks",
+  "libraryRecentlyAdded": "Recently added",
+  "libraryEmpty": "Nothing here yet",
+  "libraryRemoved": "Removed from library",
+  "searchHint": "Search…",
+  "searchTypePlaceholder": "Type a title, artist or album…",
+  "searchNoResults": "No results",
+  "searchDownloading": "Downloading…",
+  "searchError": "Error: {message}",
+  "@searchError": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "tabAll": "Tracks",
+  "tabArtists": "Artists",
+  "tabAlbums": "Albums",
+  "tabProductions": "Productions",
+  "filterWithVideo": "With video",
+  "videoUnavailable": "This video is unavailable",
+  "noItems": "No items",
+  "sortRelevance": "Relevance",
+  "sortAZ": "A–Z",
+  "recentlyPlayed": "Recently played",
+  "noRecentTracks": "No recently played tracks",
+  "openLocalFile": "Open local file",
+  "playerSourceLocal": "local",
+  "browseFiles": "Browse files",
+  "countTotal": "{loaded} / {total} results",
+  "@countTotal": {
+    "placeholders": {
+      "loaded": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "countLoadingMore": "{loaded} loaded…",
+  "@countLoadingMore": {
+    "placeholders": {
+      "loaded": {
+        "type": "int"
+      }
+    }
+  },
+  "countComplete": "{loaded} results",
+  "@countComplete": {
+    "placeholders": {
+      "loaded": {
+        "type": "int"
+      }
+    }
+  },
+  "countScrollMore": "{loaded} loaded — scroll for more",
+  "@countScrollMore": {
+    "placeholders": {
+      "loaded": {
+        "type": "int"
+      }
+    }
+  },
+  "countNLoaded": "{n} loaded",
+  "@countNLoaded": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "countFilesLoaded": "{n} file(s)",
+  "@countFilesLoaded": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "browseFilterByTitle": "Filter by title…",
+  "browseNoSongs": "No songs available",
+  "browseByFormat": "By format",
+  "browseByFormatSubtitle": "MOD, XM, S3M, IT…",
+  "browseFilterByFormat": "Filter by format…",
+  "browseByPlatform": "By platform",
+  "browseByPlatformSubtitle": "NES, SNES, Mega Drive, PlayStation…",
+  "browsePlatformNameHint": "Platform name…",
+  "browseByChip": "By sound chip",
+  "browseByChipSubtitle": "YM2612, SPC700, APU…",
+  "browseChipHint": "e.g. YM2612, SPC700…",
+  "browseOk": "OK",
+  "browseByArtist": "By artist",
+  "browseByArtistSubtitle": "Browse the composers",
+  "browseFilterByName": "Filter by name…",
+  "browseNoArtistFound": "No artist found",
+  "browseNoArtistsAvailable": "No artists available",
+  "browseNoArtist": "No artists",
+  "browseNoAlbum": "No albums",
+  "browseTopPacks": "Top packs",
+  "browseTopPacksSubtitle": "The highest-rated packs",
+  "browseTopPacksLabel": "Top packs — {collection}",
+  "@browseTopPacksLabel": {
+    "placeholders": {
+      "collection": {
+        "type": "String"
+      }
+    }
+  },
+  "browseLatestPacks": "Latest packs",
+  "browseLatestPacksSubtitle": "The most recent additions",
+  "browseLatestPacksLabel": "Latest packs — {collection}",
+  "@browseLatestPacksLabel": {
+    "placeholders": {
+      "collection": {
+        "type": "String"
+      }
+    }
+  },
+  "browseAllSongs": "All songs",
+  "browseAllSongsSubtitleAlpha": "Browse in alphabetical order",
+  "browseAlphabetical": "In alphabetical order",
+  "browseAllLabel": "All — {collection}",
+  "@browseAllLabel": {
+    "placeholders": {
+      "collection": {
+        "type": "String"
+      }
+    }
+  },
+  "browseCollections": "Collections",
+  "browseFilesCount": "{count} files",
+  "@browseFilesCount": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "browseIndexing": "Indexing in progress",
+  "browseFilterFacet": "Filter {name}…",
+  "@browseFilterFacet": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "browseAllYears": "All years",
+  "browseAllYearsSubtitle": "All the party's songs",
+  "browseNoCompo": "No compo indexed for this party.",
+  "browseOthers": "Others",
+  "browseCompoEntries": "{n, plural, =1{{n} entry — ranking} other{{n} entries — ranking}}",
+  "@browseCompoEntries": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "browsePlayPlaylist": "Play playlist",
+  "browsePlayAllRanked": "Play all (in ranking order)",
+  "browsePlaylistTracksRanked": "{n, plural, =1{{n} track — ranking order} other{{n} tracks — ranking order}}",
+  "@browsePlaylistTracksRanked": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "browseByAlbums": "Browse by album",
+  "browsePlayAll": "Play all",
+  "browseShuffle": "Shuffle",
+  "browseSearchInFolder": "Search in this folder…",
+  "browseFilterThisList": "Filter this list…",
+  "browseSearchSubfolders": "Search subfolders",
+  "browseEmptyFolder": "Empty folder",
+  "browsePlaybackError": "Playback failed: {message}",
+  "@browsePlaybackError": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "browseTracksCount": "{n, plural, =1{{n} track} other{{n} tracks}}",
+  "@browseTracksCount": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "browseViewMode": "View",
+  "browseViewList": "List",
+  "browseViewGrid": "Grid",
+  "browseViewGridCompact": "Compact grid",
+  "browseSearchAlbum": "Search for an album…",
+  "browseSearchArtist": "Search for an artist…",
+  "browsePlayAlbum": "Play album",
+  "searchDownloadingAlbum": "Downloading album…",
+  "searchCategoryChip": "Chips",
+  "searchCategoryGroup": "Groups",
+  "artistRealName": "Real name",
+  "artistAliases": "Aliases",
+  "artistBorn": "Born",
+  "artistInterview": "Interview",
+  "audioOutput": "Audio output",
+  "audioOutputSystemDefault": "System default",
+  "vizRangeAuto": "Auto",
+  "contextNotes": "Notes",
+  "notePlacedBadge": "Placed in competition",
+  "groupMembersCount": "{count, plural, =1{{count} member} other{{count} members}}",
+  "@groupMembersCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "groupViewSongs": "View songs",
+  "artistModules": "{count, plural, =1{{count} module} other{{count} modules}}",
+  "@artistModules": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchCategoryParty": "Parties",
+  "searchCategoryYear": "Year",
+  "searchCategoryOrigin": "Origin",
+  "searchCategoryProduction": "Production",
+  "searchCategoryProductionType": "Prod types",
+  "searchCategoryPublisher": "Publishers",
+  "@searchCategoryPublisher": {
+    "description": "Tag-category card on the browse landing"
+  },
+  "searchCategoryDeveloper": "Developers",
+  "@searchCategoryDeveloper": {
+    "description": "Tag-category card on the browse landing"
+  },
+  "searchCategoryArcadeBoard": "Arcade boards",
+  "@searchCategoryArcadeBoard": {
+    "description": "Tag-category card on the browse landing"
+  },
+  "searchCategorySaga": "Saga",
+  "searchCategoryGenre": "Genre",
+  "searchViaArtist": "via artist",
+  "searchViaAlbum": "via an album",
+  "searchViaSong": "via a song",
+  "searchSortPopular": "Popular",
+  "searchSortYear": "Year",
+  "searchSortRandom": "Random",
+  "searchSortRating": "Rating",
+  "@searchSortRating": {
+    "description": "Sort option: by rating (server migrations 207/208)"
+  },
+  "statsTopPercent": "Top {percent} %",
+  "@statsTopPercent": {
+    "description": "Popularity badge — {percent} is 100 minus the percentile",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "ratingVotes": "{count, plural, =1{{count} vote} other{{count} votes}}",
+  "@ratingVotes": {
+    "description": "How many accounts the rating averages",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchSortAsc": "Ascending",
+  "searchSortDesc": "Descending",
+  "searchFilters": "Filters",
+  "searchExactSearch": "Exact search",
+  "searchExactSearchSubtitle": "Disables approximate (fuzzy) search",
+  "searchTags": "Tags",
+  "searchTagSearchHint": "Search for a tag in « {category} »…",
+  "@searchTagSearchHint": {
+    "placeholders": {
+      "category": {
+        "type": "String"
+      }
+    }
+  },
+  "searchTagTypeToSearch": "Type to search for tags.",
+  "searchTagsAndLogic": "Multiple tags = logical AND.",
+  "searchFilterYear": "Year",
+  "searchFilterAll": "all",
+  "searchYearRange": "{min} – {max}",
+  "@searchYearRange": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "searchYearFilterNote": "Filtering by year excludes undated songs.",
+  "searchMinRating": "Rating ≥",
+  "searchRatingValue": "★ {value}",
+  "@searchRatingValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "searchCancel": "Cancel",
+  "searchReset": "Reset",
+  "searchApply": "Apply",
+  "searchClearRecent": "Clear recent searches",
+  "searchBrowse": "Browse",
+  "searchBrowseHint": "Pick a facet (group, chip, year…) to explore the catalogue, or start Radio/Surprise above.",
+  "searchDidYouMean": "Few results — try an approximate search?",
+  "searchYes": "Yes",
+  "featuredCommunityTitle": "New from the community",
+  "searchPlaylistSourceAll": "All",
+  "searchPlaylistSourceUser": "Community",
+  "searchPlaylistSourceServer": "Rewamp",
+  "searchFormat": "Format",
+  "searchPlatform": "Platform",
+  "filterCollection": "Collection",
+  "videoWatchDemo": "Watch the demo",
+  "searchFacetSelected": "{label}: {value}",
+  "@searchFacetSelected": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "searchCollectionLabel": "Collection: {name}",
+  "@searchCollectionLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "searchCollectionAll": "All",
+  "searchRadio": "Radio",
+  "searchRadioTooltip": "Random queue over the current filters",
+  "searchSurprise": "Surprise",
+  "searchSurpriseTooltip": "A random song",
+  "searchTabWithCount": "{label} ({count})",
+  "@searchTabWithCount": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchNoSongs": "No songs",
+  "searchSongsCount": "{n, plural, =1{{n} song} other{{n} songs}}",
+  "@searchSongsCount": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "searchAlbumsCount": "{n, plural, =1{{n} album} other{{n} albums}}",
+  "@searchAlbumsCount": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "searchAka": "aka {name}",
+  "@searchAka": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "searchChooseCollection": "Choose collection",
+  "searchFilterCollections": "Filter collections…",
+  "searchFilterPlaceholder": "Filter…",
+  "searchAllOf": "All ({label})",
+  "@searchAllOf": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "searchNoMatch": "No match",
+  "searchNoPlaylist": "No playlists",
+  "engineDescOpenmpt": "Tracker modules (MOD/XM/S3M/IT/…)",
+  "engineDescVgm": "VGM/S98/GYM/DRO — sound chips, per-channel scope",
+  "engineDescGme": "NES/GB/SNES/PC-Engine/AY/HES/KSS/SAP + RSN archives",
+  "engineDescNsfplay": "NES NSF/NSFe — per-channel voices",
+  "engineDescGbsplay": "Game Boy GBS",
+  "engineDescSidplayfp": "Commodore 64 SID (reSIDfp engine)",
+  "engineDescNez": "PC-Engine HES + Sega SGC (SN76489/YM2413)",
+  "engineDescKss": "MSX chiptunes (KSS/MGS/BGM/MPK/MBM/OPX)",
+  "engineDescFurnace": "Multi-chip chiptunes .fur / FamiTracker .ftm",
+  "engineDescZxtune": "ZX Spectrum / AY (.ay/.vtx/.pt3/.stc/…) + .chp",
+  "engineDescUade": "Amiga custom-chip formats via 68k emulation (~320 exts)",
+  "engineDescHively": "AHX / Hively Tracker (.ahx/.hvl/.thx)",
+  "engineDescAsap": "Atari 8-bit POKEY (.sap/.rmt/.cmc/.tmc/…)",
+  "engineDescAdplug": "AdLib OPL2/OPL3 (.d00/.hsc/.cmf/.a2m/.rol/…)",
+  "engineDescMidi": "Standard MIDI + SoundFont (.mid/.midi/.kar/.rmi)",
+  "engineDescHighlyExp": "PlayStation PSF/PSF2",
+  "engineDescGsf": "Game Boy Advance .gsf/.minigsf",
+  "engineDescVio2sf": "Nintendo DS .2sf/.mini2sf",
+  "engineDescNcsf": "Nintendo DS .ncsf/.minincsf — SDAT/SSEQ synth (16 voices)",
+  "engineDescV2m": "V2M synth (.v2m/.v2mz)",
+  "engineDescSndh": "Atari ST .sndh — real 68000 emulation + YM2149 + STE DAC",
+  "engineDescLazyusf": "Nintendo 64 .usf — R4300 emulation + RSP audio",
+  "engineDescWonderswan": "WonderSwan .wsr — NEC V30MZ emulation",
+  "engineDescQsf": "Capcom QSound .qsf — Z80 + QSound chip",
+  "engineDescHighlyTheoritical": "Saturn .ssf / Dreamcast .dsf — 68000/ARM7 + SCSP",
+  "engineDescPt3": "ZX Spectrum .pt3 — real AY-3-8910/YM2149 synth",
+  "engineDescOrganya": "Cave Story .org — Pixel's own engine",
+  "engineDescPxtone": "Pixel's tracker — .ptcop/.pttune",
+  "engineDescSc68": "Atari ST (YM2149/STE) + Amiga (Paula) — real 68000 via emu68",
+  "engineDescPmd": "PC-98 Professional Music Driver — OPNA FM + SSG + PPZ8 samples",
+  "engineDescMdx": "Sharp X68000 — .mdx (+ .pdx samples), YM2151 FM",
+  "engineDescFmp": "PC-98 FMP driver — OPNA + PPZ8 (.opi/.ovi/.ozi)",
+  "engineDescEup": "FM Towns EUPHONY — YM2612 FM + PCM (.eup)",
+  "engineDescMac": "Lossless .ape",
+  "engineDescVgmstream": "Streamed game audio formats (700+, incl. .rrds)",
+  "engineDescMiniaudio": "PCM/MP3/FLAC/OGG — fallback decoder",
+  "browseCountSongs": "{total, plural, =1{{loaded} / 1 song} other{{loaded} / {total} songs}}",
+  "@browseCountSongs": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "loaded": {
+        "type": "int"
+      }
+    }
+  },
+  "browseCountAlbums": "{total, plural, =1{{loaded} / 1 album} other{{loaded} / {total} albums}}",
+  "@browseCountAlbums": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "loaded": {
+        "type": "int"
+      }
+    }
+  },
+  "browseCountArtists": "{total, plural, =1{{loaded} / 1 artist} other{{loaded} / {total} artists}}",
+  "@browseCountArtists": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "loaded": {
+        "type": "int"
+      }
+    }
+  },
+  "browseLoadedSongs": "{n, plural, =1{{n} song} other{{n} songs}}",
+  "@browseLoadedSongs": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "browseLoadedAlbums": "{n, plural, =1{{n} album} other{{n} albums}}",
+  "@browseLoadedAlbums": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "browseLoadedArtists": "{n, plural, =1{{n} artist} other{{n} artists}}",
+  "@browseLoadedArtists": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "browseGroupsCount": "{n, plural, =1{{n} group} other{{n} groups}}",
+  "@browseGroupsCount": {
+    "description": "Group count on the collection hub card and group rows",
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "browseCountries": "Countries",
+  "@browseCountries": {
+    "description": "Countries card on the collection hub"
+  },
+  "browseCountriesCount": "{n, plural, =1{{n} country} other{{n} countries}}",
+  "@browseCountriesCount": {
+    "description": "Country count under the hub's Countries card",
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "browseFoldersCard": "Folders",
+  "@browseFoldersCard": {
+    "description": "Folder-tree card on the collection hub (modland, hvsc, ...)"
+  },
+  "featuredTitle": "Featured today",
+  "featuredPartyNow": "{party} is on right now — podiums from past editions",
+  "@featuredPartyNow": {
+    "placeholders": {
+      "party": {
+        "type": "String"
+      }
+    }
+  },
+  "featuredPartyStartsIn": "{days, plural, =1{{party} starts tomorrow — podiums from past editions} other{{party} starts in {days} days — podiums from past editions}}",
+  "@featuredPartyStartsIn": {
+    "placeholders": {
+      "days": {
+        "type": "int"
+      },
+      "party": {
+        "type": "String"
+      }
+    }
+  },
+  "featuredPartySeason": "{series} season — podiums from past editions",
+  "@featuredPartySeason": {
+    "placeholders": {
+      "series": {
+        "type": "String"
+      }
+    }
+  },
+  "featuredMonthReleased": "Released in {month} {year}",
+  "@featuredMonthReleased": {
+    "placeholders": {
+      "month": {
+        "type": "String"
+      },
+      "year": {
+        "type": "String"
+      }
+    }
+  },
+  "featuredAnniversaryYearsAgo": "{age, plural, =1{One year ago: the games of {year}} other{{age} years ago: the games of {year}}}",
+  "featuredMonthDecade": "The {decade}s",
+  "@featuredMonthDecade": {
+    "placeholders": {
+      "decade": {
+        "type": "String"
+      }
+    }
+  },
+  "featuredAnniversaryAge": "{age, plural, =1{One year ago: the games of {year}} other{{age} years ago: the games of {year}}}",
+  "@featuredAnniversaryAge": {
+    "placeholders": {
+      "age": {
+        "type": "int"
+      },
+      "year": {
+        "type": "String"
+      }
+    }
+  },
+  "featuredMonthHeader": "Released in {month}",
+  "@featuredMonthHeader": {
+    "placeholders": {
+      "month": {
+        "type": "String"
+      }
+    }
+  },
+  "featuredAnniversaryHeader": "Anniversaries",
+  "featuredBirthdayHeader": "Today's birthdays",
+  "featuredBirthdayWeekHeader": "This week's birthdays",
+  "featuredBirthdayWeekHeaderRange": "{header} ({start} – {end})",
+  "@featuredBirthdayWeekHeaderRange": {
+    "description": "Series header with the week's date range; header = featuredBirthdayWeekHeader, start/end = localized dates (e.g. 'Jul 13').",
+    "placeholders": {
+      "header": {
+        "type": "String"
+      },
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      }
+    }
+  },
+  "featuredBirthdayWeekArtist": "{artist}'s birthday this week",
+  "@featuredBirthdayWeekArtist": {
+    "placeholders": {
+      "artist": {
+        "type": "String"
+      }
+    }
+  },
+  "featuredGroupCount": "{count, plural, =1{{count} playlist} other{{count} playlists}}",
+  "@featuredGroupCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@featuredAnniversaryYearsAgo": {
+    "placeholders": {
+      "age": {
+        "type": "int"
+      },
+      "year": {
+        "type": "String"
+      }
+    }
+  },
+  "commonRetry": "Retry",
+  "commonOptions": "Options",
+  "commonDownload": "Download",
+  "commonDeleteDownload": "Delete download",
+  "commonAddToPlaylist": "Add to playlist",
+  "commonPlayNext": "Play next",
+  "commonAddToQueueEnd": "Add to end of queue",
+  "commonAddToFavorites": "Add to favorites",
+  "commonRemoveFromFavorites": "Remove from favorites",
+  "unitBytes": "{value} B",
+  "@unitBytes": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "unitKilobytes": "{value} KB",
+  "@unitKilobytes": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "unitMegabytes": "{value} MB",
+  "@unitMegabytes": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "subsongDeleteDownloadTitle": "Delete this download?",
+  "subsongDeleteDownloadBody": "The file and its local entries (history, tracks) will be deleted.\n\n{path}",
+  "@subsongDeleteDownloadBody": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "subsongReadTracksFailed": "Unable to read the tracks",
+  "subsongTrackNumber": "Track {number}",
+  "@subsongTrackNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "subsongCount": "{count, plural, =1{{count} subsong} other{{count} subsongs}}",
+  "@subsongCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "subsongPlayAll": "Play all",
+  "albumDownloading": "Downloading album…",
+  "albumDownloadingProgress": "Downloading album… ({done}/{total})",
+  "@albumDownloadingProgress": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "albumDownloadToSeeTracks": "Download the album to see its tracks",
+  "albumNotDownloadedHint": "Album not downloaded — start playback to download it",
+  "albumTrackCount": "{count, plural, =1{{count} track} other{{count} tracks}}",
+  "@albumTrackCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "albumLoadingInfo": "Loading details…",
+  "albumAka": "aka {label}",
+  "@albumAka": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "albumPlayAlbum": "Play album",
+  "libraryItemCount": "{count, plural, =1{{count} item} other{{count} items}}",
+  "@libraryItemCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "libraryDownloadFromSearchFirst": "Play this track from search first to download it",
+  "libraryAddedTrack": "Track added to your library",
+  "libraryAddedAlbum": "Album added to your library",
+  "libraryAddedArtist": "Artist added to your library",
+  "libraryRemovedTrack": "Track removed from your library",
+  "libraryRemovedAlbum": "Album removed from your library",
+  "libraryRemovedArtist": "Artist removed from your library",
+  "songTilePlayFailed": "Playback failed: {message}",
+  "@songTilePlayFailed": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadFailed": "Download failed — {label}",
+  "@downloadFailed": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadInProgress": "Downloading — {label}",
+  "@downloadInProgress": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadsTitle": "Downloads",
+  "@downloadsTitle": {
+    "description": "Download queue screen"
+  },
+  "downloadsEmpty": "No pending downloads",
+  "@downloadsEmpty": {
+    "description": "Download queue screen"
+  },
+  "downloadsPause": "Pause",
+  "@downloadsPause": {
+    "description": "Download queue screen"
+  },
+  "downloadsResume": "Resume",
+  "@downloadsResume": {
+    "description": "Download queue screen"
+  },
+  "downloadsCancel": "Cancel download",
+  "@downloadsCancel": {
+    "description": "Abort the download in flight (queue screen + download banner)"
+  },
+  "downloadsClear": "Remove all",
+  "@downloadsClear": {
+    "description": "Download queue screen"
+  },
+  "downloadsPausedBanner": "Downloads paused — the current file finishes first",
+  "@downloadsPausedBanner": {
+    "description": "Download queue screen"
+  },
+  "downloadInProgressPct": "Downloading — {label} {percent} %",
+  "@downloadInProgressPct": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "miniPlayerQueue": "Playlist",
+  "miniPlayerHideQueue": "Hide playlist",
+  "transportShuffle": "Shuffle",
+  "transportShuffleOn": "Shuffle on",
+  "transportLoopOff": "Loop off",
+  "transportLoopQueue": "Loop: queue",
+  "transportLoopTrack": "Loop: current track",
+  "vizStereo": "Stereo",
+  "vizSpectrum": "Spectrum",
+  "vizVoices": "Voices",
+  "vizNotes": "Notes",
+  "vizPatterns": "Patterns",
+  "patternScrollMode": "Scroll mode",
+  "patternSmoothScroll": "Smooth scrolling",
+  "patternVolumeBars": "Volume bars",
+  "patternColorScheme": "Color scheme",
+  "patternSize": "Size",
+  "patternColumns": "Columns",
+  "patternColumnsAll": "Full",
+  "patternColumnsNoteInstr": "Reduced",
+  "patternColumnsNote": "Minimal",
+  "vizClose": "Close the visualizer",
+  "vizFullscreen": "Fullscreen",
+  "vizExitFullscreen": "Exit fullscreen",
+  "vizPrevPreset": "Previous preset",
+  "vizNextPreset": "Next preset",
+  "vizProjectmUnavailable": "projectM unavailable",
+  "voicesTitle": "Voices",
+  "voicesNone": "No voices for this track.",
+  "voicesLongPressSolo": "long-press = solo",
+  "voicesMuteAll": "Mute all",
+  "voicesUnmuteAll": "Unmute all",
+  "voicesStereoOutput": "Stereo output",
+  "voicesLeft": "Left",
+  "voicesRight": "Right",
+  "enginesFormatsTitle": "Playable formats",
+  "enginesFormatsSummary": "{formats} playable formats, across {engines} playback engines.",
+  "@enginesFormatsSummary": {
+    "placeholders": {
+      "formats": {
+        "type": "int"
+      },
+      "engines": {
+        "type": "int"
+      }
+    }
+  },
+  "enginesLicenseFormats": "{license} · {count, plural, =1{1 format} other{{count} formats}}",
+  "@enginesLicenseFormats": {
+    "placeholders": {
+      "license": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "stilCoverOf": "Covers {title} by {artist}",
+  "@stilCoverOf": {
+    "description": "ⓘ panel: STIL TITLE/ARTIST name the work the tune covers, never the track itself",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      },
+      "artist": {
+        "type": "String"
+      }
+    }
+  },
+  "stilCover": "Covers {work}",
+  "@stilCover": {
+    "description": "Same, when STIL names only one of the two",
+    "placeholders": {
+      "work": {
+        "type": "String"
+      }
+    }
+  },
+  "playerQueue": "Queue",
+  "queueEdit": "Edit",
+  "@queueEdit": {
+    "description": "Button opening the queue multi-select edit mode"
+  },
+  "queueEditDone": "Done",
+  "@queueEditDone": {
+    "description": "Button leaving the queue edit mode"
+  },
+  "queueClear": "Clear queue",
+  "@queueClear": {
+    "description": "Queue panel: empty the queue and stop playback"
+  },
+  "queueClearConfirmTitle": "Clear the queue?",
+  "@queueClearConfirmTitle": {
+    "description": "Queue panel: empty the queue and stop playback"
+  },
+  "queueClearConfirmBody": "The queue will be emptied and playback will stop.",
+  "@queueClearConfirmBody": {
+    "description": "Queue panel: empty the queue and stop playback"
+  },
+  "queueClearConfirm": "Clear",
+  "@queueClearConfirm": {
+    "description": "Queue panel: empty the queue and stop playback"
+  },
+  "queueRemoveSelected": "Remove selected",
+  "@queueRemoveSelected": {
+    "description": "Removes the checked queue rows"
+  },
+  "queueRemoveTrack": "Remove from queue",
+  "@queueRemoveTrack": {
+    "description": "Swipe action / tooltip removing one queue row"
+  },
+  "queueReorder": "Reorder",
+  "@queueReorder": {
+    "description": "Drag handle tooltip in the queue"
+  },
+  "playerArtwork": "Artwork",
+  "playerVisualizer": "Visualizer",
+  "playerVoices": "Voices",
+  "playerTrackInfo": "Track info",
+  "playerShowQueue": "Playlist",
+  "playerHideQueue": "Hide playlist",
+  "playerNoTrackInfo": "No information available.",
+  "playerViewSubsongs": "View subsongs",
+  "playerViewAlbum": "View album",
+  "playerViewArtist": "View artist",
+  "playerAddToPlaylist": "Add to playlist",
+  "queueAddToPlaylist": "Add queue to a playlist",
+  "playerMoreOptions": "More options",
+  "playerClose": "Close",
+  "playerCancel": "Cancel",
+  "playerDelete": "Delete",
+  "playerAddFavorite": "Add to favorites",
+  "playerRemoveFavorite": "Remove from favorites",
+  "playerAddToLibrary": "Add to library",
+  "playerRemoveFromLibrary": "Remove from library",
+  "playerAddedToLibrary": "Track added to library",
+  "playerRemovedFromLibrary": "Track removed from library",
+  "playerDeleteDownload": "Delete download",
+  "playerRedownload": "Re-download file",
+  "playerRedownloadUnavailable": "Re-download unavailable for this file",
+  "playerDeleteDownloadTitle": "Delete download?",
+  "playerDeleteDownloadBody": "The file and its local entries (history, tracks) will be deleted.\n\n{path}",
+  "@playerDeleteDownloadBody": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "homeYourTrends": "Your trends",
+  "homeYourAllTimeTop": "Your all-time top",
+  "homeTrending": "Trending",
+  "homeFeaturedPlaylists": "Featured playlists",
+  "homeAllTimeTop": "All-time top",
+  "homePeriod7d": "7 d",
+  "homePeriod30d": "30 d",
+  "homePeriod90d": "90 d",
+  "homePlaysCount": "{n, plural, =1{{n} play} other{{n} plays}}",
+  "@homePlaysCount": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "homeTrackCount": "{n, plural, =1{{n} track} other{{n} tracks}}",
+  "@homeTrackCount": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "homePlaylistUnreadable": "Empty or unreadable playlist",
+  "homeExtractingArchive": "Extracting archive…",
+  "homeArchiveEmpty": "No playable files in the archive",
+  "homeNothingPlayable": "Nothing playable in the selection",
+  "homeAlbumLoadFailed": "Couldn't load this album",
+  "homeSongLoadFailed": "Couldn't load this track",
+  "navStats": "Stats",
+  "navSettings": "Settings",
+  "playlistMoveUp": "Move to parent folder",
+  "playlistFolderPlaylistCount": "{n, plural, =1{{n} playlist} other{{n} playlists}}",
+  "@playlistFolderPlaylistCount": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "playlistFolderSubfolderCount": "{n, plural, =1{{n} subfolder} other{{n} subfolders}}",
+  "@playlistFolderSubfolderCount": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "playlistDeleteFolderContentsHeader": "This folder and everything inside will be permanently deleted:",
+  "playlistDeleteFolderEmptyBody": "This folder will be deleted.",
+  "playlistFolderRoot": "Root",
+  "playlistMoveToFolder": "Move to folder",
+  "playlistDeleteTitle": "Delete \"{name}\"?",
+  "@playlistDeleteTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "playlistDeleteBody": "This playlist will be permanently deleted.",
+  "playlistRenameFolderTitle": "Rename folder",
+  "playlistClearFavorites": "Delete all favorites",
+  "playlistClearFavoritesTitle": "Delete all favorites?",
+  "playlistClearFavoritesBody": "You will lose all your favorite tracks. This can't be undone.",
+  "playlistRemoveFromLibrary": "Remove from library",
+  "playlistServerReadOnly": "Server playlist · read-only",
+  "navAbout": "About",
+  "navMore": "More",
+  "shellAlbumQueuedAtEnd": "Album added to the end of the queue",
+  "shellAlbumQueuedNext": "Album will play next",
+  "shellAddingToQueue": "Adding to queue…",
+  "shellAddingNext": "Adding to play next…",
+  "shellDownloadFailed": "Download failed: {error}",
+  "@shellDownloadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "shellTracksQueued": "{count, plural, =1{{count} track added to the queue} other{{count} tracks added to the queue}}",
+  "@shellTracksQueued": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellTrackQueuedAtEnd": "\"{title}\" added to the end of the queue",
+  "@shellTrackQueuedAtEnd": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "shellTrackQueuedNext": "\"{title}\" will play next",
+  "@shellTrackQueuedNext": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "shellDownloadFailedSkipping": "Download failed: {title} — skipping to next track",
+  "@shellDownloadFailedSkipping": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "shellNetworkUnavailable": "Playback stopped: the network appears to be unavailable.",
+  "statsTitle": "Statistics",
+  "statsPeriodDays": "{n} days",
+  "@statsPeriodDays": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "statsPeriodThisYear": "This year",
+  "statsPeriodAll": "All time",
+  "statsByMonthOrYear": "By month / year…",
+  "statsByYear": "By year",
+  "statsByMonth": "By month",
+  "statsPlaysLabel": "Plays",
+  "statsTracksLabel": "Tracks",
+  "statsArtistsLabel": "Artists",
+  "statsAlbumsLabel": "Albums",
+  "statsListenTime": "Listening time",
+  "statsByCollection": "By collection",
+  "statsByFormat": "By format",
+  "statsByEngine": "By engine",
+  "statsPlaylistsLabel": "Playlists",
+  "statsLocalFilesSection": "Downloaded files",
+  "statsFilesLabel": "Files",
+  "statsSpaceLabel": "Disk space",
+  "statsNoPlaysInPeriod": "No plays in this period",
+  "statsNoPlays": "No plays",
+  "statsTopTracks": "Top tracks",
+  "statsTopAlbums": "Top albums",
+  "statsTopArtists": "Top artists",
+  "statsTopTracksIn": "Top tracks — {period}",
+  "@statsTopTracksIn": {
+    "placeholders": {
+      "period": {
+        "type": "String"
+      }
+    }
+  },
+  "statsTopAlbumsIn": "Top albums — {period}",
+  "@statsTopAlbumsIn": {
+    "placeholders": {
+      "period": {
+        "type": "String"
+      }
+    }
+  },
+  "statsTopArtistsIn": "Top artists — {period}",
+  "@statsTopArtistsIn": {
+    "placeholders": {
+      "period": {
+        "type": "String"
+      }
+    }
+  },
+  "statsSeeAll": "See all",
+  "statsPlays": "{n, plural, =1{{n} play} other{{n} plays}}",
+  "@statsPlays": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "statsTrackCount": "{n, plural, =1{{n} track} other{{n} tracks}}",
+  "@statsTrackCount": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "statsChartMax": "max {n}",
+  "@statsChartMax": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "commonCancel": "Cancel",
+  "commonCreate": "Create",
+  "commonOk": "OK",
+  "commonDelete": "Delete",
+  "commonRename": "Rename",
+  "commonSort": "Sort",
+  "commonPlayAll": "Play all",
+  "sortName": "Name",
+  "sortTitle": "Title",
+  "sortArtist": "Artist",
+  "sortAlbum": "Album",
+  "sortDateAdded": "Date added",
+  "commonClear": "Clear",
+  "sortRecentlyModified": "Recently modified",
+  "sortCreationDate": "Creation date",
+  "playlistNameHint": "Name",
+  "playlistNew": "New playlist",
+  "playlistNewFolder": "New folder",
+  "playlistNewTooltip": "New playlist / folder",
+  "playlistAddTo": "Add to playlist",
+  "playlistAddToN": "{n, plural, =1{Add to {n} playlist} other{Add to {n} playlists}}",
+  "@playlistAddToN": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "playlistSelectOne": "Select a playlist",
+  "playlistFilterHint": "Filter playlists…",
+  "playlistSearchHint": "Search a playlist…",
+  "playlistNoMatch": "No matching playlist",
+  "playlistNoneCreateHint": "No playlist — create one with +",
+  "playlistTrackCount": "{n, plural, =0{No tracks} =1{{n} track} other{{n} tracks}}",
+  "@playlistTrackCount": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "playlistDuplicatesTitle": "Already there",
+  "playlistDuplicatesBody": "{n, plural, =1{{n} item is already in the selected playlists.} other{{n} items are already in the selected playlists.}}",
+  "@playlistDuplicatesBody": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "playlistSkipDuplicates": "Skip duplicates",
+  "playlistAddAgain": "Add again",
+  "playlistTracksAdded": "{n, plural, =1{{n} track added} other{{n} tracks added}} to {m, plural, =1{{n} playlist} other{{m} playlists}}",
+  "@playlistTracksAdded": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      },
+      "m": {
+        "type": "int"
+      }
+    }
+  },
+  "playlistAddFailed": "Could not add: {error}",
+  "@playlistAddFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "playlistRenameTitle": "Rename playlist",
+  "playlistDeleteFolderTitle": "Delete the folder “{name}”?",
+  "@playlistDeleteFolderTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "playlistDeleteFolderBody": "Its contents move up one level.",
+  "playlistEmpty": "Empty playlist",
+  "playlistRemoveEntry": "Remove from playlist",
+  "trackOptionsAddToLibrary": "Add to library",
+  "trackOptionsRemoveFromLibrary": "Remove from library",
+  "trackOptionsAddedToLibrary": "Track added to the library",
+  "trackOptionsRemovedFromLibrary": "Track removed from the library",
+  "trackOptionsViewAlbum": "View album",
+  "trackOptionsViewArtist": "View artist",
+  "trackOptionsPlayNow": "Play now",
+  "@trackOptionsPlayNow": {
+    "description": "First action of the track options sheet and rail popups: play immediately, replacing the queue"
+  },
+  "trackOptionsPlayNext": "Play next",
+  "trackOptionsAddToQueueEnd": "Add to end of queue",
+  "trackOptionsPlayLast": "Play last",
+  "trackOptionsDeleteDownload": "Delete download",
+  "trackOptionsDeleteDownloadTitle": "Delete this download?",
+  "trackOptionsDeleteDownloadBody": "The file and its local entries (history, tracks) will be deleted.\n\n{path}",
+  "@trackOptionsDeleteDownloadBody": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "trackOptionsDownloadDeleted": "Download deleted",
+  "trackOptionsAddToFavorites": "Add to favorites",
+  "trackOptionsRemoveFromFavorites": "Remove from favorites",
+  "trackOptionsAlbumAddedToFavorites": "Album added to favorites",
+  "trackOptionsAlbumRemovedFromFavorites": "Album removed from favorites",
+  "trackOptionsAlbumNotDownloaded": "Album not downloaded — nothing to delete",
+  "trackOptionsDeleteAlbumTitle": "Delete the downloaded album?",
+  "trackOptionsDeleteAlbumBody": "The folder and all its local entries (tracks, history) will be deleted.\n\n{dir}",
+  "@trackOptionsDeleteAlbumBody": {
+    "placeholders": {
+      "dir": {
+        "type": "String"
+      }
+    }
+  },
+  "trackOptionsAlbumDeleted": "Album deleted from local storage",
+  "trackOptionsRedownloadAlbum": "Re-download album",
+  "trackOptionsRedownloadAlbumSubtitle": "Rewrites files AND local entries",
+  "trackOptionsDeleteAlbumFiles": "Delete album files",
+  "trackOptionsDeleteAlbumFilesSubtitle": "Downloaded folder + local entries (history)",
+  "settingsTitle": "Settings",
+  "settingsGeneral": "General",
+  "settingsGeneralSubtitle": "Theme",
+  "settingsVisualisation": "Visualization",
+  "settingsVisualisationSubtitle": "Oscilloscopes, artwork background",
+  "settingsPlayback": "Playback",
+  "settingsPlaybackSubtitle": "Loops, fade-out, silence",
+  "settingsEngines": "Engines",
+  "settingsEnginesSubtitle": "libopenmpt, NSF, GBS, MIDI",
+  "settingsData": "Data",
+  "settingsDataSubtitle": "ID, history, reset",
+  "settingsBackupExport": "Export a backup",
+  "settingsBackupExportSubtitle": "Save your library, playlists and settings to a file",
+  "settingsBackupImport": "Import a backup",
+  "settingsBackupImportSubtitle": "Restore your data from a backup file",
+  "settingsBackupExportFailed": "Backup export failed",
+  "settingsBackupImportConfirmTitle": "Import backup?",
+  "settingsBackupImportConfirmBody": "This replaces your library, playlists and settings on this device. Downloaded files are kept.",
+  "settingsBackupImportConfirm": "Import",
+  "settingsBackupImportedTitle": "Backup imported",
+  "settingsBackupImportedBody": "Your data has been restored. Restart the app to apply everything.",
+  "settingsBackupTooNew": "This backup was made by a newer version of the app",
+  "settingsBackupInvalid": "Not a valid Rewamp backup",
+  "settingsBackupImportFailed": "Backup import failed",
+  "settingsAbout": "About",
+  "settingsAboutSubtitle": "Credits and licenses",
+  "settingsCreditsSubtitle": "Libraries, data & components",
+  "settingsSupport": "Contact & support",
+  "settingsSupportSubtitle": "Reach us, website",
+  "settingsSupportEmail": "Send an email",
+  "settingsSupportEmailSubtitle": "Question, bug or suggestion",
+  "settingsSupportEmailSubject": "Rewamp — support",
+  "settingsSupportEmailIntro": "Describe your question, bug or suggestion above. The information below helps us help you.",
+  "settingsSupportWebsite": "Website",
+  "settingsDonation": "Support Rewamp",
+  "settingsDonationSubtitle": "Leave a tip, if you'd like",
+  "settingsDonationBlurb": "Rewamp is free and ad-free — a labour of love devoted to preserving demoscene and retro culture. Tips help fund the app's development and cover the database hosting costs. There's no obligation: if the app brings you joy, a little something is always appreciated.",
+  "settingsDonationFloppy": "A floppy disk",
+  "settingsDonationCartridge": "A cartridge",
+  "settingsDonationBox": "A boxed game",
+  "settingsDonationCustom": "Choose an amount",
+  "settingsCancel": "Cancel",
+  "settingsOk": "OK",
+  "settingsDelete": "Delete",
+  "settingsReset": "Reset",
+  "settingsRenew": "Renew",
+  "settingsOff": "Off",
+  "settingsOn": "On",
+  "settingsAuto": "Auto",
+  "settingsInfinite": "Infinite",
+  "settingsDefault": "Default",
+  "settingsCoreNoScope": "no oscilloscope",
+  "settingsNone": "None",
+  "settingsLevelLow": "Low",
+  "settingsLevelHigh": "High",
+  "settingsStereo": "Stereo",
+  "settingsSurround": "Surround",
+  "settingsValuePercent": "{value}%",
+  "@settingsValuePercent": {
+    "placeholders": {
+      "value": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsValueSeconds": "{value} s",
+  "@settingsValueSeconds": {
+    "placeholders": {
+      "value": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsValueSecondsFrac": "{value} s",
+  "@settingsValueSecondsFrac": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsValueHz": "{value} Hz",
+  "@settingsValueHz": {
+    "placeholders": {
+      "value": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsValueDb": "{value} dB",
+  "@settingsValueDb": {
+    "placeholders": {
+      "value": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsValueTimes": "×{value}",
+  "@settingsValueTimes": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSizeMb": "{value} MB",
+  "@settingsSizeMb": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSizeKb": "{value} kB",
+  "@settingsSizeKb": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsTheme": "Theme",
+  "settingsThemeLight": "Light",
+  "settingsThemeDark": "Dark",
+  "settingsArtworkTintTitle": "Tint the player with the artwork",
+  "settingsArtworkTintSubtitle": "The player picks up the cover's dominant color",
+  "settingsGlassEffectTitle": "Liquid glass effect",
+  "settingsGlassEffectSubtitle": "Lens and blur on the bottom bars — turn off on slow devices",
+  "settingsResetSection": "Reset this section",
+  "settingsResetEngine": "Reset this engine",
+  "settingsResetChoices": "Reset these choices",
+  "settingsResetToDefault": "Default value",
+  "settingsStartInVizTitle": "Start in visualizer mode",
+  "settingsStartInVizSubtitle": "The player opens on the oscilloscopes instead of the artwork",
+  "settingsVoiceGridTitle": "Voice oscilloscope grid",
+  "settingsVoiceGridSubtitle": "Show the borders separating each voice",
+  "settingsKeepAwakeTitle": "Keep the screen on",
+  "settingsKeepAwakeSubtitle": "While a visualizer is showing, the display does not dim or lock",
+  "settingsVoiceNamesTitle": "Voice names",
+  "settingsVoiceNamesSubtitle": "Show each voice's name inside its frame",
+  "settingsLineThickness": "Line thickness",
+  "settingsColors": "Colors",
+  "settingsScopeVoiceColor": "Voice oscilloscope",
+  "settingsStereoColors": "Stereo: colors",
+  "settingsStereoMono": "Mono",
+  "settingsStereoBi": "Bi",
+  "settingsStereoMonoColor": "Stereo (mono)",
+  "settingsStereoLeftColor": "Stereo left",
+  "settingsStereoRightColor": "Stereo right",
+  "settingsNotation": "Notation (notes)",
+  "settingsNotePalette": "Color palette",
+  "settingsNoteBoxStyle": "Block style",
+  "settingsNoteStyleFlat": "Flat",
+  "settingsNoteStyleBox": "Box",
+  "settingsCrtEffects": "CRT effects",
+  "settingsCrtGlow": "Glow",
+  "settingsCrtSpeed": "Intensity / speed",
+  "settingsArtworkOpacity": "Background artwork opacity",
+  "settingsProjectMTitle": "projectM settings",
+  "settingsProjectMSubtitle": "Presets, transitions, quality, mesh…",
+  "settingsNotifyTrackTitle": "Track-change notifications",
+  "@settingsNotifyTrackTitle": {
+    "description": "Settings toggle: desktop notification on track change"
+  },
+  "settingsNotifyTrackSubtitle": "System notification with the new track's title",
+  "@settingsNotifyTrackSubtitle": {
+    "description": "Settings toggle: desktop notification on track change"
+  },
+  "settingsSilenceDetection": "Silence detection",
+  "settingsSilenceSkipTitle": "Skip to the next track on silence",
+  "settingsSilenceSkipSubtitle": "Moves on automatically when the output stays silent",
+  "settingsSilenceDelay": "Silence delay",
+  "settingsDefaultDuration": "Default duration",
+  "settingsDefaultDurationHelp": "Used when a track reports no known duration (no tag, no server metadata) — keeps it from playing or looping forever. Never applies to Amiga tracks (UADE), which have their own songlength database.",
+  "settingsForcedLoopHeader": "Forced loop / fade-out",
+  "settingsForcedLoopHelp": "Some formats loop a specific section (VGM, tracker modules…); others don't. \"Infinite\" ignores the track's natural end.",
+  "settingsForceLoopCount": "Force the number of loops",
+  "settingsLoopCount": "Number of loops",
+  "settingsForceFadeout": "Force a fade-out",
+  "settingsFadeoutDuration": "Fade duration",
+  "settingsResetEnginesTitle": "Reset engine settings?",
+  "settingsResetEnginesBody": "All engine settings will go back to their default values.",
+  "settingsResetDefaultsTitle": "Reset to default values",
+  "settingsResetDefaultsSubtitle": "All engines",
+  "settingsDefaultDecoders": "Default decoders",
+  "settingsDefaultDecodersSubtitle": "Formats several engines can play",
+  "settingsDecodersHelp": "Some formats can be played by several engines. Pick which one to use by default — every other format is routed automatically.",
+  "settingsDecoderAmigaTrackers": "Amiga trackers (mod, med, okt…)",
+  "settingsEngineOpenmptSubtitle": "Trackers — MOD, XM, S3M, IT…",
+  "settingsEngineGmeSubtitle": "SPC, VGM(gme), KSS, AY… — EQ, stereo",
+  "settingsEngineNsfSubtitle": "NES / NSF — quality, filters, per-chip options",
+  "settingsEngineGbsSubtitle": "Game Boy / GBS — high-pass filter",
+  "settingsEngineMidiSubtitle": "MIDI — SoundFont in use",
+  "settingsEngineGsfSubtitle": "GBA / GSF — interpolation, low-pass, echo",
+  "settingsEngineUadeSubtitle": "Amiga — panning, headphones, gain, LED",
+  "settingsEngineSidSubtitle": "C64 / SID — clock, model, ReSIDfp filters",
+  "settingsEngineAdplugSubtitle": "AdLib OPL — stereo/surround harmonic mode",
+  "settingsEngineHeSubtitle": "PSF / PS1-PS2 — SPU, reverb",
+  "settingsEngineVgmSubtitle": "VGM / S98 / DRO — YM2612, OPL3, QSound cores…",
+  "settingsMasterVolume": "Master volume",
+  "settingsAmigaFilter": "Amiga filter",
+  "settingsInterpolation": "Interpolation",
+  "settingsPolyphony": "Polyphony",
+  "settingsReverb": "Reverb",
+  "settingsChorus": "Chorus",
+  "settingsInterpNone": "None",
+  "settingsInterpLinear": "Linear",
+  "settingsInterpCubic": "Cubic",
+  "settingsInterpSinc": "Sinc (best)",
+  "settingsStereoSeparation": "Stereo separation",
+  "settingsGmeSilenceSubtitle": "Ends the track when the engine detects a long silence",
+  "settingsStereoDepth": "Stereo depth",
+  "settingsEqualizer": "Equalizer",
+  "settingsGmeEqSubtitle": "AY, GBS, HES, KSS, NSF, NSFe, SAP, VGM — no effect on SPC",
+  "settingsBass": "Bass",
+  "settingsTreble": "Treble",
+  "settingsAppliedLive": "Applied immediately, even during playback.",
+  "settingsAppliedNextTrack": "Applied to the next track loaded.",
+  "settingsSidEmulation": "Emulation",
+  "settingsSidResidfp": "ReSIDfp (accurate)",
+  "settingsSidLite": "SIDLite (fast)",
+  "settingsSidSampling": "Sampling",
+  "settingsSidSamplingInterp": "Interpolation (fast)",
+  "settingsSidSamplingResample": "Resample (best)",
+  "settingsSidClock": "Clock",
+  "settingsSidModel": "SID model",
+  "settingsSidFilter": "SID filter",
+  "settingsSidForceSecond": "Force a 2nd SID",
+  "settingsSidSecondSubtitle": "Stereo 2SID tunes",
+  "settingsSidSecondAddr": "2nd SID address",
+  "settingsSidForceThird": "Force a 3rd SID",
+  "settingsSidThirdAddr": "3rd SID address",
+  "settingsSidAutoFilter": "Auto 6581 filter range",
+  "settingsSidAutoFilterSubtitle": "Value recommended for the tune's author (sidplayfp tables)",
+  "settingsSid6581Range": "6581 filter range",
+  "settingsSid6581Curve": "6581 filter curve",
+  "settingsSid8580Curve": "8580 filter curve",
+  "settingsSidNote": "SID filter and curves are applied live; emulation/sampling/clock/model/2nd-3rd SID take effect on the next track.",
+  "settingsAudioOutput": "Audio output",
+  "settingsAdplugNote": "Surround: two slightly detuned OPL chips. Applied to the next track.",
+  "settingsHeSpuMain": "Main voices (SPU)",
+  "settingsHeSpuReverb": "Reverb (SPU)",
+  "settingsNsfQuality": "Quality (nsfplay)",
+  "settingsLowpassFilter": "Low-pass filter",
+  "settingsHighpassFilter": "High-pass filter",
+  "settingsRegion": "Region",
+  "settingsNsfRegionNtscForced": "NTSC forced",
+  "settingsNsfRegionPalForced": "PAL forced",
+  "settingsNsfRegionDendyForced": "Dendy forced",
+  "settingsNsfForceIrq": "Force IRQ",
+  "settingsNsfApu1Title": "2A03 — pulses (APU1)",
+  "settingsNsfApu2Title": "2A03 — triangle / noise / DPCM (APU2)",
+  "settingsNsfUnmuteOnReset": "Unmute on reset",
+  "settingsNsfPhaseRefresh": "Refresh phase",
+  "settingsNsfPhaseRefreshSubtitle": "Reset the phase when the period is written",
+  "settingsNsfNonlinearMixer": "Non-linear mixing",
+  "settingsNsfApu1NonlinearSubtitle": "The 2A03's real mix (otherwise linear)",
+  "settingsNsfDutySwap": "Swap duty cycles",
+  "settingsNsfDutySwapSubtitle": "Order of the 25% / 50% duties",
+  "settingsNsfNegateSweep": "Negative sweep on init",
+  "settingsNsfEnable4011": "Register $4011 enabled",
+  "settingsNsfEnable4011Subtitle": "Direct DAC output (original clicks)",
+  "settingsNsfPeriodicNoise": "Periodic noise",
+  "settingsNsfPeriodicNoiseSubtitle": "Short mode of the noise generator",
+  "settingsNsfDpcmAntiClick": "DPCM anti-click",
+  "settingsNsfRandomizeNoise": "Randomize noise on init",
+  "settingsNsfTriangleMute": "Mute the triangle",
+  "settingsNsfTriangleMuteSubtitle": "Silences the triangle at ultrasonic periods",
+  "settingsNsfRandomizeTri": "Randomize triangle on init",
+  "settingsNsfDpcmReverse": "Reversed DPCM",
+  "settingsNsfN163Serial": "Serial multiplexing",
+  "settingsNsfN163SerialSubtitle": "The real N163 buzz on multi-voice tunes",
+  "settingsNsfN163PhaseReadOnly": "Read-only phase",
+  "settingsNsfN163LimitWavelength": "Limit the wavelength",
+  "settingsNsfFdsCutoff": "Low-pass cutoff",
+  "settingsNsfFds4085Reset": "$4085 reset",
+  "settingsNsfFdsWriteProtect": "Write protection",
+  "settingsNsfVrc7Patch": "Patch set",
+  "settingsNsfVrc7Opll": "OPLL mode",
+  "settingsNsfVrc7OpllSubtitle": "Emulate a YM2413 instead of the VRC7",
+  "settingsGbsHpFilter": "High-pass filter (gbsplay)",
+  "settingsGbsFilterDmg": "DMG (classic GB)",
+  "settingsGbsFilterCgb": "CGB (GB Color)",
+  "settingsEcho": "Echo",
+  "settingsUadePostfx": "Post-processing",
+  "settingsUadePostfxSubtitle": "Enables the effect chain (required for everything below)",
+  "settingsUadePan": "Panning (stereo separation)",
+  "settingsUadePanValue": "Panning amount",
+  "settingsUadeHeadphones": "Headphones",
+  "settingsUadeLed": "LED (Paula filter)",
+  "settingsUadeLedAuto": "Auto (per tune)",
+  "settingsUadeLedOn": "Forced ON",
+  "settingsUadeLedOff": "Forced OFF",
+  "settingsUadeFilterType": "Filter type",
+  "settingsUadeGain": "Gain",
+  "settingsUadeGainValue": "Gain amount",
+  "settingsSoundfontLoading": "Loading the catalogue…",
+  "settingsSoundfontCatalogueError": "Catalogue unavailable ({error})",
+  "@settingsSoundfontCatalogueError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSoundfontDownloadFailed": "Download failed: {error}",
+  "@settingsSoundfontDownloadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSoundfontImport": "Import a SoundFont…",
+  "@settingsSoundfontImport": {
+    "description": "Settings: import a personal SoundFont from the device"
+  },
+  "settingsSoundfontImportSubtitle": "Choose an .sf2 file on this device",
+  "@settingsSoundfontImportSubtitle": {
+    "description": "Settings: import a personal SoundFont from the device"
+  },
+  "settingsSoundfontImported": "Imported",
+  "@settingsSoundfontImported": {
+    "description": "Settings: import a personal SoundFont from the device"
+  },
+  "settingsSoundfontInvalid": "That file is not a SoundFont (.sf2)",
+  "@settingsSoundfontInvalid": {
+    "description": "Settings: import a personal SoundFont from the device"
+  },
+  "settingsSoundfontImportFailed": "Import failed — {error}",
+  "@settingsSoundfontImportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSoundfontDelete": "Delete the file",
+  "settingsCreditsHeader": "Credits & licenses",
+  "settingsRightsNotice": "Rewamp is a player: it hosts no files and distributes no music. Tracks come from online preservation archives and remain the property of their rights holders. It is your responsibility to ensure that listening to them, downloading them and keeping them complies with the applicable rights and with the law of your country.",
+  "settingsFormatsCount": "{count, plural, =1{{count} format supported} other{{count} formats supported}}",
+  "@settingsFormatsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsFormatsEngines": "{count, plural, =1{Handled by {count} playback engine — see the details} other{Spread across {count} playback engines — see the details}}",
+  "@settingsFormatsEngines": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsUadeDataTitle": "Amiga songlengths & metadata",
+  "settingsUadeDataSubtitle": "audacious-uade songdb by Matti Tiainen (mvtiaine), CC BY-NC-SA 4.0.",
+  "settingsGb64Title": "C64 / SID data & cover art",
+  "settingsGb64Subtitle": "GameBase64 (gb64.com) — C64 game metadata and visuals.",
+  "settingsFt2FontTitle": "FastTracker 2 font",
+  "settingsFt2FontSubtitle": "The pattern visualizer's FastTracker II style uses the FT2 bitmap font from ft2-clone by 8bitbubsy (16-bits.org).",
+  "settingsLinkCopied": "{url} copied",
+  "settingsOpenLink": "Open link",
+  "@settingsLinkCopied": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEnginesHeader": "Playback engines",
+  "settingsComponentsHeader": "Other components",
+  "settingsResetAll": "Reset all settings",
+  "settingsResetAllSubtitle": "General, Visualization, Playback, Engines — not the library",
+  "settingsResetAllTitle": "Reset all settings?",
+  "settingsResetAllBody": "General, Visualization, Playback and every engine will go back to their default values. Your library and history are untouched.",
+  "settingsRenewUserId": "Renew the anonymous ID",
+  "settingsRenewUserIdTitle": "Renew the anonymous ID?",
+  "settingsRenewUserIdBody": "A new anonymous ID will be created for server statistics.\n\nThe old one will no longer be used. Your local history and favorites are unaffected.",
+  "settingsRenewUserIdFailed": "Failed — server unreachable",
+  "settingsNewUserId": "New ID: {id}",
+  "@settingsNewUserId": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsUserIdValue": "ID: {id}",
+  "@settingsUserIdValue": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsNoUserId": "No ID registered",
+  "settingsCleanDb": "Clean up the local database",
+  "settingsCleanDbSubtitle": "Removes entries whose file no longer exists (deleted downloads, old errors)",
+  "settingsOrphansRemoved": "{count, plural, =1{{count} orphan entry removed} other{{count} orphan entries removed}}",
+  "@settingsOrphansRemoved": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsDbClean": "Local database is clean — nothing to remove",
+  "settingsClearCache": "Clear the cache (artwork & metadata)",
+  "settingsClearCacheSubtitle": "Removes cached covers and fetched metadata (STIL, songlengths) — re-downloaded on the next play",
+  "settingsCacheCleared": "{count, plural, =1{Cache cleared ({count} cover)} other{Cache cleared ({count} covers)}}",
+  "@settingsCacheCleared": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsResetStats": "Reset the statistics",
+  "settingsResetStatsSubtitle": "Removes the listening history and the play counters",
+  "settingsClearStatsTitle": "Reset the statistics?",
+  "settingsClearStatsBody": "This will permanently delete:\n• the whole listening history\n• the play counters\n\nYour favorites and your library are unaffected.",
+  "settingsStatsCleared": "Statistics deleted",
+  "settingsResetDatabase": "Reset the database",
+  "settingsResetDatabaseSubtitle": "Deletes everything: history, favorites, playlists, cache",
+  "settingsResetDbTitle": "Reset the database?",
+  "settingsResetDbBody": "This will permanently delete:\n• the whole listening history\n• every counter\n• every favorite\n• every playlist\n• all cached metadata\n\nYour audio files are not deleted.",
+  "settingsDbReset": "Database reset",
+  "settingsDeleteDownloads": "Delete the downloads",
+  "settingsDeleteDownloadsSubtitle": "Deletes every file in the online folder (tracks, artwork)",
+  "settingsDeleteDownloadsTitle": "Delete the downloads?",
+  "settingsDeleteDownloadsBody": "This will permanently delete every downloaded file (tracks, albums, artwork) from the online folder.\n\nThe database entries will stay but will point at files that no longer exist.",
+  "settingsDownloadsDeleted": "Downloads deleted",
+  "settingsColor": "Color",
+  "settingsPmPresets": "Presets",
+  "settingsPmRandomNext": "Random next preset",
+  "settingsPmRandomNextSubtitle": "Off: play the presets in order",
+  "settingsPmLockPreset": "Lock the preset",
+  "settingsPmLockPresetSubtitle": "No automatic switching",
+  "settingsPmPresetDuration": "Time between presets",
+  "settingsPmTransitions": "Transitions",
+  "settingsPmBlend": "Cross-fade transition",
+  "settingsPmBlendSubtitle": "Off: switch presets instantly",
+  "settingsPmTransitionStyle": "Transition style",
+  "settingsPmTransitionStyleSubtitle": "Which pattern the blend uses",
+  "settingsPmTransitionRandom": "Random",
+  "settingsPmHardcut": "Hardcut",
+  "settingsPmHardcutSubtitle": "Beat-synced preset switching",
+  "settingsPmHardcutTime": "Hardcut: minimum time",
+  "settingsPmHardcutSensitivity": "Hardcut: sensitivity",
+  "settingsPmRendering": "Rendering",
+  "settingsPmQuality": "Quality",
+  "settingsPmQualitySubtitle": "Render resolution (Max = native resolution)",
+  "settingsPmBeatSensitivity": "Beat sensitivity",
+  "settingsPmAspectRatio": "Respect the aspect ratio",
+  "settingsPmAspectRatioSubtitle": "For the shaders that support it",
+  "settingsPmPermissive": "Permissive mode",
+  "settingsPmPermissiveSubtitle": "Load .milk files that have script errors",
+  "accountTitle": "Account",
+  "accountSubtitle": "Save and sync your library",
+  "accountAnonymous": "Anonymous account",
+  "accountAnonymousExplain": "Your favourites and your history are stored on the server, but only this device can reach them. Add an email address to find them again elsewhere.",
+  "accountEmailAttached": "Address confirmed — this account can be restored",
+  "accountEmailPending": "Address not confirmed yet",
+  "accountInsecureStorage": "This device's secure storage is unavailable: the account identifier is stored unencrypted.",
+  "accountSaveCta": "Save my account",
+  "accountStatSongs": "Favourite tracks",
+  "accountStatAlbums": "Favourite albums",
+  "accountStatPlays": "Plays",
+  "accountCreatedLabel": "Created",
+  "accountSignOut": "Sign out",
+  "accountRevoke": "Log out everywhere",
+  "accountRevokeSubtitle": "Signs out every other device",
+  "accountRevokeBody": "Every other device is signed out. This one stays connected.",
+  "accountRevokeDone": "Other devices signed out",
+  "accountDelete": "Delete my account",
+  "accountDeleteSubtitle": "Erases the account and its data on the server. Irreversible.",
+  "accountDeleteBody": "{items} favourites and {lists} playlists will be deleted from the server. This cannot be undone.",
+  "@accountDeleteBody": {
+    "placeholders": {
+      "items": {
+        "type": "int"
+      },
+      "lists": {
+        "type": "int"
+      }
+    }
+  },
+  "accountDeleteKeepsLocal": "Your downloads and this device's library are not affected.",
+  "accountDeleteDone": "Account deleted",
+  "accountSignOutSubtitle": "This device goes back to a new, empty account",
+  "accountSignOutTitle": "Sign out?",
+  "accountSignOutBody": "You can come back to this account with a code sent to {email}.",
+  "@accountSignOutBody": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "accountSignedOut": "Signed out",
+  "accountNoSignOut": "Signing out is unavailable",
+  "accountNoSignOutSubtitle": "Without an email address, this account could never be recovered.",
+  "accountDetach": "Unlink address",
+  "accountDetachSubtitle": "The account goes back to anonymous, no data is deleted",
+  "accountDetachBody": "Without an address, this account can no longer be recovered from another device.",
+  "accountDetachDone": "Address unlinked",
+  "accountOffline": "Account unavailable offline",
+  "accountEmailTitle": "Email address",
+  "accountEmailExplain": "We send you a 6-digit code to confirm the address. It is only used to recover your account.",
+  "accountEmailLabel": "Email address",
+  "accountCodeTitle": "Confirmation code",
+  "accountCodeExplain": "Code sent to {email}. It is valid for 10 minutes.",
+  "@accountCodeExplain": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "accountCodeLabel": "6-digit code",
+  "accountSendCode": "Send the code",
+  "accountVerify": "Confirm",
+  "accountResend": "Resend the code",
+  "accountResendIn": "Resend in {n} s",
+  "@accountResendIn": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "accountCheckSpam": "The email can take up to a minute to arrive — check your spam folder.",
+  "accountErrorInvalidEmail": "Invalid address",
+  "accountErrorTooMany": "Too many requests, try again in a few minutes",
+  "accountErrorInvalidCode": "Wrong or expired code",
+  "accountErrorCodeLength": "The code has 6 digits",
+  "accountErrorNetwork": "Connection failed, try again",
+  "accountMergeTitle": "Merge this library?",
+  "accountMergeBody": "This device's favourites and history will be added to the {email} account. This cannot be undone.",
+  "@accountMergeBody": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "accountMergeConfirm": "Merge",
+  "accountCarryLocal": "Keep this device's favourites",
+  "accountCarryLocalOn": "The {n} favourites and the playlists on this device are added to the account.",
+  "@accountCarryLocalOn": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "accountCarryLocalOff": "They are deleted from this device and replaced by the account's. Downloaded files are kept.",
+  "accountDropLocalTitle": "Drop this device's data?",
+  "accountCreatedOk": "Account saved, your library is backed up",
+  "accountMergedOk": "Signed in — your local favourites were added",
+  "accountSignedInOk": "Signed in",
+  "playlistEntryMissing": "File missing on this device",
+  "playlistEntryMissingRestorable": "File missing — can be downloaded again",
+  "playlistMissingCount": "{n, plural, =1{{n} missing} other{{n} missing}}",
+  "@playlistMissingCount": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "playlistBackupToAccount": "Back up to my account",
+  "playlistBackupSubtitle": "Keeps this playlist even if the app is reinstalled",
+  "playlistBackupUpdate": "Update the backup",
+  "playlistBackupUpdateSubtitle": "Replaces the account copy with this version",
+  "playlistBackupStop": "Stop backing up",
+  "playlistBackupStopped": "Backup removed",
+  "playlistBackupDone": "Playlist backed up",
+  "playlistBackupFailed": "Backup failed",
+  "playlistBackupNoAccount": "No account on this device",
+  "playlistSyncTooltip": "Sync with my account",
+  "playlistSyncRunning": "Syncing…",
+  "playlistSyncDone": "Playlists synced",
+  "playlistSyncPartial": "Some playlists could not be backed up",
+  "playlistFetchMissing": "Download the missing tracks",
+  "playlistFetchDone": "Missing tracks downloaded",
+  "playlistFetchPartial": "Some tracks could not be downloaded",
+  "playlistEntryFetchFailed": "This track could not be downloaded",
+  "accountStatPlaylists": "Playlists",
+  "accountSyncNow": "Sync now",
+  "accountSyncAuto": "Runs on its own in the background",
+  "accountSyncAnonymous": "Backed up to the server. Add an email to sync another device.",
+  "accountSyncPending": "Changes waiting to be sent",
+  "accountSyncLast": "Last sync: {when}",
+  "@accountSyncLast": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "accountSyncDone": "Sync done",
+  "accountSyncFailed": "Sync failed, will retry",
+  "podiumFirst": "1st",
+  "podiumSecond": "2nd",
+  "podiumThird": "3rd",
+  "podiumMusicOf": "music of {production}, {place} — {compo}",
+  "@podiumMusicOf": {
+    "placeholders": {
+      "production": {
+        "type": "String"
+      },
+      "place": {
+        "type": "String"
+      },
+      "compo": {
+        "type": "String"
+      }
+    }
+  },
+  "podiumContains": "contains the {place} of {compo}",
+  "@podiumContains": {
+    "placeholders": {
+      "place": {
+        "type": "String"
+      },
+      "compo": {
+        "type": "String"
+      }
+    }
+  },
+  "competitionEmpty": "This competition has no entries",
+  "competitionEntryNoMusic": "No music in the catalogue for this entry",
+  "competitionEntryTunes": "{n, plural, =1{{n} tune} other{{n} tunes}}",
+  "@competitionEntryTunes": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "onboardingSkip": "Skip",
+  "onboardingNext": "Next",
+  "onboardingStart": "Get started",
+  "onboardingBetaTitle": "Beta version",
+  "onboardingBetaBody": "Rewamp is still being built. Local data — library, playlists, favourites, listening stats — may be wiped before version 1.0. Nothing you download is at risk, but keep anything precious backed up elsewhere.",
+  "onboardingVersion": "Version {version} (build {build})",
+  "@onboardingVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      },
+      "build": {
+        "type": "String"
+      }
+    }
+  },
+  "onboardingExploreTitle": "Explore",
+  "onboardingExploreBody": "Browse and search tens of thousands of chiptunes and tracker modules from the great online archives, by artist, album, platform or party. Tap to listen, download to keep.",
+  "onboardingLibraryTitle": "Your library",
+  "onboardingLibraryBody": "Save what you like, build playlists, organise them in folders. Anything downloaded plays offline, and your library follows you across devices once you sign in.",
+  "onboardingPlayerTitle": "The player",
+  "onboardingPlayerBody": "Swipe to change track, and open the visualizers: oscilloscope, per-voice scopes, scrolling notes, tracker grid. Multi-track files expose their subsongs, and every voice can be muted on its own.",
+  "onboardingReplayTitle": "Welcome tour",
+  "onboardingReplaySubtitle": "Replay the beta notice and the feature tour",
+  "settingsPatternTitle": "Patterns",
+  "settingsPatternSubtitle": "Tracker grid: colours, columns, scrolling",
+  "patternOpaqueBg": "Opaque background",
+  "patternOpaqueBgSubtitle": "Hides the cover art behind the grid",
+  "commonSave": "Save",
+  "accountDisplayName": "Public name",
+  "accountDisplayNameNotSet": "Not set — required to publish a playlist",
+  "accountDisplayNameHint": "The name you want to be credited under.",
+  "accountDisplayNameChangeWarning": "Changing it sends every playlist you published back for review.",
+  "accountDisplayNameTaken": "This name is taken. Choose another one.",
+  "accountDisplayNameLength": "Between 2 and 40 characters.",
+  "accountDisplayNameSaved": "Public name saved",
+  "accountDisplayNameBackInReview": "Playlists sent back for review: {n}",
+  "@accountDisplayNameBackInReview": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "playlistPublish": "Make public",
+  "playlistPublishSubtitle": "Request publication (reviewed first)",
+  "playlistPublishTitle": "Publish this playlist?",
+  "playlistPublishBody": "It becomes visible to everyone once approved, credited to your public name. The cover comes from its tracks.",
+  "playlistPublishCta": "Request",
+  "playlistPublishSubmitted": "Sent for review",
+  "playlistPublishPending": "Waiting for approval",
+  "playlistPublishApproved": "Public",
+  "playlistPublishRejected": "Refused: {reason}",
+  "@playlistPublishRejected": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "playlistPublishRejectedShort": "Refused",
+  "playlistPublishNeedName": "Choose the name you want to be credited under",
+  "playlistPublishNeedTracks": "At least 5 tracks are needed to publish",
+  "playlistPublishHasLocal": "Files from your device cannot be published — others cannot play them",
+  "playlistPublishTooManyPending": "You already have 3 playlists waiting for approval",
+  "playlistPublishRefused": "Publication refused: check the tracks and the pending requests",
+  "playlistPublishFailed": "Publication failed",
+  "playlistPublishWithdrawn": "Playlist is private again",
+  "playlistUnpublish": "Make private",
+  "playlistUnpublishSubtitle": "Removes it from public playlists",
+  "playlistRenamePublishedTitle": "Rename a published playlist?",
+  "playlistRenamePublishedBody": "The name is what gets reviewed: renaming sends the playlist back for approval and unpublishes it meanwhile. Adding or reordering tracks does not.",
+  "playlistByAuthor": "by {author}",
+  "@playlistByAuthor": {
+    "placeholders": {
+      "author": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSpectrumMode": "Spectrum mode",
+  "settingsSpectrumModeStandard": "Standard",
+  "settingsSpectrumModeColored": "Colored",
+  "settingsSpectrumModeBeam": "Beam",
+  "settingsSpectrumModeLine": "Line",
+  "settingsSpectrumModeRing": "Ring",
+  "releaseNotesTitle": "What's new",
+  "releaseNotesV4Downloads": "Downloads: a long one can be cancelled while it runs, and an album archive is no longer fetched several times over.",
+  "@releaseNotesV4Downloads": {
+    "description": "Beta 4 release note bullet"
+  },
+  "releaseNotesV4Queue": "Queue: a button to empty it, with a confirmation — it also stops what is playing.",
+  "@releaseNotesV4Queue": {
+    "description": "Beta 4 release note bullet"
+  },
+  "releaseNotesV4DropFiles": "Files dropped on the window: choose play now, next or at the end; artwork and companion files are left out, and a playlist shipped inside an archive is honoured (real track names, no dead slots).",
+  "@releaseNotesV4DropFiles": {
+    "description": "Beta 4 release note bullet"
+  },
+  "releaseNotesV4Soundfont": "MIDI: import your own SoundFont from the device, alongside the ones offered by the server.",
+  "@releaseNotesV4Soundfont": {
+    "description": "Beta 4 release note bullet"
+  },
+  "releaseNotesV4Formats": "Wwise, FSB and OGL game streams play at last (custom Vorbis).",
+  "@releaseNotesV4Formats": {
+    "description": "Beta 4 release note bullet"
+  },
+  "releaseNotesV4Chips": "Six more sound chips, a choice of emulation core per chip (SameBoy for Game Boy), and correct pitch on sampled chips.",
+  "@releaseNotesV4Chips": {
+    "description": "Beta 4 release note bullet"
+  },
+  "releaseNotesV4Zx": "ZX Spectrum: .vt2 tunes play, and note and pattern views now cover the whole ZX family.",
+  "@releaseNotesV4Zx": {
+    "description": "Beta 4 release note bullet"
+  },
+  "releaseNotesV4Loop": "Repeat one really loops the tune instead of reloading it, and the time counter no longer freezes on an endless loop.",
+  "@releaseNotesV4Loop": {
+    "description": "Beta 4 release note bullet"
+  },
+  "releaseNotesV4Info": "The ⓘ panel lists the files a tune actually opened — companions and libraries included.",
+  "@releaseNotesV4Info": {
+    "description": "Beta 4 release note bullet"
+  },
+  "releaseNotesV4Linux": "Linux desktop build.",
+  "@releaseNotesV4Linux": {
+    "description": "Beta 4 release note bullet"
+  },
+  "releaseNotesDataReset": "Local data was reset for this beta. Your library and playlists rebuild from your account; downloads start over.",
+  "releaseNotesDismiss": "Continue",
+  "pmManagePresets": "Manage presets",
+  "pmPickTooltip": "Pick a preset",
+  "pmPickFilter": "Filter presets",
+  "pmSourceTooltip": "Preset source",
+  "pmAddToPlaylistTooltip": "Add preset to a playlist",
+  "pmSlowPresetDropped": "“{name}” is too heavy for this device and was set aside.",
+  "@pmSlowPresetDropped": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "pmSlowDeviceTitle": "This device is too slow",
+  "pmSlowDeviceOff": "The visualiser was turned off: this device cannot keep up with Milkdrop presets.",
+  "settingsPmSlowPresets": "{count, plural, =1{1 preset set aside} other{{count} presets set aside}}",
+  "@settingsPmSlowPresets": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "settingsPmSlowPresetsSubtitle": "Too slow on this device. Playback skips them.",
+  "settingsPmSlowPresetsRestore": "Restore",
+  "pmSourceBundled": "Built-in presets",
+  "pmSourceImports": "My imports",
+  "pmSourceAll": "All presets",
+  "pmPresetCount": "{count, plural, =1{{count} preset} other{{count} presets}}",
+  "@pmPresetCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pmNewPlaylist": "New playlist…",
+  "pmPlaylistName": "Playlist name",
+  "pmAddedToPlaylist": "Added to playlist",
+  "pmAlreadyInPlaylist": "Already in this playlist",
+  "pmTabPacks": "Packs",
+  "pmTabBrowse": "Browse",
+  "pmTabPlaylists": "Playlists",
+  "pmTabPopular": "Popular",
+  "pmTabSetAside": "Set aside",
+  "pmSetAsideEmpty": "Nothing set aside. Presets that make this device drop below 6 fps land here.",
+  "pmSetAsideRestoreAll": "Restore all",
+  "pmInstall": "Install",
+  "pmInstallQueued": "Install queued",
+  "pmUninstall": "Uninstall",
+  "pmUninstalled": "Pack removed",
+  "pmUse": "Use",
+  "pmDefaultPackBanner": "Recommended starter pack",
+  "pmLicense": "License: {license}",
+  "@pmLicense": {
+    "placeholders": {
+      "license": {
+        "type": "String"
+      }
+    }
+  },
+  "pmPacksOffline": "Server unreachable",
+  "pmSearchPresets": "Search presets…",
+  "pmPlayNow": "Play now",
+  "pmDownloadAction": "Download",
+  "pmDownloaded": "Preset downloaded",
+  "pmDownloadFailed": "Download failed",
+  "pmPreviewing": "Playing: {name}",
+  "@pmPreviewing": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "pmLocalSection": "My playlists",
+  "pmCuratedSection": "Rewamp playlists",
+  "pmImportPlaylist": "Download and use",
+  "pmPlaylistImported": "Playlist ready",
+  "pmImportFiles": "Import files…",
+  "pmImported": "{count, plural, =0{No preset imported} =1{{count} preset imported} other{{count} presets imported}}",
+  "@pmImported": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pmPresetsImported": "Presets added to the projectM library",
+  "pmNoPlaylists": "No preset playlists yet",
+  "pmSourceApplied": "Preset source applied",
+  "pmPlaylistEmpty": "This playlist is empty",
+  "pmDays7": "7 days",
+  "pmDays30": "30 days",
+  "pmDays365": "1 year",
+  "pmUsesCount": "{count, plural, =1{{count} play} other{{count} plays}}",
+  "@pmUsesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pmInstallFailed": "Install failed",
+  "pmSingleDownloads": "Individual downloads",
+  "pmAvailableIn": "Available in {pack}",
+  "@pmAvailableIn": {
+    "placeholders": {
+      "pack": {
+        "type": "String"
+      }
+    }
+  },
+  "pmCleanUp": "Clean up",
+  "pmCleanedUp": "{count, plural, =0{Nothing to clean up} =1{{count} preset deleted} other{{count} presets deleted}}",
+  "@pmCleanedUp": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pmLockAction": "Lock this preset",
+  "pmUnlockAction": "Unlock the preset",
+  "pmOrderRandom": "Shuffle presets",
+  "pmOrderSequential": "Play presets in order",
+  "pmUpdateAvailable": "Update available",
+  "pmUpdate": "Update",
+  "pmSelectAll": "Select all",
+  "pmSelectNone": "Deselect all",
+  "pmSelectedCount": "{count, plural, =0{None selected} one{{count} selected} other{{count} selected}}",
+  "@pmSelectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pmUnusedTextures": "Unused textures",
+  "pmTexturesFreed": "{size} freed",
+  "@pmTexturesFreed": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "pmTexturesCount": "{count, plural, =1{{count} texture} other{{count} textures}}",
+  "@pmTexturesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

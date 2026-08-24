@@ -1,0 +1,11 @@
+--- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/src/kss/mpk2kss.c	2026-07-06 09:48:52
++++ src/kss/mpk2kss.c	2026-07-06 09:44:22
+@@ -22,7 +22,7 @@
+     0xCD, 0x10, 0x40, /* CALL 04010H */
+     0x3E, 0x01,       /* LD A,01H */
+     0x32, 0x49, 0x5D, /* LD (05D49H),A ; FM  SLOT*/
+-    0x32, 0x4A, 0x5D, /* LD (05D4AH),A ; SCC SLOT */
++    0x32, 0x4A, 0x5D, /* LD (05D4AH),A ; SCCKSS SLOT */
+     0x21, 0x00, 0xA0, /* LD HL,A000H */
+     0x0E, 0x01,       /* LD C,01H */
+     0xAF,             /* XOR A */

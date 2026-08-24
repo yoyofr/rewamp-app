@@ -1,0 +1,135 @@
+--- /Users/yoyofr/Documents/Dev/rewamp/packages/rewamp_audio/third_party/libkss/upstream/modules/emu8950/emuadpcm.c	2026-07-06 09:48:52
++++ modules/emu8950/emuadpcm.c	2026-07-06 09:44:22
+@@ -41,10 +41,10 @@
+ 
+ FILE *fp;
+ 
+-OPL_ADPCM *OPL_ADPCM_new(uint32_t clk) {
+-  OPL_ADPCM *_this;
++OPLKSS_ADPCM *OPLKSS_ADPCM_new(uint32_t clk) {
++  OPLKSS_ADPCM *_this;
+ 
+-  _this = (OPL_ADPCM *)malloc(sizeof(OPL_ADPCM));
++  _this = (OPLKSS_ADPCM *)malloc(sizeof(OPLKSS_ADPCM));
+   if (!_this)
+     return NULL;
+ 
+@@ -62,16 +62,16 @@
+     goto Error_Exit;
+   memset(_this->memory[1], 0, ROM_SIZE);
+ 
+-  OPL_ADPCM_reset(_this);
++  OPLKSS_ADPCM_reset(_this);
+ 
+   return _this;
+ 
+ Error_Exit:
+-  OPL_ADPCM_delete(_this);
++  OPLKSS_ADPCM_delete(_this);
+   return NULL;
+ }
+ 
+-void OPL_ADPCM_delete(OPL_ADPCM *_this) {
++void OPLKSS_ADPCM_delete(OPLKSS_ADPCM *_this) {
+   if (_this) {
+     free(_this->memory[0]);
+     free(_this->memory[1]);
+@@ -79,7 +79,7 @@
+   }
+ }
+ 
+-void OPL_ADPCM_reset(OPL_ADPCM *_this) {
++void OPLKSS_ADPCM_reset(OPLKSS_ADPCM *_this) {
+   int i;
+ 
+   for (i = 0; i < 0x20; i++)
+@@ -100,8 +100,8 @@
+ #define DELTA_ADDR_MAX (1 << 16)
+ #define DELTA_ADDR_MASK (DELTA_ADDR_MAX - 1)
+ 
+-/* Update OPL_ADPCM data stage (Register $0F) */
+-static inline int update_stage(OPL_ADPCM *_this) {
++/* Update OPLKSS_ADPCM data stage (Register $0F) */
++static inline int update_stage(OPLKSS_ADPCM *_this) {
+   _this->delta_addr += _this->delta_n;
+ 
+   if (_this->delta_addr & DELTA_ADDR_MAX) {
+@@ -126,7 +126,7 @@
+   return 0;
+ }
+ 
+-static inline void update_output(OPL_ADPCM *_this, uint32_t val) {
++static inline void update_output(OPLKSS_ADPCM *_this, uint32_t val) {
+   static uint32_t F[] = {
+       57, 57, 57, 57, 77, 102, 128, 153 // This table values are from ymdelta.c by Tatsuyuki Satoh.
+   };
+@@ -142,7 +142,7 @@
+   _this->diff = CLAP(DMIN, (_this->diff * F[val & 7]) >> 6, DMAX);
+ }
+ 
+-static inline uint32_t calc(OPL_ADPCM *_this) {
++static inline uint32_t calc(OPLKSS_ADPCM *_this) {
+   uint32_t val;
+ 
+   if (_this->play_start && update_stage(_this)) {
+@@ -157,7 +157,7 @@
+   return ((_this->output[0] + _this->output[1]) * (_this->reg[0x12] & 0xff)) >> 13;
+ }
+ 
+-int16_t OPL_ADPCM_calc(OPL_ADPCM *_this) {
++int16_t OPLKSS_ADPCM_calc(OPLKSS_ADPCM *_this) {
+   if (_this->reg[0x07] & R07_SP_OFF)
+     return 0;
+ 
+@@ -183,7 +183,7 @@
+   }
+ }
+ 
+-void OPL_ADPCM_writeReg(OPL_ADPCM *_this, uint32_t adr, uint32_t data) {
++void OPLKSS_ADPCM_writeReg(OPLKSS_ADPCM *_this, uint32_t adr, uint32_t data) {
+   adr &= 0x1f;
+   data &= 0xff;
+ 
+@@ -231,7 +231,7 @@
+     _this->reg[0x0E] = data;
+     break;
+ 
+-  case 0x0F: /* OPL_ADPCM-DATA */
++  case 0x0F: /* OPLKSS_ADPCM-DATA */
+     _this->reg[0x0F] = data;
+ 
+     if ((_this->reg[0x07] & R07_REC) && (_this->reg[0x07] & R07_MEMORY_DATA)) {
+@@ -265,16 +265,16 @@
+  *    +----- D4: EOS
+  * IRQ bit (D7) is not implemented on this module.
+  */
+-uint8_t OPL_ADPCM_status(OPL_ADPCM *_this) { 
++uint8_t OPLKSS_ADPCM_status(OPLKSS_ADPCM *_this) { 
+   // BUF_RDY is always 1 - it is not accurate but practically okay.
+   return _this->status | STATUS_BUF_RDY;
+ }
+ 
+-void OPL_ADPCM_resetStatus(OPL_ADPCM *_this) {
++void OPLKSS_ADPCM_resetStatus(OPLKSS_ADPCM *_this) {
+   _this->status = 0;
+ }
+ 
+-void OPL_ADPCM_writeRAM(OPL_ADPCM *_this, uint32_t start, uint32_t length, const uint8_t *data) {
++void OPLKSS_ADPCM_writeRAM(OPLKSS_ADPCM *_this, uint32_t start, uint32_t length, const uint8_t *data) {
+   if (start >= RAM_SIZE) return;
+   if (start + length > RAM_SIZE) {
+     length = RAM_SIZE - start;
+@@ -282,10 +282,10 @@
+   memcpy(_this->memory[0] + start, data, length);
+ }
+ 
+-void OPL_ADPCM_writeROM(OPL_ADPCM *_this, uint32_t start, uint32_t length, const uint8_t *data) {
++void OPLKSS_ADPCM_writeROM(OPLKSS_ADPCM *_this, uint32_t start, uint32_t length, const uint8_t *data) {
+   if (start >= ROM_SIZE) return;
+   if (start + length > ROM_SIZE) {
+     length = ROM_SIZE - start;
+   }
+   memcpy(_this->memory[1] + start, data, length);
+-}
+\ No newline at end of file
++}

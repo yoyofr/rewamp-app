@@ -1,0 +1,101 @@
+#pragma once
+
+#include <Audio/FrameAudioData.hpp>
+
+#include <Renderer/RenderContext.hpp>
+#include <Renderer/Texture.hpp>
+
+#include <map>
+#include <memory>
+#include <string>
+
+namespace libprojectM {
+
+class Preset
+{
+public:
+    virtual ~Preset() = default;
+
+    /**
+     * @brief Initializes additional preset resources.
+     * @param renderContext A render context with the initial data.
+     */
+    virtual void Initialize(const Renderer::RenderContext& renderContext) = 0;
+    virtual void GetShadersCode(uint32_t *warpP,uint32_t *compP) = 0;
+    virtual void SetShadersCode(uint32_t warpP,uint32_t compP) = 0;
+
+    /**
+     * @brief Hands over the randNN textures a preload already resolved.
+     *
+     * The seed makes the draw reproducible; the map is what actually decides,
+     * because the two sides do not necessarily scan the same file list (the
+     * scan includes the current preset's directory, which the preload worker
+     * must not change). A slot missing from the map falls back to the seeded
+     * draw, and a zero seed to a fresh one - i.e. to MilkDrop's behaviour.
+     * Default no-op: only the Milkdrop presets have random textures.
+     */
+    virtual void SetRandomTextures(uint64_t seed, const std::map<int, std::string>& resolvedFiles)
+    {
+    }
+
+    /**
+     * @brief Reads back what SetRandomTextures should be handed on the way in.
+     */
+    virtual void GetRandomTextures(uint64_t& seed, std::map<int, std::string>& resolvedFiles) const
+    {
+    }
+
+    /**
+     * @brief Renders the preset into the current framebuffer.
+     * @param audioData Audio data to be used by the preset.
+     * @param renderContext The current render context data.
+     */
+    virtual void RenderFrame(const libprojectM::Audio::FrameAudioData& audioData,
+                             const Renderer::RenderContext& renderContext) = 0;
+
+    /**
+     * @brief Returns a pointer to the current rendering output texture.
+     * This pointer (the actual texture) may change from frame to frame, so this pointer should not be stored for use
+     * across multiple frames. Instead, a new pointer should be requested whenever needed.
+     * @return A pointer to the current output texture of the preset.
+     */
+    virtual auto OutputTexture() const -> std::shared_ptr<Renderer::Texture> = 0;
+
+    /**
+     * @brief Draws an initial image into the preset, e.g. the last frame of a previous preset.
+     * It's not guaranteed a preset supports using a previously rendered image. If not
+     * supported, this call is simply a no-op.
+     * @param image The texture to be copied as the initial preset image.
+     * @param renderContext The current render context data.
+     */
+    virtual void DrawInitialImage(const std::shared_ptr<Renderer::Texture>& image,
+                                  const Renderer::RenderContext& renderContext) = 0;
+
+    /**
+     * @brief Bind the preset's internal framebuffer.
+     * This framebuffer contains the image passed on to the next frame, onto which warp effects etc.
+     * are then applied. Has no effect if the framebuffer isn't initialized yet, e.g. before drawing
+     * the first frame.
+     *
+     * Can be used to draw anything on top of the preset's image, "burning in" additional shapes,
+     * images or text. Depending on the preset, it's not guaranteed though that the image actually
+     * is used in the next frame, or completely painted over. That said, the effect varies between
+     * presets.
+     */
+    virtual void BindFramebuffer() = 0;
+
+    inline void SetFilename(const std::string& filename)
+    {
+        m_filename = filename;
+    }
+
+    inline auto Filename() const -> const std::string&
+    {
+        return m_filename;
+    }
+
+private:
+    std::string m_filename;
+};
+
+} // namespace libprojectM

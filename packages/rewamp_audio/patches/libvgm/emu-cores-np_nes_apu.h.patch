@@ -1,0 +1,22 @@
+diff --git a/emu/cores/np_nes_apu.h b/emu/cores/np_nes_apu.h
+index 3b9b013..04ebba6 100644
+--- a/emu/cores/np_nes_apu.h
++++ b/emu/cores/np_nes_apu.h
+@@ -1,6 +1,7 @@
+ #ifndef __NP_NES_APU_H__
+ #define __NP_NES_APU_H__
+ 
++
+ void NES_APU_np_FrameSequence(void* chip, int s);
+ void* NES_APU_np_Create(UINT32 clock, UINT32 rate);
+ void NES_APU_np_Destroy(void* chip);
+@@ -14,4 +15,9 @@ void NES_APU_np_SetOption(void* chip, int id, int b);
+ void NES_APU_np_SetMask(void* chip, int m);
+ void NES_APU_np_SetStereoMix(void* chip, int trk, INT16 mixl, INT16 mixr);
+ 
++//YOYOFR
++double NES_APU_np_GetFreq(void *chip, int trk);
++int NES_APU_np_GetKeyOn(void *chip, int trk);
++//YOYOFR
++
+ #endif	// __NP_NES_APU_H__

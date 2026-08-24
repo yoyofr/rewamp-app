@@ -1,0 +1,153 @@
+name: rewamp
+description: Rewamp — multiplatform music player (successor to Modizer)
+publish_to: 'none'
+# The part after "+" is the build number. TestFlight and the Play Console both
+# refuse an upload whose build number is not strictly greater than the last one
+# they accepted — bump it on EVERY upload, even when 0.1.0 does not move.
+version: 0.4.0+8
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.41.0'   # liquid_glass_easy (chemin shader du chrome en verre)
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any
+  rewamp_audio:
+    path: ../packages/rewamp_audio
+  ffi: ^2.1.0                    # Pointer<Int8> for zero-alloc channel buf reads
+  file_selector: ^1.1.0
+  file_picker: ^10.3.1            # Android only: keeps the real file name.
+                                 # file_selector_android rewrites the extension
+                                 # from the MIME type ("axe.rsn" → "axe.bin"),
+                                 # which breaks extension-based format routing.
+  http: ^1.2.0
+  path_provider: ^2.1.0
+  sqflite: ^2.4.0
+  sqflite_common_ffi: ^2.3.4   # desktop (macOS / Linux / Windows)
+  path: ^1.9.0                  # path.join() for DB file location
+  shared_preferences: ^2.5.5
+  archive: ^3.6.1                # ZIP extraction for album downloads + user-data backup
+  share_plus: ^10.1.4            # share sheet for exporting the data backup
+  crypto: ^3.0.3                 # sha256 check for downloaded assets (soundfonts)
+  audio_service: ^0.18.15        # system media session (lock screen / artwork / remote)
+                                 # iOS+Android+macOS; playback stays in the C engine
+  audio_session: ^0.1.21         # audio_service dep; explicit for session config
+  permission_handler: ^11.3.1    # Android 13+ POST_NOTIFICATIONS for media controls
+  flutter_secure_storage: ^9.2.4 # account UUID lives in the Keychain (iOS/macOS)
+                                 # / EncryptedSharedPreferences (Android): it IS
+                                 # the account (bearer token), never in the clear
+  url_launcher: ^6.3.2           # credits&licenses: open a project page in the
+                                 # platform browser (was: copy to clipboard)
+  package_info_plus: ^8.0.0      # app version+build for report_song diagnostics
+  device_info_plus: ^11.0.0      # OS version + device model for report_song
+  # EXPÉRIMENTAL (branche feat/liquid-glass-chrome): chrome « liquid glass »
+  # sur le mini-lecteur + la barre de navigation. MIT, pur Dart + shaders.
+  webview_flutter: ^4.10.0       # demozoo production videos (YouTube/Vimeo embed,
+                                 # fullscreen in-app player); iOS+Android+macOS
+  webview_flutter_android: ^4.0.0   # direct import: gesture-free media playback
+  webview_flutter_wkwebview: ^3.15.0 # direct import: creation params (autoplay)
+  desktop_drop: ^0.7.1
+  liquid_glass_easy: ^3.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+# Branding: soleil synthwave magenta #F0388F sur fond Night #160A1E.
+# Icons/splash are already generated into the platform Runner projects.
+# To regenerate after asset changes, temporarily add these dev_dependencies:
+#   flutter_launcher_icons: ^0.13.1
+#   flutter_native_splash: ^2.4.0
+# then run, then remove them again (their SwiftPM shell breaks `flutter run`
+# on iOS while they stay resident):
+#   dart run flutter_launcher_icons
+#   dart run flutter_native_splash:create
+flutter_launcher_icons:
+  image_path: "assets/branding/icon/rewamp_icon_1024.png"
+  ios: true
+  image_path_ios: "assets/branding/icon/AppIcon_1024.png"   # full-bleed, no alpha
+  remove_alpha_ios: true
+  android: true
+  adaptive_icon_background: "#160A1E"
+  adaptive_icon_foreground: "assets/branding/icon/android/ic_launcher_foreground.png"
+  adaptive_icon_monochrome: "assets/branding/icon/android/ic_launcher_monochrome.png"
+  web:
+    generate: false
+  windows:
+    generate: true
+    image_path: "assets/branding/icon/rewamp_icon_1024.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/branding/icon/rewamp_icon_1024.png"
+
+flutter_native_splash:
+  color: "#160A1E"
+  # Sun-only mark: the launch intro (splash_intro.dart) starts from the sun and
+  # reveals the wordmark+EQ, so the static native splash must be sun-only for a
+  # seamless handoff. iOS LaunchImage is currently regenerated from splash_sun.png.
+  image: "assets/branding/splash/splash_sun.png"
+  android: true
+  ios: true
+  web: false
+  android_12:
+    # TODO(android): Android-12 masks the icon to a centred circle at an
+    # OS-fixed size — needs a centre-composed sun asset + intro size calibration.
+    image: "assets/branding/splash/splash_logo_android12.png"
+    color: "#160A1E"
+
+flutter:
+  generate: true
+  uses-material-design: true
+  shaders:
+    - shaders/oscilloscope.frag
+    # Launch-intro effects (texture postprocess; frame-0 identity — see splash_intro.dart)
+    - shaders/splash_fx_raster.frag
+    - shaders/splash_fx_copper.frag
+    - shaders/splash_fx_twister.frag
+    - shaders/splash_fx_vectorballs.frag
+    - shaders/splash_fx_starfield.frag
+    - shaders/splash_fx_laser.frag
+  assets:
+    # Internal data for playback libraries (copied to the app data dir at
+    # startup, then loaded natively via rewamp_set_data_dir). C64 ROMs are
+    # needed by libsidplayfp for RSID/BASIC tunes.
+    - assets/c64/
+    # AdPlug module-info DB (loaded natively from <datadir>/adplug/adplug.db).
+    - assets/adplug/
+    # libvgm OPL4/YMF278B wavetable ROM, requested on demand via
+    # PlayerA::SetFileReqCallback (rewamp_plugin_vgm.cpp).
+    - assets/vgm/
+    # YM2608 (OPNA) ADPCM rhythm ROM — the PC-98 rhythm section's own samples,
+    # read from <datadir>/opna/ by both PC-98 engines (libpmdmini, libfmpmini).
+    - assets/opna/
+    # UADE Amiga player data (score + eagleplayers + confs); UC_BASE_DIR points
+    # here. Enumerated + copied at startup via AssetManifest (see main.dart).
+    - assets/uade/
+    - assets/uade/players/
+    # Flutter does not recurse asset directories: PlayAY's sub-players live one
+    # level down and silently vanish from the bundle without this line.
+    - assets/uade/players/AYPlayers/
+    - assets/uade/players/ENV/EaglePlayer/
+    - assets/uade/players/S/
+    # sc68 loose 68k replay routines (Modizer Resources/sc68/Replay). 55 of
+    # the 99 are ALSO gzip-embedded in the lib (USE_REPLAY68); the other 44
+    # only exist here — resolved via --sc68-user-path=<datadir>/sc68.
+    - assets/sc68/Replay/
+    # projectM (Milkdrop) visualizer — gunzipped .milk presets + textures,
+    # copied to <datadir>/projectm/ at startup, loaded natively by mode 3.
+    - assets/projectm/presets/
+    - assets/projectm/textures/
+    # Brand assets (icon master + splash lockup); splash_logo also usable as an
+    # in-app Flutter splash widget on desktop (no native desktop splash).
+    - assets/branding/splash/
+    # Per-platform placeholder covers (no artwork available). Generated from
+    # lib/platform_artwork.dart by test/gen_placeholders.dart.
+    - assets/placeholders/
