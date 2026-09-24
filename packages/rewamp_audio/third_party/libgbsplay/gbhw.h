@@ -83,6 +83,12 @@ struct gbhw {
 	long lminval, lmaxval, rminval, rmaxval;
 	double filter_constant;
 	int filter_enabled;
+	/* YOYOFR/rewamp: capture par voix (oscilloscopes) — 1 par défaut, 0 pour
+	 * une instance qui ne doit RIEN écrire dans les globales
+	 * `m_voice_*`. C'est le cas de la sonde de sous-chansons GBR: elle tourne
+	 * sur le fil de l'UI pendant qu'un AUTRE morceau joue, et ces tampons
+	 * appartiennent au morceau qui joue. */
+	int capture_voices;
 	long cap_factor;
 
 	long master_volume;

@@ -33,6 +33,11 @@ namespace ZXTune
     CAP_DEV_SAA1099    = 0x40,
     //! SID (MOS6581/MOS8580) support
     CAP_DEV_MOS6581    = 0x80,
+    //! Multi-device module (MTC). Valeur amont 738b71fc9b, ou le layout a
+    //! ete elargi (device mask 0xfff); dans NOTRE millesime 0x800 recouvre
+    //! CAP_STOR_SCANER — inoffensif: rien dans le set compile ne teste ces
+    //! bits (seuls CAP_STOR_DIRS et CAP_STOR_PLAIN sont lus).
+    CAP_DEV_MULTI      = 0x800,
 
     //! Storages-related capabilities
     CAP_STORAGE_MASK    = 0xff00,

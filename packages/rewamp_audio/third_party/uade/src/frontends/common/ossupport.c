@@ -186,6 +186,58 @@ int uade_find_amiga_file(char *realname, size_t maxlen, const char *aname,
 				}
 			}
 		}
+
+		/* rewamp: nom de module à PLUSIEURS points — le compagnon se nomme sur
+		   le DÉBUT du nom, pas sur tout.
+
+		   Les players dérivent le fichier d'échantillons en échangeant la
+		   DERNIÈRE extension. Ça tient tant que le nom n'a qu'un point. Sur
+		   modland, l'Infogrames « north & south.national.dum » a pour banque
+		   « north & south.ins » — le player demande donc
+		   « north & south.national.ins », puis « north & south.nationa.ins »
+		   (sa seconde tentative retire un caractère), et échoue: « score died ».
+
+		   Corrigé ICI plutôt que dans le player: `players/Infogrames` est un
+		   binaire 68k de l'arbre de données UADE dont nous n'avons pas la
+		   source (`amigasrc/` ne contient que le score), le patcher demanderait
+		   de le désassembler et serait perdu à la prochaine resynchro amont —
+		   alors que cette fonction est le SEUL entonnoir par où passent tous
+		   les fichiers que le 68k ouvre. Et le correctif couvre toute la classe
+		   du problème, pas seulement Infogrames.
+
+		   On RACCOURCIT le radical point par point, du plus spécifique au plus
+		   court, en gardant l'extension demandée. Uniquement en dernier
+		   recours (les chemins exacts ont déjà échoué), uniquement vers un
+		   nom PLUS COURT, et seulement à côté du module. */
+		{
+			const char *base = strrchr(aname, '/');
+			base = base ? base + 1 : aname;
+			const char *ext = strrchr(base, '.');
+			if (ext != NULL && ext > base) {
+				const char *dir = (moduledir && moduledir[0]) ? moduledir : ".";
+				/* Chaque point du radical, du plus À DROITE au plus à gauche:
+				   « a.b.c.ins » essaie « a.b.ins » puis « a.ins ». */
+				for (const char *cut = ext; cut > base; cut--) {
+					if (*cut != '.' || cut == ext)
+						continue;
+					char _rw_short[PATH_MAX];
+					int wrote = snprintf(_rw_short, sizeof(_rw_short),
+						"%s/%.*s%s", dir, (int)(cut - base), base, ext);
+					if (wrote <= 0 || (size_t)wrote >= sizeof(_rw_short))
+						continue;
+					if (stat(_rw_short, &_rw_st) != 0 ||
+					    !S_ISREG(_rw_st.st_mode))
+						continue;
+					FILE *_rw_f = fopen(_rw_short, "rb");
+					if (_rw_f == NULL)
+						continue;
+					fclose(_rw_f);
+					strlcpy(realname, _rw_short, maxlen);
+					rewamp_loaded_files_add(realname);
+					return 0;
+				}
+			}
+		}
 	}
 #endif
 
@@ -200,7 +252,30 @@ int uade_find_amiga_file(char *realname, size_t maxlen, const char *aname,
 			snprintf(dirname, sizeof(dirname), "%s/S/", playerdir);
 		} else if (!strcasecmp(dirname, "Instruments") && moduledir != NULL) {
 			// ScottJohnston player loads samples from Instruments: volume
-			snprintf(dirname, sizeof(dirname), "%s/instruments/", moduledir);
+			//
+			// REWAMP: the directory name is resolved CASE-INSENSITIVELY.
+			// Upstream hardcodes lowercase "instruments/", which only ever
+			// worked because the machines it was tested on had a
+			// case-insensitive filesystem. modland ships SMUS samples under
+			// "Instruments/" (capital I) and that is the name our downloader
+			// writes, so on Linux and Android the opendir() below failed and
+			// the tune played with no instruments at all.
+			//
+			// uade_amiga_scandir() is the very helper this file already uses
+			// for every other path component, for exactly this reason; the
+			// lowercase spelling stays as the fallback so a tree that really
+			// has "instruments/" keeps working.
+			char _rw_real[PATH_MAX];
+			char _rw_base[PATH_MAX];
+			snprintf(_rw_base, sizeof(_rw_base), "%s/", moduledir);
+			if (uade_amiga_scandir(_rw_real, _rw_base, "Instruments",
+					       sizeof(_rw_real))) {
+				snprintf(dirname, sizeof(dirname), "%s/%s/",
+					 moduledir, _rw_real);
+			} else {
+				snprintf(dirname, sizeof(dirname),
+					 "%s/instruments/", moduledir);
+			}
 		} else {
 			uade_warning("open_amiga_file: unknown amiga volume "
 				     "(%s)\n", aname);

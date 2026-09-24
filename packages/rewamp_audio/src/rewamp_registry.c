@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <ctype.h>
 
 /* Must stay comfortably above the number of rewamp_register_plugin() calls in
@@ -12,7 +13,13 @@
  * which then never claimed their files and fell through to a failing miniaudio.
  * Keep headroom for future engines. */
 #define REWAMP_MAX_PLUGINS   64
-#define REWAMP_MAX_OVERRIDES  8
+/* ⚠️ The app pins MANY extensions (nsf family, gbs, sndh, the 4 MIDI ones,
+ * 8 Amiga tracker ones…), and a pin that does not fit used to be DROPPED
+ * SILENTLY: with 8 slots, switching « Synthé MIDI » to MT-32 after the Amiga
+ * pins had filled the table left .mid on FluidLite (and launching with MT-32
+ * set dropped the UADE pins instead). Sized with room to spare; overflow is
+ * now reported on stderr. */
+#define REWAMP_MAX_OVERRIDES  64
 #define REWAMP_HEADER_PROBE_BYTES 2048
 
 static const RewampPluginVTable* g_plugins[REWAMP_MAX_PLUGINS];
@@ -25,6 +32,9 @@ static int g_override_count = 0;
 // Forward declarations of plugin vtable getters, gated by build flags.
 #ifdef REWAMP_WITH_OPENMPT
 const RewampPluginVTable* rewamp_openmpt_plugin(void);
+#endif
+#ifdef REWAMP_WITH_XMP
+const RewampPluginVTable* rewamp_xmp_plugin(void);
 #endif
 #ifdef REWAMP_WITH_VGM
 const RewampPluginVTable* rewamp_vgm_plugin(void);
@@ -76,6 +86,9 @@ const RewampPluginVTable* rewamp_v2m_plugin(void);
 #endif
 #ifdef REWAMP_WITH_MIDI
 const RewampPluginVTable* rewamp_midi_plugin(void);
+#endif
+#ifdef REWAMP_WITH_MT32
+const RewampPluginVTable* rewamp_mt32_plugin(void);
 #endif
 #ifdef REWAMP_WITH_GSF
 const RewampPluginVTable* rewamp_gsf_plugin(void);
@@ -200,6 +213,14 @@ void rewamp_register_builtin_plugins(void) {
 #ifdef REWAMP_WITH_OPENMPT
     rewamp_register_plugin(rewamp_openmpt_plugin());
 #endif
+#ifdef REWAMP_WITH_XMP
+    // libxmp AFTER libopenmpt, deliberately: the two overlap on every
+    // mainstream tracker format and libopenmpt is the better replayer there,
+    // so libxmp scores one notch below (90 vs 100 on a confirmed header) and
+    // loses every tie. It exists for the ~10 formats libopenmpt cannot load
+    // at all — Archimedes Tracker (.musx), Liquid Tracker, Funktracker…
+    rewamp_register_plugin(rewamp_xmp_plugin());
+#endif
 #ifdef REWAMP_WITH_SID
     rewamp_register_plugin(rewamp_sid_plugin());
 #endif
@@ -228,6 +249,14 @@ void rewamp_register_builtin_plugins(void) {
     // Standard MIDI via FluidLite+SF2 (MThd/RMID magic → 110/100; probe
     // declines when no SoundFont is installed).
     rewamp_register_plugin(rewamp_midi_plugin());
+#endif
+#ifdef REWAMP_WITH_MT32
+    // Second .mid engine: Roland MT-32 / CM-32L emulation (mt32emu). Same
+    // 100 as FluidLite on a plain file, so registering it AFTER makes
+    // FluidLite win the tie; 104 when the file carries MT-32 sysex; 0 without
+    // an imported ROM set. Neither is exclusive (< 105): the app pins one or
+    // the other through rewamp_registry_set_preferred_plugin("mid", ...).
+    rewamp_register_plugin(rewamp_mt32_plugin());
 #endif
 #ifdef REWAMP_WITH_GSF
     // GBA .gsf/.minigsf via VBA (PSF 0x22 magic → 110/100). Before highlyexp
@@ -426,7 +455,12 @@ void rewamp_registry_set_preferred_plugin(const char* ext, const char* plugin_na
         }
     }
     // New entry.
-    if (!plugin_name || g_override_count >= REWAMP_MAX_OVERRIDES) return;
+    if (!plugin_name) return;
+    if (g_override_count >= REWAMP_MAX_OVERRIDES) {
+        fprintf(stderr, "[registry] pin table full (%d): '%s' -> '%s' ignored\n",
+                REWAMP_MAX_OVERRIDES, ext, plugin_name);
+        return;
+    }
     strncpy(g_overrides[g_override_count].ext, ext, 15);
     g_overrides[g_override_count].ext[15] = '\0';
     strncpy(g_overrides[g_override_count].plugin_name, plugin_name, 31);
@@ -452,6 +486,16 @@ int rewamp_registry_select_ranked(const char* path,
     uint8_t header[REWAMP_HEADER_PROBE_BYTES];
     size_t headerSize = read_header(path, header, sizeof(header));
 
+    /* Taille RÉELLE du fichier, pour les probes qui en ont besoin: plusieurs
+     * validations de amifilemagic comparent la taille calculée depuis
+     * l'en-tête à celle du fichier, et abdiquent quand on leur ment. */
+    uint64_t fileSize = 0;
+    {
+        struct stat st;
+        if (stat(path, &st) == 0 && S_ISREG(st.st_mode))
+            fileSize = (uint64_t)st.st_size;
+    }
+
     // Check if user has an extension-level plugin preference (suffix first,
     // then the Amiga prefix token).
     const char* preferredName = NULL;
@@ -474,12 +518,29 @@ int rewamp_registry_select_ranked(const char* path,
     for (int i = 0; i < g_plugin_count; ++i) {
         const RewampPluginVTable* vt = g_plugins[i];
         if (vt->probe == NULL) continue;
-        int s = vt->probe(extPtr, header, headerSize);
-        if (prefixPtr) {
-            int sp = vt->probe(prefixPtr, header, headerSize);
+        int s = vt->probe_path
+            ? vt->probe_path(extPtr, header, headerSize, path, fileSize)
+            : vt->probe(extPtr, header, headerSize);
+        /* Le préfixe n'est demandé qu'aux greffons qui répondent par une
+         * LISTE. Un fourre-tout (vgmstream) y verrait un jeton inconnu et
+         * rendrait son score de repli, ce qui annule sa propre liste
+         * d'exclusion sur tout nom `radical.ext`. Voir `noPrefixProbe`. */
+        if (prefixPtr && !vt->noPrefixProbe) {
+            int sp = vt->probe_path
+                ? vt->probe_path(prefixPtr, header, headerSize, path, fileSize)
+                : vt->probe(prefixPtr, header, headerSize);
             if (sp > s) s = sp;
         }
         if (s <= 0) continue;
+        /* Une IDENTIFICATION EXCLUSIVE passe devant l'épingle — voir
+         * REWAMP_SCORE_EXCLUSIVE. L'épingle arbitre entre greffons qui savent
+         * tous jouer le fichier; elle ne demande pas qu'on le joue MAL. */
+        if (s >= REWAMP_SCORE_EXCLUSIVE) {
+            cand[n] = vt;
+            score[n] = s;
+            n++;
+            continue;
+        }
         if (preferredName && vt->name && strcmp(vt->name, preferredName) == 0) {
             preferred = vt;   // pinned to the front below
             continue;
@@ -504,8 +565,17 @@ int rewamp_registry_select_ranked(const char* path,
     }
 
     int outN = 0;
+    /* ⚠️ L'ORDRE DE SORTIE, pas seulement le classement: le greffon épinglé
+     * était écrit EN TÊTE sans condition, donc trier une identification
+     * exclusive au-dessus de lui ne servait à rien — elle restait en
+     * deuxième position et n'était jamais essayée. Les identifications
+     * exclusives (>= REWAMP_SCORE_EXCLUSIVE) passent donc AVANT l'épingle;
+     * tout le reste garde l'ordre d'avant. */
+    int i = 0;
+    for (; i < n && outN < maxOut && score[i] >= REWAMP_SCORE_EXCLUSIVE; ++i)
+        out[outN++] = cand[i];
     if (preferred && outN < maxOut) out[outN++] = preferred;
-    for (int i = 0; i < n && outN < maxOut; ++i) out[outN++] = cand[i];
+    for (; i < n && outN < maxOut; ++i) out[outN++] = cand[i];
     return outN;
 }
 

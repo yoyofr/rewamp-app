@@ -43,6 +43,10 @@
 #ifdef REWAMP_WITH_SC68
 
 #include "rewamp_plugin.h"
+
+/* Boucle forcée (rewamp_audio.c) — lus à l'open. */
+extern "C" int g_force_loop_mode;
+extern "C" int g_force_loop_native_veto;
 #include "rewamp_channel_data.h"
 #include "rewamp_assets.h"
 #include "ModizerVoicesData.h"
@@ -173,6 +177,9 @@ static void sc68_register_voices(RewampDecoder* dec) {
 }
 
 static RewampDecoder* sc68_open_impl(const char* path, RewampAudioFormat* outFormat) {
+    /* Mode 1 (N boucles): pas de compte natif -> veto, le generique
+     * Dart compte les passes (voir configure_loop). */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
     if (!path || !sc68_lib_init()) return NULL;
 
     char cleanPath[4096];
@@ -202,7 +209,10 @@ static RewampDecoder* sc68_open_impl(const char* path, RewampAudioFormat* outFor
     if (track == 0) track = info.dsk.track >= 1 ? (int)info.dsk.track : 1;
 
     rewamp_sc68_bind_scopes(sc);
-    if (sc68_play(sc, track, 0) < 0) { sc68_destroy(sc); return NULL; }
+    /* Repeat-morceau: SC68_INF_LOOP (-1) — sc68 boucle lui-même la piste
+     * (sinon il émet SC68_END en fin de piste et le read s'arrête). */
+    const int sc68Loops = (g_force_loop_mode == 2) ? -1 : 0;
+    if (sc68_play(sc, track, sc68Loops) < 0) { sc68_destroy(sc); return NULL; }
     sc68_process(sc, NULL, NULL);     // apply the track change (n==NULL)
 
     if (sc68_music_info(sc, &info, SC68_CUR_TRACK, 0)) { sc68_destroy(sc); return NULL; }
@@ -390,7 +400,8 @@ static void sc68_seek_impl(RewampDecoder* dec, uint64_t frameIndex) {
     // CPU-emulation idiom as UADE/vio2sf/SNDH/lazyusf).
     rewamp_sc68_bind_scopes(dec->sc68);
     if (frameIndex < dec->framePos) {
-        if (sc68_play(dec->sc68, dec->track, 0) < 0) return;
+        if (sc68_play(dec->sc68, dec->track,
+                      (g_force_loop_mode == 2) ? -1 : 0) < 0) return;
         sc68_process(dec->sc68, NULL, NULL);
         dec->framePos = 0;
     }
@@ -407,6 +418,21 @@ static void sc68_seek_impl(RewampDecoder* dec, uint64_t frameIndex) {
 
 static uint64_t sc68_length_impl(RewampDecoder* dec) {
     return dec ? dec->totalFrames : 0;
+}
+
+
+/* Boucle FORCÉE (repeat-morceau): le moteur ÉMULÉ boucle DE LUI-MÊME au point
+ * de boucle de la musique — c'est notre troncature à totalFrames (longueur de
+ * catalogue/tag) qui coupait, et la relance générique repartait du DÉBUT, ce
+ * qui s'entend (même famille que le .ay zxtune, « Midnight Resistance »).
+ * Mode 2 (infini): on lève la troncature, l'émulation joue et boucle au bon
+ * endroit. Mode 1 (N passes): pas de compte natif ici → VETO posé à l'open,
+ * le générique Dart compte — comportement inchangé. Filet: un moteur qui
+ * s'arrêterait quand même rend un read() à 0 → rechargement replayCurrent,
+ * exactement le comportement d'avant ce câblage. */
+static void sc68_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (dec != NULL && mode == 2) dec->totalFrames = 0;
 }
 
 static void sc68_close_impl(RewampDecoder* dec) {
@@ -476,6 +502,7 @@ static const RewampPluginVTable kSc68VTable = {
     sc68_seek_impl,
     sc68_length_impl,
     sc68_close_impl,
+    sc68_configure_loop_fn,
 };
 
 extern "C" const RewampPluginVTable* rewamp_sc68_plugin(void) { return &kSc68VTable; }

@@ -1,6 +1,7 @@
 import 'dart:io' show File, Platform;
 import 'dart:ui';
 import 'app_snack.dart';
+import 'transport_log.dart';
 import 'sync_service.dart';
 import 'artist_links.dart';
 import 'dart:async';
@@ -19,18 +20,23 @@ import 'podium_badge.dart';
 import 'player_controller.dart' show PlayerController, QueueEntry;
 import 'playlist_picker.dart';
 import 'scrolling_text.dart';
+import 'settings_screen.dart' show kEngineSettingsPages, pushEngineSettings;
 import 'viz_selector_widget.dart';
 import 'screen_wakelock.dart';
 import 'user_settings.dart';
 import 'artwork_image.dart';
 import 'artwork_palette.dart';
 import 'platform_artwork.dart' show platformAssetFor;
+import 'library_identity.dart';
 import 'local_db.dart';
+import 'mini_window.dart';
+import 'mini_window_player.dart';
 import 'audio_route.dart';
 import 'download_banner.dart';
 import 'note_markdown.dart';
 import 'orientation_lock.dart';
 import 'production_screen.dart' show openProductionOn;
+import 'm3u_info.dart' show M3uField, M3uInfo, splitM3uArtists;
 import 'rewamp_db.dart' show DownloadInfo, ProductionRef, RewampDb;
 import 'uade_info.dart';
 import 'sap_info.dart';
@@ -53,6 +59,11 @@ Color playerSurfaceColor(BuildContext context) {
   return Color.alphaBlend(Colors.white.withValues(alpha: 0.05), cs.surface);
 }
 
+/// Le filet qui sépare, dans le panneau ⓘ, ce qui parle du FICHIER de ce qui
+/// parle de la PISTE en cours. Sans lui, deux commentaires d'affilée se lisent
+/// comme un seul.
+const _kStilRule = '────────────────────';
+
 class PlayerScreen extends StatefulWidget {
   final PlayerController   controller;
   final OnNavigateAlbum?   onNavigateAlbum;
@@ -68,10 +79,23 @@ class PlayerScreen extends StatefulWidget {
   /// n'y a pas d'album — ce qui est la règle pour hvsc/asma/modland, dont les
   /// lignes n'ont pas d'album_id, et dont les formats n'ont aucun conteneur de
   /// tags (ID3/Vorbis/RIFF) où le moteur pourrait en trouver un.
-  final String?            subsongContainerName;
+  ///
+  /// ⚠️ Une FONCTION, pas une chaîne, et c'est le correctif: la piste change
+  /// sans que la coquille se reconstruise (le lecteur est bâti une fois comme
+  /// `child:` d'un AnimatedBuilder), donc une valeur capturée restait celle du
+  /// morceau PRÉCÉDENT. Symptôme: « Chrono Trigger » affiché sur un `.s3m` qui
+  /// n'a aucun album, jusqu'à ce qu'on ferme et rouvre le lecteur — le
+  /// contrôleur, lui, était juste. Appelée à chaque build, elle suit la piste.
+  final String? Function()? subsongContainerName;
   /// Forces a re-download of the CURRENT single file (delete + refetch + replay),
   /// so a server-side update is picked up on demand. Null when unavailable.
   final VoidCallback?      onRedownload;
+  /// Ouvre l'écran Réglages (raccourci du menu « … »). Le lecteur se ferme
+  /// d'abord, comme pour album/artiste — c'est un overlay, pas une route.
+  final VoidCallback?      onNavigateSettings;
+  /// Réglages du MOTEUR qui joue, poussés par la coquille dans l'onglet
+  /// courant — c'est ce qui les affiche AVEC le mini-lecteur.
+  final ValueChanged<String>? onNavigateEngineSettings;
 
   /// Set when the player is hosted as an OVERLAY instead of a route (AppShell's
   /// swipe-up open). Closing then means driving the host's animation, not
@@ -95,6 +119,8 @@ class PlayerScreen extends StatefulWidget {
     this.onNavigateSubsongs,
     this.subsongContainerName,
     this.onRedownload,
+    this.onNavigateSettings,
+    this.onNavigateEngineSettings,
     this.onHostClose,
     this.hostController,
   });
@@ -106,7 +132,7 @@ class PlayerScreen extends StatefulWidget {
     OnNavigateArtist?  onNavigateArtist,
     OnNavigateTag?     onNavigateTag,
     VoidCallback?      onNavigateSubsongs,
-    String?            subsongContainerName,
+    String? Function()? subsongContainerName,
     VoidCallback?      onRedownload,
   }) {
     showModalBottomSheet(
@@ -208,6 +234,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   Set<String>? _serverArtists;
   String? _serverArtistsCheckedFor;
 
+  // Un album LOCAL n'a pas d'uuid: sa clé est son NOM. Résolu en base, mis en
+  // cache par nom d'album pour qu'un changement de piste le re-demande.
+  bool _localAlbumKnown = false;
+  String? _localAlbumCheckedFor;
+
   /// The credit as its individual artists. Prefers the catalogue's own list
   /// (names + aligned uuids): splitting the flattened label is a guess that
   /// cannot survive a name containing "&", and it throws the ids away, so a
@@ -220,6 +251,27 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   static List<String> _artistIdsOf(PlayerController ctrl) =>
       ctrl.currentArtistNames.isNotEmpty ? ctrl.currentArtistIds : const [];
+
+  /// Un album connu SANS uuid de catalogue rend le lien vivant lui aussi.
+  ///
+  /// Le lien exigeait `currentAlbumId`, ce qui condamnait TOUT album importé:
+  /// un import n'a aucune identité serveur (sa clé est son nom), alors que
+  /// l'écran de détail l'ouvre très bien ainsi. La question posée à la base
+  /// est « plusieurs FICHIERS partagent-ils ce nom d'album ? » — un fichier
+  /// multi-sous-chansons en porte un aussi, et lui garde « Voir les
+  /// sous-chansons ».
+  void _ensureLocalAlbumChecked(String album) {
+    if (_localAlbumCheckedFor == album) return;
+    _localAlbumCheckedFor = album;
+    _localAlbumKnown = false;
+    LocalDb.instance.hasLocalAlbumByName(album).then((v) {
+      // La piste a pu changer pendant l'aller-retour: on ne pose la réponse
+      // que si elle décrit encore l'album affiché.
+      if (mounted && _localAlbumCheckedFor == album) {
+        setState(() => _localAlbumKnown = v);
+      }
+    }).catchError((_) {});
+  }
 
   void _ensureServerArtistsChecked(bool isLocal, String artist) {
     if (!isLocal) return;
@@ -283,6 +335,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _showVisualizer = UserSettings.instance.showVisualizer;
     _syncWakelock();
     UserSettings.instance.addListener(_onSettingsChanged);
+    MiniWindow.instance.addListener(_onMiniWindowChanged);
     widget.controller.addListener(_onControllerChanged);
     _onControllerChanged(); // seed the artwork identity for the current track
     WidgetsBinding.instance.addObserver(this); // rotation → auto-fullscreen
@@ -323,6 +376,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     PlayerTint.dominant = null; // player closed → panels elsewhere stay neutral
     PlayerTint.dominantAlt = null;
     UserSettings.instance.removeListener(_onSettingsChanged);
+    MiniWindow.instance.removeListener(_onMiniWindowChanged);
     // The visualizer goes with the sheet, so the display hold does too — the
     // player is the ONLY place a viz is mounted (it is torn down at 0), which
     // is what makes this the single release site.
@@ -406,7 +460,35 @@ class _PlayerScreenState extends State<PlayerScreen>
   // _beginSheetDrag: « ce pointeur est né sur la barre ».
   bool    _seekBarTouched = false;
 
-  void _onSheetPointerDown(PointerDownEvent e) => _beginSheetDrag(e.position);
+  /// Doigts posés sur le lecteur, comptés ICI — du `Listener` parent, jamais
+  /// depuis un reconnaisseur (le `up` d'un pointeur refusé n'arrive pas, le
+  /// compteur resterait bloqué). À DEUX doigts, c'est un pincement (le zoom du
+  /// viz-piano, la police du viz-pattern): une fermeture en cours est rendue à
+  /// la feuille et plus rien n'est pris jusqu'à ce que tout soit relevé.
+  int _sheetPointers = 0;
+  /// Délai de grâce avant qu'un glissement à UN doigt ne revendique la
+  /// fermeture: un pincement pose ses deux doigts l'un après l'autre, et ce
+  /// `Listener`, hors arène, voyait le premier dépasser le slop avant que le
+  /// second ne se pose — le lecteur descendait pendant qu'on commençait à
+  /// pincer le piano. Même valeur que `_kPinchGrace` des viz.
+  static const Duration _kSheetPinchGrace = Duration(milliseconds: 90);
+  final Stopwatch _sheetSinceDown = Stopwatch();
+
+  void _onSheetPointerDown(PointerDownEvent e) {
+    _sheetPointers++;
+    if (_sheetPointers >= 2) {
+      _abortSheetDragForPinch();
+      return;
+    }
+    _beginSheetDrag(e.position);
+  }
+
+  void _abortSheetDragForPinch() {
+    _sheetDragFrom = null;
+    if (!_sheetDragActive) return;
+    _sheetDragActive = false;
+    widget.hostController?.fling(velocity: 1);   // la feuille remonte
+  }
 
   /// Trackpad. A two-finger swipe emits PAN-ZOOM events, never PointerMove, so
   /// the dismiss drag was invisible to it on macOS whatever the zone — the
@@ -430,6 +512,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     _sheetDragFrom = pos;
+    _sheetSinceDown
+      ..reset()
+      ..start();
     // Filet: un `up` manqué (pointeur annulé par une route, geste avalé par un
     // enfant) laisserait le balayage horizontal muet pour toujours.
     _playerDismissDragActive = false;
@@ -455,8 +540,20 @@ class _PlayerScreenState extends State<PlayerScreen>
       _sheetDragOverVisual = true;
       return;
     }
-    final vizClaimsVertical =
-        _showVisualizer && UserSettings.instance.vizEffect == 'notes';
+    // Les visualiseurs qui font QUELQUE CHOSE d'un geste vertical gardent le
+    // panneau pour eux: la notation y déplace sa fenêtre de hauteurs, et la
+    // vue MOTIFS y pince la taille de police (l'axe vertical du pincement).
+    //
+    // ⚠️ Pour les motifs, se contenter de bloquer à DEUX doigts ne suffirait
+    // pas: ce `Listener` n'est pas dans l'arène des gestes, il réagit dès que
+    // le PREMIER doigt descend au-delà du slop — c'est-à-dire avant que le
+    // second ne se pose. La fermeture partait donc pendant qu'on commençait à
+    // pincer. Le panneau est donc rendu en entier au visualiseur, comme pour
+    // la notation; le reste du lecteur (pochette hors panneau, transport,
+    // poignée) ferme toujours.
+    const vizOwnsVertical = {'notes', 'patterns'};
+    final vizClaimsVertical = _showVisualizer &&
+        vizOwnsVertical.contains(UserSettings.instance.vizEffect);
     _sheetDragOverVisual = (vizClaimsVertical || _showVideo || _videoFs) &&
         _visualPanelContains(pos);
   }
@@ -493,6 +590,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (host == null) return;
     if (!_sheetDragActive) {
       if (dy < kTouchSlop) return;   // downward only, and past the slop
+      // Un second doigt est posé, ou le premier vient juste de se poser: un
+      // pincement en train de naître, pas une fermeture (voir _sheetPointers).
+      if (_sheetPointers >= 2) return;
+      if (_sheetSinceDown.elapsed < _kSheetPinchGrace) return;
       // …et VERTICAL: un geste franchement de biais appartient au balayage
       // horizontal (piste suivante / précédente). Sans cette comparaison, une
       // fermeture un peu diagonale déclenchait les deux à la fois — le
@@ -511,6 +612,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// Settles the dismiss drag. Under three quarters of the way up the player
   /// goes; above it, it springs back.
   void _onSheetPointerUp(PointerEvent e) {
+    if ((e is PointerUpEvent || e is PointerCancelEvent) && _sheetPointers > 0) {
+      _sheetPointers--;
+    }
     _sheetDragFrom = null;
     // ⚠️ Le drapeau n'est PAS baissé ici. Un `Listener` est dans le chemin de
     // hit-test, donc il reçoit le `PointerUp` AVANT que l'arène ne tranche et
@@ -704,7 +808,23 @@ class _PlayerScreenState extends State<PlayerScreen>
     // (idMatch failed) so the tint never applied without a close/reopen.
     final id = c.filePath ?? '';
     if (id == _artIdentity) return;
+    final firstSeed = _artIdentity == null;
     _artIdentity = id;
+    // ⚠️ RECONSTRUIRE, sans condition, parce que la PISTE a changé.
+    //
+    // L'écran ne se reconstruisait qu'en effet de bord: le seul setState de ce
+    // chemin est celui de `_applyTint`, et il ne part que si la couleur
+    // DIFFÈRE. Une piste sans pochette qui succède à une piste dont la teinte
+    // était voisine (ou dont le placeholder rend la même) ne rebâtissait donc
+    // rien — `_vizWidget` n'était pas reconstruit, le `didUpdateWidget` du
+    // sélecteur de visualiseur ne voyait pas la nouvelle clé d'artwork, et la
+    // TEXTURE GL gardait la pochette du morceau précédent. Symptôme: elle
+    // restait affichée sous le visualiseur jusqu'à ce qu'on le désactive et le
+    // réactive (là, un initState rechargeait et effaçait).
+    //
+    // Pas au premier appel: il vient d'initState (amorçage de l'identité), où
+    // le build suit de toute façon.
+    if (!firstSeed && mounted) setState(() {});
     // Known track → its cover path immediately (no flash); unknown → null until
     // _resolveTint lands. The exact provider is cleared and re-published by the
     // new cover's onImageResolved (fires as soon as it paints).
@@ -747,6 +867,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           album:         c.currentAlbum,
           localFilePath: filePath,
           targetDir:     c.artworkTargetDir,
+          priority:      true, // la pochette du morceau en cours (voir getPath)
         );
       }
     } catch (_) {/* fall through to the placeholder */}
@@ -764,7 +885,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       // No cover on disk (none, or still downloading) → tint the themed
       // platform placeholder the display is showing right now.
       final asset = platformAssetFor(
-          platformName: c.currentPlatformName, pathOrExt: filePath ?? url);
+          platformName: c.currentPlatformName, pathOrExt: filePath ?? url,
+          engine: c.audio.backendName);
       await _applyTint(id, AssetImage(asset), 'placeholder:$asset');
       if (url != null && url.startsWith('http')) {
         // The display shows the cover via Image.network IMMEDIATELY, while the
@@ -977,6 +1099,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     return '${(t ~/ 60).toString().padLeft(2, '0')}:${(t % 60).toString().padLeft(2, '0')}';
   }
 
+  /// Le libellé de DROITE de la barre. Sous boucle infinie la durée n'est plus
+  /// une FIN: c'est la longueur d'UNE passe, celle qui sert d'échelle à la
+  /// barre (et sur laquelle la barre sature). On dit donc les deux —
+  /// « ∞ (02:30) » — au lieu d'annoncer une fin qui n'arrivera pas.
+  String _totalLabel(PlayerController ctrl) {
+    final infinite = ctrl.effectiveForceLoopMode == 'infinite';
+    if (ctrl.duration <= 0) return infinite ? '∞' : '--:--';
+    final d = _fmt(ctrl.duration);
+    return infinite ? '∞ ($d)' : d;
+  }
+
   @override
   Widget build(BuildContext context) {
     // When the artwork tint is active the sheet is DEEP whatever the app theme
@@ -1160,6 +1293,14 @@ class _PlayerScreenState extends State<PlayerScreen>
   // hides the surrounding player chrome so the viz's Expanded fills the sheet
   // (a Global-key reparent into an overlay tripped Flutter's LayoutBuilder-in-
   // performLayout assertion, so we resize in place instead).
+  bool _lastVizYield = false;
+  void _onMiniWindowChanged() {
+    final y = MiniWindow.instance.vizYield;
+    if (y == _lastVizYield || !mounted) return;
+    _lastVizYield = y;
+    setState(() {});
+  }
+
   Widget _vizWidget(PlayerController ctrl) {
     return VizSelectorWidget(
       key:                  _vizKey,
@@ -1203,7 +1344,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           iconSize: size,
           padding: const EdgeInsets.symmetric(horizontal: 6),
           constraints: const BoxConstraints(),
-          icon: _OutlinedGlyph(icon: icon, size: size, enabled: onPressed != null),
+          icon: OutlinedGlyph(icon: icon, size: size, enabled: onPressed != null),
           onPressed: onPressed,
         );
     // AnimatedBuilder: PlayerScreen does NOT rebuild when the controller ticks -
@@ -1229,10 +1370,15 @@ class _PlayerScreenState extends State<PlayerScreen>
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            btn(Icons.fast_rewind, ctrl.canGoPrev ? ctrl.goPrev : null, 30),
+            btn(Icons.fast_rewind,
+                ctrl.canGoPrev ? () => _tapTransport(ctrl, 'précédent') : null, 30),
             btn(ctrl.isPlaying ? Icons.pause : Icons.play_arrow,
-                ctrl.hasFile ? ctrl.togglePlay : null, 40),
-            btn(Icons.fast_forward, ctrl.canGoNext ? ctrl.goNext : null, 30),
+                ctrl.hasFile
+                    ? () => _tapTransport(ctrl, ctrl.isPlaying ? 'pause' : 'lecture')
+                    : null,
+                40),
+            btn(Icons.fast_forward,
+                ctrl.canGoNext ? () => _tapTransport(ctrl, 'suivant') : null, 30),
           ],
         ),
         const SizedBox(height: 4),
@@ -1243,6 +1389,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         // vertical distance wins.
         FullscreenSeekBar(
           position: ctrl.position,
+          elapsed:  ctrl.elapsedPosition,
+          infinite: ctrl.effectiveForceLoopMode == 'infinite',
           duration: ctrl.duration,
           width: lineWidth,
           onSeek: ctrl.seek,
@@ -1482,16 +1630,35 @@ class _PlayerScreenState extends State<PlayerScreen>
                     );
                   },
                 ),
+                // Bande de téléchargement: SUPERPOSÉE au visuel, jamais
+                // insérée dans la colonne. Placée entre les contrôles et
+                // l'artwork elle POUSSAIT tout le reste à son apparition — la
+                // pochette et le visualiseur rétrécissaient d'un coup au
+                // milieu de la lecture, puis reprenaient leur taille. Ici elle
+                // se pose PAR-DESSUS le bas du panneau visuel: même endroit à
+                // l'œil, aucun décalage. Rien n'est dessiné au repos.
+                if (!fs)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 8,
+                    child: ValueListenableBuilder<DownloadInfo?>(
+                      valueListenable: RewampDb.downloadStatus,
+                      builder: (_, info, __) => info == null
+                          ? const SizedBox.shrink()
+                          : const DownloadBanner(),
+                    ),
+                  ),
               ],
             ),
           ),
         ),
 
-        // Download banner directly ABOVE the controls: hitting "next" on a
-        // remote track (or auto-advancing a queue) can sit on a download for
-        // seconds, and from inside the player that looked like a hang. Placed
-        // here it sits right where the user is looking — at the controls — not
-        // lost at the top. In fullscreen it is overlaid instead (see build()).
+        // La bande de téléchargement N'EST PLUS ici: elle est superposée au
+        // bas du panneau visuel (voir plus haut) pour ne rien décaler. Elle
+        // reste visible au même endroit à l'œil — près des contrôles, là où
+        // l'utilisateur regarde quand une piste distante met des secondes à
+        // arriver et que ça ressemble à un blocage.
         // ⚠️ CHAQUE bloc porte une CLÉ, et c'est ce qui protège la rangée de
         // transport. Ces enfants sont conditionnels et se suivent, plusieurs
         // partagent le même type (deux `Transform.translate` voisins, chacun
@@ -1507,13 +1674,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         // enfant clé ne peut plus être mis à jour par un widget d'une autre
         // liste, et le décalage devient impossible.
         //
-        // Download banner directly ABOVE the controls: hitting "next" on a
-        // remote track (or auto-advancing a queue) can sit on a download for
-        // seconds, and from inside the player that looked like a hang. Placed
-        // here it sits right where the user is looking — at the controls — not
-        // lost at the top. In fullscreen it is overlaid instead (see build()).
-        if (!fs) const KeyedSubtree(
-            key: ValueKey('ps-download-banner'), child: DownloadBanner()),
         if (!fs)
           KeyedSubtree(
               key: const ValueKey('ps-track-info'),
@@ -1574,6 +1734,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                       onPressed: () => AudioRoute.show(btnCtx, ctrl.audio),
                     ),
                   ),
+                // Bureau: bascule en mini lecteur (la fenêtre rétrécit, le
+                // lecteur reste ouvert dessous et revient tel quel).
+                if (MiniWindow.instance.available)
+                  const MiniWindowButton(key: ValueKey('ps-act-miniwin')),
                 IconButton(
                   key: const ValueKey('ps-act-info'),
                   icon: const Icon(Icons.info_outline),
@@ -1641,36 +1805,76 @@ class _PlayerScreenState extends State<PlayerScreen>
           final sub = cached
               ?.where((s) => s.idx - 1 == ctrl.subsongIdx)
               .firstOrNull;
-          if (sub != null &&
-              ((sub.stilName?.isNotEmpty ?? false) ||
-                  (sub.stilAuthor?.isNotEmpty ?? false) ||
-                  (sub.stilTitle?.isNotEmpty ?? false) ||
-                  (sub.stilArtist?.isNotEmpty ?? false) ||
-                  (sub.stilComment?.isNotEmpty ?? false))) {
-            text += '\nSTIL:\n';
+          // ── L'ORDRE: le FICHIER d'abord, la PISTE ensuite ──────────────
+          //
+          // Le bloc STIL de l'ENTRÉE (celui qui précède les sous-chants dans
+          // STIL.txt) parle du morceau ENTIER — c'est là que vit le COMMENT du
+          // fichier, l'histoire que Rob Hubbard raconte sur « Commando ». Il
+          // vient donc en premier, et le bloc du sous-chant courant après, les
+          // deux séparés par un filet: on lit du général au particulier, et
+          // sans le filet les deux commentaires se lisent comme un seul.
+          //
+          // Il s'affiche même quand le sous-chant courant n'a rien à lui —
+          // c'est le cas de 17 des 19 sous-chants de « Commando ».
+          final gstil = await LocalDb.instance.getSidGlobalStilCache(md5);
+
+          /// Les lignes d'un bloc STIL. [skip] est ce qui a DÉJÀ été écrit:
+          /// un fichier à une seule entrée peut la voir remonter aux deux
+          /// niveaux côté serveur, et on ne la répète pas.
+          String stilBlock(SidSubsongCache b, {String skip = ''}) {
+            var out = '';
+            void add(String line) {
+              if (line.isNotEmpty && !skip.contains(line) && !out.contains(line)) {
+                out += line;
+              }
+            }
             // NAME/AUTHOR nomment le SOUS-CHANT — ils sont déjà le titre et
             // l'artiste affichés, et on les répète ici parce que le panneau ⓘ
             // dit d'où vient ce qu'on lit.
-            if (sub.stilName?.isNotEmpty ?? false) {
-              text += 'Name: ${sub.stilName}\n';
-            }
-            if (sub.stilAuthor?.isNotEmpty ?? false) {
-              text += 'Author: ${sub.stilAuthor}\n';
+            if (b.stilName?.isNotEmpty ?? false) add('Name: ${b.stilName}\n');
+            if (b.stilAuthor?.isNotEmpty ?? false) {
+              add('Author: ${b.stilAuthor}\n');
             }
             // TITLE/ARTIST nomment l'ŒUVRE REPRISE: une phrase, pas deux
             // étiquettes qu'on relit comme un titre et un artiste de piste —
             // c'est exactement la confusion qui faisait passer « Magnetic
             // Fields, Part 1 » de Jean-Michel Jarre pour le nom du morceau.
-            final coverT = sub.stilTitle ?? '';
-            final coverA = sub.stilArtist ?? '';
-            if (coverT.isNotEmpty || coverA.isNotEmpty) {
-              text += coverT.isNotEmpty && coverA.isNotEmpty
-                  ? '${l10n.stilCoverOf(coverT, coverA)}\n'
-                  : '${l10n.stilCover(coverT.isNotEmpty ? coverT : coverA)}\n';
+            //
+            // Et il peut y en avoir PLUSIEURS: la piste 1 du « Commando » de
+            // Rob Hubbard cite sept morceaux, chacun horodaté. On les liste
+            // dans l'ordre du fichier, qui est l'ordre chronologique. Le repli
+            // sur `stilTitle`/`stilArtist` sert les caches d'avant la migration
+            // locale 61 et les serveurs d'avant la 238 — c'est la MÊME reprise
+            // (le premier groupe), donc jamais un doublon de la liste.
+            final covers = b.stilCovers.isNotEmpty
+                ? b.stilCovers
+                : [SidCover(title: b.stilTitle, artist: b.stilArtist)];
+            for (final c in covers) {
+              final coverT = c.title ?? '';
+              final coverA = c.artist ?? '';
+              if (coverT.isNotEmpty || coverA.isNotEmpty) {
+                add(coverT.isNotEmpty && coverA.isNotEmpty
+                    ? '${l10n.stilCoverOf(coverT, coverA)}\n'
+                    : '${l10n.stilCover(coverT.isNotEmpty ? coverT : coverA)}\n');
+              }
+              if (c.comment?.isNotEmpty ?? false) add('${c.comment}\n');
             }
-            if (sub.stilComment?.isNotEmpty ?? false) {
-              text += '${sub.stilComment}\n';
-            }
+            // ⚠️ Le commentaire du BLOC est volontairement DUPLIQUÉ côté
+            // serveur dans la dernière reprise: STIL ne distingue pas
+            // formellement « commentaire de l'entrée » et « commentaire de la
+            // reprise », et perdre l'un ou l'autre coûtait plus cher que de le
+            // répéter. C'est donc au client de ne l'afficher que si aucune
+            // reprise ne le porte déjà — ce que `add` fait pour lui.
+            if (b.stilComment?.isNotEmpty ?? false) add('${b.stilComment}\n');
+            return out;
+          }
+
+          final gtext = gstil == null ? '' : stilBlock(gstil);
+          final stext = sub == null ? '' : stilBlock(sub, skip: gtext);
+          if (gtext.isNotEmpty || stext.isNotEmpty) {
+            text += '\nSTIL:\n$gtext';
+            if (gtext.isNotEmpty && stext.isNotEmpty) text += '$_kStilRule\n';
+            text += stext;
           }
         }
       } catch (_) {}
@@ -1707,27 +1911,98 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (ctrl.backend == 'asap' && ctrl.filePath != null) {
       try {
         final info = await SapInfoService.instance.forPath(ctrl.filePath!);
-        if (info != null &&
-            ((info.stilTitle?.isNotEmpty ?? false) ||
-                (info.stilArtist?.isNotEmpty ?? false) ||
-                (info.stilComment?.isNotEmpty ?? false))) {
+        if (info != null && info.hasStil) {
+          // MÊME vocabulaire que le bloc SID, et pour la même raison: écrire
+          // « Title: » / « Artist: » présentait l'ŒUVRE REPRISE comme le titre
+          // et l'artiste de la piste — la confusion corrigée côté SID par la
+          // migration 60. Une phrase, donc, et la LISTE des reprises: le
+          // serveur rend `stil.covers`, dont `stilTitle`/`stilArtist` ne sont
+          // que la première.
+          //
+          // Pas de filet ici, contrairement au SID: ASMA n'a pas de découpage
+          // par sous-chant (`subsongs` est toujours nul), donc il n'y a qu'UN
+          // bloc — celui du fichier.
           text += '\nSTIL:\n';
-          if (info.stilTitle?.isNotEmpty ?? false) {
-            text += 'Title: ${info.stilTitle}\n';
+          if (info.stilName?.isNotEmpty ?? false) {
+            text += 'Name: ${info.stilName}\n';
           }
-          if (info.stilArtist?.isNotEmpty ?? false) {
-            text += 'Artist: ${info.stilArtist}\n';
+          if (info.stilAuthor?.isNotEmpty ?? false) {
+            text += 'Author: ${info.stilAuthor}\n';
           }
-          if (info.stilComment?.isNotEmpty ?? false) {
-            text += '${info.stilComment}\n';
+          final covers = info.stilCovers.isNotEmpty
+              ? info.stilCovers
+              : [SidCover(title: info.stilTitle, artist: info.stilArtist)];
+          for (final c in covers) {
+            final coverT = c.title ?? '';
+            final coverA = c.artist ?? '';
+            if (coverT.isNotEmpty || coverA.isNotEmpty) {
+              text += coverT.isNotEmpty && coverA.isNotEmpty
+                  ? '${l10n.stilCoverOf(coverT, coverA)}\n'
+                  : '${l10n.stilCover(coverT.isNotEmpty ? coverT : coverA)}\n';
+            }
+            if (c.comment?.isNotEmpty ?? false) text += '${c.comment}\n';
+          }
+          final c = info.stilComment ?? '';
+          if (c.isNotEmpty && !covers.any((x) => x.comment == c)) {
+            text += '$c\n';
           }
         }
       } catch (_) {}
     }
 
+    text += await _m3uSection(ctrl);
     text += await _filesSection(ctrl);
 
     return text.trim().isEmpty ? l10n.playerNoTrackInfo : text;
+  }
+
+  /// Ce que le M3U VOISIN dit de l'album — album, artistes, éditeur, année,
+  /// sources.
+  ///
+  /// Un rip LOCAL n'a aucune ligne serveur: son M3U est la seule chose qui
+  /// sache le nom de l'album, ses compositeurs et son éditeur, et rien ne le
+  /// lisait (seuls la liste, les durées et les titres de piste l'étaient).
+  ///
+  /// ⚠️ Les intitulés sont ceux du FICHIER, pas les nôtres. Chaque ripeur
+  /// invente son vocabulaire (« Game », « Developer », « MT-32 version / rip »,
+  /// « Playback order »…) et en faire une liste fermée perdrait tout ce qui
+  /// n'y figure pas. Rien à traduire non plus — c'est du texte cité, comme le
+  /// reste du corps du panneau.
+  ///
+  /// Pas d'appel pour un fichier du CATALOGUE: le serveur dit mieux, et un
+  /// M3U traîne à côté de tout album téléchargé.
+  static Future<String> _m3uSection(PlayerController ctrl) async {
+    final path = ctrl.filePath;
+    if (path == null || path.isEmpty) return '';
+    if ((ctrl.currentOnlineId ?? '').isNotEmpty) return '';
+    try {
+      final info = await RewampDb.localM3uInfo(path);
+      if (info == null) return '';
+      final lines = <String>[
+        if (info.album != null) 'Album: ${info.album}',
+        if (info.artists.isNotEmpty) 'Artist: ${info.artists.join(', ')}',
+        if (info.genre != null) 'Genre: ${info.genre}',
+        // Le nom de la LISTE ne se répète pas quand il redit l'album.
+        if (info.playlist != null && info.playlist != info.album)
+          'Playlist: ${info.playlist}',
+        for (final f in info.fields)
+          // Ce qui est déjà dit au-dessus ne se redit pas: « Composer(s) »
+          // EST la ligne Artist quand `#EXTART` manquait.
+          if (!_m3uFieldIsRedundant(f, info))
+            '${f.key}: ${f.value.replaceAll('\n', '\n  ')}',
+      ];
+      if (lines.isEmpty) return '';
+      return '\nM3U:\n${lines.join('\n')}\n';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static bool _m3uFieldIsRedundant(M3uField f, M3uInfo info) {
+    final v = f.value.trim();
+    if (v == info.album || v == info.playlist || v == info.genre) return true;
+    return info.artists.isNotEmpty && splitM3uArtists(v).join(', ') ==
+        info.artists.join(', ');
   }
 
   /// `Files:` — le ou les fichiers réellement lus, avec leur taille.
@@ -1844,22 +2119,35 @@ class _PlayerScreenState extends State<PlayerScreen>
     // .spc but the one that carried the id played "local" and the link died
     // from the second track on — with the album id sitting right there. The id
     // of the SONG says nothing about whether the ALBUM is known.
+    //
+    // Deuxième porte, ajoutée après coup: un album LOCAL (importé) n'a PAS
+    // d'uuid — le lien restait mort alors que l'écran de détail l'ouvre par
+    // NOM. Voir LocalDb.hasLocalAlbumByName.
+    final hasAlbumId =
+        ctrl.currentAlbumId != null && ctrl.currentAlbumId!.isNotEmpty;
+    if (album != null && album.isNotEmpty && !hasAlbumId) {
+      _ensureLocalAlbumChecked(album);
+    }
     final albumTappable = album != null && album.isNotEmpty &&
-        ctrl.currentAlbumId != null && ctrl.currentAlbumId!.isNotEmpty &&
+        (hasAlbumId || _localAlbumKnown) &&
         widget.onNavigateAlbum != null;
     // Single-file multi-subsong container (not a real album): the label instead
     // links to the subsong list. app_shell provides the callback only in that case.
     final subsongLink   = widget.onNavigateSubsongs;
-    final showSubsongs  = !albumTappable && subsongLink != null;
-    final linkTappable  = albumTappable || showSubsongs;
     // Sans album, le NOM DU CONTENEUR plutôt qu'un libellé générique: c'est
-    // l'information, et « Voir les subsongs » ne la remplace pas. Le générique
-    // ne reste que si le conteneur lui-même n'a pas de nom.
-    final containerName = widget.subsongContainerName;
+    // l'information, et « Voir les subsongs » ne la remplace pas.
+    //
+    // Résolu MAINTENANT (voir subsongContainerName): c'est aussi lui qui dit
+    // s'il y a un conteneur SOUS LA PISTE COURANTE — le rappel de navigation,
+    // lui, est fourni une fois pour toutes par la coquille et ne prouve rien.
+    final containerName = widget.subsongContainerName?.call();
+    final showSubsongs =
+        !albumTappable && subsongLink != null && containerName != null;
+    final linkTappable  = albumTappable || showSubsongs;
     final albumLabel    = (album != null && album.isNotEmpty)
         ? album
-        : (showSubsongs && (containerName ?? '').isNotEmpty
-            ? containerName!
+        : (showSubsongs && containerName.isNotEmpty
+            ? containerName
             : l10n.playerViewSubsongs);
     if (artist != null && artist.isNotEmpty) {
       _ensureServerArtistsChecked(isLocal, artist);
@@ -2043,7 +2331,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                     tooltip: ctrl.isFavorite
                         ? l10n.playerRemoveFavorite
                         : l10n.playerAddFavorite,
-                    onPressed: ctrl.hasFile ? ctrl.toggleFavorite : null,
+                    onPressed: ctrl.hasFile
+                        ? () => _toggleFavourite(context, ctrl)
+                        : null,
                   ),
                   if (ctrl.hasFile)
                     _LibraryToggleButton(
@@ -2071,12 +2361,22 @@ class _PlayerScreenState extends State<PlayerScreen>
       return _seekBarChrome(
         ctrl,
         textTheme,
+        // Barre DÉSACTIVÉE plutôt qu'absente: un `SizedBox` de 3 px laissait
+        // un trou là où la barre se trouve sur tous les autres morceaux, et
+        // le lecteur avait l'air cassé sur une piste qui joue très bien. Un
+        // `Slider` sans `onChanged` est grisé par Material et refuse le geste
+        // — ce qui est exactement l'état: on ne peut pas se déplacer dans une
+        // durée qu'on ne connaît pas. Valeur figée à 0: elle ne peut pas
+        // représenter une progression, faute de total.
         track: const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16),
-          child: SizedBox(height: 3),
+          child: SliderTheme(
+            data: SliderThemeData(trackHeight: 3),
+            child: Slider(value: 0, min: 0, max: 1, onChanged: null),
+          ),
         ),
-        displayPos: ctrl.position,
-        totalLabel: '--:--',
+        elapsedPos: ctrl.elapsedPosition,
+        totalLabel: _totalLabel(ctrl),
       );
     }
     // Show the drag target position while the user is scrubbing; switch back
@@ -2086,8 +2386,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     return _seekBarChrome(
       ctrl,
       textTheme,
-      displayPos: displayPos,
-      totalLabel: _fmt(ctrl.duration),
+      // La BARRE sature à la durée nominale sous boucle infinie, le COMPTEUR
+      // non: deux grandeurs, deux valeurs. Pendant un scrub c'est la cible du
+      // doigt qui prime sur les deux.
+      elapsedPos: _seekDragValue ?? ctrl.elapsedPosition,
+      totalLabel: _totalLabel(ctrl),
       // Même signal que la FullscreenSeekBar, même consommateur: un geste NÉ
       // sur le Slider appartient au Slider, verticale comprise. Le glissement
       // de fermeture est un Listener ancêtre hors arène — le Slider gagne bien
@@ -2125,13 +2428,15 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   /// Shared layout of the seek row: [track] on top, then elapsed / engine /
-  /// total. Both the seekable and the unknown-duration cases go through it so
+  /// total. [elapsedPos] is the LEFT counter, which is not always the position
+  /// the track draws: sous boucle infinie la barre sature et le compteur, lui,
+  /// continue de monter. Both the seekable and the unknown-duration cases go through it so
   /// the player keeps exactly the same shape either way.
   Widget _seekBarChrome(
     PlayerController ctrl,
     TextTheme textTheme, {
     required Widget track,
-    required double displayPos,
+    required double elapsedPos,
     required String totalLabel,
   }) {
     return Column(
@@ -2143,7 +2448,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
               children: [
-                Text(_fmt(displayPos), style: textTheme.bodySmall),
+                Text(_fmt(elapsedPos), style: textTheme.bodySmall),
                 // Engine name, centered between the two times.
                 Expanded(
                   child: Center(
@@ -2270,21 +2575,25 @@ class _PlayerScreenState extends State<PlayerScreen>
           key: const ValueKey('ps-prev'),
           iconSize: 40,
           icon: const Icon(Icons.fast_rewind),
-          onPressed: ctrl.canGoPrev ? ctrl.goPrev : null,
+          onPressed:
+              ctrl.canGoPrev ? () => _tapTransport(ctrl, 'précédent') : null,
         ),
         const SizedBox(width: 4),
         IconButton(
           key: const ValueKey('ps-play'),
           iconSize: 52,
           icon: Icon(ctrl.isPlaying ? Icons.pause : Icons.play_arrow),
-          onPressed: ctrl.hasFile ? ctrl.togglePlay : null,
+          onPressed: ctrl.hasFile
+              ? () => _tapTransport(ctrl, ctrl.isPlaying ? 'pause' : 'lecture')
+              : null,
         ),
         const SizedBox(width: 4),
         IconButton(
           key: const ValueKey('ps-next'),
           iconSize: 40,
           icon: const Icon(Icons.fast_forward),
-          onPressed: ctrl.canGoNext ? ctrl.goNext : null,
+          onPressed:
+              ctrl.canGoNext ? () => _tapTransport(ctrl, 'suivant') : null,
         ),
         LoopButton(
           key: const ValueKey('ps-loop'),
@@ -2294,6 +2603,20 @@ class _PlayerScreenState extends State<PlayerScreen>
         ),
       ],
     );
+  }
+
+  /// Le ♥ passe par la MÊME garde d'identité que le bouton de bibliothèque —
+  /// un favori EST une entrée de bibliothèque, et c'est ce geste-là qui posait
+  /// le plus d'entrées mortes (il est à un doigt sur l'écran du lecteur, où le
+  /// morceau joué peut venir de n'importe où). Un un-♥ n'est jamais gardé.
+  Future<void> _toggleFavourite(
+      BuildContext context, PlayerController ctrl) async {
+    if (ctrl.isFavorite) return ctrl.toggleFavorite();
+    final refId = ctrl.libraryRefId;
+    if (refId == null) return;
+    final ok = await ensureLibraryRefForAdd(context, refId);
+    if (ok == null) return;
+    await ctrl.toggleFavorite(guardedRefId: ok);
   }
 
   void _toggleVisualizer() {
@@ -2334,7 +2657,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                     collection: collection, artistId: artistId);
               }
             : null,
-        onNavigateSubsongs: widget.onNavigateSubsongs != null
+        // Même règle que la ligne d'album: c'est le nom résolu MAINTENANT qui
+        // dit s'il y a un conteneur sous la piste courante.
+        onNavigateSubsongs: widget.onNavigateSubsongs != null &&
+                widget.subsongContainerName?.call() != null
             ? () {
                 Navigator.pop(ctx);
                 _dismiss(); // close the player itself (route OR overlay)
@@ -2346,6 +2672,22 @@ class _PlayerScreenState extends State<PlayerScreen>
                 Navigator.pop(ctx); // close the options sheet only; the player
                                     // stays open and reloads in place.
                 widget.onRedownload!();
+              }
+            : null,
+        onNavigateSettings: widget.onNavigateSettings != null
+            ? () {
+                Navigator.pop(ctx);
+                _dismiss(); // l'écran Réglages est un ONGLET, sous le lecteur
+                widget.onNavigateSettings!();
+              }
+            : null,
+        // Même geste que ci-dessus, et pour la même raison: la page vit dans
+        // l'onglet, donc SOUS le lecteur — il faut le refermer pour la voir,
+        // et le mini-lecteur prend le relais.
+        onNavigateEngineSettings: widget.onNavigateEngineSettings != null
+            ? (slug) {
+                _dismiss();
+                widget.onNavigateEngineSettings!(slug);
               }
             : null,
       )),
@@ -2383,8 +2725,32 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (v.abs() < 250) return;
     final goNext = v < 0;   // left = forward, the usual direction of travel
     if (goNext ? !ctrl.canGoNext : !ctrl.canGoPrev) return;
+    // ⚠️ Ce geste vit SUR la zone du lecteur, boutons compris: si un appui sur
+    // pause part d'ici, c'est le geste qui a gagné l'arène, pas le bouton. Le
+    // journal doit pouvoir le dire (voir transport_log.dart).
+    logTransport(goNext ? 'suivant' : 'précédent',
+        source: 'glissement lecteur',
+        detail: 'v=${v.toStringAsFixed(0)} px/s dist=${dist.toStringAsFixed(0)} px');
     HapticFeedback.lightImpact();
     (goNext ? ctrl.goNext : ctrl.goPrev)();
+  }
+
+  /// Un appui sur un BOUTON de transport: on trace d'abord, on agit ensuite.
+  ///
+  /// L'état accompagne l'action parce que c'est lui qui explique la suite: un
+  /// « pause » tracé alors que `jouait=false` veut dire que l'interface et le
+  /// moteur ne sont déjà plus d'accord, et c'est une piste différente d'un
+  /// « suivant » arrivé juste après.
+  void _tapTransport(PlayerController ctrl, String action) {
+    logTransport(action,
+        source: 'bouton lecteur',
+        detail: 'jouait=${ctrl.isPlaying} pos=${ctrl.position.toStringAsFixed(1)}s '
+            'piste="${ctrl.displayTitle}"');
+    switch (action) {
+      case 'suivant':    ctrl.goNext(); break;
+      case 'précédent':  ctrl.goPrev(); break;
+      default:           ctrl.togglePlay();
+    }
   }
 
   void _toggleVideo(PlayerController ctrl) {
@@ -2467,8 +2833,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     // covers it before the unmount; on close it is remounted from the first
     // frame, under the panel fading out. Remount is cheap (shared GL context
     // survives, register ≈ 0-4 ms).
-    final vizAllowed =
-        _showVisualizer && !(_showQueue && _flightCtrl.isCompleted);
+    // Mini lecteur: le visualiseur n'existe qu'en UNE instance — celui-ci cède
+    // pendant le mode (et une frame de plus, voir MiniWindow.vizYield).
+    final vizAllowed = _showVisualizer &&
+        !(_showQueue && _flightCtrl.isCompleted) &&
+        !MiniWindow.instance.vizYield;
     final Widget child = vizAllowed
         ? _vizWidget(ctrl)
         : GestureDetector(
@@ -2490,15 +2859,33 @@ class _PlayerScreenState extends State<PlayerScreen>
               onImageResolved: (provider, _) => _resolvedArtProvider = provider,
             ),
           );
+    // Le balayage horizontal = piste précédente / suivante… SAUF quand le
+    // visualiseur actif se sert de l'horizontal pour lui-même: la vue MOTIFS y
+    // fait défiler sa grille (un module large déborde l'écran).
+    //
+    // ⚠️ Laisser les deux en concurrence ne suffisait pas, même avec un
+    // recognizer enfant: celui des motifs s'impose un délai de grâce de 90 ms
+    // avant d'accepter (il doit laisser sa chance au pincement), et pendant ce
+    // temps c'est CE détecteur-ci qui remporte l'arène — un défilement partait
+    // donc régulièrement en changement de piste. On ne CRÉE simplement pas le
+    // recognizer dans ce cas: null, pas un handler qui ne fait rien, sinon il
+    // gagne l'arène pour ne rien en faire et le geste est perdu pour tout le
+    // monde.
+    final vizOwnsHorizontal = _showVisualizer &&
+        UserSettings.instance.vizEffect == 'patterns';
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
-      onHorizontalDragStart:  (_) => _visualSwipeDx = 0,
+      onHorizontalDragStart:
+          vizOwnsHorizontal ? null : (_) => _visualSwipeDx = 0,
       // Le glissement de fermeture a pris le geste: on n'accumule même pas la
       // distance, sinon un changement de direction en cours de route la
       // ramènerait au-dessus du seuil.
-      onHorizontalDragUpdate: (d) => _visualSwipeDx =
-          _playerDismissDragActive ? 0 : _visualSwipeDx + d.delta.dx,
-      onHorizontalDragEnd:    (d) => _onVisualSwipe(d, ctrl),
+      onHorizontalDragUpdate: vizOwnsHorizontal
+          ? null
+          : (d) => _visualSwipeDx =
+              _playerDismissDragActive ? 0 : _visualSwipeDx + d.delta.dx,
+      onHorizontalDragEnd:
+          vizOwnsHorizontal ? null : (d) => _onVisualSwipe(d, ctrl),
       child: child,
     );
   }
@@ -2903,6 +3290,20 @@ class QueuePanelState extends State<QueuePanel> {
     );
   }
 
+  /// Fond de la ligne en cours: on ÉCLAIRE en thème sombre, on ASSOMBRIT en
+  /// clair — dans les deux cas la ligne s'éloigne du fond, jamais l'inverse.
+  ///
+  /// Les valeurs diffèrent exprès: sur un fond sombre l'œil perçoit moins bien
+  /// un même écart de luminance, il en faut un peu plus pour le même effet. Et
+  /// le panneau est parfois TRANSPARENT (au-dessus de la pochette floutée dans
+  /// le lecteur), donc la teinte doit tenir sans supposer un fond opaque —
+  /// raison de plus pour un simple voile plutôt qu'une couleur calculée depuis
+  /// le thème.
+  static Color _currentRowTint(BuildContext ctx) =>
+      Theme.of(ctx).brightness == Brightness.dark
+          ? Colors.white.withValues(alpha: 0.16)
+          : Colors.black.withValues(alpha: 0.10);
+
   /// One queue row. Wrapped in a Dismissible (swipe left to remove) outside of
   /// edit mode; in edit mode the row selects instead, so a swipe would fight
   /// the checkbox for the same gesture.
@@ -3001,6 +3402,17 @@ class QueuePanelState extends State<QueuePanel> {
             ),
       selected: selected,
       selectedTileColor: cs.primary.withValues(alpha: 0.10),
+      // La piste en cours n'avait que du GRAS et une couleur de texte — presque
+      // rien à retrouver du coin de l'œil dans une file longue. Un fond la
+      // désigne d'un coup.
+      //
+      // Teinte NEUTRE (blanc en sombre, noir en clair) et non `cs.primary`:
+      // celle-là est déjà la teinte de la SÉLECTION du mode édition, et les
+      // deux états peuvent coexister sur la même ligne — la piste en cours
+      // peut être cochée. Deux fonds identiques ne diraient plus lequel est
+      // lequel. Un décalage de luminance dit « active », une teinte colorée dit
+      // « choisie ».
+      tileColor: isCurrent ? _currentRowTint(ctx) : null,
     );
 
     // Key the ITEM, never the position — see QueueEntry.id. Falls back to the
@@ -3041,8 +3453,11 @@ class QueuePanelState extends State<QueuePanel> {
 /// reason: a preset can be white, and a translucent slab behind the controls
 /// would cover the very thing one is watching. An icon font is text, so the
 /// glyph is drawn as text twice - Icon itself takes no foreground paint.
-class _OutlinedGlyph extends StatelessWidget {
-  const _OutlinedGlyph({
+/// Public: le mode visualiseur du mini lecteur (mini_window_player.dart) dessine
+/// son transport avec le même glyphe cerné que le plein écran.
+class OutlinedGlyph extends StatelessWidget {
+  const OutlinedGlyph({
+    super.key,
     required this.icon,
     required this.size,
     this.enabled = true,
@@ -3160,6 +3575,10 @@ class _ArtworkPanel extends StatelessWidget {
           builder: (context, lift, _) => ArtworkImage(
             imageKey: imageKey,
             url: artworkUrl,
+            // Même raison que le mini-lecteur: c'est la pochette de ce qui
+            // JOUE, elle ne fait pas la queue derrière les vignettes d'une
+            // grille d'albums (voir ArtworkImage.priority).
+            priority: true,
             artist: artist,
             album: album,
             localFilePath: localFilePath,
@@ -3219,6 +3638,10 @@ class _PlayerOptionsSheet extends StatefulWidget {
   final OnNavigateArtist?  onNavigateArtist;
   final VoidCallback?      onNavigateSubsongs;
   final VoidCallback?      onRedownload;
+  final VoidCallback?      onNavigateSettings;
+  /// Réglages du MOTEUR qui joue, poussés par la coquille dans l'onglet
+  /// courant — c'est ce qui les affiche AVEC le mini-lecteur.
+  final ValueChanged<String>? onNavigateEngineSettings;
 
   const _PlayerOptionsSheet({
     required this.ctrl,
@@ -3227,6 +3650,8 @@ class _PlayerOptionsSheet extends StatefulWidget {
     this.onNavigateArtist,
     this.onNavigateSubsongs,
     this.onRedownload,
+    this.onNavigateSettings,
+    this.onNavigateEngineSettings,
   });
 
   @override
@@ -3250,15 +3675,19 @@ class _PlayerOptionsSheetState extends State<_PlayerOptionsSheet> {
     return fp.contains('${sep}online$sep');
   }
 
-  /// Offer a forced re-download only for a downloaded, single-song ONLINE file
-  /// (not a container subsong, not an album archive) — "pas un album ni un
-  /// fichier multisong". The action re-resolves the current URL and refetches.
+  /// Re-télécharger de force le FICHIER en cours, quand c'en est un qu'on a
+  /// descendu depuis le serveur.
+  ///
+  /// ⚠️ Le compte de sous-chansons ne DÉCIDE de rien: un `.sid` de 14 pistes
+  /// reste UN fichier, et « One Man and his Droid » n'offrait donc pas l'option
+  /// — pas plus que n'importe quel NSF, GBS ou module. L'index de sous-chanson
+  /// non plus: on refetche le fichier, pas la piste. Le seul cas qu'on ne peut
+  /// pas servir est le membre d'une ARCHIVE d'album, qui n'a pas d'URL à lui —
+  /// et ça ne se sait qu'après avoir demandé son contexte au serveur, donc
+  /// l'action le dit elle-même (`playerRedownloadUnavailable`) plutôt que de
+  /// disparaître d'un menu.
   bool get _canRedownload =>
-      widget.onRedownload != null &&
-      _isDownloadedFile &&
-      !_isLocal &&
-      widget.ctrl.subsongIdx == 0 &&
-      (widget.ctrl.currentSubsongCount ?? 1) <= 1;
+      widget.onRedownload != null && _isDownloadedFile && !_isLocal;
 
   Future<void> _deleteDownload() async {
     final fp = widget.ctrl.filePath;
@@ -3298,6 +3727,10 @@ class _PlayerOptionsSheetState extends State<_PlayerOptionsSheet> {
   /// For local files: tag-artist names confirmed to exist server-side.
   Set<String>? _serverArtists; // null = check pending
 
+  /// Un album LOCAL (importé) n'a pas d'uuid: le lien « Voir l'album » se
+  /// décide alors sur son NOM. Voir LocalDb.hasLocalAlbumByName.
+  bool _localAlbumKnown = false;
+
   static List<String> _splitArtists(String artist) => artist
       .split(RegExp(r'\s*[,;]\s*|\s*&\s*'))
       .map((a) => a.trim())
@@ -3314,6 +3747,13 @@ class _PlayerOptionsSheetState extends State<_PlayerOptionsSheet> {
     final artist = widget.ctrl.currentArtist;
     if (_isLocal && artist != null && artist.isNotEmpty) {
       _checkServerArtists(_splitArtists(artist));
+    }
+    final album  = widget.ctrl.currentAlbum;
+    final hasId  = widget.ctrl.currentAlbumId?.isNotEmpty ?? false;
+    if (!hasId && album != null && album.isNotEmpty) {
+      LocalDb.instance.hasLocalAlbumByName(album).then((v) {
+        if (mounted) setState(() => _localAlbumKnown = v);
+      }).catchError((_) {});
     }
   }
 
@@ -3335,12 +3775,22 @@ class _PlayerOptionsSheetState extends State<_PlayerOptionsSheet> {
     final next      = !_inLibrary;
     final l10n      = context.l10n;
     final messenger = ScaffoldMessenger.of(context);
+    // Garde d'identité AVANT tout effet visible: elle peut demander un import
+    // (chemin jetable) ou refuser (téléchargement sans songId), et un renoncement
+    // doit laisser la feuille telle quelle. Voir library_identity.dart.
+    var refId = widget.refId;
+    if (next) {
+      final ok = await ensureLibraryRefForAdd(context, refId);
+      if (ok == null) return;
+      refId = ok;
+      if (!mounted) return;
+    }
     setState(() => _inLibrary = next);
     Navigator.pop(context);
     if (next) {
       await LocalDb.instance.addToLibrary(
         type:       'track',
-        refId:      widget.refId,
+        refId:      refId,
         name:       ctrl.displayTitle,
         artist:     ctrl.currentArtist,
         album:      ctrl.currentAlbum,
@@ -3349,11 +3799,11 @@ class _PlayerOptionsSheetState extends State<_PlayerOptionsSheet> {
         formatExt:  ctrl.currentFormatExt,
       );
     } else {
-      await LocalDb.instance.removeFromLibrary('track', widget.refId);
+      await LocalDb.instance.removeFromLibrary('track', refId);
     }
     // …et le compte doit l'apprendre: ce menu écrivait en local seulement.
     await SyncService.recordTrackMembership(
-      refId:     widget.refId,
+      refId:     refId,
       value:     next,
       title:     ctrl.displayTitle,
       artist:    ctrl.currentArtist,
@@ -3422,11 +3872,14 @@ class _PlayerOptionsSheetState extends State<_PlayerOptionsSheet> {
                 onTap: _toggleLibrary,
               ),
 
-              // View album — only for a real server album (known albumId),
-              // hidden for local files (album not in the DB).
-              if (!_isLocal &&
-                  album != null && album.isNotEmpty &&
-                  ctrl.currentAlbumId != null && ctrl.currentAlbumId!.isNotEmpty &&
+              // View album — un vrai album de catalogue (albumId connu), OU un
+              // album LOCAL que la base connaît par son NOM: un import n'a
+              // aucune identité serveur, et exiger l'uuid retirait l'entrée à
+              // tous les albums importés. Un fichier multi-sous-chansons, lui,
+              // garde « Voir les sous-chansons » (hasLocalAlbumByName est faux).
+              if (album != null && album.isNotEmpty &&
+                  ((ctrl.currentAlbumId?.isNotEmpty ?? false) ||
+                      _localAlbumKnown) &&
                   widget.onNavigateAlbum != null)
                 ListTile(
                   leading: const Icon(Icons.album_outlined),
@@ -3511,6 +3964,50 @@ class _PlayerOptionsSheetState extends State<_PlayerOptionsSheet> {
                   leading: Icon(Icons.refresh, color: cs.primary),
                   title: Text(l10n.playerRedownload),
                   onTap: widget.onRedownload,
+                ),
+
+              const Divider(height: 1),
+
+              // Raccourci vers les réglages du MOTEUR qui joue — seulement
+              // quand ce moteur a une page (kEngineSettingsPages est clefé sur
+              // le slug que le moteur publie, `audio.backendName`). Un moteur
+              // sans rien à régler ne montre pas une entrée qui ne mène nulle
+              // part. La page se pousse au navigateur RACINE: le lecteur est
+              // un overlay et reste ouvert derrière, donc on revient droit à
+              // la musique en fermant la page.
+              if (kEngineSettingsPages.containsKey(ctrl.audio.backendName))
+                ListTile(
+                  leading: const Icon(Icons.tune),
+                  title: Text(l10n.playerEngineSettings),
+                  subtitle: Text(
+                      kEngineSettingsPages[ctrl.audio.backendName]!.title),
+                  onTap: () {
+                    final slug = ctrl.audio.backendName;
+                    // Confié à la coquille quand elle l'offre: la page s'ouvre
+                    // alors DANS l'onglet, donc AVEC le mini-lecteur, et la
+                    // promesse de retour ramène au lecteur plein écran. Le
+                    // repli sur le navigateur RACINE reste pour un hôte qui ne
+                    // câble pas ce rappel — il recouvre toute la coquille.
+                    if (widget.onNavigateEngineSettings != null) {
+                      Navigator.pop(context);
+                      widget.onNavigateEngineSettings!(slug);
+                      return;
+                    }
+                    // Navigateur RACINE capturé AVANT le pop: après, ce
+                    // context est démonté et `Navigator.of` chercherait dans
+                    // un arbre disparu.
+                    final nav = Navigator.of(context, rootNavigator: true);
+                    Navigator.pop(context);
+                    pushEngineSettings(nav, slug);
+                  },
+                ),
+
+              // Raccourci vers les Réglages généraux (onglet).
+              if (widget.onNavigateSettings != null)
+                ListTile(
+                  leading: const Icon(Icons.settings_outlined),
+                  title: Text(l10n.settingsTitle),
+                  onTap: widget.onNavigateSettings,
                 ),
 
               // Delete the downloaded file (+ its local DB rows) — the same
@@ -3845,12 +4342,21 @@ class _LibraryToggleButtonState extends State<_LibraryToggleButton> {
   }
 
   Future<void> _toggle() async {
-    final refId = _refId;
+    var refId = _refId;
     if (refId == null) return;
     final ctrl      = widget.ctrl;
     final next      = !_inLibrary;
     final l10n      = context.l10n;
     final messenger = ScaffoldMessenger.of(context);
+    // Voir library_identity.dart: un ajout exige une identité qui SURVIVE —
+    // songId du catalogue, ou chemin d'import pérenne. Le reste est proposé à
+    // l'import, ou refusé.
+    if (next) {
+      final ok = await ensureLibraryRefForAdd(context, refId);
+      if (ok == null) return;
+      refId = ok;
+      if (!mounted) return;
+    }
     setState(() => _inLibrary = next);
     if (next) {
       await LocalDb.instance.addToLibrary(

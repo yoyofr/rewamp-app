@@ -142,6 +142,48 @@ abstract class AppLocalizations {
   /// **'Search'**
   String get navSearch;
 
+  /// No description provided for @navLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Local'**
+  String get navLocal;
+
+  /// No description provided for @settingsTabsOrderTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tab order'**
+  String get settingsTabsOrderTitle;
+
+  /// No description provided for @settingsTabsOrderSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag to reorder. The first four appear in the bottom bar; the rest live under “More”.'**
+  String get settingsTabsOrderSubtitle;
+
+  /// No description provided for @settingsTabsInBar.
+  ///
+  /// In en, this message translates to:
+  /// **'In the bar'**
+  String get settingsTabsInBar;
+
+  /// No description provided for @settingsTabsInMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Under “More”'**
+  String get settingsTabsInMore;
+
+  /// No description provided for @settingsLaunchTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Tab at launch'**
+  String get settingsLaunchTab;
+
+  /// No description provided for @settingsLaunchTabSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Which tab the app opens on'**
+  String get settingsLaunchTabSubtitle;
+
   /// No description provided for @navLibrary.
   ///
   /// In en, this message translates to:
@@ -189,6 +231,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'File no longer on the server: {file}'**
   String playbackFileGone(String file);
+
+  /// Shown when an album's tracklist names a file the archive does not contain (joshw rips list vocal .mp3 tracks they do not ship). {file} is that entry's name.
+  ///
+  /// In en, this message translates to:
+  /// **'{file} is not in the album\'s archive — the rip lists it but does not ship it.'**
+  String playbackTrackNotInArchive(String file);
+
+  /// Shown when a download source does not answer in time. {host} is the origin server's hostname — naming it is the useful fact (modland is not mirrored, so every Amiga module depends on that one host).
+  ///
+  /// In en, this message translates to:
+  /// **'{host} did not respond. Check your connection, then try again.'**
+  String playbackSourceTimeout(String host);
 
   /// No description provided for @failedToLoadFile.
   ///
@@ -352,29 +406,53 @@ abstract class AppLocalizations {
   /// **'No recently played tracks'**
   String get noRecentTracks;
 
-  /// No description provided for @openLocalFile.
-  ///
-  /// In en, this message translates to:
-  /// **'Open local file'**
-  String get openLocalFile;
-
   /// No description provided for @playerSourceLocal.
   ///
   /// In en, this message translates to:
   /// **'local'**
   String get playerSourceLocal;
 
-  /// No description provided for @browseFiles.
+  /// No description provided for @homePlayFiles.
   ///
   /// In en, this message translates to:
-  /// **'Browse files'**
-  String get browseFiles;
+  /// **'Play files'**
+  String get homePlayFiles;
 
-  /// No description provided for @countTotal.
+  /// No description provided for @homePlayFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Play a folder'**
+  String get homePlayFolder;
+
+  /// No description provided for @homeSectionsOrderTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Section order'**
+  String get homeSectionsOrderTitle;
+
+  /// No description provided for @homeSectionsOrderSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag to arrange the Home screen the way you like.'**
+  String get homeSectionsOrderSubtitle;
+
+  /// No description provided for @homeSectionsOrderReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Default order'**
+  String get homeSectionsOrderReset;
+
+  /// No description provided for @homeSectionsOrderSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Home section order'**
+  String get homeSectionsOrderSettings;
+
+  /// total est une CHAINE et non un int: search_artists peut rendre un PLANCHER (truncated), affiche alors « 4403+ ». Interpolation brute, aucun NumberFormat n'est perdu.
   ///
   /// In en, this message translates to:
   /// **'{loaded} / {total} results'**
-  String countTotal(int loaded, int total);
+  String countTotal(int loaded, String total);
 
   /// No description provided for @countLoadingMore.
   ///
@@ -1036,6 +1114,24 @@ abstract class AppLocalizations {
   /// **'Rating ≥'**
   String get searchMinRating;
 
+  /// Facet chip (next to Format / Platform): keep only songs/albums that placed 1st-3rd in a demoscene competition. May be followed by a count in parentheses.
+  ///
+  /// In en, this message translates to:
+  /// **'Podium'**
+  String get searchPodium;
+
+  /// Podium picker option: any placing (1st, 2nd or 3rd). Its count is the sum of the three ranks.
+  ///
+  /// In en, this message translates to:
+  /// **'Any podium'**
+  String get searchPodiumAny;
+
+  /// Snack when the server does not support the podium filter yet; the filter is then cleared.
+  ///
+  /// In en, this message translates to:
+  /// **'The podium filter is not available on the server yet'**
+  String get searchPodiumUnavailable;
+
   /// No description provided for @searchRatingValue.
   ///
   /// In en, this message translates to:
@@ -1180,11 +1276,11 @@ abstract class AppLocalizations {
   /// **'A random song'**
   String get searchSurpriseTooltip;
 
-  /// No description provided for @searchTabWithCount.
+  /// count est une CHAINE: le total d'un onglet peut etre un PLANCHER (search_artists truncated), affiche alors « 4403+ ».
   ///
   /// In en, this message translates to:
   /// **'{label} ({count})'**
-  String searchTabWithCount(String label, int count);
+  String searchTabWithCount(String label, String count);
 
   /// No description provided for @searchNoSongs.
   ///
@@ -1252,6 +1348,12 @@ abstract class AppLocalizations {
   /// **'Tracker modules (MOD/XM/S3M/IT/…)'**
   String get engineDescOpenmpt;
 
+  /// No description provided for @engineDescXmp.
+  ///
+  /// In en, this message translates to:
+  /// **'Modules libopenmpt cannot read (.musx, .liq, .fnk…)'**
+  String get engineDescXmp;
+
   /// No description provided for @engineDescVgm.
   ///
   /// In en, this message translates to:
@@ -1273,7 +1375,7 @@ abstract class AppLocalizations {
   /// No description provided for @engineDescGbsplay.
   ///
   /// In en, this message translates to:
-  /// **'Game Boy GBS'**
+  /// **'Game Boy GBS/GBR'**
   String get engineDescGbsplay;
 
   /// No description provided for @engineDescSidplayfp.
@@ -1709,6 +1811,12 @@ abstract class AppLocalizations {
   /// **'Track {number}'**
   String subsongTrackNumber(int number);
 
+  /// No description provided for @subsongDefaultTrack.
+  ///
+  /// In en, this message translates to:
+  /// **'Default track'**
+  String get subsongDefaultTrack;
+
   /// No description provided for @subsongCount.
   ///
   /// In en, this message translates to:
@@ -1816,6 +1924,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Artist removed from your library'**
   String get libraryRemovedArtist;
+
+  /// No description provided for @libraryImportBeforeAddTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Import first?'**
+  String get libraryImportBeforeAddTitle;
+
+  /// No description provided for @libraryImportBeforeAddBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This file is playing from a temporary location the system can clear. Import it into your local library so the entry survives?'**
+  String get libraryImportBeforeAddBody;
+
+  /// No description provided for @libraryImportBeforeAddArchiveBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This track comes from an archive opened into a temporary cache. The whole archive will be imported into your local library, companion files included.'**
+  String get libraryImportBeforeAddArchiveBody;
+
+  /// No description provided for @libraryAddNeedsCatalogueId.
+  ///
+  /// In en, this message translates to:
+  /// **'Cannot add this track: its catalogue id is unknown on this device.'**
+  String get libraryAddNeedsCatalogueId;
 
   /// No description provided for @songTilePlayFailed.
   ///
@@ -1949,6 +2081,12 @@ abstract class AppLocalizations {
   /// **'Notes'**
   String get vizNotes;
 
+  /// No description provided for @vizPiano.
+  ///
+  /// In en, this message translates to:
+  /// **'Piano'**
+  String get vizPiano;
+
   /// No description provided for @vizPatterns.
   ///
   /// In en, this message translates to:
@@ -1966,6 +2104,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Smooth scrolling'**
   String get patternSmoothScroll;
+
+  /// No description provided for @patternPinnedRow.
+  ///
+  /// In en, this message translates to:
+  /// **'Pinned playing row'**
+  String get patternPinnedRow;
 
   /// No description provided for @patternVolumeBars.
   ///
@@ -2108,7 +2252,7 @@ abstract class AppLocalizations {
   /// No description provided for @enginesLicenseFormats.
   ///
   /// In en, this message translates to:
-  /// **'{license} · {count, plural, =1{1 format} other{{count} formats}}'**
+  /// **'{license} · {count, plural, one{{count} format} other{{count} formats}}'**
   String enginesLicenseFormats(String license, int count);
 
   /// ⓘ panel: STIL TITLE/ARTIST name the work the tune covers, never the track itself
@@ -2248,6 +2392,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add to playlist'**
   String get playerAddToPlaylist;
+
+  /// No description provided for @playerEngineSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Engine settings'**
+  String get playerEngineSettings;
 
   /// No description provided for @queueAddToPlaylist.
   ///
@@ -3023,12 +3173,6 @@ abstract class AppLocalizations {
   /// **'Empty playlist'**
   String get playlistEmpty;
 
-  /// No description provided for @playlistRemoveEntry.
-  ///
-  /// In en, this message translates to:
-  /// **'Remove from playlist'**
-  String get playlistRemoveEntry;
-
   /// No description provided for @trackOptionsAddToLibrary.
   ///
   /// In en, this message translates to:
@@ -3695,12 +3839,6 @@ abstract class AppLocalizations {
   /// **'Line thickness'**
   String get settingsLineThickness;
 
-  /// No description provided for @settingsColors.
-  ///
-  /// In en, this message translates to:
-  /// **'Colors'**
-  String get settingsColors;
-
   /// No description provided for @settingsScopeVoiceColor.
   ///
   /// In en, this message translates to:
@@ -3743,12 +3881,6 @@ abstract class AppLocalizations {
   /// **'Stereo right'**
   String get settingsStereoRightColor;
 
-  /// No description provided for @settingsNotation.
-  ///
-  /// In en, this message translates to:
-  /// **'Notation (notes)'**
-  String get settingsNotation;
-
   /// No description provided for @settingsNotePalette.
   ///
   /// In en, this message translates to:
@@ -3773,17 +3905,35 @@ abstract class AppLocalizations {
   /// **'Box'**
   String get settingsNoteStyleBox;
 
-  /// No description provided for @settingsCrtEffects.
+  /// No description provided for @settingsVizAll.
   ///
   /// In en, this message translates to:
-  /// **'CRT effects'**
-  String get settingsCrtEffects;
+  /// **'All visualizers'**
+  String get settingsVizAll;
 
-  /// No description provided for @settingsCrtGlow.
+  /// No description provided for @settingsVizScopes.
   ///
   /// In en, this message translates to:
-  /// **'Glow'**
-  String get settingsCrtGlow;
+  /// **'Oscilloscopes (stereo and per-voice)'**
+  String get settingsVizScopes;
+
+  /// No description provided for @settingsVizFrameRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Frame rate'**
+  String get settingsVizFrameRate;
+
+  /// No description provided for @settingsVizFrameRateScreen.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen'**
+  String get settingsVizFrameRateScreen;
+
+  /// No description provided for @settingsValueFps.
+  ///
+  /// In en, this message translates to:
+  /// **'{value} fps'**
+  String settingsValueFps(int value);
 
   /// No description provided for @settingsCrtSpeed.
   ///
@@ -3826,6 +3976,276 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Silence detection'**
   String get settingsSilenceDetection;
+
+  /// No description provided for @settingsCrossfade.
+  ///
+  /// In en, this message translates to:
+  /// **'Crossfade'**
+  String get settingsCrossfade;
+
+  /// Onglet Local: ouvre la feuille de lecture (fichier ou dossier). VERBE et non un nom - c est une action de liste, pas un titre de rubrique.
+  ///
+  /// In en, this message translates to:
+  /// **'Play files or a folder'**
+  String get localActionPlay;
+
+  /// Onglet Local: ouvre la feuille d import (fichiers ou dossier).
+  ///
+  /// In en, this message translates to:
+  /// **'Import files or a folder'**
+  String get localActionImport;
+
+  /// No description provided for @localOpsImporting.
+  ///
+  /// In en, this message translates to:
+  /// **'Importing {name}…'**
+  String localOpsImporting(String name);
+
+  /// No description provided for @localOpsImportingSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Importing the selected files…'**
+  String get localOpsImportingSelection;
+
+  /// No description provided for @localOpsDeleting.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting {name}…'**
+  String localOpsDeleting(String name);
+
+  /// No description provided for @localOpsPhaseCopying.
+  ///
+  /// In en, this message translates to:
+  /// **'copying'**
+  String get localOpsPhaseCopying;
+
+  /// No description provided for @localOpsPhaseExtracting.
+  ///
+  /// In en, this message translates to:
+  /// **'extracting'**
+  String get localOpsPhaseExtracting;
+
+  /// No description provided for @localOpsPhaseRegistering.
+  ///
+  /// In en, this message translates to:
+  /// **'adding to library'**
+  String get localOpsPhaseRegistering;
+
+  /// No description provided for @localOpsPhaseDeleting.
+  ///
+  /// In en, this message translates to:
+  /// **'removing files'**
+  String get localOpsPhaseDeleting;
+
+  /// No description provided for @localImportFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Import files'**
+  String get localImportFiles;
+
+  /// No description provided for @storageLocalImports.
+  ///
+  /// In en, this message translates to:
+  /// **'Local imports'**
+  String get storageLocalImports;
+
+  /// No description provided for @settingsVgmJapaneseTags.
+  ///
+  /// In en, this message translates to:
+  /// **'Japanese tags (GD3)'**
+  String get settingsVgmJapaneseTags;
+
+  /// No description provided for @settingsVgmJapaneseTagsHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Prefer the Japanese title/game/artist fields of VGM tags when present.'**
+  String get settingsVgmJapaneseTagsHelp;
+
+  /// No description provided for @localImportFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Import a folder'**
+  String get localImportFolder;
+
+  /// No description provided for @localLibraryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'On this device'**
+  String get localLibraryTitle;
+
+  /// Library row whose local file lives on another device of the same account: shown greyed, not playable here.
+  ///
+  /// In en, this message translates to:
+  /// **'On another device'**
+  String get libraryOnAnotherDevice;
+
+  /// No description provided for @localLibraryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No local imports yet. Use “Import files” or “Import a folder” from Home.'**
+  String get localLibraryEmpty;
+
+  /// No description provided for @queueLimitReached.
+  ///
+  /// In en, this message translates to:
+  /// **'Queue limited to the first {count} tracks'**
+  String queueLimitReached(int count);
+
+  /// No description provided for @localDeleteTrackConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete “{name}”? The file and its companion files (artwork…) will be removed.'**
+  String localDeleteTrackConfirm(String name);
+
+  /// No description provided for @localDeleteFolderConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{Delete folder “{name}” and its {count} track?} other{Delete folder “{name}” and its {count} tracks?}}'**
+  String localDeleteFolderConfirm(String name, int count);
+
+  /// No description provided for @localImportDone.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} track(s) imported to library'**
+  String localImportDone(int count);
+
+  /// No description provided for @localImportDoneAlbums.
+  ///
+  /// In en, this message translates to:
+  /// **'{tracks} track(s) imported — {albums} album(s)'**
+  String localImportDoneAlbums(int tracks, int albums);
+
+  /// No description provided for @localImportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Import failed: {error}'**
+  String localImportFailed(String error);
+
+  /// No description provided for @settingsCrossfadeHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Blends the end of each track into the start of the next. At 0, playback is still gapless.'**
+  String get settingsCrossfadeHelp;
+
+  /// No description provided for @settingsMinSubsongSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Short subsongs'**
+  String get settingsMinSubsongSection;
+
+  /// No description provided for @settingsMinSubsongTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimum length'**
+  String get settingsMinSubsongTitle;
+
+  /// No description provided for @settingsMinSubsongHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Subsongs shorter than this stay out of the list and the queue — a game file often holds more sound effects than music. At 0 nothing is dropped; a length the decoder cannot tell is never treated as short.'**
+  String get settingsMinSubsongHelp;
+
+  /// No description provided for @localNewFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'New folder'**
+  String get localNewFolder;
+
+  /// No description provided for @localFolderName.
+  ///
+  /// In en, this message translates to:
+  /// **'Folder name'**
+  String get localFolderName;
+
+  /// No description provided for @localRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get localRename;
+
+  /// No description provided for @localMoveTo.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to…'**
+  String get localMoveTo;
+
+  /// No description provided for @localMove.
+  ///
+  /// In en, this message translates to:
+  /// **'Move'**
+  String get localMove;
+
+  /// No description provided for @localMoveNothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing moved'**
+  String get localMoveNothing;
+
+  /// No description provided for @localNameInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid name'**
+  String get localNameInvalid;
+
+  /// No description provided for @localNameTaken.
+  ///
+  /// In en, this message translates to:
+  /// **'That name is already taken'**
+  String get localNameTaken;
+
+  /// No description provided for @localMoveIntoItself.
+  ///
+  /// In en, this message translates to:
+  /// **'A folder cannot be moved into itself'**
+  String get localMoveIntoItself;
+
+  /// No description provided for @localManageFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Operation failed'**
+  String get localManageFailed;
+
+  /// No description provided for @subsongSkippedShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Not queued: under {seconds} s (Settings → Playback)'**
+  String subsongSkippedShort(int seconds);
+
+  /// No description provided for @settingsQueuePrefetchSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Queue downloads'**
+  String get settingsQueuePrefetchSection;
+
+  /// No description provided for @settingsQueuePrefetchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Download the whole queue'**
+  String get settingsQueuePrefetchTitle;
+
+  /// No description provided for @settingsQueuePrefetchSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'One file at a time; the next missing track starts as soon as the previous one lands. Off: only the next track is fetched.'**
+  String get settingsQueuePrefetchSubtitle;
+
+  /// No description provided for @settingsCdRipDeclickSection.
+  ///
+  /// In en, this message translates to:
+  /// **'CD rips'**
+  String get settingsCdRipDeclickSection;
+
+  /// No description provided for @settingsCdRipDeclickTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove clicks at track start'**
+  String get settingsCdRipDeclickTitle;
+
+  /// No description provided for @settingsCdRipDeclickSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Bad CD rips (mp3, ape, ogg, flac…) often open on a few corrupt samples. They are repaired until 200 ms of real music has played; the filter then steps aside.'**
+  String get settingsCdRipDeclickSubtitle;
 
   /// No description provided for @settingsSilenceSkipTitle.
   ///
@@ -3947,6 +4367,12 @@ abstract class AppLocalizations {
   /// **'Trackers — MOD, XM, S3M, IT…'**
   String get settingsEngineOpenmptSubtitle;
 
+  /// No description provided for @settingsEngineXmpSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Modules libopenmpt cannot read — .musx, .liq, .fnk…'**
+  String get settingsEngineXmpSubtitle;
+
   /// No description provided for @settingsEngineGmeSubtitle.
   ///
   /// In en, this message translates to:
@@ -4013,6 +4439,12 @@ abstract class AppLocalizations {
   /// **'Master volume'**
   String get settingsMasterVolume;
 
+  /// No description provided for @settingsAmplification.
+  ///
+  /// In en, this message translates to:
+  /// **'Amplification'**
+  String get settingsAmplification;
+
   /// No description provided for @settingsAmigaFilter.
   ///
   /// In en, this message translates to:
@@ -4042,6 +4474,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Chorus'**
   String get settingsChorus;
+
+  /// No description provided for @playbackMt32NoRoms.
+  ///
+  /// In en, this message translates to:
+  /// **'This MIDI was written for a Roland MT-32. Without its ROMs it plays on the SoundFont, with instruments mapped to General MIDI — import the ROMs in Settings › Engines › Munt for the real thing.'**
+  String get playbackMt32NoRoms;
+
+  /// No description provided for @settingsMidiMt32ToGm.
+  ///
+  /// In en, this message translates to:
+  /// **'Adapt MT-32 files'**
+  String get settingsMidiMt32ToGm;
+
+  /// No description provided for @settingsMidiMt32ToGmSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'A MIDI written for a Roland MT-32 numbers its programs in the MT-32\'s own list: mapped to their closest General MIDI equivalent, it plays with plausible instruments instead of random ones.'**
+  String get settingsMidiMt32ToGmSubtitle;
 
   /// No description provided for @settingsInterpNone.
   ///
@@ -4835,6 +5285,168 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{Cache cleared ({count} cover)} other{Cache cleared ({count} covers)}}'**
   String settingsCacheCleared(int count);
 
+  /// No description provided for @storageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage'**
+  String get storageTitle;
+
+  /// No description provided for @storageSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What the app keeps on disk, with deletion'**
+  String get storageSubtitle;
+
+  /// No description provided for @storageDownloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloads'**
+  String get storageDownloads;
+
+  /// No description provided for @storageArtworkCache.
+  ///
+  /// In en, this message translates to:
+  /// **'Artwork cache'**
+  String get storageArtworkCache;
+
+  /// No description provided for @storageSoundfonts.
+  ///
+  /// In en, this message translates to:
+  /// **'SoundFonts'**
+  String get storageSoundfonts;
+
+  /// No description provided for @storagePresets.
+  ///
+  /// In en, this message translates to:
+  /// **'Visualizer presets'**
+  String get storagePresets;
+
+  /// No description provided for @storageOpenedFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Opened files'**
+  String get storageOpenedFiles;
+
+  /// No description provided for @storageOpenedEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Files opened from outside the app (share, “Open with”, the file picker on mobile) are copied here.'**
+  String get storageOpenedEmpty;
+
+  /// No description provided for @storageInUse.
+  ///
+  /// In en, this message translates to:
+  /// **'in a playlist or library'**
+  String get storageInUse;
+
+  /// No description provided for @storageDeleteAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete all'**
+  String get storageDeleteAll;
+
+  /// No description provided for @storageClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get storageClear;
+
+  /// No description provided for @storageDeleteSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete selection'**
+  String get storageDeleteSelection;
+
+  /// No description provided for @storageSelectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get storageSelectAll;
+
+  /// No description provided for @storageFilterHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Filter by name'**
+  String get storageFilterHint;
+
+  /// No description provided for @storageNoMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'No file matches this filter.'**
+  String get storageNoMatch;
+
+  /// No description provided for @storageSelectedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} selected} other{{count} selected}}'**
+  String storageSelectedCount(int count);
+
+  /// No description provided for @storageDeleteSelectionBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{Delete {count} file?} other{Delete {count} files?}}'**
+  String storageDeleteSelectionBody(int count);
+
+  /// No description provided for @storageDeleteSelectionInUseBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, other{Delete {count} files? {inUse} of them are used by a playlist or the library — those entries will lose their file.}}'**
+  String storageDeleteSelectionInUseBody(int count, int inUse);
+
+  /// No description provided for @storageDownloadsClearBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete every downloaded file and its library rows? Favourites and playlists keep their entries, but the files will need downloading again.'**
+  String get storageDownloadsClearBody;
+
+  /// No description provided for @storageSoundfontsClearBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete every SoundFont, imported ones included? Catalogue SoundFonts re-download on demand; imported files are lost.'**
+  String get storageSoundfontsClearBody;
+
+  /// No description provided for @storagePresetsClearBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete downloaded preset packs and imported presets? Bundled presets are kept; packs re-download on demand, imported files are lost.'**
+  String get storagePresetsClearBody;
+
+  /// No description provided for @storageOpenedDeleteAllTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete opened files'**
+  String get storageOpenedDeleteAllTitle;
+
+  /// No description provided for @storageInUseDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'File in use'**
+  String get storageInUseDeleteTitle;
+
+  /// No description provided for @storageInUseDeleteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A playlist or the library still points at this file. Deleting it will leave those entries without their file.'**
+  String get storageInUseDeleteBody;
+
+  /// No description provided for @storageCategoryStat.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} file — {size}} other{{count} files — {size}}}'**
+  String storageCategoryStat(int count, String size);
+
+  /// No description provided for @storageDownloadsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} file — {size} · managed from albums and tracks} other{{count} files — {size} · managed from albums and tracks}}'**
+  String storageDownloadsSubtitle(int count, String size);
+
+  /// No description provided for @storageOpenedDeleteAllBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Delete {count} file? Files used by a playlist or the library are kept.} other{Delete {count} files? Files used by a playlist or the library are kept.}}'**
+  String storageOpenedDeleteAllBody(int count);
+
   /// No description provided for @settingsResetStats.
   ///
   /// In en, this message translates to:
@@ -4883,6 +5495,48 @@ abstract class AppLocalizations {
   /// **'Reset the database?'**
   String get settingsResetDbTitle;
 
+  /// No description provided for @settingsCleanLocalTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Clean up unplayable local entries'**
+  String get settingsCleanLocalTitle;
+
+  /// No description provided for @cleanStageScan.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanning entries…'**
+  String get cleanStageScan;
+
+  /// No description provided for @cleanStageSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing with your account…'**
+  String get cleanStageSync;
+
+  /// No description provided for @cleanStagePurge.
+  ///
+  /// In en, this message translates to:
+  /// **'Removing from your account…'**
+  String get cleanStagePurge;
+
+  /// No description provided for @cleanStageDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Removing locally…'**
+  String get cleanStageDelete;
+
+  /// No description provided for @settingsCleanLocalBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Library entries naming a file that is no longer on this device. They are removed from your account too, so they disappear from your other devices.'**
+  String get settingsCleanLocalBody;
+
+  /// No description provided for @settingsCleanLocalDone.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{Nothing to clean up} one{{count} entry removed} other{{count} entries removed}}'**
+  String settingsCleanLocalDone(int count);
+
   /// No description provided for @settingsResetDbBody.
   ///
   /// In en, this message translates to:
@@ -4906,6 +5560,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Deletes every file in the online folder (tracks, artwork)'**
   String get settingsDeleteDownloadsSubtitle;
+
+  /// No description provided for @settingsCleanAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Clean the local database and cache'**
+  String get settingsCleanAll;
+
+  /// No description provided for @settingsCleanAllSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Removes entries whose file is gone, library entries pointing at files kept on another device, and the artwork & metadata cache'**
+  String get settingsCleanAllSubtitle;
+
+  /// No description provided for @settingsCleanAllConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Library entries pointing at files kept on another device are also removed from your account, so from your other devices. Artwork and metadata are re-downloaded on next play.'**
+  String get settingsCleanAllConfirmBody;
+
+  /// No description provided for @settingsDataAdvanced.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced'**
+  String get settingsDataAdvanced;
+
+  /// No description provided for @settingsDataAdvancedSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Each cleanup step on its own, the cache, and the resets'**
+  String get settingsDataAdvancedSubtitle;
+
+  /// No description provided for @settingsDataGroupDb.
+  ///
+  /// In en, this message translates to:
+  /// **'Database'**
+  String get settingsDataGroupDb;
+
+  /// No description provided for @settingsDataGroupCache.
+  ///
+  /// In en, this message translates to:
+  /// **'Cache'**
+  String get settingsDataGroupCache;
+
+  /// No description provided for @settingsDataGroupReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset'**
+  String get settingsDataGroupReset;
 
   /// No description provided for @settingsDeleteDownloadsTitle.
   ///
@@ -5363,6 +6065,12 @@ abstract class AppLocalizations {
   /// **'The code has 6 digits'**
   String get accountErrorCodeLength;
 
+  /// No description provided for @albumOfflinePartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline — showing what is already on this device'**
+  String get albumOfflinePartial;
+
   /// No description provided for @accountErrorNetwork.
   ///
   /// In en, this message translates to:
@@ -5759,6 +6467,12 @@ abstract class AppLocalizations {
   /// **'Save'**
   String get commonSave;
 
+  /// No description provided for @commonImport.
+  ///
+  /// In en, this message translates to:
+  /// **'Import'**
+  String get commonImport;
+
   /// No description provided for @accountDisplayName.
   ///
   /// In en, this message translates to:
@@ -5975,71 +6689,113 @@ abstract class AppLocalizations {
   /// **'Ring'**
   String get settingsSpectrumModeRing;
 
+  /// No description provided for @settingsPianoMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Piano look'**
+  String get settingsPianoMode;
+
+  /// No description provided for @settingsPianoModeRoll.
+  ///
+  /// In en, this message translates to:
+  /// **'Keyboards'**
+  String get settingsPianoModeRoll;
+
+  /// No description provided for @settingsPianoModeFalling.
+  ///
+  /// In en, this message translates to:
+  /// **'Falling notes'**
+  String get settingsPianoModeFalling;
+
+  /// No description provided for @settingsPianoColor.
+  ///
+  /// In en, this message translates to:
+  /// **'Colors'**
+  String get settingsPianoColor;
+
+  /// No description provided for @settingsPianoColorVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'By voice'**
+  String get settingsPianoColorVoice;
+
+  /// No description provided for @settingsPianoColorInstrument.
+  ///
+  /// In en, this message translates to:
+  /// **'By instrument'**
+  String get settingsPianoColorInstrument;
+
+  /// No description provided for @settingsPianoGlow.
+  ///
+  /// In en, this message translates to:
+  /// **'Glow on struck keys'**
+  String get settingsPianoGlow;
+
+  /// No description provided for @settingsPianoLighting.
+  ///
+  /// In en, this message translates to:
+  /// **'Light and shadows on the keys'**
+  String get settingsPianoLighting;
+
+  /// No description provided for @settingsPianoVoiceNames.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice names'**
+  String get settingsPianoVoiceNames;
+
+  /// Featured rail: header of the new-in-the-catalogue section
+  ///
+  /// In en, this message translates to:
+  /// **'New in the catalogue'**
+  String get featuredAdditionsHeader;
+
+  /// Featured rail: label of a freshly added album card
+  ///
+  /// In en, this message translates to:
+  /// **'Just added'**
+  String get featuredAdditionsCard;
+
+  /// Featured rail: label of the freshly-added-tunes playlist
+  ///
+  /// In en, this message translates to:
+  /// **'The freshly added tunes'**
+  String get featuredAdditionsPlaylist;
+
   /// No description provided for @releaseNotesTitle.
   ///
   /// In en, this message translates to:
   /// **'What\'s new'**
   String get releaseNotesTitle;
 
-  /// Beta 4 release note bullet
+  /// Release note: no background CPU use when idle
   ///
   /// In en, this message translates to:
-  /// **'Downloads: a long one can be cancelled while it runs, and an album archive is no longer fetched several times over.'**
-  String get releaseNotesV4Downloads;
+  /// **'The app no longer works away in the background when nothing is playing: far less processor and battery.'**
+  String get releaseNotesV7Cpu;
 
-  /// Beta 4 release note bullet
+  /// Release note: visualizers idle when stopped, frame-rate cap
   ///
   /// In en, this message translates to:
-  /// **'Queue: a button to empty it, with a confirmation — it also stops what is playing.'**
-  String get releaseNotesV4Queue;
+  /// **'Visualizers stand still while playback is stopped, and are capped at 60 frames per second (adjustable).'**
+  String get releaseNotesV7VizIdle;
 
-  /// Beta 4 release note bullet
+  /// Release note: fix, wrong song started in some multi-song files
   ///
   /// In en, this message translates to:
-  /// **'Files dropped on the window: choose play now, next or at the end; artwork and companion files are left out, and a playlist shipped inside an archive is honoured (real track names, no dead slots).'**
-  String get releaseNotesV4DropFiles;
+  /// **'Fixed: on PC Engine, Master System and Atari ST (.sndh), some tracks started the song next to the right one.'**
+  String get releaseNotesV7Subsongs;
 
-  /// Beta 4 release note bullet
+  /// Release note: piano visualizer empty on PC Engine music
   ///
   /// In en, this message translates to:
-  /// **'MIDI: import your own SoundFont from the device, alongside the ones offered by the server.'**
-  String get releaseNotesV4Soundfont;
+  /// **'The Piano visualizer stayed empty on PC Engine music.'**
+  String get releaseNotesV7Piano;
 
-  /// Beta 4 release note bullet
+  /// Release note: damaged database repairs itself
   ///
   /// In en, this message translates to:
-  /// **'Wwise, FSB and OGL game streams play at last (custom Vorbis).'**
-  String get releaseNotesV4Formats;
-
-  /// Beta 4 release note bullet
-  ///
-  /// In en, this message translates to:
-  /// **'Six more sound chips, a choice of emulation core per chip (SameBoy for Game Boy), and correct pitch on sampled chips.'**
-  String get releaseNotesV4Chips;
-
-  /// Beta 4 release note bullet
-  ///
-  /// In en, this message translates to:
-  /// **'ZX Spectrum: .vt2 tunes play, and note and pattern views now cover the whole ZX family.'**
-  String get releaseNotesV4Zx;
-
-  /// Beta 4 release note bullet
-  ///
-  /// In en, this message translates to:
-  /// **'Repeat one really loops the tune instead of reloading it, and the time counter no longer freezes on an endless loop.'**
-  String get releaseNotesV4Loop;
-
-  /// Beta 4 release note bullet
-  ///
-  /// In en, this message translates to:
-  /// **'The ⓘ panel lists the files a tune actually opened — companions and libraries included.'**
-  String get releaseNotesV4Info;
-
-  /// Beta 4 release note bullet
-  ///
-  /// In en, this message translates to:
-  /// **'Linux desktop build.'**
-  String get releaseNotesV4Linux;
+  /// **'A database left broken by an update now repairs itself, instead of making the library unreachable.'**
+  String get releaseNotesV7Database;
 
   /// No description provided for @releaseNotesDataReset.
   ///
@@ -6104,7 +6860,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsPmSlowPresets.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, =1{1 preset set aside} other{{count} presets set aside}}'**
+  /// **'{count, plural, one{{count} preset set aside} other{{count} presets set aside}}'**
   String settingsPmSlowPresets(int count);
 
   /// No description provided for @settingsPmSlowPresetsSubtitle.
@@ -6478,6 +7234,270 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count, plural, =1{{count} texture} other{{count} textures}}'**
   String pmTexturesCount(int count);
+
+  /// No description provided for @browseCharts.
+  ///
+  /// In en, this message translates to:
+  /// **'Charts'**
+  String get browseCharts;
+
+  /// No description provided for @chartsGlobal.
+  ///
+  /// In en, this message translates to:
+  /// **'Global'**
+  String get chartsGlobal;
+
+  /// No description provided for @chartsByCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'By collection'**
+  String get chartsByCollection;
+
+  /// No description provided for @chartsTopSongs.
+  ///
+  /// In en, this message translates to:
+  /// **'Top songs'**
+  String get chartsTopSongs;
+
+  /// No description provided for @chartsTopAlbums.
+  ///
+  /// In en, this message translates to:
+  /// **'Top albums'**
+  String get chartsTopAlbums;
+
+  /// No description provided for @chartsRewampSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Top rewamp'**
+  String get chartsRewampSection;
+
+  /// No description provided for @chartsPublishedSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Published charts'**
+  String get chartsPublishedSection;
+
+  /// No description provided for @chartsUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Updated {date}'**
+  String chartsUpdated(String date);
+
+  /// No description provided for @chartsSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Source'**
+  String get chartsSource;
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'MIDI synthesizer'**
+  String get settingsMidiSynth;
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic (MT-32 when the file asks for it)'**
+  String get settingsMidiSynthAuto;
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'SoundFont (FluidLite)'**
+  String get settingsMidiSynthSoundfont;
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'Roland MT-32 (emulation)'**
+  String get settingsMidiSynthMt32;
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'Roland MT-32 emulation'**
+  String get settingsMt32Section;
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'MT-32 ROMs'**
+  String get settingsMt32RomsTitle;
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'No usable ROM set — import the control and PCM ROMs of an MT-32 or CM-32L'**
+  String get settingsMt32RomsMissing;
+
+  /// Settings: MT-32 ROM set in use
+  ///
+  /// In en, this message translates to:
+  /// **'Active set: {set}'**
+  String settingsMt32RomsActive(String set);
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'Import ROM files…'**
+  String get settingsMt32Import;
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'Control + PCM ROM (.rom/.bin), MAME split halves accepted. ROMs are not distributed with the app.'**
+  String get settingsMt32ImportSubtitle;
+
+  /// Settings: an imported file mt32emu does not recognise
+  ///
+  /// In en, this message translates to:
+  /// **'{name} is not a known MT-32 / CM-32L ROM'**
+  String settingsMt32ImportRejected(String name);
+
+  /// Settings: MT-32 ROM import result
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} ROM file imported} other{{count} ROM files imported}}'**
+  String settingsMt32ImportDone(int count);
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get settingsMt32Model;
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic (CM-32L if available)'**
+  String get settingsMt32ModelAuto;
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'Reverb'**
+  String get settingsMt32Reverb;
+
+  /// Settings: MIDI synth choice / Roland MT-32 emulation
+  ///
+  /// In en, this message translates to:
+  /// **'Roland MT-32 / CM-32L emulation for MIDI (.mid/.midi/.kar/.rmi)'**
+  String get engineDescMt32;
+
+  /// Tooltip: shrink the desktop window into a mini player
+  ///
+  /// In en, this message translates to:
+  /// **'Mini player'**
+  String get miniWindowEnter;
+
+  /// Tooltip (mini player): go back to the main window
+  ///
+  /// In en, this message translates to:
+  /// **'Back to the main window'**
+  String get miniWindowExit;
+
+  /// Mini player title when no track is loaded
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing playing'**
+  String get miniWindowIdle;
+
+  /// Settings toggle / mini player pin tooltip: keep the window above all others
+  ///
+  /// In en, this message translates to:
+  /// **'Always on top'**
+  String get settingsAlwaysOnTopTitle;
+
+  /// Settings: explains the always-on-top toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the window above all others — main window and mini player alike'**
+  String get settingsAlwaysOnTopSubtitle;
+
+  /// Mini player pin tooltip when always-on-top is active
+  ///
+  /// In en, this message translates to:
+  /// **'Always on top: on'**
+  String get windowAlwaysOnTopOn;
+
+  /// Mini player cover tooltip: click zooms the cover to fill its box
+  ///
+  /// In en, this message translates to:
+  /// **'Zoom cover to fill'**
+  String get miniWindowCoverFill;
+
+  /// Mini player cover tooltip: click shows the whole cover (aspect fit)
+  ///
+  /// In en, this message translates to:
+  /// **'Show whole cover'**
+  String get miniWindowCoverFit;
+
+  /// Release note: new Roland MT-32 engine for game MIDI files
+  ///
+  /// In en, this message translates to:
+  /// **'New Roland MT-32 engine for game MIDI music, with your own ROMs. Without ROMs, a MIDI written for the MT-32 is adapted to General MIDI.'**
+  String get releaseNotesV7Mt32;
+
+  /// Release note: ten rare module formats now playable
+  ///
+  /// In en, this message translates to:
+  /// **'Ten rare module formats now play (Archimedes Tracker .musx, .liq, .fnk…).'**
+  String get releaseNotesV7Xmp;
+
+  /// Release note: Westwood AdLib .adl subsongs + BP SoundMon V1
+  ///
+  /// In en, this message translates to:
+  /// **'Westwood AdLib music (.adl) plays all of its tracks, and BP SoundMon V1 is recognised on Amiga.'**
+  String get releaseNotesV7AmigaAdlib;
+
+  /// Release note: desktop mini player + always on top
+  ///
+  /// In en, this message translates to:
+  /// **'Mac: a mini player, compact or with the visualizer, and an “Always on top” option.'**
+  String get releaseNotesV7MiniPlayer;
+
+  /// Release note: visualizers can name and colour instruments
+  ///
+  /// In en, this message translates to:
+  /// **'Oscilloscope, notes and piano can name and colour each instrument, not just each voice.'**
+  String get releaseNotesV7Instruments;
+
+  /// Release note: search filter for competition winners
+  ///
+  /// In en, this message translates to:
+  /// **'Search: filter the tunes that placed 1st, 2nd or 3rd in a demoscene competition.'**
+  String get releaseNotesV7Podium;
+
+  /// Release note: too-short subsongs left out of Play all
+  ///
+  /// In en, this message translates to:
+  /// **'Subsongs that are too short (game sound effects) are left out of “Play all” — threshold in Settings → Playback.'**
+  String get releaseNotesV7ShortSubsongs;
+
+  /// Release note: importing and organising local folders
+  ///
+  /// In en, this message translates to:
+  /// **'Your imports: drop a whole folder (archives unpacked), and create, rename or move folders.'**
+  String get releaseNotesV7LocalFolders;
+
+  /// Release note: MIDI drum and volume fixes
+  ///
+  /// In en, this message translates to:
+  /// **'MIDI: drums no longer play as a piano, and the volume no longer clips.'**
+  String get releaseNotesV7Midi;
+
+  /// Release note: projectM preset randomness and false slow-device verdict
+  ///
+  /// In en, this message translates to:
+  /// **'projectM: presets no longer repeat from one launch to the next, and a preset is no longer set aside by mistake after a pause.'**
+  String get releaseNotesV7ProjectM;
+
+  /// Library row: the file is not on this device and the account is anonymous, so it is nowhere — shown instead of 'On another device'
+  ///
+  /// In en, this message translates to:
+  /// **'File missing'**
+  String get libraryFileMissing;
 }
 
 class _AppLocalizationsDelegate

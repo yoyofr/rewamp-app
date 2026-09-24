@@ -22,7 +22,12 @@
 
 extern "C" {
 #include "rewamp_plugin.h"
+
+/* Boucle forcée (rewamp_audio.c) — lus à l'open. */
+extern "C" int g_force_loop_mode;
+extern "C" int g_force_loop_native_veto;
 #include "rewamp_channel_data.h"
+#include "rewamp_psf_fade.h"   // fondu de fin décrit par le tag `fade`
 #include "ModizerVoicesData.h"
 #include "ModizerConstants.h"
 }
@@ -168,9 +173,7 @@ struct snsf_info_state {
 };
 
 static void snsf_copy_tag(char *dst, size_t cap, const char *v) {
-    strncpy(dst, v, cap - 1);
-    dst[cap - 1] = '\0';
-    char *nl = strchr(dst, '\n'); if (nl) *nl = '\0';
+    rewamp_psf_tag_copy(dst, cap, v);   /* 1re ligne, Shift-JIS → UTF-8 au besoin */
 }
 
 /* Parse "m:ss.xxx" / "ss.xxx" time into milliseconds. */
@@ -210,6 +213,7 @@ struct RewampDecoder {
     snsf_loader_state *state;        /* owns the ROM + SRAM images */
     uint64_t           totalFrames;
     uint64_t           framePos;
+    uint64_t           fadeFrames = 0;  /* rampe finale (tag `fade`) */
     int                finished;
     int                started;      /* snsf_start() succeeded → snsf_term() owed */
     int64_t            muteCached;
@@ -257,6 +261,9 @@ static int snsf_probe(const char *ext, const uint8_t *hdr, size_t hdrSize) {
 /* ── open ───────────────────────────────────────────────────────────────────── */
 
 static RewampDecoder* snsf_open(const char *path, RewampAudioFormat *outFormat) {
+    /* Mode 1 (N boucles): pas de compte natif -> veto, le generique
+     * Dart compte les passes (voir configure_loop). */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
     char cleanPath[4096];
     strncpy(cleanPath, path, sizeof(cleanPath) - 1);
     cleanPath[sizeof(cleanPath) - 1] = '\0';
@@ -305,6 +312,8 @@ static RewampDecoder* snsf_open(const char *path, RewampAudioFormat *outFormat) 
     int len_ms = info.tag_length_ms + info.tag_fade_ms;
     dec->totalFrames = (len_ms > 0)
         ? (uint64_t)((double)len_ms / 1000.0 * SNSF_SAMPLE_RATE) : 0;
+    dec->fadeFrames = rewamp_psf_fade_frames(info.tag_fade_ms,
+                                             SNSF_SAMPLE_RATE, dec->totalFrames);
 
     /* ⓘ panel: the generic tag reader (rewamp_tags.c) only knows ID3/Vorbis/RIFF
      * containers, so a PSF-family plugin must publish its own tags. */
@@ -335,6 +344,7 @@ static RewampDecoder* snsf_open(const char *path, RewampAudioFormat *outFormat) 
 
 static uint64_t snsf_read(RewampDecoder *dec, float *out, uint64_t frameCount) {
     if (!dec || !dec->started || dec->finished || frameCount == 0) return 0;
+    const uint64_t fadeBase = dec->framePos;
 
     if (dec->totalFrames > 0) {
         if (dec->framePos >= dec->totalFrames) { dec->finished = 1; return 0; }
@@ -354,6 +364,8 @@ static uint64_t snsf_read(RewampDecoder *dec, float *out, uint64_t frameCount) {
         for (unsigned i = 0; i < n * SNSF_STEREO; i++) dst[i] = src[i] / 32768.0f;
         written += n;
     }
+    rewamp_psf_fade_apply(out, written, 2, fadeBase,
+                          dec->totalFrames, dec->fadeFrames);
     dec->framePos += written;
     return written;
 }
@@ -391,6 +403,24 @@ static void snsf_seek(RewampDecoder *dec, uint64_t frameIndex) {
 
 static uint64_t snsf_length(RewampDecoder *dec) { return dec ? dec->totalFrames : 0; }
 
+
+/* Boucle FORCÉE (repeat-morceau): le moteur ÉMULÉ boucle DE LUI-MÊME au point
+ * de boucle de la musique — c'est notre troncature à totalFrames (longueur de
+ * catalogue/tag) qui coupait, et la relance générique repartait du DÉBUT, ce
+ * qui s'entend (même famille que le .ay zxtune, « Midnight Resistance »).
+ * Mode 2 (infini): on lève la troncature, l'émulation joue et boucle au bon
+ * endroit. Mode 1 (N passes): pas de compte natif ici → VETO posé à l'open,
+ * le générique Dart compte — comportement inchangé. Filet: un moteur qui
+ * s'arrêterait quand même rend un read() à 0 → rechargement replayCurrent,
+ * exactement le comportement d'avant ce câblage. */
+static void snsf_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (dec == NULL) return;
+    if (mode == 2) dec->totalFrames = 0;
+    // Toute boucle forcée retire le fondu natif: voir rewamp_psf_fade.h.
+    if (mode != 0) dec->fadeFrames = 0;
+}
+
 static void snsf_close(RewampDecoder *dec) {
     if (!dec) return;
     if (dec->started) snsf_term();
@@ -408,6 +438,7 @@ static const RewampPluginVTable kSnsfVTable = {
     snsf_seek,
     snsf_length,
     snsf_close,
+    snsf_configure_loop_fn,
 };
 
 extern "C" const RewampPluginVTable* rewamp_snsf_plugin(void) {

@@ -19,6 +19,8 @@
 #include "rewamp_assets.h"         // rewamp_get_data_dir() → bundled adplug.db
 
 #include "adplug.h"
+#include "adl.h"          // CadlPlayer: la sonde de sous-chansons interroge le pilote
+#include "fprovide.h"     // CProvider_Filesystem (chargement de la sonde)
 #include "surroundopl.h"
 #include "wemuopl.h"
 #include "silentopl.h"
@@ -75,6 +77,126 @@ static int adplug_probe(const char* ext, const uint8_t* hdr, size_t n) {
     // Exclusive AdLib extensions: score above the generic fallback but below
     // header-confirmed native plugins. open() runs AdPlug's real content probe.
     return 90;
+}
+
+// ── Sonde de sous-chansons `.adl` (Westwood ADL) ──────────────────────────
+//
+// Un `.adl` est une TABLE de morceaux, et AdPlug n'en compte que la LONGUEUR:
+// `CadlPlayer::load` cherche la DERNIÈRE entrée valide et pose
+// `numsubsongs = index + 1` (adl.cpp), TROUS COMPRIS. Mesuré: DUNE19.ADL
+// annonce 74 pistes, LOREINTR.ADL 55, « eob2 - catacomb » 120 — pour 43, 28 et
+// 111 qui produisent réellement une note. Un rip complet affichait donc des
+// dizaines de lignes muettes.
+//
+// ⚠️ **L'en-tête seul ne suffit PAS.** Une première version lisait les tables
+// (entrée ≠ sentinelle + offset de programme non nul, les deux conditions que
+// `play()` et `getProgram()` exigent) et retirait bien les 28 slots morts de
+// DUNE19 — mais elle gardait les entrées 0, 1 et 10, qui portent de VRAIS
+// programmes dont aucun ne joue une note: ce sont les routines de CONTRÔLE du
+// pilote Westwood (arrêt, fondu — `beginFadeOut` joue la piste 1). Et la règle
+// « les programmes bas sont du contrôle » ne tient pas non plus: sur
+// « eob2 - catacomb » c'est l'entrée 2, qui désigne le programme 98.
+//
+// Donc on demande au PILOTE, pas à l'en-tête: `rewind(n)` puis on fait tourner
+// le programme sur un OPL ESPION qui ne synthétise rien et ne retient qu'une
+// chose — un key-on a-t-il été écrit (0xB0-0xB8 bit 5, ou les percussions en
+// 0xBD). C'est exactement ce que la lecture ferait, sans émulation ni sortie.
+// Coût mesuré sur les quatre `.adl` du disque: 0,3 à 0,9 ms pour le FICHIER
+// ENTIER (la plupart des programmes se terminent en quelques trames, et on
+// s'arrête à la PREMIÈRE note). Budget 60 s de rejeu par piste, ce qui borne le
+// seul cas coûteux — un programme qui ne finit jamais et ne joue rien.
+//
+// ⚠️ La liste est CREUSE: la 6e piste jouable de DUNE19 porte l'index 10. Le
+// `?subsong=` de rewamp veut le VRAI index (celui que `rewind()` reçoit), donc
+// la position dans la liste ne peut pas en tenir lieu — d'où
+// rewamp_adplug_probe_get_index(), relayé par rewamp_probe_subsong_index().
+//
+// ⚠️ « joue une note » ne veut pas dire « musique »: beaucoup d'entrées d'un
+// ADL de jeu sont des BRUITAGES, et rien ne les distingue d'un thème. On ne
+// retire que ce qui est PROUVÉ muet.
+static void adplug_ensure_database(void);   // défini plus bas (une fois par processus)
+
+#define ADPLUG_ADL_PROBE_MAX   250
+// Le replay ADL est fixé à 72 Hz, et la borne est celle d'AdPlug lui-même
+// (`CPlayer::songlength` s'arrête à 10 minutes de temps VIRTUEL).
+#define ADPLUG_ADL_PROBE_TICKS (72 * 600)
+
+static int s_adl_probe_count = 0;
+static int s_adl_probe_index[ADPLUG_ADL_PROBE_MAX];
+static int s_adl_probe_ms[ADPLUG_ADL_PROBE_MAX];
+
+// OPL espion: aucune synthèse, on ne retient que « une note a-t-elle démarré ».
+class CAdlProbeOpl : public Copl {
+public:
+    int keyed = 0;
+    void write(int reg, int val) override {
+        if (reg >= 0xB0 && reg <= 0xB8 && (val & 0x20)) keyed = 1;       // key-on
+        else if (reg == 0xBD && (val & 0x20) && (val & 0x1F)) keyed = 1; // percussions
+    }
+    void init(void) override { keyed = 0; }
+};
+
+extern "C" int rewamp_adplug_probe_subsong_count(const char* path) {
+    s_adl_probe_count = 0;
+    if (!path) return 0;
+
+    char clean[4096];
+    strncpy(clean, path, sizeof(clean) - 1);
+    clean[sizeof(clean) - 1] = '\0';
+    char* q = strrchr(clean, '?');
+    if (q && strncmp(q, "?subsong=", 9) == 0) *q = '\0';
+
+    const char* dot = strrchr(clean, '.');
+    if (!dot) return 0;
+    char ext[16] = {0};
+    for (int i = 0; dot[i + 1] && i < 15; i++)
+        ext[i] = (char)tolower((unsigned char)dot[i + 1]);
+    if (strcmp(ext, "adl") != 0) return 0;   // le seul format concerné
+
+    adplug_ensure_database();
+
+    CAdlProbeOpl opl;
+    CadlPlayer player(&opl);
+    CProvider_Filesystem fp;
+    // load() refait ses propres contrôles de plausibilité (tailles minimales,
+    // offsets de programmes): un faux `.adl` échoue ici et la sonde rend 0.
+    if (!player.load(clean, fp)) return 0;
+
+    const unsigned nsub = player.getsubsongs();
+    const float refresh = player.getrefresh() > 0.0f ? player.getrefresh() : 72.0f;
+    int live = 0;
+    for (unsigned s = 0; s < nsub && live < ADPLUG_ADL_PROBE_MAX; s++) {
+        opl.keyed = 0;
+        player.rewind((int)s);
+        // UNE passe donne les deux réponses. On ne s'arrête PAS à la première
+        // note: la DURÉE veut la fin du programme, et c'est exactement la
+        // boucle de `CPlayer::songlength` — qui, elle, échangerait notre OPL
+        // espion contre son propre CSilentopl et masquerait les key-on. Coût
+        // mesuré pour le fichier entier: 0,4 ms (eob2, 120 morceaux), 2,4 ms
+        // (LOREINTR).
+        int ticks = 0;
+        while (ticks < ADPLUG_ADL_PROBE_TICKS && player.update()) ticks++;
+        if (opl.keyed) {
+            s_adl_probe_ms[live]      = (int)((double)ticks * 1000.0 / refresh);
+            s_adl_probe_index[live++] = (int)s;
+        }
+    }
+
+    s_adl_probe_count = live;
+    return live;
+}
+
+/* Index RÉEL de la i-ème sous-chanson jouable (la liste est creuse). */
+extern "C" int rewamp_adplug_probe_get_index(int idx) {
+    if (idx < 0 || idx >= s_adl_probe_count) return idx;
+    return s_adl_probe_index[idx];
+}
+
+/* Durée de la i-ème sous-chanson jouable, en ms. Même passe que le comptage
+ * (voir ci-dessus), donc gratuite. -1 hors liste = « inconnue ». */
+extern "C" int rewamp_adplug_probe_get_duration_ms(int idx) {
+    if (idx < 0 || idx >= s_adl_probe_count) return -1;
+    return s_adl_probe_ms[idx];
 }
 
 // Build the surround OPL3 (two woody chips) exactly like Modizer's default path

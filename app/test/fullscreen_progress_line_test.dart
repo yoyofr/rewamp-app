@@ -268,4 +268,93 @@ void _refinementTests() {
     await tester.pump();
     expect(downs, 2);
   });
+
+  // Boucle infinie: la BARRE sature à la durée nominale (on ne sait pas où la
+  // musique est repartie), mais le compteur de GAUCHE dit depuis combien de
+  // temps ça joue et doit continuer de monter. Deux grandeurs, deux valeurs —
+  // le compteur gelait avec la barre.
+  testWidgets('le compteur de gauche suit `elapsed`, pas la barre saturée',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: FullscreenSeekBar(
+            position: 100,   // barre pleine
+            elapsed:  245,   // 4:05 réellement écoulées
+            duration: 100,
+            width: 200,
+            onSeek: _noSeek,
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    // Chaque timestamp est peint DEUX fois (contour noir + remplissage blanc).
+    expect(find.text('4:05'), findsNWidgets(2), reason: 'compteur écoulé');
+    expect(find.text('1:40'), findsNWidgets(2), reason: 'durée nominale');
+  });
+
+  // Sans `elapsed`, les deux grandeurs n'en font qu'une: rien ne change pour
+  // les formats à durée finie.
+  testWidgets('elapsed absent: le compteur retombe sur la position',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: FullscreenSeekBar(
+            position: 30,
+            duration: 100,
+            width: 200,
+            onSeek: _noSeek,
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('0:30'), findsNWidgets(2));
+  });
+
+  // Sous boucle infinie la durée n'est plus une FIN: c'est la longueur d'UNE
+  // passe, celle qui sert d'échelle à la barre. Le libellé dit les deux.
+  testWidgets('boucle infinie: « ∞ (durée d\'une passe) » à droite',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: FullscreenSeekBar(
+            position: 100,
+            elapsed:  245,
+            infinite: true,
+            duration: 100,
+            width: 200,
+            onSeek: _noSeek,
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('∞ (1:40)'), findsNWidgets(2));
+    expect(find.text('1:40'), findsNothing, reason: 'la durée nue ne sort plus');
+  });
+
+  // Durée inconnue ET boucle infinie: le symbole SEUL — il n'y a rien à mettre
+  // entre parenthèses, et « --:-- » ne dirait pas que ça tourne en boucle.
+  testWidgets('boucle infinie sans durée: le symbole seul', (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: FullscreenSeekBar(
+            position: 0,
+            infinite: true,
+            duration: 0,
+            width: 200,
+            onSeek: _noSeek,
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('∞'), findsNWidgets(2));
+    expect(find.text('--:--'), findsNothing);
+  });
 }

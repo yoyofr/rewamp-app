@@ -87,6 +87,23 @@ double rewamp_silent_seconds(void) {
  * immediately judged silent by leftover state). */
 void rewamp_reset_silence(void) { g_silent_frames = 0; }
 
+/* « Le décodeur a encore de la matière »: un morceau SÉQUENCÉ dont il reste des
+ * événements à jouer n'est pas fini, même si sa sortie est muette à cet
+ * instant.
+ *
+ * Le cas qui l'impose: un MIDI MT-32 passe ses premières secondes à PROGRAMMER
+ * le synthé (banque de timbres, réverbération, assignation des parties). Le
+ * flux d'événements est dense, la sortie audio parfaitement silencieuse, et le
+ * saut automatique des silences (Réglages → Lecture) concluait « fin de piste »
+ * puis avançait la file — le morceau était sauté avant d'avoir commencé.
+ *
+ * ⚠️ Ce n'est pas la même chose que `rewamp_reset_silence`, qui repart d'un
+ * chargement ou d'un seek: ici c'est le DÉCODEUR qui dit qu'il travaille, à
+ * chaque passe de lecture. Écriture racée assumée (même discipline que les
+ * compteurs de télémétrie): le producteur écrit, le rappel audio écrit aussi,
+ * et une remise à zéro perdue coûte un tour de compteur, rien de plus. */
+void rewamp_decoder_activity(void) { g_silent_frames = 0; }
+
 /* Oscilloscope line thickness multiplier (0.5–3); applied by the GL renderers
  * as a ribbon half-width. 1.0 = default. */
 static volatile float g_viz_line_width = 1.0f;
@@ -226,6 +243,39 @@ int rewamp_voice_name(int v, char* out, int len) {
         n = snprintf(out, (size_t)len, "Voice %d", v + 1);  /* synthetic default */
     return n < 0 ? 0 : (n >= len ? len - 1 : n);
 }
+
+/* Nom d'un INSTRUMENT (index de vgm_last_instr[]). Repli « Inst n »: tous les
+ * moteurs n'ont pas de noms, et un numéro reste une identité utilisable. */
+int rewamp_instrument_name(int idx, char* out, int len) {
+    if (!out || len <= 0) return 0;
+    int n;
+    if (idx > 0 && idx < MODIZ_MAX_INSTR && modizInstrName[idx][0] != '\0')
+        n = snprintf(out, (size_t)len, "%s", modizInstrName[idx]);
+    else
+        n = snprintf(out, (size_t)len, "Inst %d", idx);
+    return n < 0 ? 0 : (n >= len ? len - 1 : n);
+}
+
+/* Instrument joué EN CE MOMENT par la voix v (0 = aucun / moteur sans notion
+ * d'instrument). Lu au rendu par la légende « par instrument » du piano. */
+int rewamp_voice_instrument(int v) {
+    if (v < 0 || v >= SOUND_MAXVOICES_BUFFER_FX) return 0;
+    return (int)vgm_last_instr[v];
+}
+
+/* Les instruments de TOUTES les voies en UN appel: l'UI les relit à cadence
+ * rapide pour suivre un changement d'instrument, et un appel FFI par voie (×
+ * 64 voies × 60 img/s) coûterait pour rien. Rend le nombre d'entrées écrites. */
+int rewamp_voice_instruments(int32_t* out, int max) {
+    if (!out || max <= 0) return 0;
+    int n = SOUND_MAXVOICES_BUFFER_FX < max ? SOUND_MAXVOICES_BUFFER_FX : max;
+    for (int v = 0; v < n; v++) out[v] = (int32_t)vgm_last_instr[v];
+    return n;
+}
+
+/* Génération des NOMS d'instruments (voir rewamp_channel_data.c): l'UI ne
+ * relit une chaîne que lorsqu'elle change. */
+unsigned rewamp_instrument_names_generation(void) { return rewamp_instrument_names_gen(); }
 
 int64_t rewamp_get_voice_mute_mask(void) { return generic_mute_mask; }
 void    rewamp_set_voice_mute_mask(int64_t mask) { generic_mute_mask = mask; }
@@ -945,12 +995,42 @@ static const RewampPluginVTable* rewamp_madec_vtable(void) {
     return &g_madec_vtable;
 }
 
-RewampResult rewamp_load_file(const char* path) {
-    if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
+/* One opened, loop-configured decoder — everything a load does short of the
+ * datasource/sound wiring. Factored out of rewamp_load_file so the gapless
+ * handoff (rewamp_handoff_open_next, called from the PRODUCER thread) opens
+ * the next track through the exact same orchestration: per-track state resets,
+ * registry cascade, configure_loop + fadeout window, ProWizard rescue,
+ * miniaudio fallback, tags, backend name. */
+typedef struct {
+    const RewampPluginVTable* vt;
+    RewampDecoder*            dec;
+    RewampAudioFormat         fmt;
+    RewampDeclick*            declick;   /* NULL sauf rip CD + réglage actif */
+} RewampOpenedTrack;
 
-    rewamp_unload();
-    g_native_loop_supported    = 0; // set again below only if this load succeeds
-                                     // via a plugin whose configure_loop is non-NULL
+/* Déclic de début de piste des rips CD — voir rewamp_declick.h. Décidé ICI,
+ * au-dessus des greffons, sur le CHEMIN: un `.ape` est joué par MAC, un
+ * `.ogg` par vgmstream, un build sans FFmpeg retombe sur miniaudio — et le
+ * déchet est dans le FICHIER, pas dans le moteur. (Première version posée dans
+ * le seul greffon vgmstream: `T-3103G_02.ape` claquait toujours.) Réglage
+ * Réglages → Lecture → « Rips CD », actif par défaut. */
+static RewampDeclick* rewamp_declick_for(const char* path, const RewampAudioFormat* fmt) {
+    if (path == NULL || fmt == NULL) return NULL;
+    if (rewamp_get_engine_param("rewamp", "cd_rip_declick", 1.0) == 0.0) return NULL;
+    char clean[4096];
+    snprintf(clean, sizeof(clean), "%s", path);
+    char* q = strstr(clean, "?subsong=");
+    if (q != NULL) *q = '\0';
+    const char* slash = strrchr(clean, '/');
+    const char* base  = slash ? slash + 1 : clean;
+    const char* dot   = strrchr(base, '.');
+    if (dot == NULL || !rewamp_declick_ext_is_cd_rip(dot + 1)) return NULL;
+    return rewamp_declick_create((int)fmt->channels, (int)fmt->sampleRate);
+}
+
+static int rewamp_open_track(const char* path, RewampOpenedTrack* out) {
+    g_native_loop_supported    = 0; // set again below only on a configure_loop
+                                     // plugin that did not veto
     g_loop_fadeout_start_frame = -1;
 
     // Clear any per-voice state from the previous file. Plugins that produce
@@ -999,6 +1079,11 @@ RewampResult rewamp_load_file(const char* path) {
             // the info panel; wipe that state before the next attempt.
             rewamp_channel_data_reset(0);
             rewamp_track_message_clear();
+            // Et les TAGS (titre/artiste/album) avec: ce sont des globaux de
+            // processus que seul l'appelant remet à zéro, et un candidat qui
+            // échoue APRÈS les avoir posés les laisserait au gagnant — Dart
+            // les lit comme « le tag de CE fichier » et les persiste.
+            rewamp_track_artwork_clear();
         }
         RewampAudioFormat fmt = {0};
         g_force_loop_native_veto = 0; // plugin's open() may set it (see below)
@@ -1022,10 +1107,17 @@ RewampResult rewamp_load_file(const char* path) {
                     g_force_fadeout_seconds > 0.0 && vt->length != NULL) {
                     uint64_t singlePassFrames = vt->length(dec);
                     if (singlePassFrames > 0) {
+                        // The window is applied in ds_read against the RING's
+                        // cursor (REWAMP_RING_RATE) — a decoder rendering at
+                        // another rate (openmpt at 48 kHz) is resampled by the
+                        // producer, so its native frame counts scale here.
                         int64_t fadeFrames = (int64_t)(g_force_fadeout_seconds *
-                                                        (double)fmt.sampleRate);
+                                                        (double)REWAMP_RING_RATE);
                         int64_t totalFrames = (int64_t)singlePassFrames *
                                                (int64_t)(g_force_loop_count + 1);
+                        if (fmt.sampleRate != REWAMP_RING_RATE && fmt.sampleRate > 0)
+                            totalFrames = totalFrames * REWAMP_RING_RATE
+                                          / (int64_t)fmt.sampleRate;
                         if (fadeFrames > 0 && fadeFrames < totalFrames) {
                             g_loop_fadeout_start_frame  = totalFrames - fadeFrames;
                             g_loop_fadeout_total_frames = fadeFrames;
@@ -1033,39 +1125,32 @@ RewampResult rewamp_load_file(const char* path) {
                     }
                 }
             }
-            if (rewamp_data_source_init(&g_dataSource, vt, dec, fmt) == MA_SUCCESS) {
-                ma_result r = ma_sound_init_from_data_source(
-                    &g_engine, &g_dataSource.base, 0, NULL, &g_sound);
-                if (r == MA_SUCCESS) {
-                    g_sound_loaded = 1;
-                    g_using_plugin = 1;
-                    g_backend_name = vt->name;
-                    /* Container tags (ID3 / Vorbis / RIFF INFO) for plugin-
-                     * decoded files: vgmstream/ffmpeg play tagged mp3/ogg but
-                     * publish only technical stream facts (Format/Codec/…) to
-                     * the panel — never the metadata tags. Read them ourselves
-                     * and APPEND (no empty-guard: vgmstream already wrote its
-                     * lines, and we want the tags in ADDITION). Safe for every
-                     * plugin: rewamp_tags_append_info detects the container by
-                     * magic and NO-OPS on non-container formats (PSF/VGM/chip
-                     * files), so it never duplicates a PSF plugin's own tags.
-                     * Uses cleanPath (no ?subsong= suffix) — the real on-disk
-                     * file. */
-                    rewamp_tags_append_info(cleanPath);
-                    // A plugin can VETO native loop per-file in its open() (e.g.
-                    // vgmstream/libvgm on a stream with no loop point — its
-                    // native loop_count is a no-op there, so the generic Dart
-                    // loop must take over). g_force_loop_native_veto is reset
-                    // below before each open() and set by the plugin.
-                    g_native_loop_supported =
-                        (vt->configure_loop != NULL && !g_force_loop_native_veto) ? 1 : 0;
-                    return REWAMP_OK;
-                }
-                rewamp_data_source_uninit(&g_dataSource);  // also closes dec
-                dec = NULL;
-            }
-            if (dec != NULL) vt->close(dec);
+            g_backend_name = vt->name;
+            /* Container tags (ID3 / Vorbis / RIFF INFO) for plugin-decoded
+             * files: vgmstream/ffmpeg play tagged mp3/ogg but publish only
+             * technical stream facts (Format/Codec/…) to the panel — never
+             * the metadata tags. Read them ourselves and APPEND (no
+             * empty-guard: vgmstream already wrote its lines, and we want the
+             * tags in ADDITION). Safe for every plugin: rewamp_tags_append_info
+             * detects the container by magic and NO-OPS on non-container
+             * formats (PSF/VGM/chip files), so it never duplicates a PSF
+             * plugin's own tags. Uses cleanPath (no ?subsong= suffix) — the
+             * real on-disk file. */
+            rewamp_tags_append_info(cleanPath);
+            // A plugin can VETO native loop per-file in its open() (e.g.
+            // vgmstream/libvgm on a stream with no loop point — its native
+            // loop_count is a no-op there, so the generic Dart loop must take
+            // over). g_force_loop_native_veto is reset above before each
+            // open() and set by the plugin.
+            g_native_loop_supported =
+                (vt->configure_loop != NULL && !g_force_loop_native_veto) ? 1 : 0;
+            out->vt  = vt;
+            out->dec = dec;
+            out->fmt = fmt;
+            out->declick = rewamp_declick_for(path, &fmt);
+            return 1;
         }
+        if (dec != NULL) vt->close(dec);
         // This plugin claimed the file but failed; try the next candidate.
     }
 
@@ -1078,9 +1163,9 @@ RewampResult rewamp_load_file(const char* path) {
         char convPath[4096];
         if (rewamp_prowizard_to_file(cleanPath, convPath, sizeof(convPath))) {
             g_prowizard_retry = 1;
-            RewampResult r = rewamp_load_file(convPath);
+            int ok = rewamp_open_track(convPath, out);
             g_prowizard_retry = 0;
-            if (r == REWAMP_OK) return r;
+            if (ok) return 1;
         }
     }
 #endif
@@ -1098,22 +1183,50 @@ RewampResult rewamp_load_file(const char* path) {
         RewampAudioFormat fmt = {0};
         RewampDecoder* dec = rewamp_madec_open(cleanPath, &fmt);
         if (dec != NULL && fmt.channels > 0 && fmt.sampleRate > 0) {
-            if (rewamp_data_source_init(&g_dataSource, rewamp_madec_vtable(),
-                                        dec, fmt) == MA_SUCCESS) {
-                if (ma_sound_init_from_data_source(
-                        &g_engine, &g_dataSource.base, 0, NULL, &g_sound) ==
-                    MA_SUCCESS) {
-                    g_sound_loaded = 1;
-                    g_using_plugin = 1;
-                    g_backend_name = "miniaudio";
-                    return REWAMP_OK;
-                }
-                rewamp_data_source_uninit(&g_dataSource);  // also closes dec
-                dec = NULL;
-            }
-            if (dec != NULL) rewamp_madec_vtable()->close(dec);
+            g_backend_name = "miniaudio";
+            out->vt  = rewamp_madec_vtable();
+            out->dec = dec;
+            out->fmt = fmt;
+            out->declick = rewamp_declick_for(path, &fmt);
+            return 1;
         }
+        if (dec != NULL) rewamp_madec_vtable()->close(dec);
     }
+    return 0;
+}
+
+RewampResult rewamp_load_file(const char* path) {
+    if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
+
+    rewamp_unload();
+    // A manual load supersedes whatever next-track was staged for gapless: the
+    // queue decision that staged it is stale the moment the user picks a track.
+    rewamp_clear_next_file();
+    // La fin de piste posée par Dart est PAR PISTE — celle d'hier ne doit pas
+    // couper celle d'aujourd'hui. Dart re-pose après chaque load/adoption.
+    rewamp_set_track_end_seconds(0.0);
+
+    RewampOpenedTrack ot;
+    if (!rewamp_open_track(path, &ot)) return REWAMP_ERROR_LOAD_FAILED;
+    /* Nouvelle piste = nouvelle image (pochette, grille de motifs, voies),
+     * même si l'on ne joue pas encore: le visualiseur doit sortir de sa veille.
+     * Voir rewamp_viz_idle.h. */
+    rewamp_viz_wake();
+
+    if (rewamp_data_source_init(&g_dataSource, ot.vt, ot.dec, ot.fmt, ot.declick)
+            == MA_SUCCESS) {
+        if (ma_sound_init_from_data_source(
+                &g_engine, &g_dataSource.base, 0, NULL, &g_sound) == MA_SUCCESS) {
+            g_sound_loaded = 1;
+            g_using_plugin = 1;
+            return REWAMP_OK;
+        }
+        rewamp_data_source_uninit(&g_dataSource);  // also closes dec
+        ot.dec = NULL;
+    }
+    if (ot.dec != NULL && ot.vt->close != NULL) ot.vt->close(ot.dec);
+    rewamp_declick_destroy(ot.declick);
+    g_backend_name = "";
     return REWAMP_ERROR_LOAD_FAILED;
 }
 
@@ -1237,6 +1350,104 @@ void rewamp_set_forced_loop(int mode, int count,
     g_force_base_duration_secs = baseDurationSeconds > 0.0 ? baseDurationSeconds : 0.0;
 }
 
+/* ── Gapless: staged next track ──────────────────────────────────────────────
+ * Dart arms the NEXT queue entry here as soon as the current track is playing
+ * and the next file exists on disk; the producer thread consumes it at decoder
+ * EOF (rewamp_handoff_attempt → rewamp_handoff_open_next) and swaps decoders
+ * inside the same ring. The staged snapshot carries the same per-track values
+ * rewamp_set_forced_loop would have carried for a plain load — open() reads
+ * them from the g_force_* globals, so they are applied JUST before the open.
+ * Any queue mutation (edit, reorder, shuffle/repeat change, manual skip)
+ * must re-arm or clear; a manual rewamp_load_file() clears it itself. */
+typedef struct {
+    int    staged;
+    char   path[4096];
+    int    loopMode;
+    int    loopCount;
+    int    fadeoutEnabled;
+    double fadeoutSeconds;
+    double baseDurationSecs;
+} RewampNextTrack;
+static RewampNextTrack g_next;
+static pthread_mutex_t g_next_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+void rewamp_set_next_file(const char* path, int loopMode, int loopCount,
+                          int fadeoutEnabled, double fadeoutSeconds,
+                          double baseDurationSeconds) {
+    if (path == NULL || path[0] == '\0') { rewamp_clear_next_file(); return; }
+    pthread_mutex_lock(&g_next_mtx);
+    snprintf(g_next.path, sizeof(g_next.path), "%s", path);
+    g_next.loopMode         = loopMode;
+    g_next.loopCount        = loopCount;
+    g_next.fadeoutEnabled   = fadeoutEnabled;
+    g_next.fadeoutSeconds   = fadeoutSeconds;
+    g_next.baseDurationSecs = baseDurationSeconds;
+    g_next.staged           = 1;
+    pthread_mutex_unlock(&g_next_mtx);
+}
+
+void rewamp_clear_next_file(void) {
+    pthread_mutex_lock(&g_next_mtx);
+    g_next.staged = 0;
+    pthread_mutex_unlock(&g_next_mtx);
+}
+
+/* Crossfade duration — the storage lives in rewamp_datasource.c (the producer
+ * reads it every track end); this is the FFI face. */
+extern double g_crossfade_seconds;
+void rewamp_set_crossfade_seconds(double seconds) {
+    g_crossfade_seconds = seconds > 0.0 ? seconds : 0.0;
+}
+
+/* Fin de piste posée par Dart — voir g_track_end_seconds (rewamp_datasource.c).
+ * Par piste: remise à zéro à chaque load et à chaque handoff. */
+extern double g_track_end_seconds;
+void rewamp_set_track_end_seconds(double seconds) {
+    g_track_end_seconds = seconds > 0.0 ? seconds : 0.0;
+}
+
+int rewamp_next_staged(void) {
+    pthread_mutex_lock(&g_next_mtx);
+    int s = g_next.staged;
+    pthread_mutex_unlock(&g_next_mtx);
+    return s;
+}
+
+/* Producer-thread half of the handoff (see rewamp_handoff_attempt in
+ * rewamp_datasource.c): consume the staged track, apply its per-track loop
+ * snapshot and open it through the exact same orchestration as a plain load.
+ * Consumes the staging even on failure — a broken file must not be retried in
+ * a loop every producer wake; the plain end-of-track path takes over. */
+int rewamp_handoff_open_next(const RewampPluginVTable** outVt,
+                             RewampDecoder** outDec,
+                             RewampAudioFormat* outFmt,
+                             RewampDeclick** outDeclick) {
+    RewampNextTrack next;
+    pthread_mutex_lock(&g_next_mtx);
+    if (!g_next.staged) {
+        pthread_mutex_unlock(&g_next_mtx);
+        return 0;
+    }
+    next = g_next;
+    g_next.staged = 0;
+    pthread_mutex_unlock(&g_next_mtx);
+
+    rewamp_set_forced_loop(next.loopMode, next.loopCount, next.fadeoutEnabled,
+                           next.fadeoutSeconds, next.baseDurationSecs);
+    // Même règle qu'au load: la fin posée par Dart appartenait à la piste
+    // SORTANTE. Dart re-posera celle de la nouvelle à l'adoption (le staging
+    // porte déjà sa durée de BASE, qui sert de première approximation).
+    rewamp_set_track_end_seconds(next.baseDurationSecs);
+
+    RewampOpenedTrack ot;
+    if (!rewamp_open_track(next.path, &ot)) return 0;
+    *outVt  = ot.vt;
+    *outDec = ot.dec;
+    *outFmt = ot.fmt;
+    *outDeclick = ot.declick;
+    return 1;
+}
+
 int rewamp_has_native_loop_support(void) {
     return g_native_loop_supported;
 }
@@ -1303,6 +1514,10 @@ extern int         rewamp_kss_probe_base(void);
 extern int         rewamp_openmpt_probe_subsong_count(const char* path);
 extern const char* rewamp_openmpt_probe_get_title(int idx);
 #endif
+#ifdef REWAMP_WITH_XMP
+extern int         rewamp_xmp_probe_subsong_count(const char* path);
+extern int         rewamp_xmp_probe_get_duration_ms(int idx);
+#endif
 #ifdef REWAMP_WITH_SC68
 extern int         rewamp_sc68_probe_subsong_count(const char* path);
 extern const char* rewamp_sc68_probe_get_title(int idx);
@@ -1316,24 +1531,57 @@ extern int         rewamp_sndh_probe_get_duration_ms(int idx);
 extern int         rewamp_sndh_probe_base(void);
 #endif
 
+#ifdef REWAMP_WITH_ASAP
+extern int         rewamp_asap_probe_subsong_count(const char* path);
+extern int         rewamp_asap_probe_get_duration_ms(int idx);
+#endif
+
 #ifdef REWAMP_WITH_ZXTUNE
 extern int         rewamp_zxtune_probe_subsong_count(const char* path);
 extern const char* rewamp_zxtune_probe_get_title(int idx);
+#endif
+#ifdef REWAMP_WITH_ADPLUG
+extern int         rewamp_adplug_probe_subsong_count(const char* path);
+extern int         rewamp_adplug_probe_get_index(int idx);
+extern int         rewamp_gbsplay_probe_subsong_count(const char* path);
+extern int         rewamp_gbsplay_probe_get_index(int idx);
+extern int         rewamp_adplug_probe_get_duration_ms(int idx);
+#endif
+#ifdef REWAMP_WITH_FURNACE
+extern int         rewamp_furnace_probe_subsong_info(const char* path);
+extern const char* rewamp_furnace_probe_get_title(int idx);
+extern int         rewamp_furnace_probe_get_duration_ms(int idx);
 #endif
 
 // ── Probe-cache dispatch (last-file cache, set by rewamp_probe_subsong_count) ─
 
 typedef const char* (*probe_get_title_fn)(int);
 typedef int         (*probe_get_duration_fn)(int);
+typedef int         (*probe_get_index_fn)(int);
 
 static probe_get_title_fn    s_probe_title_fn    = NULL;
 static probe_get_duration_fn s_probe_duration_fn = NULL;
+/* Set only by a format whose playable subsongs are SPARSE (AdPlug `.adl`: the
+ * table holds sentinel entries between the live ones). NULL = dense, and the
+ * index is then s_probe_base + position, as it always was. */
+static probe_get_index_fn    s_probe_index_fn    = NULL;
 // The absolute base of the last probe's subsong indices (0 for formats whose
 // subsong index is already absolute, e.g. NSF; trk_min for KSS). The Dart layer
 // adds this to the 0-based position so probeSubsongs advertises absolute indices.
 static int s_probe_base = 0;
 
 int rewamp_probe_subsong_base(void) { return s_probe_base; }
+
+int rewamp_probe_subsong_index(int idx) {
+    if (s_probe_index_fn) return s_probe_index_fn(idx);
+    return s_probe_base + idx;
+}
+
+int rewamp_decode_text(const char* in, char* out, int out_cap) {
+    if (!out || out_cap <= 0) return 0;
+    rewamp_text_to_utf8(in, out, (size_t)out_cap);
+    return (int)strlen(out);
+}
 
 const char* rewamp_probe_get_title(int idx) {
     if (s_probe_title_fn) return s_probe_title_fn(idx);
@@ -1390,6 +1638,7 @@ int rewamp_can_play(const char* path) {
 int rewamp_probe_subsong_count(const char* path) {
     s_probe_title_fn    = NULL;
     s_probe_duration_fn = NULL;
+    s_probe_index_fn    = NULL;
     s_probe_base        = 0;
 
 #ifdef REWAMP_WITH_SID
@@ -1423,6 +1672,20 @@ int rewamp_probe_subsong_count(const char* path) {
         if (n > 1) {
             s_probe_title_fn    = rewamp_openmpt_probe_get_title;
             s_probe_duration_fn = NULL;   // openmpt exposes no per-subsong ms here
+            return n;
+        }
+    }
+#endif
+#ifdef REWAMP_WITH_XMP
+    // Same idea for the formats libopenmpt cannot load: libxmp counts the
+    // module's order-list SEQUENCES and, unlike libopenmpt, gives a duration
+    // for each one. AFTER the libopenmpt branch, so a module both can read
+    // keeps libopenmpt's answer (and its subsong titles).
+    {
+        const int n = rewamp_xmp_probe_subsong_count(path);
+        if (n > 1) {
+            s_probe_title_fn    = NULL;   // libxmp names no sequence
+            s_probe_duration_fn = rewamp_xmp_probe_get_duration_ms;
             return n;
         }
     }
@@ -1465,6 +1728,85 @@ int rewamp_probe_subsong_count(const char* path) {
         if (n > 1) {
             s_probe_title_fn    = rewamp_zxtune_probe_get_title;
             s_probe_duration_fn = NULL;   /* zxtune exposes no per-module length */
+            return n;
+        }
+    }
+#endif
+#ifdef REWAMP_WITH_FURNACE
+    // Un `.ftm` FamiTracker porte couramment une dizaine de morceaux, que
+    // Furnace importe en sous-chansons; le décodeur savait déjà en jouer une
+    // (`?subsong=N`), rien ne les COMPTAIT. La sonde se garde elle-même par
+    // extension (charger un module coûte une init de DivEngine), et ne
+    // revendique qu'au-delà d'une sous-chanson: un module simple retombe sur
+    // la suite, donc cette branche est inerte pour tout ce que libgme possède.
+    {
+        const int n = rewamp_furnace_probe_subsong_info(path);
+        if (n > 1) {
+            s_probe_title_fn    = rewamp_furnace_probe_get_title;
+            s_probe_duration_fn = rewamp_furnace_probe_get_duration_ms;
+            return n;
+        }
+    }
+#endif
+#ifdef REWAMP_WITH_ASAP
+    // AVANT libgme, et c'est le point: libgme a bien un Sap_Emu, mais il
+    // REFUSE les `.sap` de `TYPE D` (« Digimusic not supported », un return sec
+    // dans son parse_info) et ne connaît AUCUN des autres formats ASAP (cmc,
+    // rmt, tmc, mpt…). La sonde rendait donc 0 et l'écran des sous-chansons
+    // affichait « Impossible de lire les pistes » sur un fichier qu'ASAP joue
+    // sans broncher — mesuré sur `asma/Games/Ghostbusters.sap` (TYPE D,
+    // SONGS 2).
+    //
+    // La branche est bornée par la liste d'extensions d'ASAP ET par le succès
+    // d'ASAPInfo_Load: ce qui n'est pas à lui retombe sur libgme, inchangé.
+    {
+        const int n = rewamp_asap_probe_subsong_count(path);
+        if (n > 0) {
+            s_probe_title_fn    = NULL;   // ASAP ne nomme pas ses sous-chansons
+            s_probe_duration_fn = rewamp_asap_probe_get_duration_ms;
+            return n;
+        }
+    }
+#endif
+#ifdef REWAMP_WITH_ADPLUG
+    // Un `.adl` Westwood est une TABLE de morceaux et personne ne la comptait:
+    // la chaîne finissait chez libgme, qui ne connaît pas le format — donc 0,
+    // et l'écran des sous-chansons annonçait « Impossible de lire les pistes »
+    // sur un fichier qui en tient des dizaines.
+    //
+    // Et elle ÉCARTE ce qu'AdPlug laisse dans son compte (`numsubsongs` =
+    // index de la dernière entrée valide + 1, TROUS COMPRIS): DUNE19.ADL
+    // annonce 74 pistes pour 43 qui jouent une note. La liste rendue est donc
+    // CREUSE — c'est le seul consommateur de s_probe_index_fn, et la raison
+    // pour laquelle l'index ne peut plus se déduire de la position.
+    //
+    // Bornée à l'extension `.adl` et au contenu (`CadlPlayer::load` refait ses
+    // contrôles de plausibilité): tout le reste retombe sur la suite, inchangé.
+    {
+        const int n = rewamp_adplug_probe_subsong_count(path);
+        if (n > 0) {
+            s_probe_title_fn    = NULL;   // le format ne nomme pas ses morceaux
+            s_probe_duration_fn = rewamp_adplug_probe_get_duration_ms;
+            s_probe_index_fn    = rewamp_adplug_probe_get_index;
+            return n;
+        }
+    }
+#endif
+#ifdef REWAMP_WITH_GBSPLAY
+    // Un `.gbr` est un rip du DRIVER Game Boy: pas de table de morceaux, donc
+    // libgbsplay annonce 255 — la valeur maximale d'un `uint8_t`, qui veut dire
+    // « je ne sais pas ». La sonde demande au PILOTE lequel joue vraiment (même
+    // principe que `.adl`: on n'écarte que ce qui est PROUVÉ muet), et la liste
+    // rendue est CREUSE, d'où s_probe_index_fn.
+    //
+    // Bornée à la magie GBRF: un `.gbs` porte un vrai compte dans son en-tête
+    // et reste à libgme, plus bas.
+    {
+        const int n = rewamp_gbsplay_probe_subsong_count(path);
+        if (n > 0) {
+            s_probe_title_fn    = NULL;   // le format ne nomme rien
+            s_probe_duration_fn = NULL;   // ni ne mesure rien
+            s_probe_index_fn    = rewamp_gbsplay_probe_get_index;
             return n;
         }
     }

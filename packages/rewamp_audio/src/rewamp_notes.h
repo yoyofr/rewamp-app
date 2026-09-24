@@ -2,6 +2,7 @@
 #define REWAMP_NOTES_H
 
 #include <stdint.h>
+#include "rewamp_plugin.h"   /* RewampPluginVTable (typedef anonyme: pas de forward-decl possible) */
 #include "rewamp_audio.h"  /* REWAMP_EXPORT */
 
 #ifdef __cplusplus
@@ -21,12 +22,35 @@ extern "C" {
 /* Reset the timeline for a new track / after a seek. voiceCount = active voices. */
 void rewamp_notes_reset(int voiceCount);
 
+/* Frontière gapless: n'efface RIEN (l'oreille est encore dans le morceau
+ * précédent), change seulement le nombre de voix et le taux pour les captures à
+ * venir. Voir rewamp_notes.c. */
+void rewamp_notes_new_epoch(int voiceCount, int sampleRate);
+
+/* Numéro d'ÉCHANTILLON par voie, lu dans la GRILLE de motifs du greffon au
+ * curseur courant (order,row) — pour les moteurs qui ne l'écrivent pas dans
+ * vgm_last_instr[] (zxtune, libpt3: leur échantillon vit dans la grille, pas
+ * dans l'état par voie). Appelé par le producteur, sous decodeLock, à chaque
+ * échantillon du curseur; ne refait le pattern_get qu'au changement de motif.
+ * La capture prend vgm_last_instr[] s'il est non nul, sinon cette valeur. */
+void rewamp_notes_grid_update(const RewampPluginVTable* vt,
+                              RewampDecoder* dec, int order, int row);
+
 /* Capture one column: reads the current vgm_last_note[] (Hz) for all voices and
  * stores it tagged with [producerSamplePos]. Called by the producer per step. */
 void rewamp_notes_capture(int64_t producerSamplePos);
 
 /* Updates the playhead (consumer sample position) — what is currently heard. */
 void rewamp_notes_set_played(int64_t playedSamplePos);
+
+/* Same, for a SEEK: the playhead moves but the audio from there has not
+ * started yet, so the display clock is held until a consumer update moves it
+ * (a load holds it too, through rewamp_notes_reset). */
+void rewamp_notes_seek_played(int64_t playedSamplePos);
+
+/* Instruments visibles, datés (implémentation et contrat dans le .c). */
+int rewamp_notes_instruments_window(double fromSec, double toSec, int32_t* out, int max);
+int rewamp_notes_voice_instruments(int32_t* out, int max);
 
 /* Pause flag from the transport (rewamp_pause/play). While paused the
  * interpolated playhead stops extrapolating (it kept running up to the
@@ -68,6 +92,10 @@ double rewamp_notes_played_interp(int sampleRate);
  * value snaps at each audio callback, and callback jitter is what judder is
  * made of. Call once per rendered frame. */
 double rewamp_notes_played_smooth(void);
+
+/* Même valeur, SANS faire avancer l'horloge: pour tout appelant qui n'est pas
+ * le rendu (voir le commentaire dans le .c). */
+double rewamp_notes_played_display(void);
 
 /* Collects raw stored columns whose sample position is in [fromSample, toSample].
  * outHz   : count * voiceCount floats (per-voice note value, column-major).

@@ -15,6 +15,28 @@ class AppLocalizationsCs extends AppLocalizations {
   String get navSearch => 'Hledat';
 
   @override
+  String get navLocal => 'Místní';
+
+  @override
+  String get settingsTabsOrderTitle => 'Pořadí karet';
+
+  @override
+  String get settingsTabsOrderSubtitle =>
+      'Přetažením uspořádejte. První čtyři jsou v dolním pruhu, ostatní pod „Více“.';
+
+  @override
+  String get settingsTabsInBar => 'V pruhu';
+
+  @override
+  String get settingsTabsInMore => 'Pod „Více“';
+
+  @override
+  String get settingsLaunchTab => 'Karta při spuštění';
+
+  @override
+  String get settingsLaunchTabSubtitle => 'Na které kartě se aplikace otevře';
+
+  @override
   String get navLibrary => 'Knihovna';
 
   @override
@@ -42,6 +64,16 @@ class AppLocalizationsCs extends AppLocalizations {
   @override
   String playbackFileGone(String file) {
     return 'Soubor už na serveru není: $file';
+  }
+
+  @override
+  String playbackTrackNotInArchive(String file) {
+    return 'Soubor $file v archivu alba není — rip jej uvádí, ale nedodává.';
+  }
+
+  @override
+  String playbackSourceTimeout(String host) {
+    return '$host neodpověděl. Zkontrolujte připojení a zkuste to znovu.';
   }
 
   @override
@@ -130,16 +162,29 @@ class AppLocalizationsCs extends AppLocalizations {
   String get noRecentTracks => 'Žádné nedávno přehrané skladby';
 
   @override
-  String get openLocalFile => 'Otevřít místní soubor';
-
-  @override
   String get playerSourceLocal => 'místní';
 
   @override
-  String get browseFiles => 'Procházet soubory';
+  String get homePlayFiles => 'Přehrát soubory';
 
   @override
-  String countTotal(int loaded, int total) {
+  String get homePlayFolder => 'Přehrát složku';
+
+  @override
+  String get homeSectionsOrderTitle => 'Pořadí sekcí';
+
+  @override
+  String get homeSectionsOrderSubtitle =>
+      'Přetažením uspořádejte domovskou obrazovku podle sebe.';
+
+  @override
+  String get homeSectionsOrderReset => 'Výchozí pořadí';
+
+  @override
+  String get homeSectionsOrderSettings => 'Pořadí sekcí domovské obrazovky';
+
+  @override
+  String countTotal(int loaded, String total) {
     return '$loaded / $total výsledků';
   }
 
@@ -563,6 +608,16 @@ class AppLocalizationsCs extends AppLocalizations {
   String get searchMinRating => 'Hodnocení ≥';
 
   @override
+  String get searchPodium => 'Stupně vítězů';
+
+  @override
+  String get searchPodiumAny => 'Jakékoli umístění na stupních';
+
+  @override
+  String get searchPodiumUnavailable =>
+      'Filtr stupňů vítězů zatím není na serveru k dispozici';
+
+  @override
   String searchRatingValue(String value) {
     return '★ $value';
   }
@@ -642,7 +697,7 @@ class AppLocalizationsCs extends AppLocalizations {
   String get searchSurpriseTooltip => 'Náhodná skladba';
 
   @override
-  String searchTabWithCount(String label, int count) {
+  String searchTabWithCount(String label, String count) {
     return '$label ($count)';
   }
 
@@ -704,6 +759,10 @@ class AppLocalizationsCs extends AppLocalizations {
   String get engineDescOpenmpt => 'Tracker moduly (MOD/XM/S3M/IT/…)';
 
   @override
+  String get engineDescXmp =>
+      'Moduly, které libopenmpt nečte (.musx, .liq, .fnk…)';
+
+  @override
   String get engineDescVgm =>
       'VGM/S98/GYM/DRO — zvukové čipy, osciloskop po kanálech';
 
@@ -715,7 +774,7 @@ class AppLocalizationsCs extends AppLocalizations {
   String get engineDescNsfplay => 'NES NSF/NSFe — hlasy po kanálech';
 
   @override
-  String get engineDescGbsplay => 'Game Boy GBS';
+  String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
   String get engineDescSidplayfp => 'Commodore 64 SID (engine reSIDfp)';
@@ -1092,6 +1151,9 @@ class AppLocalizationsCs extends AppLocalizations {
   }
 
   @override
+  String get subsongDefaultTrack => 'Výchozí skladba';
+
+  @override
   String subsongCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -1183,6 +1245,21 @@ class AppLocalizationsCs extends AppLocalizations {
   String get libraryRemovedArtist => 'Interpret odebrán z knihovny';
 
   @override
+  String get libraryImportBeforeAddTitle => 'Nejprve importovat?';
+
+  @override
+  String get libraryImportBeforeAddBody =>
+      'Tento soubor se přehrává z dočasného umístění, které systém může vyprázdnit. Importovat jej do místní knihovny, aby položka přetrvala?';
+
+  @override
+  String get libraryImportBeforeAddArchiveBody =>
+      'Tato skladba pochází z archivu otevřeného do dočasné mezipaměti. Do místní knihovny se naimportuje celý archiv včetně doprovodných souborů.';
+
+  @override
+  String get libraryAddNeedsCatalogueId =>
+      'Skladbu nelze přidat: její identifikátor v katalogu není na tomto zařízení znám.';
+
+  @override
   String songTilePlayFailed(String message) {
     return 'Přehrávání selhalo: $message';
   }
@@ -1258,6 +1335,9 @@ class AppLocalizationsCs extends AppLocalizations {
   String get vizNotes => 'Noty';
 
   @override
+  String get vizPiano => 'Piano';
+
+  @override
   String get vizPatterns => 'Patterny';
 
   @override
@@ -1265,6 +1345,9 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get patternSmoothScroll => 'Plynulé posouvání';
+
+  @override
+  String get patternPinnedRow => 'Připnutý aktivní řádek';
 
   @override
   String get patternVolumeBars => 'Sloupce hlasitosti';
@@ -1423,6 +1506,9 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get playerAddToPlaylist => 'Přidat do playlistu';
+
+  @override
+  String get playerEngineSettings => 'Nastavení jádra';
 
   @override
   String get queueAddToPlaylist => 'Přidat frontu do playlistu';
@@ -1962,9 +2048,6 @@ class AppLocalizationsCs extends AppLocalizations {
   String get playlistEmpty => 'Prázdný playlist';
 
   @override
-  String get playlistRemoveEntry => 'Odebrat z playlistu';
-
-  @override
   String get trackOptionsAddToLibrary => 'Přidat do knihovny';
 
   @override
@@ -2334,9 +2417,6 @@ class AppLocalizationsCs extends AppLocalizations {
   String get settingsLineThickness => 'Tloušťka čáry';
 
   @override
-  String get settingsColors => 'Barvy';
-
-  @override
   String get settingsScopeVoiceColor => 'Osciloskop hlasů';
 
   @override
@@ -2358,9 +2438,6 @@ class AppLocalizationsCs extends AppLocalizations {
   String get settingsStereoRightColor => 'Stereo pravý';
 
   @override
-  String get settingsNotation => 'Notace (noty)';
-
-  @override
   String get settingsNotePalette => 'Barevná paleta';
 
   @override
@@ -2373,10 +2450,21 @@ class AppLocalizationsCs extends AppLocalizations {
   String get settingsNoteStyleBox => 'Box';
 
   @override
-  String get settingsCrtEffects => 'CRT efekty';
+  String get settingsVizAll => 'Všechny vizualizace';
 
   @override
-  String get settingsCrtGlow => 'Záře (glow)';
+  String get settingsVizScopes => 'Osciloskopy (stereo a po hlasech)';
+
+  @override
+  String get settingsVizFrameRate => 'Snímková frekvence';
+
+  @override
+  String get settingsVizFrameRateScreen => 'Obrazovka';
+
+  @override
+  String settingsValueFps(int value) {
+    return '$value sn./s';
+  }
 
   @override
   String get settingsCrtSpeed => 'Intenzita / rychlost';
@@ -2399,6 +2487,174 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get settingsSilenceDetection => 'Detekce ticha';
+
+  @override
+  String get settingsCrossfade => 'Prolínání';
+
+  @override
+  String get localActionPlay => 'Přehrát soubory nebo složku';
+
+  @override
+  String get localActionImport => 'Importovat soubory nebo složku';
+
+  @override
+  String localOpsImporting(String name) {
+    return 'Import $name…';
+  }
+
+  @override
+  String get localOpsImportingSelection => 'Import vybraných souborů…';
+
+  @override
+  String localOpsDeleting(String name) {
+    return 'Mazání $name…';
+  }
+
+  @override
+  String get localOpsPhaseCopying => 'kopírování';
+
+  @override
+  String get localOpsPhaseExtracting => 'rozbalování';
+
+  @override
+  String get localOpsPhaseRegistering => 'přidávání do knihovny';
+
+  @override
+  String get localOpsPhaseDeleting => 'odstraňování souborů';
+
+  @override
+  String get localImportFiles => 'Importovat soubory';
+
+  @override
+  String get storageLocalImports => 'Místní importy';
+
+  @override
+  String get settingsVgmJapaneseTags => 'Japonské tagy (GD3)';
+
+  @override
+  String get settingsVgmJapaneseTagsHelp =>
+      'Upřednostní japonská pole (název, hra, umělec) VGM tagů, pokud existují.';
+
+  @override
+  String get localImportFolder => 'Importovat složku';
+
+  @override
+  String get localLibraryTitle => 'V tomto zařízení';
+
+  @override
+  String get libraryOnAnotherDevice => 'Na jiném zařízení';
+
+  @override
+  String get localLibraryEmpty =>
+      'Zatím žádné místní importy. Použijte „Importovat soubory“ nebo „Importovat složku“ na úvodní obrazovce.';
+
+  @override
+  String queueLimitReached(int count) {
+    return 'Fronta omezena na prvních $count skladeb';
+  }
+
+  @override
+  String localDeleteTrackConfirm(String name) {
+    return 'Smazat „$name“? Soubor a doprovodné soubory (obal…) budou odstraněny.';
+  }
+
+  @override
+  String localDeleteFolderConfirm(String name, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Smazat složku „$name“ a jejích $count skladeb?',
+      many: 'Smazat složku „$name“ a jejích $count skladby?',
+      few: 'Smazat složku „$name“ a její $count skladby?',
+      one: 'Smazat složku „$name“ a její $count skladbu?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String localImportDone(int count) {
+    return 'Do knihovny importováno: $count';
+  }
+
+  @override
+  String localImportDoneAlbums(int tracks, int albums) {
+    return 'Importováno skladeb: $tracks — alb: $albums';
+  }
+
+  @override
+  String localImportFailed(String error) {
+    return 'Import se nezdařil: $error';
+  }
+
+  @override
+  String get settingsCrossfadeHelp =>
+      'Prolne konec každé skladby se začátkem následující. Při 0 zůstává přehrávání bez mezer.';
+
+  @override
+  String get settingsMinSubsongSection => 'Příliš krátké podskladby';
+
+  @override
+  String get settingsMinSubsongTitle => 'Minimální délka';
+
+  @override
+  String get settingsMinSubsongHelp =>
+      'Kratší podskladby zůstanou mimo seznam i frontu – herní soubor často obsahuje více zvukových efektů než hudby. Při 0 se nevynechá nic; neznámá délka se nikdy nepovažuje za krátkou.';
+
+  @override
+  String get localNewFolder => 'Nová složka';
+
+  @override
+  String get localFolderName => 'Název složky';
+
+  @override
+  String get localRename => 'Přejmenovat';
+
+  @override
+  String get localMoveTo => 'Přesunout do…';
+
+  @override
+  String get localMove => 'Přesunout';
+
+  @override
+  String get localMoveNothing => 'Nic se nepřesunulo';
+
+  @override
+  String get localNameInvalid => 'Neplatný název';
+
+  @override
+  String get localNameTaken => 'Tento název je již obsazen';
+
+  @override
+  String get localMoveIntoItself => 'Složku nelze přesunout do sebe sama';
+
+  @override
+  String get localManageFailed => 'Operace se nezdařila';
+
+  @override
+  String subsongSkippedShort(int seconds) {
+    return 'Nepřidává se do fronty: méně než $seconds s (Nastavení → Přehrávání)';
+  }
+
+  @override
+  String get settingsQueuePrefetchSection => 'Stahování fronty';
+
+  @override
+  String get settingsQueuePrefetchTitle => 'Stáhnout celou frontu';
+
+  @override
+  String get settingsQueuePrefetchSubtitle =>
+      'Jeden soubor po druhém; další chybějící skladba začne, jakmile dorazí předchozí. Vypnuto: jen následující skladba.';
+
+  @override
+  String get settingsCdRipDeclickSection => 'CD ripy';
+
+  @override
+  String get settingsCdRipDeclickTitle =>
+      'Odstranit lupance na začátku skladby';
+
+  @override
+  String get settingsCdRipDeclickSubtitle =>
+      'Vadné CD ripy (mp3, ape, ogg, flac…) často začínají několika poškozenými vzorky. Opravují se, dokud nezahraje 200 ms skutečné hudby; pak se filtr stáhne.';
 
   @override
   String get settingsSilenceSkipTitle => 'Při tichu přejít na další skladbu';
@@ -2467,6 +2723,10 @@ class AppLocalizationsCs extends AppLocalizations {
   String get settingsEngineOpenmptSubtitle => 'Trackery — MOD, XM, S3M, IT…';
 
   @override
+  String get settingsEngineXmpSubtitle =>
+      'Moduly, které libopenmpt nečte — .musx, .liq, .fnk…';
+
+  @override
   String get settingsEngineGmeSubtitle =>
       'SPC, VGM(gme), KSS, AY… — ekvalizér, stereo';
 
@@ -2507,6 +2767,9 @@ class AppLocalizationsCs extends AppLocalizations {
   String get settingsMasterVolume => 'Hlavní hlasitost';
 
   @override
+  String get settingsAmplification => 'Zesílení';
+
+  @override
   String get settingsAmigaFilter => 'Filtr Amiga';
 
   @override
@@ -2520,6 +2783,17 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get settingsChorus => 'Chorus';
+
+  @override
+  String get playbackMt32NoRoms =>
+      'Toto MIDI bylo napsáno pro Roland MT-32. Bez jeho ROM hraje na SoundFontu s nástroji převedenými na General MIDI — ROM importujte v Nastavení › Enginy › Munt.';
+
+  @override
+  String get settingsMidiMt32ToGm => 'Přizpůsobit soubory MT-32';
+
+  @override
+  String get settingsMidiMt32ToGmSubtitle =>
+      'MIDI napsané pro Roland MT-32 čísluje programy podle vlastního seznamu MT-32: po převodu na nejbližší nástroj General MIDI zní věrohodně místo náhodně.';
 
   @override
   String get settingsInterpNone => 'Žádná';
@@ -2992,6 +3266,154 @@ class AppLocalizationsCs extends AppLocalizations {
   }
 
   @override
+  String get storageTitle => 'Úložiště';
+
+  @override
+  String get storageSubtitle => 'Co aplikace drží na disku, s mazáním';
+
+  @override
+  String get storageDownloads => 'Stažené';
+
+  @override
+  String get storageArtworkCache => 'Mezipaměť obalů';
+
+  @override
+  String get storageSoundfonts => 'SoundFonty';
+
+  @override
+  String get storagePresets => 'Předvolby vizualizéru';
+
+  @override
+  String get storageOpenedFiles => 'Otevřené soubory';
+
+  @override
+  String get storageOpenedEmpty =>
+      'Soubory otevřené zvenčí (sdílení, „Otevřít v“, výběr na mobilu) se kopírují sem.';
+
+  @override
+  String get storageInUse => 'v playlistu nebo knihovně';
+
+  @override
+  String get storageDeleteAll => 'Smazat vše';
+
+  @override
+  String get storageClear => 'Vyčistit';
+
+  @override
+  String get storageDeleteSelection => 'Smazat výběr';
+
+  @override
+  String get storageSelectAll => 'Vybrat vše';
+
+  @override
+  String get storageFilterHint => 'Filtrovat podle názvu';
+
+  @override
+  String get storageNoMatch => 'Filtru neodpovídá žádný soubor.';
+
+  @override
+  String storageSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count vybraných',
+      many: '$count vybraného',
+      few: '$count vybrané',
+      one: '$count vybraný',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Smazat $count souborů?',
+      many: 'Smazat $count souboru?',
+      few: 'Smazat $count soubory?',
+      one: 'Smazat $count soubor?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionInUseBody(int count, int inUse) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Smazat $count souborů? $inUse z nich používá playlist nebo knihovna — tyto položky přijdou o soubor.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get storageDownloadsClearBody =>
+      'Smazat všechny stažené soubory a jejich řádky knihovny? Oblíbené a playlisty si položky ponechají, ale soubory bude nutné stáhnout znovu.';
+
+  @override
+  String get storageSoundfontsClearBody =>
+      'Smazat všechny SoundFonty včetně importovaných? Katalogové se znovu stáhnou; importované budou ztraceny.';
+
+  @override
+  String get storagePresetsClearBody =>
+      'Smazat stažené balíčky presetů a importované presety? Vestavěné zůstanou; balíčky se znovu stáhnou, importované budou ztraceny.';
+
+  @override
+  String get storageOpenedDeleteAllTitle => 'Smazat otevřené soubory';
+
+  @override
+  String get storageInUseDeleteTitle => 'Soubor se používá';
+
+  @override
+  String get storageInUseDeleteBody =>
+      'Playlist nebo knihovna na tento soubor stále odkazuje. Smazáním zůstanou tyto položky bez souboru.';
+
+  @override
+  String storageCategoryStat(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count souborů — $size',
+      many: '$count souboru — $size',
+      few: '$count soubory — $size',
+      one: '$count soubor — $size',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDownloadsSubtitle(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count souborů — $size · správa z alb a skladeb',
+      many: '$count souboru — $size · správa z alb a skladeb',
+      few: '$count soubory — $size · správa z alb a skladeb',
+      one: '$count soubor — $size · správa z alb a skladeb',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageOpenedDeleteAllBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Smazat $count souborů? Soubory používané playlistem nebo knihovnou zůstanou.',
+      many:
+          'Smazat $count souboru? Soubory používané playlistem nebo knihovnou zůstanou.',
+      few:
+          'Smazat $count soubory? Soubory používané playlistem nebo knihovnou zůstanou.',
+      one:
+          'Smazat $count soubor? Soubory používané playlistem nebo knihovnou zůstanou.',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetStats => 'Resetovat statistiky';
 
   @override
@@ -3019,6 +3441,39 @@ class AppLocalizationsCs extends AppLocalizations {
   String get settingsResetDbTitle => 'Resetovat databázi?';
 
   @override
+  String get settingsCleanLocalTitle => 'Vyčistit nepřehratelné místní položky';
+
+  @override
+  String get cleanStageScan => 'Prohledávání položek…';
+
+  @override
+  String get cleanStageSync => 'Synchronizace s vaším účtem…';
+
+  @override
+  String get cleanStagePurge => 'Odebírání z vašeho účtu…';
+
+  @override
+  String get cleanStageDelete => 'Odebírání místně…';
+
+  @override
+  String get settingsCleanLocalBody =>
+      'Položky knihovny odkazující na soubor, který už v tomto zařízení není. Odstraní se i z účtu, tedy i z ostatních zařízení.';
+
+  @override
+  String settingsCleanLocalDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Odebráno $count položky',
+      many: 'Odebráno $count položek',
+      few: 'Odebrány $count položky',
+      one: 'Odebrána $count položka',
+      zero: 'Není co čistit',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetDbBody =>
       'Trvale se smaže:\n• celá historie poslechu\n• všechna počítadla\n• všechny oblíbené položky\n• všechny playlisty\n• všechna metadata v mezipaměti\n\nVaše zvukové soubory smazány nebudou.';
 
@@ -3031,6 +3486,33 @@ class AppLocalizationsCs extends AppLocalizations {
   @override
   String get settingsDeleteDownloadsSubtitle =>
       'Smaže všechny soubory ve složce online (skladby, obaly)';
+
+  @override
+  String get settingsCleanAll => 'Vyčistit místní databázi a mezipaměť';
+
+  @override
+  String get settingsCleanAllSubtitle =>
+      'Odstraní položky bez souboru, položky knihovny odkazující na soubory na jiném zařízení a vyprázdní mezipaměť obalů a metadat';
+
+  @override
+  String get settingsCleanAllConfirmBody =>
+      'Položky knihovny odkazující na soubory na jiném zařízení budou odstraněny i z vašeho účtu, tedy z ostatních zařízení. Obaly a metadata se při dalším přehrání stáhnou znovu.';
+
+  @override
+  String get settingsDataAdvanced => 'Pokročilé';
+
+  @override
+  String get settingsDataAdvancedSubtitle =>
+      'Každý krok čištění zvlášť, mezipaměť a resety';
+
+  @override
+  String get settingsDataGroupDb => 'Databáze';
+
+  @override
+  String get settingsDataGroupCache => 'Mezipaměť';
+
+  @override
+  String get settingsDataGroupReset => 'Reset';
 
   @override
   String get settingsDeleteDownloadsTitle => 'Smazat stažené soubory?';
@@ -3285,6 +3767,10 @@ class AppLocalizationsCs extends AppLocalizations {
   String get accountErrorCodeLength => 'Kód má 6 číslic';
 
   @override
+  String get albumOfflinePartial =>
+      'Offline — zobrazujeme, co už v zařízení je';
+
+  @override
   String get accountErrorNetwork => 'Připojení selhalo, zkus to znovu';
 
   @override
@@ -3526,6 +4012,9 @@ class AppLocalizationsCs extends AppLocalizations {
   String get commonSave => 'Uložit';
 
   @override
+  String get commonImport => 'Importovat';
+
+  @override
   String get accountDisplayName => 'Veřejné jméno';
 
   @override
@@ -3650,46 +4139,63 @@ class AppLocalizationsCs extends AppLocalizations {
   String get settingsSpectrumModeRing => 'Prstenec';
 
   @override
+  String get settingsPianoMode => 'Vzhled piana';
+
+  @override
+  String get settingsPianoModeRoll => 'Klaviatury';
+
+  @override
+  String get settingsPianoModeFalling => 'Padající noty';
+
+  @override
+  String get settingsPianoColor => 'Barvy';
+
+  @override
+  String get settingsPianoColorVoice => 'Podle hlasu';
+
+  @override
+  String get settingsPianoColorInstrument => 'Podle nástroje';
+
+  @override
+  String get settingsPianoGlow => 'Záře na stisknutých klávesách';
+
+  @override
+  String get settingsPianoLighting => 'Světlo a stíny na klávesách';
+
+  @override
+  String get settingsPianoVoiceNames => 'Názvy hlasů';
+
+  @override
+  String get featuredAdditionsHeader => 'Novinky v katalogu';
+
+  @override
+  String get featuredAdditionsCard => 'Čerstvě přidáno';
+
+  @override
+  String get featuredAdditionsPlaylist => 'Čerstvě přidané skladby';
+
+  @override
   String get releaseNotesTitle => 'Novinky';
 
   @override
-  String get releaseNotesV4Downloads =>
-      'Stahování: dlouhé stahování lze zrušit v průběhu a archiv alba se už nestahuje několikrát.';
+  String get releaseNotesV7Cpu =>
+      'Aplikace už nepracuje na pozadí, když nic nehraje: mnohem menší zátěž procesoru a baterie.';
 
   @override
-  String get releaseNotesV4Queue =>
-      'Fronta: tlačítko pro její vyprázdnění, s potvrzením — zastaví také přehrávání.';
+  String get releaseNotesV7VizIdle =>
+      'Vizualizace se zastaví, když je přehrávání zastaveno, a jsou omezeny na 60 snímků za sekundu (nastavitelné).';
 
   @override
-  String get releaseNotesV4DropFiles =>
-      'Soubory přetažené na okno: přehrát teď, jako další nebo na konec; obaly a doprovodné soubory se vynechají a seznam skladeb přiložený v archivu se respektuje (skutečné názvy, žádné mrtvé stopy).';
+  String get releaseNotesV7Subsongs =>
+      'Opraveno: na PC Engine, Master System a Atari ST (.sndh) některé skladby spouštěly vedlejší píseň.';
 
   @override
-  String get releaseNotesV4Soundfont =>
-      'MIDI: importujte vlastní SoundFont ze zařízení, vedle těch ze serveru.';
+  String get releaseNotesV7Piano =>
+      'Vizualizace Klavír zůstávala u hudby z PC Engine prázdná.';
 
   @override
-  String get releaseNotesV4Formats =>
-      'Herní streamy Wwise, FSB a OGL konečně hrají (vlastní Vorbis).';
-
-  @override
-  String get releaseNotesV4Chips =>
-      'Šest zvukových čipů navíc, volba emulačního jádra pro každý čip (SameBoy pro Game Boy) a správná výška tónu u vzorkovacích čipů.';
-
-  @override
-  String get releaseNotesV4Zx =>
-      'ZX Spectrum: soubory .vt2 hrají a pohledy na noty a patterny pokrývají celou rodinu ZX.';
-
-  @override
-  String get releaseNotesV4Loop =>
-      'Opakování skladby ji skutečně zacyklí místo znovunačtení a počitadlo už nezamrzá v nekonečné smyčce.';
-
-  @override
-  String get releaseNotesV4Info =>
-      'Panel ⓘ vypíše soubory, které skladba skutečně otevřela — včetně doprovodných a knihoven.';
-
-  @override
-  String get releaseNotesV4Linux => 'Verze pro Linux.';
+  String get releaseNotesV7Database =>
+      'Databáze poškozená aktualizací se nyní opraví sama, místo aby knihovna zůstala nepřístupná.';
 
   @override
   String get releaseNotesDataReset =>
@@ -3733,7 +4239,7 @@ class AppLocalizationsCs extends AppLocalizations {
       other: '$count vyřazených presetů',
       many: '$count vyřazených presetů',
       few: '$count vyřazené presety',
-      one: '1 vyřazený preset',
+      one: '$count vyřazený preset',
     );
     return '$_temp0';
   }
@@ -3996,4 +4502,167 @@ class AppLocalizationsCs extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get browseCharts => 'Žebříčky';
+
+  @override
+  String get chartsGlobal => 'Globální';
+
+  @override
+  String get chartsByCollection => 'Podle kolekce';
+
+  @override
+  String get chartsTopSongs => 'Top skladby';
+
+  @override
+  String get chartsTopAlbums => 'Top alba';
+
+  @override
+  String get chartsRewampSection => 'Top rewamp';
+
+  @override
+  String get chartsPublishedSection => 'Zveřejněné žebříčky';
+
+  @override
+  String chartsUpdated(String date) {
+    return 'Aktualizováno $date';
+  }
+
+  @override
+  String get chartsSource => 'Zdroj';
+
+  @override
+  String get settingsMidiSynth => 'MIDI syntezátor';
+
+  @override
+  String get settingsMidiSynthAuto =>
+      'Automaticky (MT-32, když si to soubor žádá)';
+
+  @override
+  String get settingsMidiSynthSoundfont => 'SoundFont (FluidLite)';
+
+  @override
+  String get settingsMidiSynthMt32 => 'Roland MT-32 (emulace)';
+
+  @override
+  String get settingsMt32Section => 'Emulace Roland MT-32';
+
+  @override
+  String get settingsMt32RomsTitle => 'ROM MT-32';
+
+  @override
+  String get settingsMt32RomsMissing =>
+      'Žádná použitelná sada ROM — importujte řídicí a PCM ROM z MT-32 nebo CM-32L';
+
+  @override
+  String settingsMt32RomsActive(String set) {
+    return 'Aktivní sada: $set';
+  }
+
+  @override
+  String get settingsMt32Import => 'Importovat soubory ROM…';
+
+  @override
+  String get settingsMt32ImportSubtitle =>
+      'Řídicí ROM + PCM ROM (.rom/.bin), poloviny MAME jsou přijímány. ROM nejsou součástí aplikace.';
+
+  @override
+  String settingsMt32ImportRejected(String name) {
+    return '$name není známá ROM MT-32 / CM-32L';
+  }
+
+  @override
+  String settingsMt32ImportDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Importováno $count souborů ROM',
+      many: 'Importováno $count souboru ROM',
+      few: 'Importovány $count soubory ROM',
+      one: 'Importován $count soubor ROM',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsMt32Model => 'Model';
+
+  @override
+  String get settingsMt32ModelAuto => 'Automaticky (CM-32L, je-li k dispozici)';
+
+  @override
+  String get settingsMt32Reverb => 'Dozvuk';
+
+  @override
+  String get engineDescMt32 =>
+      'Emulace Roland MT-32 / CM-32L pro MIDI (.mid/.midi/.kar/.rmi)';
+
+  @override
+  String get miniWindowEnter => 'Minipřehrávač';
+
+  @override
+  String get miniWindowExit => 'Zpět do hlavního okna';
+
+  @override
+  String get miniWindowIdle => 'Nic se nepřehrává';
+
+  @override
+  String get settingsAlwaysOnTopTitle => 'Vždy navrchu';
+
+  @override
+  String get settingsAlwaysOnTopSubtitle =>
+      'Drží okno nad ostatními — hlavní okno i minipřehrávač';
+
+  @override
+  String get windowAlwaysOnTopOn => 'Vždy navrchu: zapnuto';
+
+  @override
+  String get miniWindowCoverFill => 'Přiblížit obal na celou plochu';
+
+  @override
+  String get miniWindowCoverFit => 'Zobrazit celý obal';
+
+  @override
+  String get releaseNotesV7Mt32 =>
+      'Nový engine Roland MT-32 pro MIDI hudbu ze her, s vašimi vlastními ROM. Bez ROM se MIDI napsané pro MT-32 přizpůsobí standardu General MIDI.';
+
+  @override
+  String get releaseNotesV7Xmp =>
+      'Nově se přehrává deset vzácných formátů modulů (Archimedes Tracker .musx, .liq, .fnk…).';
+
+  @override
+  String get releaseNotesV7AmigaAdlib =>
+      'Hudba AdLib od Westwoodu (.adl) přehraje všechny své skladby a BP SoundMon V1 je na Amize rozpoznán.';
+
+  @override
+  String get releaseNotesV7MiniPlayer =>
+      'Mac: minipřehrávač, kompaktní nebo s vizualizací, a volba „Vždy navrchu“.';
+
+  @override
+  String get releaseNotesV7Instruments =>
+      'Osciloskop, noty a klavír umí pojmenovat a obarvit každý nástroj, nejen každý hlas.';
+
+  @override
+  String get releaseNotesV7Podium =>
+      'Hledání: filtrujte skladby, které se v soutěži demoscény umístily na 1., 2. nebo 3. místě.';
+
+  @override
+  String get releaseNotesV7ShortSubsongs =>
+      'Příliš krátké podskladby (zvukové efekty her) se vynechávají z „Přehrát vše“ — práh v Nastavení → Přehrávání.';
+
+  @override
+  String get releaseNotesV7LocalFolders =>
+      'Vaše importy: přetáhněte celou složku (archivy se rozbalí) a vytvářejte, přejmenovávejte nebo přesouvejte složky.';
+
+  @override
+  String get releaseNotesV7Midi =>
+      'MIDI: bicí už nehrají jako klavír a hlasitost už se nepřebuzuje.';
+
+  @override
+  String get releaseNotesV7ProjectM =>
+      'projectM: předvolby se už neopakují od jednoho spuštění k dalšímu a po pauze už není žádná předvolba chybně vyřazena.';
+
+  @override
+  String get libraryFileMissing => 'Soubor chybí';
 }

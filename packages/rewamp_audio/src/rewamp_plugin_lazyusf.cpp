@@ -19,7 +19,12 @@
 #ifdef REWAMP_WITH_LAZYUSF
 
 #include "rewamp_plugin.h"
+
+/* Boucle forcée (rewamp_audio.c) — lus à l'open. */
+extern "C" int g_force_loop_mode;
+extern "C" int g_force_loop_native_veto;
 #include "rewamp_channel_data.h"
+#include "rewamp_psf_fade.h"   // fondu de fin décrit par le tag `fade`
 #include "ModizerVoicesData.h"
 
 #include "usf/usf.h"
@@ -38,6 +43,7 @@ struct RewampDecoder {
     void*    state;         /* usf_state_t, opaque, malloc'd to usf_get_state_size() */
     int      sampleRate;    /* learned from the first usf_render(..., 0, ...) call */
     uint64_t totalFrames;   /* from length+fade tags; 0 = unknown */
+    uint64_t fadeFrames;    /* rampe finale (tag `fade`), 0 = aucune */
     uint64_t framePos;
     char     path[4096];    /* kept for usf_restart-based seek (re-open on rewind) */
 };
@@ -95,9 +101,9 @@ static int lu_info(void* context, const char* name, const char* value) {
     else if (strcasecmp(name, "_enablecompare")  == 0 && *value) t->enableCompare  = 1;
     else if (strcasecmp(name, "_enablefifofull") == 0 && *value) t->enableFifoFull = 1;
     else if (strcasecmp(name, "title") == 0)
-        { strncpy(t->title, value, sizeof(t->title) - 1); }
+        { rewamp_psf_tag_copy(t->title, sizeof(t->title), value); }
     else if (strcasecmp(name, "artist") == 0)
-        { strncpy(t->artist, value, sizeof(t->artist) - 1); }
+        { rewamp_psf_tag_copy(t->artist, sizeof(t->artist), value); }
     return 0;
 }
 
@@ -112,6 +118,9 @@ static int lazyusf_probe(const char* ext, const uint8_t* header, size_t headerSi
 }
 
 static RewampDecoder* lazyusf_open(const char* path, RewampAudioFormat* outFormat) {
+    /* Mode 1 (N boucles): pas de compte natif -> veto, le generique
+     * Dart compte les passes (voir configure_loop). */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
     if (!path) return nullptr;
 
     char cleanPath[4096];
@@ -156,6 +165,9 @@ static RewampDecoder* lazyusf_open(const char* path, RewampAudioFormat* outForma
     const int64_t totalMs = (int64_t)tags.lengthMs + tags.fadeMs;
     dec->totalFrames = totalMs > 0
         ? (uint64_t)totalMs * (uint64_t)dec->sampleRate / 1000ull : 0;
+    dec->fadeFrames = rewamp_psf_fade_frames(tags.fadeMs,
+                                             (uint32_t)dec->sampleRate,
+                                             dec->totalFrames);
     dec->framePos = 0;
 
     if (tags.title[0])  rewamp_track_message_append("Title: %s\n", tags.title);
@@ -206,6 +218,7 @@ static void lazyusf_clear_stale_voices() {
 
 static uint64_t lazyusf_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     if (!dec || frameCount == 0) return 0;
+    const uint64_t fadeBase = dec->framePos;
 
     static int16_t buf[8192];   /* 2ch interleaved */
     const float scale = 1.0f / 32768.0f;
@@ -223,6 +236,8 @@ static uint64_t lazyusf_read(RewampDecoder* dec, float* out, uint64_t frameCount
         dec->framePos += (uint64_t)want;
     }
     lazyusf_clear_stale_voices();
+    rewamp_psf_fade_apply(out, written, 2, fadeBase,
+                          dec->totalFrames, dec->fadeFrames);
     return written;
 }
 
@@ -254,6 +269,24 @@ static uint64_t lazyusf_length(RewampDecoder* dec) {
     return dec ? dec->totalFrames : 0;
 }
 
+
+/* Boucle FORCÉE (repeat-morceau): le moteur ÉMULÉ boucle DE LUI-MÊME au point
+ * de boucle de la musique — c'est notre troncature à totalFrames (longueur de
+ * catalogue/tag) qui coupait, et la relance générique repartait du DÉBUT, ce
+ * qui s'entend (même famille que le .ay zxtune, « Midnight Resistance »).
+ * Mode 2 (infini): on lève la troncature, l'émulation joue et boucle au bon
+ * endroit. Mode 1 (N passes): pas de compte natif ici → VETO posé à l'open,
+ * le générique Dart compte — comportement inchangé. Filet: un moteur qui
+ * s'arrêterait quand même rend un read() à 0 → rechargement replayCurrent,
+ * exactement le comportement d'avant ce câblage. */
+static void lazyusf_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (dec == NULL) return;
+    if (mode == 2) dec->totalFrames = 0;
+    // Toute boucle forcée retire le fondu natif: voir rewamp_psf_fade.h.
+    if (mode != 0) dec->fadeFrames = 0;
+}
+
 static void lazyusf_close(RewampDecoder* dec) {
     if (!dec) return;
     if (dec->state) {
@@ -271,6 +304,7 @@ static const RewampPluginVTable kLazyusfVTable = {
     lazyusf_seek,
     lazyusf_length,
     lazyusf_close,
+    lazyusf_configure_loop_fn,
 };
 
 extern "C" const RewampPluginVTable* rewamp_lazyusf_plugin(void) { return &kLazyusfVTable; }

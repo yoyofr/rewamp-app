@@ -8,6 +8,22 @@
 	<array>
 		<string>en</string>
 		<string>fr</string>
+		<string>de</string>
+		<string>es</string>
+		<string>pt</string>
+		<string>it</string>
+		<string>nl</string>
+		<string>pl</string>
+		<string>fi</string>
+		<string>sv</string>
+		<string>no</string>
+		<string>da</string>
+		<string>cs</string>
+		<string>hu</string>
+		<string>ru</string>
+		<string>ja</string>
+		<string>zh</string>
+		<string>ko</string>
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
@@ -386,6 +402,7 @@
 					<string>fwav</string>
 					<string>fwse</string>
 					<string>g1l</string>
+					<string>gbr</string>
 					<string>gbs</string>
 					<string>gbts</string>
 					<string>gca</string>
@@ -1386,6 +1403,26 @@
 				<string>public.m3u-playlist</string>
 			</array>
 		</dict>
+		<!-- DOSSIER. Le routeur local sait déjà en parcourir un (local_open.dart:
+		     presets d'abord, puis chaque fichier jouable, archives dépliées),
+		     mais macOS ne PROPOSE le dépôt sur l'icône du Dock que si l'app
+		     DÉCLARE accepter le type: sans cette entrée, l'icône ne s'allume
+		     pas et le dossier est refusé — la fenêtre, elle, recevait déjà.
+		     Rank Alternate, comme tout le reste ici: on se propose, on ne vole
+		     aucune association (le Finder reste le propriétaire du double-clic
+		     sur un dossier; Viewer, pas Editor, dit qu'on n'y écrit pas). -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Folder</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.folder</string>
+			</array>
+		</dict>
 	<!-- Le mécanisme HISTORIQUE, en plus de l'UTI ci-dessus, et il est
 	     INDISPENSABLE: une extension n'a qu'UN propriétaire d'UTI, donc dès
 	     qu'une autre app exporte `sndh`/`sc68`/`v2m`/`pt3` (Modizer le fait),
@@ -1722,6 +1759,7 @@
 					<string>fwav</string>
 					<string>fwse</string>
 					<string>g1l</string>
+					<string>gbr</string>
 					<string>gbs</string>
 					<string>gbts</string>
 					<string>gca</string>

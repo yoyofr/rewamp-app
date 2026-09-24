@@ -1,0 +1,48 @@
+--- src/mixer.c
++++ src/mixer.c
+@@ -22,6 +22,8 @@
+ 
+ #include <math.h>
+ #include "common.h"
++/* rewamp: per-voice oscilloscope capture (see the header). */
++#include "../rewamp_xmp_capture.h"
+ #include "virtual.h"
+ #include "mixer.h"
+ #include "mix_all.h"
+@@ -523,6 +525,9 @@
+ #endif
+ 
+ 	libxmp_mixer_prepare(ctx);
++
++	/* rewamp: start this tick's scope window (all voices squared up). */
++	rewamp_xmp_capture_begin(mod->chn, s->ticksize);
+ 
+ 	for (voc = 0; voc < p->virt.maxvoc; voc++) {
+ 		int c5spd, rampsize, delta_l, delta_r;
+@@ -682,8 +687,16 @@
+ 					}
+ 
+ 					if (mix_fn != NULL) {
++						/* rewamp: the voice's own output is the
++						 * DELTA of the shared buffer across this
++						 * mix call. */
++						int rw_stride = (~s->format & XMP_FORMAT_MONO) ? 2 : 1;
++						rewamp_xmp_capture_pre(buf_pos, samples, rw_stride);
+ 						mix_fn(vi, buf_pos, samples,
+ 							vol_l >> 8, vol_r >> 8, step_dir * (1 << SMIX_SHIFT), rsize, delta_l, delta_r);
++						rewamp_xmp_capture_post(vi->chn, buf_pos,
++							samples, rw_stride, s->ticksize - size,
++							DOWNMIX_SHIFT - s->amplify + 9);
+ 					}
+ 
+ 					buf_pos += mix_size;
+@@ -761,6 +774,9 @@
+ 		vi->old_vr = vol_r;
+ 	}
+ 
++	/* rewamp: one write-head step per tick, for every voice at once. */
++	rewamp_xmp_capture_advance(mod->chn, s->ticksize);
++
+ 	/* Render final frame */
+ 
+ 	size = s->ticksize;

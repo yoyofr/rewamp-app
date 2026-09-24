@@ -6,12 +6,21 @@ import 'favorite_color.dart';
 import 'package:rewamp_audio/rewamp_audio.dart' show SubsongInfo, RewampAudio;
 import 'l10n.dart';
 import 'rewamp_db.dart';
+import 'scrolling_text.dart';
 import 'uade_info.dart';
+import 'library_identity.dart';
 import 'local_db.dart';
+import 'min_subsong.dart';
+import 'user_settings.dart';
 import 'artwork_image.dart';
+import 'artwork_viewer.dart';
 import 'library_button.dart';
 import 'player_controller.dart';
+import 'local_open.dart' show rotateToDefaultSubsong;
 import 'playlist_picker.dart';
+import 'default_subsong.dart' show defaultSubsongFromHeader;
+import 'sap_info.dart' show SapInfoService;
+import 'app_snack.dart';
 import 'track_options_sheet.dart'
     show globalOnAlbumQueueAdd, globalOnPlayAlbum, showTrackOptions;
 
@@ -53,6 +62,35 @@ class ContainerSubsongScreen extends StatefulWidget {
 }
 
 class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
+  /// La pochette RÉELLE résolue par la vignette, ou null tant qu'il n'y a
+  /// qu'un placeholder. C'est elle qu'on agrandit — la re-résoudre depuis
+  /// l'url finirait par diverger de ce que l'utilisateur a touché.
+  final ValueNotifier<ImageProvider?> _fullArt = ValueNotifier(null);
+
+  /// Seuil « sous-chansons trop courtes » tel que cet écran l'affiche.
+  ///
+  /// ⚠️ Il vit dans l'état, pas lu au vol dans `build`: changer le réglage
+  /// pendant que cet écran est MONTÉ (il l'est — Réglages est poussé
+  /// PAR-DESSUS) ne reconstruit rien tout seul, et le grisé restait celui
+  /// d'avant jusqu'à ce qu'on ferme et rouvre l'écran. `UserSettings` est un
+  /// ChangeNotifier: il suffit de l'écouter. Même règle que la coquille et
+  /// l'accueil, qui l'écoutent déjà.
+  int _minSubsongMs = 0;
+
+  void _onSettingsChanged() {
+    final v = minSubsongMs;
+    // Seulement quand CE réglage bouge: le notifier est global, et tout
+    // reconstruire à chaque poussée de réglage serait du gaspillage pur.
+    if (v != _minSubsongMs && mounted) setState(() => _minSubsongMs = v);
+  }
+
+  @override
+  void dispose() {
+    UserSettings.instance.removeListener(_onSettingsChanged);
+    _fullArt.dispose();
+    super.dispose();
+  }
+
   List<SubsongInfo>? _subsongs;
   /// La liste vient-elle de la TRACKLIST SERVEUR (et non de la sonde native) ?
   /// Décide la FORME d'identité des lignes émises — voir _resultFor.
@@ -76,7 +114,12 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
     // ("mdat.monkey island"), so basenameWithoutExtension returns "mdat" —
     // which then became the fallback title of every row, and the player's.
     if (lp != null && lp.isNotEmpty) return UadeInfoService.displayName(lp);
-    return widget.result.displayTitle;
+    // ⚠️ PAS `displayTitle`: quand le serveur fournit déjà la tracklist (hvsc,
+    // joshw), `_probe` sort AVANT de résoudre le chemin — `_resolvedPath` reste
+    // nul et on retombe ici. Or la ligne d'un conteneur est celle de sa
+    // sous-chanson 0, qui porte SON titre: l'écran s'appelait « Space Game »,
+    // le nom STIL de la piste 1 de « One Man and his Droid ».
+    return widget.result.containerName;
   }
 
   // Library/favorite key for the WHOLE song (no subsong suffix), so it's
@@ -84,11 +127,17 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
   // songId is non-nullable on SearchResult, so the old
   // `?? localPath ?? filename` chain was dead code — but callers still treat a
   // ref id as optional, so keep the nullable type.
-  String? get _songRefId => widget.result.songId;
+  /// Réécriture consultée: un ajout passé par l'import a posé la ligne sous la
+  /// clé pérenne (voir library_identity.dart).
+  String? get _songRefId => widget.result.songId.isEmpty
+      ? widget.result.songId
+      : libraryRefRewrite(widget.result.songId);
 
   @override
   void initState() {
     super.initState();
+    _minSubsongMs = minSubsongMs;
+    UserSettings.instance.addListener(_onSettingsChanged);
     _probe();
     _resolveDeletable();
     final ref = _songRefId;
@@ -111,15 +160,29 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
 
   Map<int, SubsongScore> _scores = const {};
 
+  /// « Ce fichier est-il À NOUS, sur le disque ? » — ce qui décide de la
+  /// présence de « Re-télécharger » et « Supprimer le téléchargement ».
+  ///
+  /// ⚠️ Appelée à l'ouverture ET APRÈS CHAQUE LECTURE. Un fichier pas encore
+  /// téléchargé répond « non » à l'ouverture; le lire le fait DESCENDRE, et
+  /// sans nouvelle résolution le menu restait sans ses deux entrées jusqu'à ce
+  /// qu'on quitte l'écran et qu'on y revienne. L'état affiché doit suivre le
+  /// disque, pas la première impression qu'on en a eue.
   Future<void> _resolveDeletable() async {
     String? fp = widget.result.localPath;
     fp ??= (await LocalDb.instance.getTrackByOnlineId(widget.result.songId))
           ?.filePath;
-    if (fp == null) return;
     final sep = Platform.pathSeparator;
-    if (!fp.contains('${sep}online$sep')) return;
-    if (!await File(fp).exists()) return;
-    if (mounted) setState(() => _deletablePath = fp);
+    final ok = fp != null &&
+        fp.contains('${sep}online$sep') &&
+        await File(fp).exists();
+    // Rendre la main SANS rien changer était l'autre moitié du défaut: la
+    // réponse « non » ne s'écrivait jamais, donc un fichier supprimé ailleurs
+    // laissait ses entrées de menu en place.
+    final next = ok ? fp : null;
+    if (mounted && next != _deletablePath) {
+      setState(() => _deletablePath = next);
+    }
   }
 
   Future<void> _deleteDownload() async {
@@ -152,11 +215,68 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
     Navigator.of(context).pop(); // leave the subsong list — file is gone
   }
 
+  /// Re-télécharge le FICHIER de force, pochette comprise.
+  ///
+  /// Même geste que celui du lecteur, mais atteignable ici: c'est l'écran où
+  /// l'on REGARDE un fichier, donc l'endroit où l'on constate qu'il est périmé —
+  /// et le lecteur exige d'être en train de jouer ce fichier-là.
+  ///
+  /// N'est proposé que pour un fichier qu'on a DESCENDU (`_deletablePath`, sous
+  /// `online/`): un fichier local à l'utilisateur n'a rien à re-télécharger.
+  /// Le membre d'une archive d'album, lui, n'a pas d'URL à lui — et ça ne se
+  /// sait qu'après avoir demandé son contexte au serveur, donc l'action le DIT
+  /// plutôt que de disparaître d'un menu.
+  Future<void> _redownload() async {
+    final fp   = _deletablePath;
+    final id   = catalogueSongId(widget.result.songId);
+    final l10n = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    if (fp == null || id == null) return;
+
+    final s = (await RewampDb.getSongContext(id))?.song;
+    if (s == null || s.downloadUrl == null || s.downloadUrl!.isEmpty) {
+      AppSnack.showOn(messenger, l10n.playerRedownloadUnavailable);
+      return;
+    }
+
+    // Le fichier peut être EN TRAIN de jouer: le lâcher avant de l'effacer,
+    // sinon le décodeur tient un fichier qui n'existe plus.
+    final ctrl = PlayerController.current;
+    if (ctrl != null && ctrl.filePath == fp) ctrl.stop();
+
+    // Table rase: fichier(s) — le nom dérivé peut avoir changé côté serveur —,
+    // compagnons, pochette, lignes DB et url de provenance. Le ♥, la
+    // bibliothèque et l'historique d'écoute survivent au geste.
+    await RewampDb.purgeBeforeRedownload(s, currentPath: fp);
+
+    try {
+      await RewampDb.downloadToLibrary(s, force: true);
+    } catch (_) {
+      if (!mounted) return;
+      AppSnack.showOn(messenger, l10n.playerRedownloadUnavailable);
+      return;
+    }
+    if (!mounted) return;
+    // La liste vient du fichier (sonde) ou du serveur: la refaire, et re-armer
+    // l'action, dont le chemin vient d'être effacé puis recréé.
+    setState(() => _deletablePath = null);
+    await _resolveDeletable();
+    if (mounted) await _probe();
+  }
+
   Future<void> _toggleFavorite() async {
-    final ref = _songRefId;
+    var ref = _songRefId;
     if (ref == null) return;
     final r    = widget.result;
     final next = !_isFav;
+    // Un ♥ EST une entrée de bibliothèque: il passe par la garde d'identité
+    // (chemin jetable ⇒ import proposé, téléchargement sans songId ⇒ refus).
+    // Un un-♥ n'est jamais gardé — voir library_identity.dart.
+    if (next) {
+      final ok = await ensureLibraryRefForAdd(context, ref);
+      if (ok == null || !mounted) return;
+      ref = ok;
+    }
     setState(() => _isFav = next);
     await LocalDb.instance.setLibraryFavorite(
       type:       'track',
@@ -228,7 +348,7 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
       final ext = _extOf(localPath);
       if (_kSidExts.contains(ext)) {
         subs = await _sidSubsongs(localPath);
-      } else if (UadeInfoService.isUadePath(localPath)) {
+      } else if (UadeInfoService.isUadeFileAt(localPath)) {
         final info = await UadeInfoService.instance.forPath(localPath);
         // playableSubsongs: the songdb flags NOSOUND slots (silent, length 0),
         // which upstream's own plugin filters out by default.
@@ -245,7 +365,29 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
               ]
             : await RewampDb.probeContainerFile(localPath);
       } else {
+        // ⚠️ `probeContainerFile` consulte le M3U quand il y en a un, et
+        // **le M3U PRIME sur l'en-tête**. Ça vaut d'avance pour le chantier
+        // NSF/GBS (leurs en-têtes portent aussi un octet « première piste »,
+        // mais les rips joshw sont livrés avec leur M3U): un fichier dont la
+        // liste vient d'un M3U ne doit PAS se voir imposer un départ par
+        // l'en-tête — la liste du M3U est déjà celle que le ripper a voulue,
+        // ordre compris, et les deux numérotations ne coïncident même pas
+        // (le M3U retire les slots morts).
         subs = await RewampDb.probeContainerFile(localPath);
+        // ASMA: le `.sap` porte un DEFSONG que le serveur rend 0-based dense,
+        // par le même RPC md5 que le STIL. La liste d'un SAP est dense elle
+        // aussi, l'index de ligne EST l'index de sous-chanson.
+        // …mais l'en-tête est SOUS LA MAIN et le cache SAP local ne retient
+        // que le STIL: on le lit d'abord, le serveur n'est qu'un repli.
+        if (ext == 'sap') {
+          _defaultRow = await defaultSubsongFromHeader(localPath);
+          if (_defaultRow == null) {
+            try {
+              final info = await SapInfoService.instance.forPath(localPath);
+              _defaultRow = info?.defaultSubsong;
+            } catch (_) {}
+          }
+        }
       }
       if (!mounted) return;
       if (subs.isEmpty) {
@@ -274,6 +416,11 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
 
   /// SID subsongs from HVSC songlengths + STIL (get_sid_info by md5).
   /// Falls back to the native probe when the md5 is unknown server-side.
+  /// Sous-chant de départ DÉSIGNÉ par le fichier, en INDEX DE LISTE (pas en
+  /// index de sous-chanson: les deux diffèrent dès qu'un slot muet est
+  /// retiré). null = démarrer au premier, le cas de l'immense majorité.
+  int? _defaultRow;
+
   Future<List<SubsongInfo>> _sidSubsongs(String localPath) async {
     final audio = RewampAudio();
     // Native tune count from the SID header — the authoritative subsong count.
@@ -287,6 +434,13 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
       final md5 = audio.sidMd5(localPath);
       if (md5.isNotEmpty) info = await RewampDb.getSidInfo(md5);
     } catch (_) {}
+    // `default_subsong` est DÉJÀ 0-based dense (le serveur a converti le
+    // 1-based du SID): pour un SID la liste est dense elle aussi, l'index de
+    // ligne EST l'index de sous-chanson.
+    // L'en-tête d'abord (gratuit, et vrai même hors catalogue), le serveur
+    // ensuite — un SID dont l'en-tête ne dit rien peut être connu de HVSC.
+    _defaultRow = await defaultSubsongFromHeader(localPath) ??
+        info?.defaultSubsong;
 
     // Count = max(header, STIL) so we never drop tunes the header knows about.
     final count = [
@@ -311,6 +465,38 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
     ];
   }
 
+  /// Le titre PROPRE à une sous-chanson, ou null si elle n'en a pas.
+  ///
+  /// ⚠️ **Un titre que TOUTES les sous-chansons partagent n'est pas un titre de
+  /// sous-chanson: c'est celui du FICHIER.** Un SNDH n'a qu'un tag `TITL`, et
+  /// la sonde le rend pour chacune de ses 20 entrées — non nul, donc le repli
+  /// numéroté ne partait jamais: la liste affichait vingt fois « Amberstar »
+  /// et « tout lire » mettait vingt « Amberstar » en file, là où le MÊME
+  /// fichier lancé depuis un rail (AppShell._subsongEntries, qui ne lit pas la
+  /// sonde) donnait « Amberstar (1) », « (2) »… Même règle que
+  /// RewampDb.numberSubsongTitles: on ne numérote que si les titres sont
+  /// IDENTIQUES — une vraie tracklist garde ses noms.
+  String? _ownTitle(SubsongInfo sub) {
+    final subs = _subsongs;
+    if (!identical(subs, _sharedTitleFor)) {
+      _sharedTitleFor = subs;
+      final first = subs == null || subs.isEmpty ? null : subs.first.title;
+      _titleIsShared = subs != null &&
+          subs.length > 1 &&
+          first != null &&
+          first.isNotEmpty &&
+          subs.every((s) => s.title == first);
+    }
+    final own = sub.title;
+    if (_titleIsShared || own == null || own.isEmpty) return null;
+    return own;
+  }
+
+  // Mémo du verdict, clefé sur l'IDENTITÉ de la liste: `_ownTitle` est appelé
+  // par ligne depuis le builder, le recalculer là serait quadratique.
+  List<SubsongInfo>? _sharedTitleFor;
+  bool _titleIsShared = false;
+
   SearchResult _resultFor(SubsongInfo sub) {
     final r = widget.result;
     // La FORME d'identité suit la SOURCE de la liste.
@@ -327,7 +513,7 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
     return SearchResult(
       songId:      entryId,
       collection:  r.collection,
-      title:       sub.title ?? '$_containerName (${sub.index + 1})',
+      title:       _ownTitle(sub) ?? '$_containerName (${sub.index + 1})',
       filename:    r.filename,
       // JAMAIS `?? _containerName`: le nom d'album entre dans le CHEMIN de
       // téléchargement (_dirSegments range un album sous son niveau à lui), donc
@@ -381,21 +567,28 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
       final start = subs.indexWhere((x) => x.subsongIdx == sub.subsongIdx);
       await playAll(context, subs.map(_resultFor).toList(),
           startIndex: start < 0 ? 0 : start);
+      await _resolveDeletable();
       return;
     }
     widget.onTap(context, _resultFor(sub));
+    await _resolveDeletable();
   }
 
   Future<void> _playAll() async {
     final subs = _subsongs;
     if (subs == null || subs.isEmpty) return;
-    final list = subs.map(_resultFor).toList();
+    // Le fichier désigne son premier morceau: on TOURNE la liste plutôt que
+    // de couper devant — « tout lire » doit tout lire (voir
+    // rotateToDefaultSubsong).
+    final list =
+        rotateToDefaultSubsong(subs.map(_resultFor).toList(), _defaultRow);
     final playAll = widget.onPlayAll ?? globalOnPlayAlbum;
     if (playAll != null) {
       await playAll(context, list);
     } else {
       widget.onTap(context, list.first);
     }
+    await _resolveDeletable();
   }
 
   @override
@@ -444,27 +637,94 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                         _header(context, l10n, cs, r, subs.length),
                         const Divider(height: 1),
                         Expanded(
-                          child: ListView.builder(
+                          child: Builder(builder: (_) {
+                            // Ce qu'un « tout lire » ÉCARTERA (Réglages →
+                            // Lecture, durée minimale). Même fonction que la
+                            // file, jamais une règle recopiée: les gardes
+                            // « même fichier », « durée inconnue » et « tout
+                            // filtré ⇒ on ne filtre rien » sont trois
+                            // occasions de diverger. `fileKey` reprend celui
+                            // de _resultFor, dont seul `filePath` varie.
+                            final skipped = skippedQueueSubsongs<SubsongInfo>(
+                              subs,
+                              minMs: _minSubsongMs,
+                              fileKey: (x) => x.filePath,
+                              durationMs: (x) => x.durationMs,
+                            );
+                            return ListView.builder(
                             itemCount: subs.length,
                             itemBuilder: (_, i) {
                               final sub = subs[i];
-                              final title = sub.title?.isNotEmpty == true
-                                  ? sub.title!
-                                  : l10n.subsongTrackNumber(sub.index + 1);
+                              // Grisée = ne sera pas mise en file par un
+                              // « tout lire ». Elle reste JOUABLE au tap, et
+                              // le sous-titre dit pourquoi + où le changer.
+                              final isSkipped = skipped.contains(sub);
+                              final title = _ownTitle(sub) ??
+                                  l10n.subsongTrackNumber(sub.index + 1);
                               final dur = sub.durationMs != null
-                                  ? _formatDuration(sub.durationMs!)
+                                  ? RewampDb.formatDurationMs(sub.durationMs!)
                                   : null;
+                              // Le fichier DÉSIGNE ce sous-chant comme son
+                              // premier morceau: la pastille le dit, et
+                              // « tout lire » démarre là (rotation).
+                              final isDefault = _defaultRow == i;
                               return ListTile(
+                                subtitle: isSkipped
+                                    ? Text(
+                                        l10n.subsongSkippedShort(
+                                            (_minSubsongMs / 1000).round()),
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            color: cs.onSurfaceVariant),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis)
+                                    : null,
                                 leading: CircleAvatar(
-                                  backgroundColor: cs.primaryContainer,
+                                  // Grisée: la pastille perd sa teinte
+                                  // d'accent. On ÉTEINT plutôt qu'on ne baisse
+                                  // l'opacité de toute la ligne — le
+                                  // sous-titre qui explique pourquoi doit
+                                  // rester lisible.
+                                  backgroundColor: isSkipped
+                                      ? cs.surfaceContainerHighest
+                                      : isDefault
+                                          ? cs.primary
+                                          : cs.primaryContainer,
                                   child: Text('${sub.index + 1}',
                                       style: TextStyle(
-                                          color: cs.onPrimaryContainer,
+                                          color: isSkipped
+                                              ? cs.onSurfaceVariant
+                                              : isDefault
+                                                  ? cs.onPrimary
+                                                  : cs.onPrimaryContainer,
                                           fontWeight: FontWeight.bold,
                                           fontSize: 13)),
                                 ),
-                                title: Text(title,
-                                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                                // ⚠️ Le style se pose par DefaultTextStyle et
+                                // non par `ScrollingText(style:)`: celui-ci
+                                // REMPLACE le style hérité (`widget.style ??
+                                // DefaultTextStyle.of(ctx).style`), donc un
+                                // `TextStyle(color:)` nu perdrait la taille et
+                                // la graisse du titre de ListTile. Posé ICI,
+                                // il MERGE par-dessus.
+                                title: DefaultTextStyle.merge(
+                                  style: isSkipped
+                                      ? TextStyle(color: cs.onSurfaceVariant)
+                                      : null,
+                                  child: Row(
+                                  children: [
+                                    Flexible(
+                                        child: ScrollingText(text: title)),
+                                    if (isDefault) ...[
+                                      const SizedBox(width: 6),
+                                      Tooltip(
+                                        message: l10n.subsongDefaultTrack,
+                                        child: Icon(Icons.play_circle_outline,
+                                            size: 15, color: cs.primary),
+                                      ),
+                                    ],
+                                  ],
+                                )),
                                 // Like album rows: a per-row play button before
                                 // the "…" overflow (whole-row tap still plays).
                                 trailing: Row(
@@ -543,7 +803,8 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                                 onTap: () => _play(sub),
                               );
                             },
-                          ),
+                            );
+                          }),
                         ),
                       ],
                     ),
@@ -559,8 +820,17 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
       if (r.platform != null && r.platform!.isNotEmpty) r.platform!,
       if (r.year != null) r.year.toString(),
     ].join(' · ');
+    // Durée du FICHIER: celle du serveur si elle existe, sinon la SOMME des
+    // sous-chants affichés — c'est le cas d'un fichier local, ou d'une
+    // collection sans `total_length_ms`. La somme n'est montrée que si CHAQUE
+    // entrée a sa durée: partielle, elle mentirait. Les entrées mortes ne s'y
+    // trouvent pas, elles ont déjà été retirées de la liste.
+    final totalMs = r.totalLengthMs ??
+        RewampDb.sumSubsongDurationsMs(
+            [for (final s in _subsongs ?? const <SubsongInfo>[]) s.durationMs]);
     final meta = <String>[
       l10n.subsongCount(count),
+      if (totalMs != null) RewampDb.formatDurationMs(totalMs),
       if (r.fileSize > 0) _formatSize(l10n, r.fileSize),
     ].join(' · ');
 
@@ -572,9 +842,30 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
+              // Tap = pochette en plein écran, mais SEULEMENT quand il y en a
+              // une vraie: `_fullArt` reste nul tant que la vignette n'a
+              // résolu qu'un placeholder (voir artworkKeyIsRealCover).
+              ValueListenableBuilder<ImageProvider?>(
+                valueListenable: _fullArt,
+                builder: (_, full, child) => GestureDetector(
+                  onTap: full == null
+                      ? null
+                      : () => showFullscreenArtwork(context, full,
+                          title: r.album ?? r.displayTitle),
+                  child: child,
+                ),
+                child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: ArtworkImage(
+                  // ⚠️ PAS de `setState` ici. `onImageResolved` est notifié
+                  // depuis le `build()` d'ArtworkImage, et
+                  // `ImageStream.addListener` appelle son écouteur de façon
+                  // SYNCHRONE quand l'image est déjà décodée (cache) — on
+                  // reconstruisait donc PENDANT la construction, Flutter levait,
+                  // la frame était abandonnée et la vignette restait sur son
+                  // placeholder. Un notifieur ne reconstruit que le détecteur.
+                  onImageResolved: (provider, key) => _fullArt.value =
+                      artworkKeyIsRealCover(key) ? provider : null,
                   url:           r.artworkUrl,
                   // Le fichier RÉSOLU quand la sonde l'a trouvé: c'est lui qui
                   // porte une éventuelle pochette voisine, et la ligne de
@@ -589,6 +880,7 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                   platformName:  r.platform,
                   formatHint:    r.formatExt,
                   size:          88,
+                ),
                 ),
               ),
               const SizedBox(width: 14),
@@ -658,7 +950,12 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                 LibraryButton(
                   type:       'track',
                   refId:      _songRefId!,
-                  name:       r.displayTitle,
+                  // Le nom du CONTENEUR, jamais `r.displayTitle`: la ligne
+                  // d'un conteneur est souvent celle de sa sous-chanson 0,
+                  // dont le titre est déjà numéroté — l'entrée s'appelait
+                  // « Commando (1) », puis « Commando (1) (1) » au cycle
+                  // suivant. Même règle que le titre de l'écran.
+                  name:       _containerName,
                   artist:     r.artistLabel.isEmpty ? null : r.artistLabel,
                   album:      r.album,
                   artworkUrl: r.artworkUrl,
@@ -685,6 +982,8 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                     case 'playlist':
                       showAddToPlaylistSheet(context,
                           resolveTrackIds: () => trackIdsForResults(rows));
+                    case 'redownload':
+                      _redownload();
                     case 'delete':
                       _deleteDownload();
                   }
@@ -716,6 +1015,15 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                   ),
                   if (_deletablePath != null)
                     PopupMenuItem(
+                      value: 'redownload',
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.refresh),
+                        title: Text(l10n.playerRedownload),
+                      ),
+                    ),
+                  if (_deletablePath != null)
+                    PopupMenuItem(
                       value: 'delete',
                       child: ListTile(
                         contentPadding: EdgeInsets.zero,
@@ -742,10 +1050,4 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
     return l10n.unitBytes('$bytes');
   }
 
-  static String _formatDuration(int ms) {
-    final s = ms ~/ 1000;
-    final m = s ~/ 60;
-    final sec = s % 60;
-    return '$m:${sec.toString().padLeft(2, '0')}';
-  }
 }

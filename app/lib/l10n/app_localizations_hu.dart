@@ -15,6 +15,28 @@ class AppLocalizationsHu extends AppLocalizations {
   String get navSearch => 'Keresés';
 
   @override
+  String get navLocal => 'Helyi';
+
+  @override
+  String get settingsTabsOrderTitle => 'Lapok sorrendje';
+
+  @override
+  String get settingsTabsOrderSubtitle =>
+      'Húzással rendezhető. Az első négy az alsó sávban van, a többi a „Továbbiak” alatt.';
+
+  @override
+  String get settingsTabsInBar => 'A sávban';
+
+  @override
+  String get settingsTabsInMore => 'A „Továbbiak” alatt';
+
+  @override
+  String get settingsLaunchTab => 'Lap induláskor';
+
+  @override
+  String get settingsLaunchTabSubtitle => 'Melyik lapon nyíljon az alkalmazás';
+
+  @override
   String get navLibrary => 'Könyvtár';
 
   @override
@@ -42,6 +64,16 @@ class AppLocalizationsHu extends AppLocalizations {
   @override
   String playbackFileGone(String file) {
     return 'A fájl már nincs a szerveren: $file';
+  }
+
+  @override
+  String playbackTrackNotInArchive(String file) {
+    return 'A(z) $file nincs az album archívumában — a rip felsorolja, de nem tartalmazza.';
+  }
+
+  @override
+  String playbackSourceTimeout(String host) {
+    return 'A(z) $host nem válaszolt. Ellenőrizze a kapcsolatot, majd próbálja újra.';
   }
 
   @override
@@ -130,16 +162,30 @@ class AppLocalizationsHu extends AppLocalizations {
   String get noRecentTracks => 'Nincs nemrég hallgatott szám';
 
   @override
-  String get openLocalFile => 'Helyi fájl megnyitása';
-
-  @override
   String get playerSourceLocal => 'helyi';
 
   @override
-  String get browseFiles => 'Fájlok tallózása';
+  String get homePlayFiles => 'Fájlok lejátszása';
 
   @override
-  String countTotal(int loaded, int total) {
+  String get homePlayFolder => 'Mappa lejátszása';
+
+  @override
+  String get homeSectionsOrderTitle => 'Szakaszok sorrendje';
+
+  @override
+  String get homeSectionsOrderSubtitle =>
+      'Húzással rendezheted a kezdőképernyőt tetszés szerint.';
+
+  @override
+  String get homeSectionsOrderReset => 'Alapértelmezett sorrend';
+
+  @override
+  String get homeSectionsOrderSettings =>
+      'A kezdőképernyő szakaszainak sorrendje';
+
+  @override
+  String countTotal(int loaded, String total) {
     return '$loaded / $total találat';
   }
 
@@ -550,6 +596,16 @@ class AppLocalizationsHu extends AppLocalizations {
   String get searchMinRating => 'Értékelés ≥';
 
   @override
+  String get searchPodium => 'Dobogó';
+
+  @override
+  String get searchPodiumAny => 'Bármely dobogós hely';
+
+  @override
+  String get searchPodiumUnavailable =>
+      'A dobogós szűrő még nem érhető el a szerveren';
+
+  @override
   String searchRatingValue(String value) {
     return '★ $value';
   }
@@ -631,7 +687,7 @@ class AppLocalizationsHu extends AppLocalizations {
   String get searchSurpriseTooltip => 'Egy véletlenszerű szám';
 
   @override
-  String searchTabWithCount(String label, int count) {
+  String searchTabWithCount(String label, String count) {
     return '$label ($count)';
   }
 
@@ -689,6 +745,10 @@ class AppLocalizationsHu extends AppLocalizations {
   String get engineDescOpenmpt => 'Tracker modulok (MOD/XM/S3M/IT/…)';
 
   @override
+  String get engineDescXmp =>
+      'Modulok, amelyeket a libopenmpt nem olvas (.musx, .liq, .fnk…)';
+
+  @override
   String get engineDescVgm =>
       'VGM/S98/GYM/DRO — hangchipek, csatornánkénti szkóp';
 
@@ -700,7 +760,7 @@ class AppLocalizationsHu extends AppLocalizations {
   String get engineDescNsfplay => 'NES NSF/NSFe — csatornánkénti szólamok';
 
   @override
-  String get engineDescGbsplay => 'Game Boy GBS';
+  String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
   String get engineDescSidplayfp => 'Commodore 64 SID (reSIDfp motor)';
@@ -1052,6 +1112,9 @@ class AppLocalizationsHu extends AppLocalizations {
   }
 
   @override
+  String get subsongDefaultTrack => 'Alapértelmezett szám';
+
+  @override
   String subsongCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -1137,6 +1200,21 @@ class AppLocalizationsHu extends AppLocalizations {
   String get libraryRemovedArtist => 'Az előadó eltávolítva a könyvtáradból';
 
   @override
+  String get libraryImportBeforeAddTitle => 'Előbb importálod?';
+
+  @override
+  String get libraryImportBeforeAddBody =>
+      'Ez a fájl ideiglenes helyről szól, amelyet a rendszer bármikor kiüríthet. Importálod a helyi könyvtárba, hogy a bejegyzés megmaradjon?';
+
+  @override
+  String get libraryImportBeforeAddArchiveBody =>
+      'Ez a szám egy ideiglenes gyorsítótárba kibontott archívumból származik. A teljes archívum a kísérőfájlokkal együtt a helyi könyvtárba kerül.';
+
+  @override
+  String get libraryAddNeedsCatalogueId =>
+      'A szám nem adható hozzá: a katalógusazonosítója ismeretlen ezen az eszközön.';
+
+  @override
   String songTilePlayFailed(String message) {
     return 'A lejátszás nem sikerült: $message';
   }
@@ -1212,6 +1290,9 @@ class AppLocalizationsHu extends AppLocalizations {
   String get vizNotes => 'Hangjegyek';
 
   @override
+  String get vizPiano => 'Zongora';
+
+  @override
   String get vizPatterns => 'Patternek';
 
   @override
@@ -1219,6 +1300,9 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get patternSmoothScroll => 'Sima görgetés';
+
+  @override
+  String get patternPinnedRow => 'Rögzített aktív sor';
 
   @override
   String get patternVolumeBars => 'Hangerősávok';
@@ -1297,7 +1381,7 @@ class AppLocalizationsHu extends AppLocalizations {
       count,
       locale: localeName,
       other: '$count formátum',
-      one: '1 formátum',
+      one: '$count formátum',
     );
     return '$license · $_temp0';
   }
@@ -1375,6 +1459,9 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get playerAddToPlaylist => 'Hozzáadás lejátszási listához';
+
+  @override
+  String get playerEngineSettings => 'Motor beállításai';
 
   @override
   String get queueAddToPlaylist => 'Várólista hozzáadása lejátszási listához';
@@ -1890,9 +1977,6 @@ class AppLocalizationsHu extends AppLocalizations {
   String get playlistEmpty => 'Üres lejátszási lista';
 
   @override
-  String get playlistRemoveEntry => 'Eltávolítás a lejátszási listáról';
-
-  @override
   String get trackOptionsAddToLibrary => 'Hozzáadás a könyvtárhoz';
 
   @override
@@ -2269,9 +2353,6 @@ class AppLocalizationsHu extends AppLocalizations {
   String get settingsLineThickness => 'Vonalvastagság';
 
   @override
-  String get settingsColors => 'Színek';
-
-  @override
   String get settingsScopeVoiceColor => 'Szólamoszcilloszkóp';
 
   @override
@@ -2293,9 +2374,6 @@ class AppLocalizationsHu extends AppLocalizations {
   String get settingsStereoRightColor => 'Sztereó jobb';
 
   @override
-  String get settingsNotation => 'Kotta (hangjegyek)';
-
-  @override
   String get settingsNotePalette => 'Színpaletta';
 
   @override
@@ -2308,10 +2386,21 @@ class AppLocalizationsHu extends AppLocalizations {
   String get settingsNoteStyleBox => 'Box';
 
   @override
-  String get settingsCrtEffects => 'CRT-effektek';
+  String get settingsVizAll => 'Minden vizualizáció';
 
   @override
-  String get settingsCrtGlow => 'Ragyogás (glow)';
+  String get settingsVizScopes => 'Oszcilloszkópok (sztereó és hangonként)';
+
+  @override
+  String get settingsVizFrameRate => 'Képkockasebesség';
+
+  @override
+  String get settingsVizFrameRateScreen => 'Képernyő';
+
+  @override
+  String settingsValueFps(int value) {
+    return '$value fps';
+  }
 
   @override
   String get settingsCrtSpeed => 'Intenzitás / sebesség';
@@ -2334,6 +2423,172 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get settingsSilenceDetection => 'Csendfelismerés';
+
+  @override
+  String get settingsCrossfade => 'Áttűnés';
+
+  @override
+  String get localActionPlay => 'Fájlok vagy mappa lejátszása';
+
+  @override
+  String get localActionImport => 'Fájlok vagy mappa importálása';
+
+  @override
+  String localOpsImporting(String name) {
+    return '$name importálása…';
+  }
+
+  @override
+  String get localOpsImportingSelection => 'A kijelölt fájlok importálása…';
+
+  @override
+  String localOpsDeleting(String name) {
+    return '$name törlése…';
+  }
+
+  @override
+  String get localOpsPhaseCopying => 'másolás';
+
+  @override
+  String get localOpsPhaseExtracting => 'kibontás';
+
+  @override
+  String get localOpsPhaseRegistering => 'hozzáadás a könyvtárhoz';
+
+  @override
+  String get localOpsPhaseDeleting => 'fájlok eltávolítása';
+
+  @override
+  String get localImportFiles => 'Fájlok importálása';
+
+  @override
+  String get storageLocalImports => 'Helyi importok';
+
+  @override
+  String get settingsVgmJapaneseTags => 'Japán címkék (GD3)';
+
+  @override
+  String get settingsVgmJapaneseTagsHelp =>
+      'A VGM-címkék japán mezőit (cím, játék, előadó) részesíti előnyben, ha léteznek.';
+
+  @override
+  String get localImportFolder => 'Mappa importálása';
+
+  @override
+  String get localLibraryTitle => 'Ezen az eszközön';
+
+  @override
+  String get libraryOnAnotherDevice => 'Egy másik eszközön';
+
+  @override
+  String get localLibraryEmpty =>
+      'Még nincs helyi importálás. Használd a kezdőképernyő „Fájlok importálása” vagy „Mappa importálása” gombját.';
+
+  @override
+  String queueLimitReached(int count) {
+    return 'A sor az első $count számra korlátozva';
+  }
+
+  @override
+  String localDeleteTrackConfirm(String name) {
+    return 'Törlöd a(z) „$name” elemet? A fájl és a kísérőfájljai (borító…) is törlődnek.';
+  }
+
+  @override
+  String localDeleteFolderConfirm(String name, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Törlöd a(z) „$name” mappát és $count számát?',
+      one: 'Törlöd a(z) „$name” mappát és $count számát?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String localImportDone(int count) {
+    return '$count szám importálva a könyvtárba';
+  }
+
+  @override
+  String localImportDoneAlbums(int tracks, int albums) {
+    return '$tracks szám importálva – $albums album';
+  }
+
+  @override
+  String localImportFailed(String error) {
+    return 'Az importálás nem sikerült: $error';
+  }
+
+  @override
+  String get settingsCrossfadeHelp =>
+      'A számok végét átúsztatja a következő elejébe. 0-nál a lejátszás továbbra is szünetmentes.';
+
+  @override
+  String get settingsMinSubsongSection => 'Túl rövid alzeneszámok';
+
+  @override
+  String get settingsMinSubsongTitle => 'Legrövidebb hossz';
+
+  @override
+  String get settingsMinSubsongHelp =>
+      'Az ennél rövidebb alzeneszámok kimaradnak a listából és a sorból – egy játékfájl gyakran több hangeffektet tartalmaz, mint zenét. 0 esetén semmi sem marad ki; az ismeretlen hossz sosem számít rövidnek.';
+
+  @override
+  String get localNewFolder => 'Új mappa';
+
+  @override
+  String get localFolderName => 'Mappa neve';
+
+  @override
+  String get localRename => 'Átnevezés';
+
+  @override
+  String get localMoveTo => 'Áthelyezés ide…';
+
+  @override
+  String get localMove => 'Áthelyezés';
+
+  @override
+  String get localMoveNothing => 'Semmi sem lett áthelyezve';
+
+  @override
+  String get localNameInvalid => 'Érvénytelen név';
+
+  @override
+  String get localNameTaken => 'Ez a név már foglalt';
+
+  @override
+  String get localMoveIntoItself => 'Egy mappa nem helyezhető át önmagába';
+
+  @override
+  String get localManageFailed => 'A művelet nem sikerült';
+
+  @override
+  String subsongSkippedShort(int seconds) {
+    return 'Nem kerül a sorba: $seconds s alatt (Beállítások → Lejátszás)';
+  }
+
+  @override
+  String get settingsQueuePrefetchSection => 'A sor letöltései';
+
+  @override
+  String get settingsQueuePrefetchTitle => 'A teljes sor letöltése';
+
+  @override
+  String get settingsQueuePrefetchSubtitle =>
+      'Egyszerre egy fájl; a következő hiányzó szám akkor indul, amint az előző megérkezett. Kikapcsolva: csak a következő szám.';
+
+  @override
+  String get settingsCdRipDeclickSection => 'CD-ripek';
+
+  @override
+  String get settingsCdRipDeclickTitle =>
+      'Kattanások eltávolítása a szám elején';
+
+  @override
+  String get settingsCdRipDeclickSubtitle =>
+      'A hibás CD-ripek (mp3, ape, ogg, flac…) gyakran néhány sérült mintával kezdődnek. Ezeket a szűrő kijavítja, amíg 200 ms valódi zene le nem szólt; utána félreáll.';
 
   @override
   String get settingsSilenceSkipTitle =>
@@ -2404,6 +2659,10 @@ class AppLocalizationsHu extends AppLocalizations {
   String get settingsEngineOpenmptSubtitle => 'Trackerek — MOD, XM, S3M, IT…';
 
   @override
+  String get settingsEngineXmpSubtitle =>
+      'Modulok, amelyeket a libopenmpt nem olvas — .musx, .liq, .fnk…';
+
+  @override
   String get settingsEngineGmeSubtitle =>
       'SPC, VGM(gme), KSS, AY… — EQ, sztereó';
 
@@ -2445,6 +2704,9 @@ class AppLocalizationsHu extends AppLocalizations {
   String get settingsMasterVolume => 'Fő hangerő';
 
   @override
+  String get settingsAmplification => 'Erősítés';
+
+  @override
   String get settingsAmigaFilter => 'Amiga szűrő';
 
   @override
@@ -2458,6 +2720,17 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get settingsChorus => 'Chorus';
+
+  @override
+  String get playbackMt32NoRoms =>
+      'Ez a MIDI Roland MT-32-re készült. A ROM-ok nélkül a SoundFonton szól, General MIDI-re fordított hangszerekkel — importáld a ROM-okat itt: Beállítások › Motorok › Munt.';
+
+  @override
+  String get settingsMidiMt32ToGm => 'MT-32-fájlok igazítása';
+
+  @override
+  String get settingsMidiMt32ToGmSubtitle =>
+      'A Roland MT-32-re írt MIDI a saját listája szerint számozza a programjait: a legközelebbi General MIDI hangszerre fordítva hihetően szól, nem véletlenszerűen.';
 
   @override
   String get settingsInterpNone => 'Nincs';
@@ -2929,6 +3202,142 @@ class AppLocalizationsHu extends AppLocalizations {
   }
 
   @override
+  String get storageTitle => 'Tárhely';
+
+  @override
+  String get storageSubtitle => 'Amit az app a lemezen tart, törléssel';
+
+  @override
+  String get storageDownloads => 'Letöltések';
+
+  @override
+  String get storageArtworkCache => 'Borító-gyorsítótár';
+
+  @override
+  String get storageSoundfonts => 'SoundFontok';
+
+  @override
+  String get storagePresets => 'Vizualizáló-presetek';
+
+  @override
+  String get storageOpenedFiles => 'Megnyitott fájlok';
+
+  @override
+  String get storageOpenedEmpty =>
+      'A kívülről megnyitott fájlok (megosztás, „Megnyitás ezzel”, mobil fájlválasztó) ide másolódnak.';
+
+  @override
+  String get storageInUse => 'lejátszási listában vagy a könyvtárban';
+
+  @override
+  String get storageDeleteAll => 'Összes törlése';
+
+  @override
+  String get storageClear => 'Ürítés';
+
+  @override
+  String get storageDeleteSelection => 'Kijelöltek törlése';
+
+  @override
+  String get storageSelectAll => 'Összes kijelölése';
+
+  @override
+  String get storageFilterHint => 'Szűrés név szerint';
+
+  @override
+  String get storageNoMatch => 'Egy fájl sem felel meg a szűrőnek.';
+
+  @override
+  String storageSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count kijelölve',
+      one: '$count kijelölve',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Töröl $count fájlt?',
+      one: 'Töröl $count fájlt?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionInUseBody(int count, int inUse) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Töröl $count fájlt? Ebből $inUse lejátszási listában vagy a könyvtárban használatos — azok a bejegyzések elvesztik a fájljukat.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get storageDownloadsClearBody =>
+      'Törli az összes letöltött fájlt és könyvtári sorait? A kedvencek és lejátszási listák megtartják bejegyzéseiket, de a fájlokat újra le kell tölteni.';
+
+  @override
+  String get storageSoundfontsClearBody =>
+      'Törli az összes SoundFontot, az importáltakat is? A katalógusbeliek igény szerint újra letöltődnek; az importáltak elvesznek.';
+
+  @override
+  String get storagePresetsClearBody =>
+      'Törli a letöltött preset-csomagokat és az importált preseteket? A beépítettek megmaradnak; a csomagok újra letöltődnek, az importáltak elvesznek.';
+
+  @override
+  String get storageOpenedDeleteAllTitle => 'Megnyitott fájlok törlése';
+
+  @override
+  String get storageInUseDeleteTitle => 'A fájl használatban van';
+
+  @override
+  String get storageInUseDeleteBody =>
+      'Egy lejátszási lista vagy a könyvtár még erre a fájlra mutat. Törlésével ezek a bejegyzések fájl nélkül maradnak.';
+
+  @override
+  String storageCategoryStat(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count fájl — $size',
+      one: '$count fájl — $size',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDownloadsSubtitle(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count fájl — $size · kezelés az albumokból és számokból',
+      one: '$count fájl — $size · kezelés az albumokból és számokból',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageOpenedDeleteAllBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Töröl $count fájlt? A lejátszási lista vagy a könyvtár által használt fájlok megmaradnak.',
+      one:
+          'Töröl $count fájlt? A lejátszási lista vagy a könyvtár által használt fájlok megmaradnak.',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetStats => 'A statisztika visszaállítása';
 
   @override
@@ -2956,6 +3365,37 @@ class AppLocalizationsHu extends AppLocalizations {
   String get settingsResetDbTitle => 'Visszaállítod az adatbázist?';
 
   @override
+  String get settingsCleanLocalTitle =>
+      'Lejátszhatatlan helyi bejegyzések törlése';
+
+  @override
+  String get cleanStageScan => 'Bejegyzések vizsgálata…';
+
+  @override
+  String get cleanStageSync => 'Szinkronizálás a fiókoddal…';
+
+  @override
+  String get cleanStagePurge => 'Eltávolítás a fiókodból…';
+
+  @override
+  String get cleanStageDelete => 'Eltávolítás helyben…';
+
+  @override
+  String get settingsCleanLocalBody =>
+      'Olyan könyvtárbejegyzések, amelyek fájlja már nincs ezen az eszközön. A fiókodból is törlődnek, tehát a többi eszközödről is.';
+
+  @override
+  String settingsCleanLocalDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count bejegyzés törölve',
+      zero: 'Nincs mit törölni',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetDbBody =>
       'Ez véglegesen törli:\n• a teljes hallgatási előzményt\n• minden számlálót\n• minden kedvencet\n• minden lejátszási listát\n• minden gyorsítótárazott metaadatot\n\nA hangfájljaid nem törlődnek.';
 
@@ -2968,6 +3408,33 @@ class AppLocalizationsHu extends AppLocalizations {
   @override
   String get settingsDeleteDownloadsSubtitle =>
       'Törli az online mappa összes fájlját (számok, borítók)';
+
+  @override
+  String get settingsCleanAll => 'Helyi adatbázis és gyorsítótár tisztítása';
+
+  @override
+  String get settingsCleanAllSubtitle =>
+      'Eltávolítja a fájl nélküli bejegyzéseket, a más eszközön lévő fájlokra mutató könyvtárbejegyzéseket, és üríti a borító- és metaadat-gyorsítótárat';
+
+  @override
+  String get settingsCleanAllConfirmBody =>
+      'A más eszközön lévő fájlokra mutató könyvtárbejegyzések a fiókjából is törlődnek, tehát a többi eszközéről is. A borítók és metaadatok a következő lejátszáskor újra letöltődnek.';
+
+  @override
+  String get settingsDataAdvanced => 'Speciális';
+
+  @override
+  String get settingsDataAdvancedSubtitle =>
+      'Minden tisztítási lépés külön, a gyorsítótár és a visszaállítások';
+
+  @override
+  String get settingsDataGroupDb => 'Adatbázis';
+
+  @override
+  String get settingsDataGroupCache => 'Gyorsítótár';
+
+  @override
+  String get settingsDataGroupReset => 'Visszaállítás';
 
   @override
   String get settingsDeleteDownloadsTitle => 'Törlöd a letöltéseket?';
@@ -3222,6 +3689,9 @@ class AppLocalizationsHu extends AppLocalizations {
   String get accountErrorCodeLength => 'A kód 6 jegyű';
 
   @override
+  String get albumOfflinePartial => 'Offline — az eszközön már meglévő elemek';
+
+  @override
   String get accountErrorNetwork => 'A kapcsolat nem jött létre, próbáld újra';
 
   @override
@@ -3462,6 +3932,9 @@ class AppLocalizationsHu extends AppLocalizations {
   String get commonSave => 'Mentés';
 
   @override
+  String get commonImport => 'Importálás';
+
+  @override
   String get accountDisplayName => 'Nyilvános név';
 
   @override
@@ -3587,46 +4060,63 @@ class AppLocalizationsHu extends AppLocalizations {
   String get settingsSpectrumModeRing => 'Gyűrű';
 
   @override
+  String get settingsPianoMode => 'A zongora megjelenése';
+
+  @override
+  String get settingsPianoModeRoll => 'Billentyűzetek';
+
+  @override
+  String get settingsPianoModeFalling => 'Lehulló hangjegyek';
+
+  @override
+  String get settingsPianoColor => 'Színek';
+
+  @override
+  String get settingsPianoColorVoice => 'Szólam szerint';
+
+  @override
+  String get settingsPianoColorInstrument => 'Hangszer szerint';
+
+  @override
+  String get settingsPianoGlow => 'Ragyogás a leütött billentyűkön';
+
+  @override
+  String get settingsPianoLighting => 'Fény és árnyékok a billentyűkön';
+
+  @override
+  String get settingsPianoVoiceNames => 'Szólamok nevei';
+
+  @override
+  String get featuredAdditionsHeader => 'Újdonságok a katalógusban';
+
+  @override
+  String get featuredAdditionsCard => 'Most került be';
+
+  @override
+  String get featuredAdditionsPlaylist => 'A frissen bekerült számok';
+
+  @override
   String get releaseNotesTitle => 'Újdonságok';
 
   @override
-  String get releaseNotesV4Downloads =>
-      'Letöltések: a hosszú letöltés menet közben megszakítható, és egy album archívuma már nem töltődik le többször.';
+  String get releaseNotesV7Cpu =>
+      'Az alkalmazás már nem dolgozik a háttérben, amikor semmi sem szól: sokkal kevesebb processzor- és akkumulátorhasználat.';
 
   @override
-  String get releaseNotesV4Queue =>
-      'Várólista: gomb az ürítéséhez, megerősítéssel — a lejátszást is leállítja.';
+  String get releaseNotesV7VizIdle =>
+      'A vizualizációk megállnak, amíg a lejátszás le van állítva, és legfeljebb 60 képkocka/másodpercre korlátozódnak (állítható).';
 
   @override
-  String get releaseNotesV4DropFiles =>
-      'Az ablakra ejtett fájlok: lejátszás most, ezután vagy a végén; a borítók és kísérőfájlok kimaradnak, az archívumban érkező lejátszási listát pedig figyelembe vesszük (valódi címek, halott sávok nélkül).';
+  String get releaseNotesV7Subsongs =>
+      'Javítva: PC Engine, Master System és Atari ST (.sndh) esetén egyes számok a szomszédos dalt indították el.';
 
   @override
-  String get releaseNotesV4Soundfont =>
-      'MIDI: saját SoundFont importálása az eszközről, a kiszolgálóé mellé.';
+  String get releaseNotesV7Piano =>
+      'A Zongora vizualizáció üres maradt PC Engine-zenénél.';
 
   @override
-  String get releaseNotesV4Formats =>
-      'A Wwise, FSB és OGL játékfolyamok végre szólnak (saját Vorbis).';
-
-  @override
-  String get releaseNotesV4Chips =>
-      'Hat további hangchip, chipenként választható emulációs mag (Game Boyhoz SameBoy), és helyes hangmagasság a mintavételes chipeknél.';
-
-  @override
-  String get releaseNotesV4Zx =>
-      'ZX Spectrum: a .vt2 fájlok szólnak, a kotta- és mintanézet pedig a teljes ZX családot lefedi.';
-
-  @override
-  String get releaseNotesV4Loop =>
-      'A szám ismétlése valóban ciklusban játszik újratöltés helyett, és a számláló sem fagy le végtelen ismétlésnél.';
-
-  @override
-  String get releaseNotesV4Info =>
-      'Az ⓘ panel felsorolja a fájlokat, amelyeket a szám valóban megnyitott — a kísérőket és könyvtárakat is.';
-
-  @override
-  String get releaseNotesV4Linux => 'Linux asztali verzió.';
+  String get releaseNotesV7Database =>
+      'A frissítés által megrongált adatbázis most magától helyreáll, ahelyett hogy elérhetetlenné tenné a könyvtárat.';
 
   @override
   String get releaseNotesDataReset =>
@@ -3668,7 +4158,7 @@ class AppLocalizationsHu extends AppLocalizations {
       count,
       locale: localeName,
       other: '$count kihagyott preset',
-      one: '1 kihagyott preset',
+      one: '$count kihagyott preset',
     );
     return '$_temp0';
   }
@@ -3917,4 +4407,164 @@ class AppLocalizationsHu extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get browseCharts => 'Slágerlisták';
+
+  @override
+  String get chartsGlobal => 'Globális';
+
+  @override
+  String get chartsByCollection => 'Gyűjtemény szerint';
+
+  @override
+  String get chartsTopSongs => 'Top dalok';
+
+  @override
+  String get chartsTopAlbums => 'Top albumok';
+
+  @override
+  String get chartsRewampSection => 'Top rewamp';
+
+  @override
+  String get chartsPublishedSection => 'Közzétett listák';
+
+  @override
+  String chartsUpdated(String date) {
+    return 'Frissítve: $date';
+  }
+
+  @override
+  String get chartsSource => 'Forrás';
+
+  @override
+  String get settingsMidiSynth => 'MIDI-szintetizátor';
+
+  @override
+  String get settingsMidiSynthAuto => 'Automatikus (MT-32, ha a fájl kéri)';
+
+  @override
+  String get settingsMidiSynthSoundfont => 'SoundFont (FluidLite)';
+
+  @override
+  String get settingsMidiSynthMt32 => 'Roland MT-32 (emuláció)';
+
+  @override
+  String get settingsMt32Section => 'Roland MT-32 emuláció';
+
+  @override
+  String get settingsMt32RomsTitle => 'MT-32 ROM-ok';
+
+  @override
+  String get settingsMt32RomsMissing =>
+      'Nincs használható ROM-készlet — importálja egy MT-32 vagy CM-32L vezérlő- és PCM-ROM-ját';
+
+  @override
+  String settingsMt32RomsActive(String set) {
+    return 'Aktív készlet: $set';
+  }
+
+  @override
+  String get settingsMt32Import => 'ROM-fájlok importálása…';
+
+  @override
+  String get settingsMt32ImportSubtitle =>
+      'Vezérlő ROM + PCM ROM (.rom/.bin), a MAME-felek elfogadottak. A ROM-ok nem részei az alkalmazásnak.';
+
+  @override
+  String settingsMt32ImportRejected(String name) {
+    return '$name nem ismert MT-32 / CM-32L ROM';
+  }
+
+  @override
+  String settingsMt32ImportDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ROM-fájl importálva',
+      one: '$count ROM-fájl importálva',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsMt32Model => 'Modell';
+
+  @override
+  String get settingsMt32ModelAuto => 'Automatikus (CM-32L, ha elérhető)';
+
+  @override
+  String get settingsMt32Reverb => 'Zengetés';
+
+  @override
+  String get engineDescMt32 =>
+      'Roland MT-32 / CM-32L emuláció MIDI-hez (.mid/.midi/.kar/.rmi)';
+
+  @override
+  String get miniWindowEnter => 'Minilejátszó';
+
+  @override
+  String get miniWindowExit => 'Vissza a főablakhoz';
+
+  @override
+  String get miniWindowIdle => 'Nincs lejátszás';
+
+  @override
+  String get settingsAlwaysOnTopTitle => 'Mindig felül';
+
+  @override
+  String get settingsAlwaysOnTopSubtitle =>
+      'Az ablakot a többi fölött tartja — a főablakot és a minilejátszót is';
+
+  @override
+  String get windowAlwaysOnTopOn => 'Mindig felül: be';
+
+  @override
+  String get miniWindowCoverFill => 'Borító nagyítása kitöltésig';
+
+  @override
+  String get miniWindowCoverFit => 'Teljes borító megjelenítése';
+
+  @override
+  String get releaseNotesV7Mt32 =>
+      'Új Roland MT-32 motor a játékok MIDI-zenéjéhez, a saját ROM-jaiddal. ROM-ok nélkül az MT-32-re írt MIDI a General MIDI-hez igazodik.';
+
+  @override
+  String get releaseNotesV7Xmp =>
+      'Tíz ritka modulformátum is lejátszható (Archimedes Tracker .musx, .liq, .fnk…).';
+
+  @override
+  String get releaseNotesV7AmigaAdlib =>
+      'A Westwood AdLib-zenéi (.adl) minden számukat lejátsszák, a BP SoundMon V1 pedig felismerhető Amigán.';
+
+  @override
+  String get releaseNotesV7MiniPlayer =>
+      'Mac: minilejátszó, kompakt vagy vizualizációval, és „Mindig felül” beállítás.';
+
+  @override
+  String get releaseNotesV7Instruments =>
+      'Az oszcilloszkóp, a kotta és a zongora minden hangszert meg tud nevezni és színezni, nem csak minden szólamot.';
+
+  @override
+  String get releaseNotesV7Podium =>
+      'Keresés: szűrés a demoscene-versenyeken 1., 2. vagy 3. helyezést elért számokra.';
+
+  @override
+  String get releaseNotesV7ShortSubsongs =>
+      'A túl rövid alszámok (játékok hangeffektusai) kimaradnak az „Összes lejátszása” alól — küszöb: Beállítások → Lejátszás.';
+
+  @override
+  String get releaseNotesV7LocalFolders =>
+      'Importjaid: húzz be egy teljes mappát (az archívumok kibontva), és hozz létre, nevezz át vagy helyezz át mappákat.';
+
+  @override
+  String get releaseNotesV7Midi =>
+      'MIDI: a dob többé nem zongoraként szól, és a hangerő sem torzul.';
+
+  @override
+  String get releaseNotesV7ProjectM =>
+      'projectM: az előbeállítások már nem ismétlődnek indításról indításra, és szünet után sem sorolódik ki tévesen egy előbeállítás.';
+
+  @override
+  String get libraryFileMissing => 'Hiányzó fájl';
 }

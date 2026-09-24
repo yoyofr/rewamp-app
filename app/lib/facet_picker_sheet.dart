@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'l10n.dart';
+import 'cancel_field.dart';
 import 'rewamp_db.dart' show FacetCount;
 
 /// Feuille de choix d'une valeur de facette (format, plateforme, collection):
@@ -68,21 +69,19 @@ class _FacetPickerSheetState extends State<FacetPickerSheet> {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: TextField(
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    prefixIcon: const Icon(Icons.search, size: 18),
-                    hintText: l10n.searchFilterPlaceholder,
-                    border: const OutlineInputBorder(),
-                    suffixIcon: _query.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.clear, size: 18),
-                            onPressed: () => setState(() => _query = ''),
-                          ),
+                child: CancelField(
+                  hasText: _query.isNotEmpty,
+                  onCleared: (_) => setState(() => _query = ''),
+                  builder: (_) => TextField(
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.search, size: 18),
+                      hintText: l10n.searchFilterPlaceholder,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => setState(() => _query = v),
                   ),
-                  onChanged: (v) => setState(() => _query = v),
                 ),
               ),
               Flexible(

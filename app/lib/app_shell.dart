@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:ui' as ui show lerpDouble;
+import 'dart:math' as math show max, min;
 import 'dart:math' show Random;
 import 'dart:ui';
 
 import 'dart:io';
+import 'dart:typed_data' show Uint8List;
 
-import 'package:flutter/foundation.dart' show kReleaseMode;
+import 'package:flutter/foundation.dart' show kDebugMode, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:rewamp_audio/rewamp_audio.dart';
@@ -13,16 +15,22 @@ import 'app_snack.dart';
 import 'onboarding.dart';
 import 'l10n.dart';
 import 'package:desktop_drop/desktop_drop.dart';
+import 'local_tab_screen.dart';
 import 'local_open.dart';
 import 'preset_manager.dart';
 import 'preset_screen.dart';
 import 'local_db.dart';
+import 'min_subsong.dart';
 import 'player_controller.dart' show PlayerController, QueueEntry;
 import 'queue_persistence.dart';
+import 'queue_shuffle.dart';
+import 'transport_log.dart';
 import 'media_session.dart';
 import 'glass_chrome.dart';
 import 'mini_player.dart';
+import 'mini_window_player.dart';
 import 'download_banner.dart';
+import 'local_ops.dart' show LocalOpsBanner;
 import 'download_cancel.dart';
 import 'download_manager.dart';
 import 'download_queue_screen.dart';
@@ -32,12 +40,16 @@ import 'album_detail_screen.dart';
 import 'competition_screen.dart' show globalOnPlayOnlineSong;
 import 'home_refresh.dart';
 import 'sync_service.dart';
+import 'folder_picker.dart';
 import 'home_screen.dart';
+import 'opened_files.dart';
 import 'search_screen.dart';
 import 'container_subsong_screen.dart';
 import 'track_options_sheet.dart'
     show globalOnQueueAdd, globalOnAlbumQueueAdd, globalOnPlayAlbum,
          globalOnNavigateTag, globalOnOpenGroup,
+         globalOnNavigateAlbum, globalOnOpenSubsongs,
+         globalOnOpenSubsongsForTrack,
          globalOnStartFeaturedRadio, globalOnPlayNowSong,
          globalOnLocalQueueAdd, globalQueueHasContent,
          showPlayChoiceSheet, PlayChoice;
@@ -47,7 +59,26 @@ import 'stats_screen.dart';
 import 'production_screen.dart';
 import 'rewamp_db.dart';
 import 'uade_info.dart';
+import 'shell_tabs.dart';
 import 'user_settings.dart';
+import 'font_fallback.dart';
+
+/// Plafond de la file: un « tout lire » peut viser des milliers de lignes.
+/// Appliqué aux chemins de démarrage (_startAlbumQueue, _startLocalTrackQueue)
+/// ET d'ajout (_onAlbumQueueAdd, _onLocalTracksQueueAdd) — jamais en silence
+/// (règle des caps annoncés): le plafonnement se dit par un AppSnack
+/// `queueLimitReached`. 2000 et pas moins: le plus gros album du catalogue
+/// fait 1184 pistes (Wario Ware Inc, modland — mesuré en base le 2026-08-27,
+/// 3 albums > 500, aucun > 1200) et un album doit toujours se lire ENTIER.
+const int kQueueLimit = 2000;
+
+/// Plugin name to pin for a .mid, from the « Synthé MIDI » setting — null =
+/// no pin (auto). Pure so it can be tested without the native engine.
+String? preferredMidiPluginFor(String midiSynth) => switch (midiSynth) {
+      'soundfont' => 'fluidlite',
+      'mt32'      => 'mt32',
+      _           => null,
+    };
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -105,7 +136,9 @@ class _AppShellState extends State<AppShell>
   late final PlayerController _controller;
   late final List<Widget> _screens;
   Timer? _ticker;
-  int _index = 0;
+  /// L'onglet affiché. Initialisé au réglage « onglet au lancement » — lu ICI
+  /// et pas dans le build: c'est un point de DÉPART, pas un état lié.
+  int _index = UserSettings.instance.launchTab.index;
 
   // ── Unified playback queue ───────────────────────────────────────────────────
   final _queue    = <_QueueItem>[];
@@ -140,6 +173,21 @@ class _AppShellState extends State<AppShell>
   // broken source (e.g. a whole collection with malformed mirror URLs) isn't
   // re-hammered on every track advance. Cleared when a fresh queue is built.
   final Set<String> _prefetchFailed = {};
+
+  /// Entrées qu'un pré-téléchargement a déjà SERVIES, clefées comme la sonde
+  /// qui les a choisies (chemin attendu, ou id de catalogue).
+  ///
+  /// ⚠️ Ce n'est pas un doublon de `_prefetchFailed`: il ferme le TROISIÈME
+  /// cas, celui que l'invariant de terminaison de [_chainPrefetch] ne couvrait
+  /// pas. Une entrée était réputée consommée si elle était sur le disque OU en
+  /// échec — mais un téléchargement peut RÉUSSIR sans se poser au chemin
+  /// sondé: quand la ligne du catalogue nomme l'ARCHIVE
+  /// (`…thelastchapter.zip` comme s'il s'agissait du fichier audio), le pick
+  /// générique rend le vrai membre (`Traymuss - The Last Chapter.flac`) et le
+  /// chemin attendu reste éternellement absent. L'entrée n'était alors NI sur
+  /// le disque NI en échec: le chaînage la reprenait sans fin, ré-extrayant
+  /// 44 Mo par tour.
+  final Set<String> _prefetchDone = {};
   // Bumped when the search tab is re-selected → SearchScreen resets criteria.
   final _searchResetTick = ValueNotifier<int>(0);
   int   _queueIdx = -1;
@@ -169,14 +217,17 @@ class _AppShellState extends State<AppShell>
   // One Navigator key per tab so each tab has its own navigation stack.
   // Navigation inside a tab (e.g. artist → song list) stays within that
   // tab's area; the sidebar and MiniPlayer are never affected.
-  final _navKeys = List.generate(6, (_) => GlobalKey<NavigatorState>());
+  // Un navigateur par onglet — l'index de [ShellTab] EST l'index d'écran.
+  final _navKeys =
+      List.generate(ShellTab.values.length, (_) => GlobalKey<NavigatorState>());
   /// What each tab currently has stacked, newest last — fed by a real
   /// NavigatorObserver so it also sees the pushes that do NOT go through
   /// [_pushOnTab] (an artist opened from an album screen, say). An untracked
   /// route contributes a null, which simply never matches a name.
-  late final _navStacks = List.generate(6, (_) => <String?>[]);
-  late final _navObservers =
-      List.generate(6, (i) => _TabRouteObserver(_navStacks[i]));
+  late final _navStacks =
+      List.generate(ShellTab.values.length, (_) => <String?>[]);
+  late final _navObservers = List.generate(
+      ShellTab.values.length, (i) => _TabRouteObserver(_navStacks[i]));
 
   static const double _desktopBreakpoint = 600.0;
 
@@ -370,6 +421,11 @@ class _AppShellState extends State<AppShell>
       CurvedAnimation(parent: _chromeCtrl, curve: Curves.easeInOutCubic);
   bool _chromeCondensed = false;
 
+  /// Profondeur du scrollable dont l'utilisateur tient le drag (null = aucun).
+  /// Seules ses notifications décident du chrome — voir le NotificationListener
+  /// du corps, et le piège des marquees verticaux qu'il documente.
+  int? _chromeDragDepth;
+
   void _setChromeCondensed(bool v) {
     // Without a mini player there is nothing to pair the pill with — the nav
     // bar alone stays full-width.
@@ -424,6 +480,13 @@ class _AppShellState extends State<AppShell>
     globalOnNavigateTag   = _pushTagSearch;
     globalOnOpenProduction = _pushProduction;
     globalOnOpenGroup     = _pushGroup;
+    // « Voir l'album » / « Voir les subsongs » depuis N'IMPORTE QUELLE liste:
+    // le lecteur les offrait déjà, les listes non — un tap n'y menait qu'à la
+    // lecture. La feuille de choix décide seule, ces deux crochets lui donnent
+    // de quoi naviguer.
+    globalOnNavigateAlbum = _pushAlbumScreen;
+    globalOnOpenSubsongs  = _openSubsongList;
+    globalOnOpenSubsongsForTrack = _openSubsongListForTrack;
     globalOnOpenPresets   = _pushPresets;
     globalOpenLocalPaths  = _openLocalPaths;
     // Dock drop / Open With / double-click. Set the hook FIRST:
@@ -466,7 +529,7 @@ class _AppShellState extends State<AppShell>
     // the pref itself — it is the controller's own state).
     _controller.setShuffleEnabled(_shuffleEnabled);
     _applyPlaybackLibraryPrefs(audio);
-    UserSettings.instance.addListener(() => _applyPlaybackLibraryPrefs(_controller.audio));
+    UserSettings.instance.addListener(_onSettingsChanged);
     _controller.onTrackEnded = () {
       final mode = _controller.loopMode;
       if (mode == 2) {
@@ -479,8 +542,14 @@ class _AppShellState extends State<AppShell>
         _controller.replayCurrent();
       } else if (mode == 1 && !_controller.canGoNext && _queue.isNotEmpty) {
         // Loop the queue: wrap to the first item once the last one ends.
+        _reshuffleForNewPass();
         _playAt(0);
       } else if (_controller.canGoNext) {
+        // Ce que la conclusion « la piste est finie » DÉCLENCHE: l'avance de
+        // file. La ligne dit d'où on part, pour que le journal se lise de bout
+        // en bout (source de la commande → fin de piste → avance).
+        logTransport('avance file', source: 'fin de piste',
+            detail: 'idx=$_queueIdx/${_queue.length}');
         _controller.goNext();
       } else if (_queue.isNotEmpty) {
         // Nothing advanced: the queue is done. Arm the restart so the next play
@@ -489,8 +558,21 @@ class _AppShellState extends State<AppShell>
         _controller.queueExhausted = true;
       }
     };
+    // Gapless: the ear crossed a staged boundary → adopt without reloading;
+    // and the staged snapshot depends on the transport loop mode.
+    _controller.onTrackHandoff = _onTrackHandoff;
+    // ⚠️ `_refreshQueueNav` en plus de l'armement: sur la DERNIÈRE piste, c'est
+    // le mode qui décide si « suivant » existe (il reboucle vers la première).
+    // Sans ça, armer repeat n'allumait le bouton qu'au changement de piste
+    // suivant — c'est-à-dire jamais, puisqu'il n'y en a pas.
+    _controller.onLoopModeChanged = () {
+      _refreshQueueNav();
+      unawaited(_armNext());
+    };
     _controller.onRestartQueue = () {
-      if (_queue.isNotEmpty) _playAt(0);
+      if (_queue.isEmpty) return;
+      _reshuffleForNewPass();
+      _playAt(0);
     };
     _controller.onGoToQueueIndex = (i) {
       if (i >= 0 && i < _queue.length) _playAt(i);
@@ -550,9 +632,19 @@ class _AppShellState extends State<AppShell>
           resetTick:       _searchResetTick,
         ),
       ),
+      // Onglet « Local » — ce que CET APPAREIL possède: deux arbres
+      // (téléchargements, imports) et les gestes qui font entrer des fichiers.
       _TabNavigator(
         navKey: _navKeys[2],
         observer: _navObservers[2],
+        child: LocalTabScreen(
+          onPlayFiles:  _pickAndPlayLocalFiles,
+          onPlayFolder: _pickAndPlayLocalFolder,
+        ),
+      ),
+      _TabNavigator(
+        navKey: _navKeys[3],
+        observer: _navObservers[3],
         child: LibraryScreen(
           onPlayTrack:       _onSingleLocalFileReady,
           onDownloadTrack:   _downloadLibraryTrack,
@@ -560,7 +652,7 @@ class _AppShellState extends State<AppShell>
           onPlayAlbum:       _startAlbumQueue,
           onPlayLocalAlbum:  _startLocalTrackQueue,
           onNavigateAlbum:   (name, {collection, platform, artworkUrl, albumId}) =>
-              _navKeys[2].currentState?.push(MaterialPageRoute(
+              _navKeys[ShellTab.library.index].currentState?.push(MaterialPageRoute(
                 builder: (_) => AlbumDetailScreen(
                   albumName:       name,
                   albumId:         albumId,
@@ -575,7 +667,7 @@ class _AppShellState extends State<AppShell>
                 ),
               )),
           onNavigateArtist:  (name, {collection, artistId}) =>
-              _navKeys[2].currentState?.push(MaterialPageRoute(
+              _navKeys[ShellTab.library.index].currentState?.push(MaterialPageRoute(
                 builder: (_) => ArtistResultsScreen(
                   artistName:      name,
                   artistId:        artistId,
@@ -590,13 +682,13 @@ class _AppShellState extends State<AppShell>
         ),
       ),
       _TabNavigator(
-        navKey: _navKeys[3],
-        observer: _navObservers[3],
+        navKey: _navKeys[4],
+        observer: _navObservers[4],
         child: StatsScreen(onPlayLocalAlbum: _startLocalTrackQueue),
       ),
       _TabNavigator(
-        navKey: _navKeys[4],
-        observer: _navObservers[4],
+        navKey: _navKeys[5],
+        observer: _navObservers[5],
         child: SettingsScreen(
           onHistoryCleared:       () => _controller.loadHistory(),
           onDatabaseReset:        _onDatabaseReset,
@@ -604,11 +696,20 @@ class _AppShellState extends State<AppShell>
         ),
       ),
       _TabNavigator(
-        navKey: _navKeys[5],
-        observer: _navObservers[5],
+        navKey: _navKeys[6],
+        observer: _navObservers[6],
         child: const AboutScreen(),
       ),
     ];
+  }
+
+  /// Un réglage a changé. Deux effets, et le second est neuf: la barre de
+  /// navigation LIT l'ordre des onglets à chaque build, donc revenir de son
+  /// éditeur doit reconstruire la coquille — sans ça, ranger ses onglets ne se
+  /// voyait qu'au relancement.
+  void _onSettingsChanged() {
+    _applyPlaybackLibraryPrefs(_controller.audio);
+    if (mounted) setState(() {});
   }
 
   // Audio-underrun telemetry (debug only). The counter is bumped by the audio
@@ -700,6 +801,13 @@ class _AppShellState extends State<AppShell>
 
   void _applyPlaybackLibraryPrefs(RewampAudio audio) {
     final s = UserSettings.instance;
+    // Fondu croisé (0 = gapless pur). Le natif coupe de lui-même les fondus
+    // par défaut des moteurs quand c'est actif — transparent.
+    audio.setCrossfadeSeconds(s.crossfadeSeconds);
+    // Plafond de cadence des visualiseurs (0 = celle de l'écran). Poussé ICI
+    // et pas dans chaque widget: la règle est unique et vit dans le natif, qui
+    // la sert aux DEUX chemins de rendu (ticker Dart, boucle SurfaceView).
+    audio.vizSetMaxFps(s.vizMaxFps);
     // NSF / NSFe: apply user preference (default: nsfplay).
     for (final ext in ['nsf', 'nsfe']) {
       audio.setPreferredPlugin(ext, s.nsfPlugin);
@@ -711,6 +819,15 @@ class _AppShellState extends State<AppShell>
     // registered and psgplay probes LOWER, so this call is what actually
     // selects it — without it the registry would fall back to AtariAudio.
     audio.setPreferredPlugin('sndh', s.sndhPlugin == 'psgplay' ? 'psgplay' : 'sndh');
+    // .mid: FluidLite (SoundFont) and mt32emu (Roland MT-32) both score 100;
+    // 'auto' pins nothing (FluidLite wins the tie, the MT-32 wins on files
+    // carrying its sysex), the other two pin. See preferredMidiPluginFor.
+    for (final ext in ['mid', 'midi', 'kar', 'rmi']) {
+      audio.setPreferredPlugin(ext, preferredMidiPluginFor(s.midiSynth));
+    }
+    audio.setEngineParam('mt32', 'model',  s.mt32Model.toDouble());
+    audio.setEngineParam('mt32', 'reverb', s.mt32Reverb ? 1 : 0);
+    audio.setEngineParam('mt32', 'gain',   s.mt32Gain);
 
     // Per-engine parameters (Settings → Moteurs) — read by the plugin's
     // open(), i.e. applied on the next track (re)load.
@@ -718,6 +835,13 @@ class _AppShellState extends State<AppShell>
     audio.setEngineParam('openmpt', 'stereo_sep',    s.omptStereoSep.toDouble());
     audio.setEngineParam('openmpt', 'master_volume', s.omptMasterVolume);
     audio.setEngineParam('openmpt', 'amiga_filter',  s.omptAmigaFilter.toDouble());
+    audio.setEngineParam('xmp', 'interpolation',  s.xmpInterpolation.toDouble());
+    audio.setEngineParam('xmp', 'stereo_sep',     s.xmpStereoSep.toDouble());
+    audio.setEngineParam('xmp', 'amplify',        s.xmpAmplify.toDouble());
+    audio.setEngineParam('xmp', 'master_volume',  s.xmpMasterVolume.toDouble());
+    audio.setEngineParam('xmp', 'dsp_lowpass',    s.xmpDspLowpass ? 1 : 0);
+    audio.setEngineParam('xmp', 'amiga_mixer',    s.xmpAmigaMixer ? 1 : 0);
+    audio.setEngineParam('midi', 'mt32_to_gm',    s.midiMt32ToGm ? 1 : 0);
     audio.setEngineParam('gme', 'silence_detection', s.gmeSilenceDetection ? 1 : 0);
     audio.setEngineParam('gme', 'stereo_depth',      s.gmeStereoDepth);
     audio.setEngineParam('gme', 'eq_enabled',        s.gmeEqEnabled ? 1 : 0);
@@ -735,6 +859,9 @@ class _AppShellState extends State<AppShell>
     audio.setEngineParam('uade', 'gain_value',       s.uadeGainValue);
     audio.setEngineParam('uade', 'led',              s.uadeLed.toDouble());
     audio.setEngineParam('uade', 'filter_type',      s.uadeFilterType.toDouble());
+    // Pas un moteur: lu par rewamp_open_track pour tout rip CD (voir
+    // UserSettings.cdRipDeclick).
+    audio.setEngineParam('rewamp', 'cd_rip_declick', s.cdRipDeclick ? 1 : 0);
 
     audio.setEngineParam('sid', 'engine',          s.sidEngine.toDouble());
     audio.setEngineParam('sid', 'auto_filter',     s.sidAutoFilter ? 1 : 0);
@@ -783,6 +910,8 @@ class _AppShellState extends State<AppShell>
     audio.setEngineParam('highlyexp', 'spu_main',  s.heSpuMain ? 1 : 0);
     audio.setEngineParam('highlyexp', 'spu_reverb', s.heSpuReverb ? 1 : 0);
     audio.setEngineParam('adplug', 'surround',     s.adplugSurround ? 1 : 0);
+    audio.setEngineParam(
+        'vgm', 'japanese_tags', s.vgmJapaneseTags ? 1 : 0);
     audio.setEngineParam('vgm', 'ym2612_core',     s.vgmYm2612Core.toDouble());
     audio.setEngineParam('vgm', 'ymf262_core',     s.vgmYmf262Core.toDouble());
     audio.setEngineParam('vgm', 'ym3812_core',     s.vgmYm3812Core.toDouble());
@@ -862,7 +991,18 @@ class _AppShellState extends State<AppShell>
     // multi-subsong file within the album queues every subsong, not just one.
     final expanded = <SearchResult>[];
     for (final t in tracks) {
-      expanded.addAll(await _subsongEntries(t));
+      expanded.addAll(_rotateToTopEntry(t, await _subsongEntries(t)));
+    }
+    // Plafond de la file TOTALE — même règle que _onLocalTracksQueueAdd:
+    // tronqué et ANNONCÉ, jamais en silence.
+    final room = kQueueLimit - _queue.length;
+    if (expanded.length > room) {
+      if (mounted) {
+        AppSnack.show(context, l10n.queueLimitReached(kQueueLimit),
+            duration: const Duration(seconds: 4));
+      }
+      if (room <= 0) return;
+      expanded.removeRange(room, expanded.length);
     }
     // seq assigned in canonical (album/subsong) order first, so turning
     // shuffle back off can restore it — only the INSERTION order is shuffled.
@@ -896,6 +1036,23 @@ class _AppShellState extends State<AppShell>
     _exitRadio();
     final l10n = context.l10n;
     await _seedQueueWithCurrent(); // jouer hors d'une file vide — l'y remettre
+    // Plafond de la file TOTALE: un ajout n'emmène la file au-delà de
+    // kQueueLimit jamais en silence (le lot est tronqué et ça se dit).
+    final room = kQueueLimit - _queue.length;
+    if (tracks.length > room) {
+      if (room <= 0) {
+        if (mounted) {
+          AppSnack.show(context, l10n.queueLimitReached(kQueueLimit),
+              duration: const Duration(seconds: 4));
+        }
+        return;
+      }
+      tracks = tracks.sublist(0, room);
+      if (mounted) {
+        AppSnack.show(context, l10n.queueLimitReached(kQueueLimit),
+            duration: const Duration(seconds: 4));
+      }
+    }
     // seq en ordre canonique d'abord, pour que couper le shuffle restaure
     // l'ordre; seule l'INSERTION est mélangée.
     var items = [for (final t in tracks) _LocalItem(t, _seq())];
@@ -931,6 +1088,61 @@ class _AppShellState extends State<AppShell>
   /// garde le comportement d'avant sur une app fraîchement lancée; et une
   /// feuille écartée n'enfile RIEN — c'est un refus, pas un « à la fin » par
   /// défaut.
+  /// « Lire des fichiers » depuis l'onglet Local: le sélecteur d'OUVERTURE
+  /// (écoute jetable), puis le MÊME routage qu'un dépôt sur la fenêtre —
+  /// dépliage des archives et conteneurs, feuille « quand l'entendre », file.
+  Future<void> _pickAndPlayLocalFiles(BuildContext _) async {
+    final files = await pickLocalFilesToPlay();
+    if (files.isEmpty) return;
+    await _openLocalPaths(files);
+  }
+
+  /// « Lire un dossier »: joué TEL QUEL, sans import. ⚠️ Sur mobile,
+  /// l'arborescence est recopiée PENDANT la portée de sécurité du sélecteur
+  /// (materialiseFolder) — lire hors portée ne lève pas, ça rend une liste
+  /// VIDE. Le dossier passe ENTIER au routeur, qui le parcourt et filtre son
+  /// contenu comme n'importe quel geste en lot.
+  Future<void> _pickAndPlayLocalFolder(BuildContext _) async {
+    final dir = await withPickedFolder(OpenedFiles.materialiseFolder);
+    if (dir == null || !mounted) return;
+    await _openLocalPaths([dir]);
+  }
+
+  /// Un DÉPÔT venu du Finder, portée de sécurité comprise.
+  ///
+  /// ⚠️ macOS sandbox: un élément déposé HORS du conteneur n'est lisible que
+  /// pendant la portée ouverte par son signet (`extraAppleBookmark`), et
+  /// l'oubli ne LÈVE PAS — il rend une énumération VIDE. Pour un fichier, la
+  /// permission implicite du dépôt suffisait, ce qui masquait le trou; pour un
+  /// DOSSIER, c'est le parcours qui la réclame, et le dépôt d'un dossier ne
+  /// donnait donc jamais rien. Même leçon que le sélecteur de dossier iOS
+  /// (`withPickedFolder`): ouvrir la portée, travailler, refermer.
+  ///
+  /// ⚠️ La portée d'un DOSSIER n'est PAS refermée: les pistes qu'on vient d'y
+  /// trouver ne sont lues qu'ensuite, à la lecture — la refermer ici rendrait
+  /// la file injouable. Elle meurt avec le processus, comme le sélecteur iOS
+  /// le fait quand l'appelant n'a pas de fin franche.
+  Future<void> _openDroppedItems(List<DropItem> items) async {
+    final opened = <Uint8List>[];
+    final keep   = <Uint8List>[];
+    for (final it in items) {
+      final bm = it.extraAppleBookmark;
+      if (bm == null || bm.isEmpty) continue;
+      final ok = await DesktopDrop.instance
+          .startAccessingSecurityScopedResource(bookmark: bm);
+      if (!ok) continue;
+      (FileSystemEntity.isDirectorySync(it.path) ? keep : opened).add(bm);
+    }
+    try {
+      await _openLocalPaths([for (final f in items) f.path]);
+    } finally {
+      for (final bm in opened) {
+        await DesktopDrop.instance
+            .stopAccessingSecurityScopedResource(bookmark: bm);
+      }
+    }
+  }
+
   Future<void> _openLocalPaths(List<String> paths) async {
     if (paths.isEmpty || !mounted) return;
     final l10n      = context.l10n;
@@ -1106,7 +1318,7 @@ class _AppShellState extends State<AppShell>
     await _seedQueueWithCurrent(); // playing outside an empty queue — see it
 
     // Multi-subsong file: queue every subsong (matches _startAlbumQueue).
-    final expanded = await _subsongEntries(r);
+    final expanded = _rotateToTopEntry(r, await _subsongEntries(r));
     var items = [for (final s in expanded) _OnlineItem(s, _seq())];
     if (_shuffleEnabled) items = items.toList()..shuffle();
     if (atEnd) {
@@ -1210,18 +1422,14 @@ class _AppShellState extends State<AppShell>
       return;
     }
     _controller.stop();
-    // Delete the current file + the freshly-derived path so downloadAndPlay
-    // refetches instead of serving the cached copy (the name may have changed).
-    final paths = <String>{
-      if (oldPath != null && oldPath.isNotEmpty) oldPath,
-      await RewampDb.localPath(s),
-    };
-    for (final path in paths) {
-      try {
-        final f = File(path);
-        if (await f.exists()) await f.delete();
-      } catch (_) {}
-    }
+    // Table rase AVANT de refetcher: fichier(s), compagnons, pochette (disque +
+    // bitmap décodé), lignes `tracks`/`recent_albums` et url de provenance —
+    // « Re-télécharger » est le seul geste par lequel l'utilisateur peut dire
+    // « ce que j'ai est périmé », et il ne vaut que s'il efface TOUT ce qui
+    // décrit l'ancienne copie. Ce qu'il ne touche pas: le ♥, l'appartenance à
+    // la bibliothèque et l'historique d'écoute.
+    await RewampDb.purgeBeforeRedownload(s,
+        currentPath: oldPath, artworkUrl: _controller.artworkUrl);
     if (!mounted) return;
     await downloadAndPlay(context, s, _onFileReady);
   }
@@ -1284,14 +1492,14 @@ class _AppShellState extends State<AppShell>
   }
 
   /// Infers (collection, platform) from an online file's on-disk path:
-  ///   online/<collection>/<artist>/<platform|formatExt>/<album>/<file>
+  ///   `online/<collection>/<artist>/<platform|formatExt>/<album>/<file>`
   /// The level-3 segment is the platform OR the format ext (see
   /// RewampDb._dirSegments) — it's a platform only when it isn't the format ext.
   /// This is the reliable source: the path is always present, unlike the
   /// library row (which may be missing or have a null platform).
   ///
   /// Album-grain zip collections use a flattened, artist-free layout
-  /// (online/<collection>/<albumKey>/<file>) — no platform segment there, so
+  /// (`online/<collection>/<albumKey>/<file>`) — no platform segment there, so
   /// return only the collection (idx+3 would be the filename).
   (String?, String?) _albumContextFromPath(String path, String? formatExt) {
     final parts = path.split(p.separator);
@@ -1337,6 +1545,10 @@ class _AppShellState extends State<AppShell>
     int subsongIdx = 0,
     double? durationS,
     int? subsongCount,
+    // Gapless adoption: the native engine already plays this file (see
+    // PlayerController.loadFile's adoptHandoff) — metadata only, and the
+    // missing-file recovery is moot (the file is being DECODED right now).
+    bool adopt = false,
   }) {
     // The file may simply not be HERE. An account syncs its history and its
     // library between devices, so a row can name a track this device never
@@ -1348,7 +1560,8 @@ class _AppShellState extends State<AppShell>
     // recents, search history, an .m3u entry), and putting it upstream would
     // have covered exactly the one screen it was written for. Free for the
     // normal case - a download that just finished leaves the file right there.
-    if (_recoverMissingFile(
+    if (!adopt &&
+        _recoverMissingFile(
       path:       path,
       label:      label,
       onlineId:   onlineId,
@@ -1378,6 +1591,7 @@ class _AppShellState extends State<AppShell>
       artworkTargetDir: artworkTargetDir,
       durationS:        durationS,
       recordAsAlbum:    true,
+      adoptHandoff:     adopt,
     );
   }
 
@@ -1445,10 +1659,10 @@ class _AppShellState extends State<AppShell>
   ///
   /// Everything but the id is derived from the PATH, and each piece is there
   /// for a reason paid at least once:
-  ///  * the collection ('…/online/<collection>/…') scopes the album
+  ///  * the collection (`…/online/<collection>/…`) scopes the album
   ///    re-resolution, which otherwise matches a homonym in another collection;
   ///  * an album-grain collection files its tracks under
-  ///    '…/online/<collection>/<albumId>/…', and that key IS the album uuid
+  ///    `…/online/<collection>/<albumId>/…`, and that key IS the album uuid
   ///    when it was known at download time — free, offline, and exactly what
   ///    the re-resolution wants;
   ///  * the QUEUE's album is the last resort, and only for a track that really
@@ -1546,7 +1760,7 @@ class _AppShellState extends State<AppShell>
       album:       album,
       albumId: albumId ??
           pathFromDisk ??
-          ((album ?? '').isNotEmpty ? _queueAlbumId : null),
+          _queueAlbumIdFor(album),
       formatExt:   formatExt ?? _pathExt(path),
       downloadUrl: null,
       fileSize:    0,
@@ -1592,7 +1806,65 @@ class _AppShellState extends State<AppShell>
     return ids;
   }
 
+  /// Pochette et chemin local d'une entrée EN LIGNE, relus dans `tracks` —
+  /// clefés par l'uid de l'entrée, et d'AFFICHAGE seulement.
+  ///
+  /// ⚠️ Une entrée de file ne porte que ce que connaissait l'écran qui l'a
+  /// mise en file, et une file RESTAURÉE ne porte que ce que le fichier
+  /// `queue_state.json` avait figé — son `artwork_url` est l'url du CATALOGUE,
+  /// jamais la pochette réellement posée sur le disque. Résultat mesuré:
+  /// après un re-téléchargement, `tracks` pointe le sidecar
+  /// « dragon breed.avp.jpg » (que le LECTEUR affiche) tandis que la file garde
+  /// une url `files.rewamp.app/artwork/modland/…/cover.png` qui ne répond pas —
+  /// d'où des vignettes GÉNÉRIQUES à côté d'un lecteur illustré. Même leçon
+  /// que pour les entrées de bibliothèque: **la pochette se relit dans
+  /// `tracks`**.
+  ///
+  /// On ne TOUCHE PAS aux `_QueueItem`: leur identité sert de clé ailleurs
+  /// (`identical` dans `_armNext`). L'overlay est une couche d'affichage.
+  final Map<int, ({String? artworkUrl, String? localPath})> _queueArt = {};
+
+  /// Remplit [_queueArt] pour les entrées en ligne qui n'ont pas de chemin
+  /// local, puis republie la file si quelque chose a bougé.
+  ///
+  /// Hors du chemin critique: une lecture par entrée sur une base que sqflite
+  /// SÉRIALISE, ce n'est pas ce qu'on veut entre le tap et le son.
+  Future<void> _resolveQueueArtwork() async {
+    final todo = [
+      for (final it in List<_QueueItem>.of(_queue))
+        if (it is _OnlineItem &&
+            it.result.localPath == null &&
+            it.result.songId.isNotEmpty &&
+            !_queueArt.containsKey(it.uid))
+          it,
+    ];
+    if (todo.isEmpty) return;
+    var changed = false;
+    for (final it in todo) {
+      final r = it.result;
+      try {
+        final rec = await LocalDb.instance.getTrackByOnlineId(r.songId);
+        final art   = rec?.artworkUrl;
+        final local = (rec == null || rec.filePath.isEmpty) ? null : rec.filePath;
+        // ⚠️ L'ABSENCE se mémorise aussi. Sans ça une entrée que `tracks` ne
+        // connaît pas serait re-interrogée à CHAQUE republication de la file
+        // (réordonnancement, retrait, avancement) — sur une base que sqflite
+        // sérialise, c'est le genre de requête répétée qui a déjà bloqué la
+        // file un jour.
+        _queueArt[it.uid] = (artworkUrl: art, localPath: local);
+        if (art != null || local != null) changed = true;
+      } catch (_) {/* une entrée sans pochette n'est pas une erreur */}
+    }
+    if (changed && mounted) _syncControllerQueue();
+  }
+
   void _syncControllerQueue() {
+    // La relecture des pochettes est déclenchée ICI, à chaque publication de la
+    // file: c'est le seul point par lequel TOUTES passent (construction,
+    // restauration, réordonnancement, retrait). L'appel est asynchrone et
+    // idempotent — il ne regarde que les entrées qu'il n'a pas déjà résolues,
+    // donc republier n'entraîne pas de boucle.
+    unawaited(_resolveQueueArtwork());
     String fileOf(_QueueItem it) => switch (it) {
       _OnlineItem(:final result) => result.filename,
       _LocalItem(:final track)   => p.basename(track.filePath),
@@ -1616,10 +1888,12 @@ class _AppShellState extends State<AppShell>
         // Artwork context for the row thumbnail (falls back to the themed
         // per-platform placeholder when nothing resolves).
         final (art, alb, local, plat, fmt) = switch (item) {
+          // La ligne `tracks` d'abord quand on l'a relue: elle sait où la
+          // pochette a ATTERRI, là où la file ne porte que l'url du catalogue.
           _OnlineItem(:final result) => (
-              result.artworkUrl,
+              _queueArt[item.uid]?.artworkUrl ?? result.artworkUrl,
               result.album,
-              result.localPath,
+              result.localPath ?? _queueArt[item.uid]?.localPath,
               result.platform,
               result.formatExt,
             ),
@@ -1641,18 +1915,43 @@ class _AppShellState extends State<AppShell>
           localFilePath: local,
           platformName: plat,
           formatHint: fmt,
+          // Ce qui permet de renommer la BONNE entrée quand STIL arrive
+          // (updateQueueEntries): une position n'est pas une identité.
+          subsongIdx: switch (item) {
+            _OnlineItem(:final result) => result.subsongIdx,
+            _LocalItem(:final track)   => track.subsongIdx,
+          },
         );
       }).toList(),
       currentIdx: _queueIdx,
     );
+    // Every queue mutation funnels through here — the staged gapless track may
+    // no longer be the right "next", so recompute (cheap; re-staging the same
+    // path is a harmless overwrite, and a stale target gets cleared).
+    unawaited(_armNext());
   }
+
+  /// Sous repeat-FILE (loopMode 1), la fin de la file rejoint son début: c'est
+  /// déjà ce que le relais gapless met en scène (`_armNext`, « loop queue:
+  /// wrap »). La règle vit ICI pour que les trois chemins qui avancent — le
+  /// bouton « suivant », `_playNext`, et l'armement — ne puissent pas diverger:
+  /// un bouton éteint sur la dernière piste alors que la lecture automatique,
+  /// elle, reboucle, est exactement le genre d'écart qu'on paie ensuite.
+  ///
+  /// Repeat-MORCEAU (loopMode 2) est exclu: là il n'y a pas de « suivant », la
+  /// piste ne finit jamais. Et une file d'UNE entrée ne reboucle pas non plus —
+  /// même seuil que `_armNext`.
+  bool get _queueWrapsAtEnd =>
+      _controller.loopMode == 1 && _queue.length > 1;
 
   void _refreshQueueNav() {
     // Radio never ends: keep "next" live even when the rolling window hasn't
     // been refilled yet (_playNext resolves one on demand in that case).
     final radio = _radioPool.isNotEmpty;
     _controller.setQueueNav(
-      next: (radio || _queueIdx < _queue.length - 1) ? _playNext : null,
+      next: (radio || _queueIdx < _queue.length - 1 || _queueWrapsAtEnd)
+          ? _playNext
+          : null,
       prev: _queueIdx > 0 ? _playPrev : null,
     );
     // Every queue mutation path (start/add/clear/shuffle/jump) ends here —
@@ -1740,6 +2039,7 @@ class _AppShellState extends State<AppShell>
       ..clear()
       ..addAll(items);
     _prefetchFailed.clear();
+    _prefetchDone.clear();
     final rawIdx = (state['idx'] as num?)?.toInt() ?? 0;
     _queueIdx = rawIdx.clamp(0, items.length - 1);
     _syncControllerQueue();
@@ -1749,7 +2049,20 @@ class _AppShellState extends State<AppShell>
     // (onResumePrimed → _playAt). Auto-playing at launch leaked audio on iOS and
     // brought up the media session, which tripped Android's foreground-service
     // watchdog (ForegroundServiceDidNotStartInTimeException → crash loop).
-    final cur = _queue[_queueIdx];
+    unawaited(_primeQueueEntry(_queue[_queueIdx]));
+  }
+
+  /// Affiche une entrée de file SANS toucher au décodeur: le lecteur montre la
+  /// piste, à l'arrêt, et la première pression sur lecture la charge
+  /// (`onResumePrimed` → `_playAt`).
+  ///
+  /// Deux appelants, pour la même raison: la file restaurée au lancement (jouer
+  /// tout seul au démarrage laissait fuir du son sur iOS et réveillait la
+  /// session média, ce qui déclenchait le chien de garde de service au premier
+  /// plan d'Android) et la SUPPRESSION d'un fichier pendant que la lecture est
+  /// en pause — dans les deux cas, personne n'a demandé à entendre quoi que ce
+  /// soit.
+  Future<void> _primeQueueEntry(_QueueItem cur) async {
     switch (cur) {
       case _OnlineItem(:final result):
         String fp;
@@ -1843,6 +2156,33 @@ class _AppShellState extends State<AppShell>
       ..addAll(others.skip(_queueIdx));
   }
 
+  /// Un nouveau TOUR de file en lecture aléatoire REMÉLANGE.
+  ///
+  /// Le mélange est une PERMUTATION calculée une fois (voir _shuffleQueue), et
+  /// c'est le bon modèle pour un tour: chaque morceau passe exactement une
+  /// fois. Mais le tour SUIVANT — reboucler la file, ou appuyer sur play sur
+  /// une file épuisée — rejouait la même permutation, donc le même ordre
+  /// indéfiniment tant qu'on ne rebasculait pas le bouton (demandé le
+  /// 2026-09-14; c'est ce que remélangent Spotify et Apple Music).
+  ///
+  /// ⚠️ Et on ne rouvre pas sur la piste qu'on vient de finir: un tirage
+  /// uniforme la remet en tête une fois sur N, et à la frontière d'un tour ça
+  /// s'entend comme un morceau qui se répète — le seul endroit où un vrai
+  /// hasard a l'air d'un bug. Même garde que le tirage de presets projectM.
+  void _reshuffleForNewPass() {
+    if (!_shuffleEnabled || _queue.length < 2) return;
+    final justPlayed = (_queueIdx >= 0 && _queueIdx < _queue.length)
+        ? _queue[_queueIdx]
+        : null;
+    final shuffled = reshuffledForNewPass(_queue, justPlayed: justPlayed);
+    _queue
+      ..clear()
+      ..addAll(shuffled);
+    // L'ORDRE a changé: le miroir du contrôleur et l'état des boutons aussi.
+    _syncControllerQueue();
+    _refreshQueueNav();
+  }
+
   /// Restores the queue's original insertion order (per-item `seq`).
   void _unshuffleQueue() {
     final current = (_queueIdx >= 0 && _queueIdx < _queue.length)
@@ -1871,6 +2211,7 @@ class _AppShellState extends State<AppShell>
       ..clear()
       ..add(_OnlineItem(first, _seq()));
     _prefetchFailed.clear();
+    _prefetchDone.clear();
     _queueIdx = 0;
     _consecutiveDlFailures = 0;
     _consecutiveLoadFailures = 0;
@@ -2045,6 +2386,8 @@ class _AppShellState extends State<AppShell>
       }
     }
     if (_queueIdx + 1 < _queue.length) return _playAt(_queueIdx + 1);
+    // Dernière piste sous repeat-file: on repart de la première.
+    if (_queueWrapsAtEnd) return _playAt(0);
   }
 
   Future<void> _downloadAndPlayOnline(BuildContext ctx, SearchResult r) async {
@@ -2088,6 +2431,211 @@ class _AppShellState extends State<AppShell>
   /// audio (and title/artwork) stay on the track that's actually still playing.
   /// Threaded through the auto-advance chain so a run of failures restores to the
   /// track that was playing BEFORE the jump, not an intermediate skipped one.
+  /// A resolved ONLINE queue entry is ready on disk: hand it to the player and
+  /// apply its context. Shared by _playAt and the gapless adoption thunk —
+  /// [adopt] runs the metadata half only (the native engine already plays it).
+  void _playResolvedOnline(SearchResult result, String path, int subsongIdx,
+      String? artworkDir, {bool adopt = false}) {
+    _onFileReadyAsAlbum(
+      path,
+      result.displayTitle,
+      artist:           result.artistLabel.isEmpty ? null : result.artistLabel,
+      artistNames:      result.artistNames,
+      artistIds:        result.artistIds,
+      album:            result.album,
+      albumId:          result.albumId,
+      formatExt:        result.formatExt,
+      onlineId:         result.songId,
+      artworkUrl:       result.artworkUrl,
+      artworkTargetDir: artworkDir,
+      subsongIdx:       subsongIdx,
+      durationS:        result.durationMs != null ? result.durationMs! / 1000.0 : null,
+      subsongCount:     result.subsongCount,
+      adopt:            adopt,
+    );
+    // STIL info (get_sid_info) for the ⓘ panel — was only wired for
+    // locally-replayed SID files (_LocalItem below); an online SID
+    // played here for the first time never got it fetched/cached.
+    if (_kSidExts.contains(result.formatExt.toLowerCase())) {
+      _applyLocalSidMeta(path);
+    }
+    // Prefer the on-disk path for platform: server browse often returns a
+    // null platform per track (jw_psf), so result.platform is unreliable.
+    final (col, plat) = _albumContextFromPath(path, result.formatExt);
+    _controller.setAlbumContext(
+        collectionSlug: col ?? result.collection,
+        platformName:   plat ?? result.platform, year: result.year,
+        forPath: path);
+  }
+
+  /// Same for a LOCAL queue entry whose file exists.
+  void _playResolvedLocal(TrackRecord track, {bool adopt = false}) {
+    final artworkDir = track.source == 'online' ? p.dirname(track.filePath) : null;
+    // TEMP (diagnostic « écritures croisées »): d'OÙ vient l'album qu'on va
+    // attacher à cette piste. `_queueAlbumId` survit à l'album qui l'a posé —
+    // c'est le suspect n° 1 des estampillages parasites.
+    if (kDebugMode && track.albumId == null && _queueAlbumId != null) {
+      debugPrint('[stamp] REPLI _queueAlbumId=$_queueAlbumId '
+          'sur ${track.filePath.split('/').last} '
+          '(meta="${track.metaAlbum ?? ''}")');
+    }
+    _onFileReadyAsAlbum(
+      track.filePath,
+      track.displayTitle,
+      artist:           track.artist,
+      album:            track.metaAlbum,
+      // The queue's id when this row has none — see [_queueAlbumId]. L'emprunt
+      // passe par la vérification de NOM: ce site ne gardait rien du tout, et
+      // estampillait l'album de la file sur n'importe quelle piste sans id.
+      albumId:          track.albumId ?? _queueAlbumIdFor(track.metaAlbum),
+      formatExt:        track.formatExt,
+      onlineId:         track.onlineId,
+      artworkUrl:       track.artworkUrl,
+      artworkTargetDir: artworkDir,
+      subsongIdx:       track.subsongIdx,
+      durationS:        track.durationS,
+      subsongCount:     track.subsongCount,
+      adopt:            adopt,
+    );
+    // Origin: what the row STORES first (mig 52 — written when the album
+    // was downloaded or the track played, i.e. when it was actually
+    // known), and only then what the on-disk path says. The path fallback
+    // is no longer gated on `source == 'online'`: that field is a default
+    // on a row this shell synthesised from a directory listing, so a
+    // downloaded album replayed from the recents rail lost its collection
+    // while the very path it reads from spells `online/jw_gbs/…`.
+    final (pathCollection, pathPlatform) =
+        _albumContextFromPath(track.filePath, track.formatExt);
+    // Le CHEMIN d'abord quand il sait, la ligne ensuite. Il dit où les
+    // octets SONT (`online/<collection>/…/<plateforme>/…`), là où la valeur
+    // stockée est une écriture passée — qui a pu être polluée: une
+    // recherche d'origine d'album asynchrone estampillait la réponse sur le
+    // morceau courant, si bien que deux sous-chansons d'un module Amiga de
+    // modland portaient « hvsc / c64 », l'origine de Commando joué juste
+    // avant. La course est fermée (voir _lookupAlbumContext), mais les
+    // lignes fausses restaient et resservaient le mauvais placeholder à
+    // chaque relance; `setTrackOrigin` écrasant colonne par colonne, lire
+    // le chemin en premier les RÉPARE dès la lecture suivante.
+    //
+    // Le chemin ne répond que lorsqu'il porte vraiment l'information (une
+    // collection au grain album, ou un dossier d'album par uuid, n'ont pas
+    // de niveau plateforme), donc la ligne reste le repli utile.
+    final trackCollection = (pathCollection ?? '').isNotEmpty
+        ? pathCollection
+        : track.collectionSlug;
+    final trackPlatform = (pathPlatform ?? '').isNotEmpty
+        ? pathPlatform
+        : track.platformName;
+    _controller.setAlbumContext(
+        forPath: track.filePath,
+        collectionSlug: trackCollection,
+        platformName: trackPlatform,
+        // Stored with the rest (mig 52) — it was the one header field
+        // `_backfillIdentity` still went to the SERVER for, while the
+        // tracklist had carried it all along.
+        year: track.year);
+    final ext = (track.formatExt ?? _pathExt(track.filePath)).toLowerCase();
+    if (_kSidExts.contains(ext)) _applyLocalSidMeta(track.filePath);
+  }
+
+  // ── Gapless: arm the next queue entry on the native side ──────────────────
+  // The staged track is opened by the producer thread the instant the current
+  // decoder ends; the queue/UI flip happens later, when the LISTENER crosses
+  // the boundary (onTrackHandoff). The adopt thunk captures everything the
+  // flip needs at ARM time, so the handoff never re-resolves anything.
+  int _armedIdx = -1;
+  _QueueItem? _armedItem;
+  Future<void> Function()? _armedAdopt;
+
+  void _disarmNext() {
+    _armedIdx = -1;
+    _armedItem = null;
+    _armedAdopt = null;
+    _controller.clearNextTrack();
+  }
+
+  Future<void> _armNext() async {
+    if (!_controller.audio.supportsGapless) return;
+    // Same next-track rules as onTrackEnded, decided AHEAD of time.
+    final mode = _controller.loopMode;
+    if (mode == 2) { _disarmNext(); return; }       // repeat-track: no end
+    int next = -1;
+    if (_queueIdx >= 0 && _queueIdx + 1 < _queue.length) {
+      next = _queueIdx + 1;
+    } else if (mode == 1 && _queue.length > 1) {
+      next = 0;                                      // loop queue: wrap
+    }
+    if (next < 0) { _disarmNext(); return; }
+    final item = _queue[next];
+
+    String path;
+    int subsongIdx;
+    double? durationS;
+    Future<void> Function() adopt;
+    switch (item) {
+      case _OnlineItem(:final result):
+        // Deferred-expansion rows re-shape the queue when reached — that
+        // cannot happen from a background handoff.
+        if (item.deferExpand) { _disarmNext(); return; }
+        // Already-downloaded only, resolved purely locally: the arming path
+        // must never touch the network (that is _prefetchNextDownload's job —
+        // once its download lands, the next _armNext call picks it up).
+        final row = await LocalDb.instance.getTrackByOnlineId(result.songId);
+        final fp = row?.filePath;
+        if (fp == null || !await File(fp).exists()) { _disarmNext(); return; }
+        // The queue may have changed during the awaits.
+        if (next >= _queue.length || !identical(_queue[next], item)) return;
+        final sub = await RewampDb.archiveSubsongIndex(
+            path: fp, songId: result.songId, fallback: result.subsongIdx);
+        final artworkDir = await RewampDb.artworkDirForResult(result);
+        path = fp;
+        subsongIdx = sub;
+        durationS =
+            result.durationMs != null ? result.durationMs! / 1000.0 : null;
+        adopt = () async =>
+            _playResolvedOnline(result, fp, sub, artworkDir, adopt: true);
+      case _LocalItem(:final track):
+        if (!await File(track.filePath).exists()) { _disarmNext(); return; }
+        if (next >= _queue.length || !identical(_queue[next], item)) return;
+        path = track.filePath;
+        subsongIdx = track.subsongIdx;
+        durationS = track.durationS;
+        adopt = () async => _playResolvedLocal(track, adopt: true);
+    }
+
+    _armedIdx = next;
+    _armedItem = item;
+    _armedAdopt = adopt;
+    _controller.armNextTrack(
+        path: path, subsongIdx: subsongIdx, durationS: durationS);
+  }
+
+  /// The listener just crossed into the staged track (native side already
+  /// decodes it): advance the queue pointer and adopt — no reload, no gap.
+  void _onTrackHandoff() {
+    final idx = _armedIdx;
+    final item = _armedItem;
+    final adopt = _armedAdopt;
+    _armedIdx = -1; _armedItem = null; _armedAdopt = null; // consumed
+    if (adopt == null ||
+        idx < 0 || idx >= _queue.length || !identical(_queue[idx], item)) {
+      // The queue changed under a staged handoff that fired anyway (mutations
+      // disarm, so this is belt-and-braces): reload through the normal path so
+      // queue state and audio agree again.
+      if (_queueIdx + 1 < _queue.length) unawaited(_playAt(_queueIdx + 1));
+      return;
+    }
+    setState(() => _queueIdx = idx);
+    _controller.updateQueueIdx(idx);
+    _refreshQueueNav();
+    unawaited(() async {
+      await adopt();
+      await _armNext();          // stage the following entry right away
+      unawaited(_prefetchNextDownload());
+      if (_radioPool.isNotEmpty) unawaited(_radioRefill());
+    }());
+  }
+
   Future<void> _playAt(int i, {int? revertTo}) async {
     final prevIdx = revertTo ?? _queueIdx;
     _queueIdx = i;
@@ -2103,6 +2651,7 @@ class _AppShellState extends State<AppShell>
             UadeInfoService.isUadePath(result.filename) &&
             !_isResolvedSubsong(result)) {
           item.deferExpand = false; // once, even if the probe finds nothing
+          var spliced = false;
           try {
             final path = await RewampDb.downloadToLibrary(result);
             final info = await UadeInfoService.instance.forPath(path);
@@ -2119,7 +2668,7 @@ class _AppShellState extends State<AppShell>
                 // recevrait deux noms selon le chemin qui la déplie.
                 for (var k = 0; k < playable.length; k++)
                   result.withSubsong(playable[k].idx,
-                      title: '${result.displayTitle} (${k + 1})',
+                      title: '${result.subsongTitleBase} (${k + 1})',
                       // Own length, never the container's: the catalogue row
                       // carries subsong 0's and withSubsong copies it.
                       durationMs: playable[k].lengthMs)
@@ -2128,9 +2677,15 @@ class _AppShellState extends State<AppShell>
                   i, i + 1, [for (final r in rows) _OnlineItem(r, _seq())]);
               _syncControllerQueue();
               _refreshQueueNav();
-              return _playAt(i);
+              spliced = true;
             }
           } catch (_) {/* fall through to normal single-file play */}
+          // Le rejeu vit HORS du `try`, et ce n'est pas cosmétique: le catch
+          // ci-dessus veut dire « la SONDE a échoué, joue le fichier seul ».
+          // Une fois les sous-chansons épissées la sonde a réussi, donc un
+          // échec du rejeu n'est plus de son ressort — le laisser dedans le
+          // ferait retomber sur la lecture simple et jouerait DEUX fois.
+          if (spliced) return _playAt(i);
         }
         try {
           final path       = await RewampDb.downloadToLibrary(result);
@@ -2140,35 +2695,7 @@ class _AppShellState extends State<AppShell>
           // download). Other formats keep their own index.
           final subsongIdx = await RewampDb.archiveSubsongIndex(
               path: path, songId: result.songId, fallback: result.subsongIdx);
-          _onFileReadyAsAlbum(
-            path,
-            result.displayTitle,
-            artist:           result.artistLabel.isEmpty ? null : result.artistLabel,
-            artistNames:      result.artistNames,
-            artistIds:        result.artistIds,
-            album:            result.album,
-            albumId:          result.albumId,
-            formatExt:        result.formatExt,
-            onlineId:         result.songId,
-            artworkUrl:       result.artworkUrl,
-            artworkTargetDir: artworkDir,
-            subsongIdx:       subsongIdx,
-            durationS:        result.durationMs != null ? result.durationMs! / 1000.0 : null,
-            subsongCount:     result.subsongCount,
-          );
-          // STIL info (get_sid_info) for the ⓘ panel — was only wired for
-          // locally-replayed SID files (_LocalItem below); an online SID
-          // played here for the first time never got it fetched/cached.
-          if (_kSidExts.contains(result.formatExt.toLowerCase())) {
-            _applyLocalSidMeta(path);
-          }
-          // Prefer the on-disk path for platform: server browse often returns a
-          // null platform per track (jw_psf), so result.platform is unreliable.
-          final (col, plat) = _albumContextFromPath(path, result.formatExt);
-          _controller.setAlbumContext(
-              collectionSlug: col ?? result.collection,
-              platformName:   plat ?? result.platform, year: result.year,
-              forPath: path);
+          _playResolvedOnline(result, path, subsongIdx, artworkDir);
         } on DownloadCancelledException {
           // The user aborted this download: stay on whatever plays, do NOT
           // auto-advance (skipping to the next track would start ANOTHER
@@ -2232,6 +2759,27 @@ class _AppShellState extends State<AppShell>
             _restoreQueueIdx(prevIdx);
             return;
           }
+          // La tracklist nomme un fichier que l'archive ne contient pas
+          // (« Atelier Annie »: six .mp3 annoncés, zéro livré). C'est un
+          // défaut de CETTE piste, pas du réseau — et ces entrées sont
+          // souvent CONSÉCUTIVES: les trois premières de cet album. Les
+          // compter comme des pannes réseau arrêtait la file au seuil de
+          // trois, avant même d'atteindre la piste 4, qui elle est là.
+          if (e is ArchiveEntryMissingException) {
+            debugPrint('[queue] absent de l\'archive à $i: ${e.filename}');
+            if (e.songId != null && e.songId!.isNotEmpty) {
+              RewampDb.reportSong(
+                songId:       e.songId!,
+                reason:       'download_failed',
+                subsongIndex: e.subsongIndex > 0 ? e.subsongIndex : null,
+                detail:       'tracklist names "${e.filename}", '
+                    'absent from ${e.url}',
+              );
+            }
+            if (i + 1 < _queue.length) return _playAt(i + 1, revertTo: prevIdx);
+            _restoreQueueIdx(prevIdx);
+            return;
+          }
           // Download failed (network down/slow, timeout, 5xx…). Surface it and
           // auto-advance so the radio/queue keeps flowing — but stop after 3
           // consecutive failures (network is likely fully down).
@@ -2251,6 +2799,13 @@ class _AppShellState extends State<AppShell>
         }
         _consecutiveDlFailures = 0;
       case _LocalItem(:final track):
+        // Cache d'archive purgé par l'OS (Caches/local_archives): ré-extraire
+        // depuis l'archive d'origine (opened/) AVANT toute autre récupération
+        // — le chemin demandé redevient valide tel quel. Un stat quand le
+        // fichier est là, rien de plus.
+        if (!await File(track.filePath).exists()) {
+          await RewampDb.reExtractForMissingLocalPath(track.filePath);
+        }
         // Playlist/library trace whose file was deleted: re-resolve through
         // the online download machinery (get_song_context et al) instead of
         // failing the load and silently skipping.
@@ -2287,7 +2842,7 @@ class _AppShellState extends State<AppShell>
           }();
           final pathAlbumId = track.albumId ??
               pathFromDisk ??
-              ((track.metaAlbum ?? '').isNotEmpty ? _queueAlbumId : null);
+              _queueAlbumIdFor(track.metaAlbum);
           final r = SearchResult(
             songId:      track.onlineId!,
             collection:  pathColl ?? '',
@@ -2321,67 +2876,16 @@ class _AppShellState extends State<AppShell>
           _prefetchNextDownload();
           return;
         }
-        final artworkDir = track.source == 'online' ? p.dirname(track.filePath) : null;
-        _onFileReadyAsAlbum(
-          track.filePath,
-          track.displayTitle,
-          artist:           track.artist,
-          album:            track.metaAlbum,
-          // The queue's id when this row has none — see [_queueAlbumId].
-          albumId:          track.albumId ?? _queueAlbumId,
-          formatExt:        track.formatExt,
-          onlineId:         track.onlineId,
-          artworkUrl:       track.artworkUrl,
-          artworkTargetDir: artworkDir,
-          subsongIdx:       track.subsongIdx,
-          durationS:        track.durationS,
-          subsongCount:     track.subsongCount,
-        );
-        // Origin: what the row STORES first (mig 52 — written when the album
-        // was downloaded or the track played, i.e. when it was actually
-        // known), and only then what the on-disk path says. The path fallback
-        // is no longer gated on `source == 'online'`: that field is a default
-        // on a row this shell synthesised from a directory listing, so a
-        // downloaded album replayed from the recents rail lost its collection
-        // while the very path it reads from spells `online/jw_gbs/…`.
-        final (pathCollection, pathPlatform) =
-            _albumContextFromPath(track.filePath, track.formatExt);
-        // Le CHEMIN d'abord quand il sait, la ligne ensuite. Il dit où les
-        // octets SONT (`online/<collection>/…/<plateforme>/…`), là où la valeur
-        // stockée est une écriture passée — qui a pu être polluée: une
-        // recherche d'origine d'album asynchrone estampillait la réponse sur le
-        // morceau courant, si bien que deux sous-chansons d'un module Amiga de
-        // modland portaient « hvsc / c64 », l'origine de Commando joué juste
-        // avant. La course est fermée (voir _lookupAlbumContext), mais les
-        // lignes fausses restaient et resservaient le mauvais placeholder à
-        // chaque relance; `setTrackOrigin` écrasant colonne par colonne, lire
-        // le chemin en premier les RÉPARE dès la lecture suivante.
-        //
-        // Le chemin ne répond que lorsqu'il porte vraiment l'information (une
-        // collection au grain album, ou un dossier d'album par uuid, n'ont pas
-        // de niveau plateforme), donc la ligne reste le repli utile.
-        final trackCollection = (pathCollection ?? '').isNotEmpty
-            ? pathCollection
-            : track.collectionSlug;
-        final trackPlatform = (pathPlatform ?? '').isNotEmpty
-            ? pathPlatform
-            : track.platformName;
-        _controller.setAlbumContext(
-            forPath: track.filePath,
-            collectionSlug: trackCollection,
-            platformName: trackPlatform,
-            // Stored with the rest (mig 52) — it was the one header field
-            // `_backfillIdentity` still went to the SERVER for, while the
-            // tracklist had carried it all along.
-            year: track.year);
-        final ext = (track.formatExt ?? _pathExt(track.filePath)).toLowerCase();
-        if (_kSidExts.contains(ext)) _applyLocalSidMeta(track.filePath);
+        _playResolvedLocal(track);
     }
     // A backfill may have just resolved the album id for this queue — keep it
     // so the NEXT track gets the link without its own lookup.
     final resolvedAlbumId = _controller.currentAlbumId;
     if ((_queueAlbumId ?? '').isEmpty && (resolvedAlbumId ?? '').isNotEmpty) {
-      _queueAlbumId = resolvedAlbumId;
+      _queueAlbumId   = resolvedAlbumId;
+      // Le nom vient du MÊME backfill que l'id — c'est lui qui rendra l'emprunt
+      // vérifiable pour les pistes suivantes.
+      _queueAlbumName = _controller.currentAlbum;
     }
     // Now that this entry is playing, warm the next real download so advancing
     // to it (last subsong / next album) doesn't stall. Fire-and-forget.
@@ -2396,10 +2900,34 @@ class _AppShellState extends State<AppShell>
   /// doesn't have). Without it the queue stalls silently on that entry. Skips
   /// forward one entry, capped at 3 consecutive decode failures so a run of bad
   /// rows can't spin through the whole queue. A success clears the count.
+  /// Dernier chemin pour lequel on a prévenu « MIDI MT-32 sans ROMs », pour
+  /// ne le dire qu'UNE fois par piste (un tick de file ne rejoue pas le
+  /// bandeau).
+  String? _mt32WarnedPath;
+
+  /// Un MIDI écrit pour MT-32 qui se joue ici sur la SoundFont GM: le natif
+  /// a traduit ses numéros de programme (table ScummVM) et le dit par
+  /// `midiMt32Fallback`. L'utilisateur, lui, entend une approximation — et
+  /// sans ce bandeau il n'a aucun moyen de savoir POURQUOI ça sonne autre
+  /// chose, ni qu'importer les ROMs Roland y changerait tout.
+  void _maybeWarnMt32Fallback() {
+    if (!mounted) return;
+    final path = _controller.filePath;
+    if (path == null || path == _mt32WarnedPath) return;
+    if (!_controller.audio.midiMt32Fallback) return;
+    _mt32WarnedPath = path;
+    AppSnack.show(context, context.l10n.playbackMt32NoRoms,
+        duration: const Duration(seconds: 6));
+  }
+
   void _onLoadResult(bool ok) {
     if (ok) {
       _consecutiveLoadFailures = 0;
       _lastGoodIdx = _queueIdx;   // this entry is now genuinely playing
+      _maybeWarnMt32Fallback();
+      // Gapless: a track just started (plain load or adoption) — stage the
+      // one that should follow it.
+      unawaited(_armNext());
       return;
     }
     if (_controller.lastLoadMissingOnDisk) {
@@ -2516,6 +3044,31 @@ class _AppShellState extends State<AppShell>
   /// file (other subsongs of the current file, other tracks of an extracted
   /// archive) are skipped — and prefetches just that ONE (never the whole
   /// queue). Fire-and-forget, guarded, at most one prefetch in flight.
+  /// Enchaîne sur le manquant SUIVANT dès qu'un pré-téléchargement a atterri.
+  ///
+  /// C'est toute la différence entre les deux modes du réglage
+  /// `queuePrefetchAll`: un SEUL téléchargement court à la fois dans les deux
+  /// cas — c'est la charge qu'on borne, pas le nombre de morceaux — mais
+  /// « suivant seulement » attend le prochain changement de piste pour
+  /// relancer, là où « toute la file » repart aussitôt. Sans ce chaînage, une
+  /// file de vingt morceaux n'en pré-chargeait qu'UN: le vingtième se
+  /// téléchargeait à son tour, au moment précis où il fallait l'entendre.
+  ///
+  /// ⚠️ La récursion se termine par construction: chaque tour consomme une
+  /// entrée — elle est sur le disque, elle est dans `_prefetchFailed`, ou elle
+  /// est dans `_prefetchDone` — et la boucle s'arrête au bout de la file. Un
+  /// écran démonté l'arrête aussi.
+  ///
+  /// Les TROIS jeux sont nécessaires, et l'oubli du dernier a coûté une boucle
+  /// infinie: une entrée peut être SERVIE sans jamais apparaître au chemin
+  /// sondé (ligne de catalogue nommant l'archive), donc « sur le disque » et
+  /// « en échec » ne partitionnent pas les issues.
+  void _chainPrefetch() {
+    if (!mounted) return;
+    if (!UserSettings.instance.queuePrefetchAll) return;
+    unawaited(_prefetchNextDownload());
+  }
+
   Future<void> _prefetchNextDownload() async {
     for (var j = _queueIdx + 1; j < _queue.length; j++) {
       final it = _queue[j];
@@ -2534,6 +3087,7 @@ class _AppShellState extends State<AppShell>
         // Keyed by song id rather than by path: the row's path is a guess
         // until the catalogue answers (the snapshot's file name, or the title).
         if (_prefetchFailed.contains(id)) continue;
+        if (_prefetchDone.contains(id)) continue;   // déjà servie ce tour-ci
         if (_prefetchingPath == id) return;
         _prefetchingPath = id;
         debugPrint('[prefetch] warming entry $j (catalogue id $id)');
@@ -2557,7 +3111,9 @@ class _AppShellState extends State<AppShell>
                     wantFileName: p.basename(t.filePath));
               }();
           await RewampDb.downloadToLibrary(row);
-        }).then((_) {}, onError: (e) {
+        }).then((_) {
+          _prefetchDone.add(id);
+        }, onError: (e) {
           // Logged, not silent: a prefetch that never fires is invisible from
           // the UI — the track simply downloads late, which reads as "prefetch
           // does not work" with nothing to go on.
@@ -2565,8 +3121,10 @@ class _AppShellState extends State<AppShell>
           // A CANCEL is not a bad file: blacklisting it would keep this track
           // from ever being prefetched again this session.
           if (e is! DownloadCancelledException) _prefetchFailed.add(id);
-        }).whenComplete(
-            () { if (_prefetchingPath == id) _prefetchingPath = null; }));
+        }).whenComplete(() {
+          if (_prefetchingPath == id) _prefetchingPath = null;
+          _chainPrefetch();
+        }));
         return;   // one download ahead, same rule as below
       }
       if (it is! _OnlineItem) continue; // nothing to fetch for the rest
@@ -2579,18 +3137,31 @@ class _AppShellState extends State<AppShell>
       final rec = await LocalDb.instance.getTrackByOnlineId(r.songId);
       if (rec != null && await File(rec.filePath).exists()) continue;
       if (_prefetchFailed.contains(lp)) continue; // known-bad → try the one after
+      if (_prefetchDone.contains(lp)) continue;   // déjà servie ce tour-ci
       if (_prefetchingPath == lp) return;    // already prefetching this one
       _prefetchingPath = lp;
       unawaited(RewampDb.downloadToLibrary(r).then(
-        (_) {},
+        (path) {
+          _prefetchDone.add(lp);
+          // Une réussite qui ne se pose pas au chemin sondé est une anomalie
+          // de DONNÉE (la ligne nomme l'archive, ou l'archive et le catalogue
+          // ne s'accordent pas sur l'extension), pas une erreur: on la nomme
+          // pour qu'elle soit lisible, sans la traiter en échec.
+          if (path != lp) {
+            debugPrint('[prefetch] ${r.displayTitle}: servie hors du chemin '
+                'attendu ($lp) → $path');
+          }
+        },
         // Block body, not `=> _prefetchFailed.add(lp)`: Set.add returns bool,
         // but this then() yields Future<void> and a Future.then error handler
         // must return the future's own type — the bool tripped a runtime
         // "error handler must return a value of the returned future's type".
         onError: (e) { if (e is! DownloadCancelledException) _prefetchFailed.add(lp); },
-      ).whenComplete(
-          () { if (_prefetchingPath == lp) _prefetchingPath = null; }));
-      return; // only the next one — keep exactly one download ahead
+      ).whenComplete(() {
+        if (_prefetchingPath == lp) _prefetchingPath = null;
+        _chainPrefetch();
+      }));
+      return; // one at a time; _chainPrefetch decides whether to continue
     }
   }
 
@@ -2618,6 +3189,19 @@ class _AppShellState extends State<AppShell>
   /// subsong 6, not 0).
   static bool _isResolvedSubsong(SearchResult r) =>
       r.songId.contains('#') || r.resolvedSubsong;
+
+  /// Une ligne de palmarès (`topSubsongIndex` posé) est un conteneur qui
+  /// désigne son entrée la plus écoutée: ses sous-chansons dépliées sont
+  /// TOURNÉES pour démarrer là — même règle que le sous-chant de départ d'un
+  /// SID (rotateToDefaultSubsong), jamais une coupe. Entrée introuvable (slot
+  /// muet retiré, fichier changé) ⇒ liste inchangée, index 0.
+  static List<SearchResult> _rotateToTopEntry(
+      SearchResult container, List<SearchResult> rows) {
+    final top = container.topSubsongIndex;
+    if (top == null || rows.length < 2) return rows;
+    return rotateToDefaultSubsong(
+        rows, rows.indexWhere((x) => x.subsongIdx == top));
+  }
 
   Future<List<SearchResult>> _subsongEntries(SearchResult s,
       {bool eager = true}) async {
@@ -2673,25 +3257,66 @@ class _AppShellState extends State<AppShell>
         }
       } catch (_) {}
     }
+    // Même forme que la branche UADE ci-dessus, et pour la même raison: le
+    // serveur ne compte pas ces formats (`track_count: 1` par DÉFAUT, pas par
+    // constat — voir RewampDb.kNativeCountedContainerFormats), donc seul le
+    // décodeur sait. Sans cette branche un `.adl` téléchargé jouait sa
+    // sous-chanson 0, qui est la routine d'ARRÊT du pilote Westwood: RIEN,
+    // alors que le même fichier importé localement jouait ses 43 morceaux.
+    //
+    // ⚠️ La liste est CREUSE: on garde les index RENDUS, jamais 0..count-1.
+    final nativeCounted =
+        RewampDb.kNativeCountedContainerFormats.contains(
+            s.formatExt.toLowerCase());
+    if (nativeCounted && !eager) return [s];   // même report que UADE
+    if (nativeCounted) {
+      try {
+        final path = await RewampDb.downloadToLibrary(s);
+        final subs = _controller.audio.probeSubsongs(path);
+        if (subs.length > 1) {
+          idxs  = [for (final x in subs) x.subsongIdx];
+          count = idxs.length;
+          lensMs = {
+            for (final x in subs)
+              if ((x.durationMs ?? 0) > 0) x.subsongIdx: x.durationMs!,
+          };
+        }
+      } catch (_) {}
+    }
     // SID per-subsong STIL titles are filled ASYNC by _applyLocalSidMeta after
     // playback starts — NOT here: doing the download + get_sid_info RPC inline
     // blocked the queue build (a visible pause before a rail SID started). The
     // numbered fallback below is shown until STIL arrives.
     if (count > 1) {
-      final list = idxs ?? List.generate(count, (i) => i);
+      // ⚠️ Pas `0..count-1` d'office: SNDH et sc68 numérotent à partir de 1
+      // (voir RewampDb.kOneBasedSubsongExts).
+      final list =
+          idxs ?? RewampDb.genericSubsongIndices(s.formatExt, count);
       // No per-subsong metadata → still number the rows so they're distinct.
       // Le numéro est la POSITION dans la liste, pas l'index de sous-chanson:
       // une liste UADE a ses slots NOSOUND retirés, et c'est la position que
       // porte le nom partout ailleurs.
-      return [
+      final rows = [
         for (var k = 0; k < list.length; k++)
           s.withSubsong(list[k],
-              title: '${s.displayTitle} (${k + 1})',
+              title: '${s.subsongTitleBase} (${k + 1})',
               durationMs: lensMs?[list[k]]),
       ];
+      // Réglages → Lecture: écarter les sous-chansons trop courtes. Cette
+      // fonction n'a que des appelants qui REMPLISSENT la file, et ce qu'elle
+      // rend est par construction un jeu de sous-chansons d'UN fichier — les
+      // deux conditions du filtre. La numérotation, elle, reste celle de la
+      // liste ENTIÈRE: le nom d'une sous-chanson ne doit pas dépendre d'un
+      // réglage local (il est persisté, et deux appareils le compareraient).
+      final (kept, _) = filterQueueSubsongs<SearchResult>(rows, null,
+          minMs: minSubsongMs,
+          fileKey: (r) => '${r.songId.split('#').first}|${r.localPath ?? ''}',
+          durationMs: (r) => r.durationMs);
+      return kept;
     }
     return [s];
   }
+
 
   Future<void> _startAlbumQueue(
     BuildContext ctx,
@@ -2700,6 +3325,12 @@ class _AppShellState extends State<AppShell>
   }) async {
     if (songs.isEmpty) return;
     _exitRadio();
+    // Réglages → Lecture: écarter les sous-chansons trop courtes. Posé au
+    // REMPLISSAGE de la file — voir _filterQueueSubsongs et min_subsong.dart.
+    (songs, startIndex) = filterQueueSubsongs(songs, startIndex,
+        minMs: minSubsongMs,
+        fileKey: (r) => '${r.songId.split('#').first}|${r.localPath ?? ''}',
+        durationMs: (r) => r.durationMs);
     // A single multi-subsong file played whole ("Lire tous les subsongs") — the
     // queue is one container's subsongs. Remember it so the player offers the
     // subsong-list link. A real multi-file album leaves this null.
@@ -2731,6 +3362,20 @@ class _AppShellState extends State<AppShell>
     // why a re-launch already worked). One helper dispatches PSF vs zip.
     songs = await RewampDb.ensureAlbumExtracted(songs);
 
+    // Plafond de file. La fenêtre gardée CONTIENT la piste demandée — couper
+    // bêtement aux N premières casserait « lire l'album à partir de la piste
+    // 600 » — et le plafonnement se DIT (jamais de troncature silencieuse).
+    if (songs.length > kQueueLimit) {
+      final si = (startIndex ?? 0).clamp(0, songs.length - 1);
+      final from = math.min(si, songs.length - kQueueLimit);
+      songs = songs.sublist(from, from + kQueueLimit);
+      if (startIndex != null) startIndex = si - from;
+      if (mounted) {
+        AppSnack.show(context, context.l10n.queueLimitReached(kQueueLimit),
+            duration: const Duration(seconds: 4));
+      }
+    }
+
     final startTrack = (startIndex ?? 0).clamp(0, songs.length - 1);
     // Expand each track into its subsongs, tracking where the started track
     // lands. Only the started track (+ the immediate next) is expanded EAGERLY;
@@ -2743,7 +3388,8 @@ class _AppShellState extends State<AppShell>
     for (var t = 0; t < songs.length; t++) {
       if (t == startTrack) idx = items.length;
       final eager = t == startTrack || t == startTrack + 1;
-      final rows  = await _subsongEntries(songs[t], eager: eager);
+      final rows  = _rotateToTopEntry(
+          songs[t], await _subsongEntries(songs[t], eager: eager));
       final deferred = !eager &&
           rows.length == 1 &&
           UadeInfoService.isUadePath(rows.first.filename) &&
@@ -2768,6 +3414,7 @@ class _AppShellState extends State<AppShell>
       ..clear()
       ..addAll(items);
     _prefetchFailed.clear();
+    _prefetchDone.clear();
     _queueIdx = idx;
     if (_shuffleEnabled && startIndex != null) _shuffleQueue();
     _syncControllerQueue();
@@ -2830,17 +3477,64 @@ class _AppShellState extends State<AppShell>
   /// from the single lookup the first track paid for.
   String? _queueAlbumId;
 
+  /// Le NOM de l'album que [_queueAlbumId] désigne.
+  ///
+  /// ⚠️ Sans lui, l'emprunt était gardé par « la piste porte UN nom d'album »
+  /// (migration 48) — ce qui vérifie qu'elle appartient à un album, jamais
+  /// qu'elle appartient à CELUI-LÀ. Une piste ayant son propre album mais pas
+  /// encore d'uuid recevait donc l'uuid d'un album étranger, et cet id ne fait
+  /// pas que mal étiqueter: il DÉCIDE OÙ LE FICHIER EST TÉLÉCHARGÉ. Mesuré sur
+  /// la base réelle: 13 lignes partageant un `album_id` qui n'est pas le leur.
+  ///
+  /// Le nom ne sert qu'à VÉRIFIER la cohérence — l'identité reste l'uuid, deux
+  /// albums pouvant porter le même nom.
+  String? _queueAlbumName;
+
+  /// L'uuid d'album de la file, mais seulement s'il décrit bien [metaAlbum].
+  ///
+  /// Rend null dès que les deux ne s'accordent pas: un album de file qui
+  /// survit à la piste qui l'a posé ne doit rien estampiller.
+  String? _queueAlbumIdFor(String? metaAlbum) {
+    final name = (metaAlbum ?? '').trim();
+    if (name.isEmpty) return null;                 // pas de nom, pas d'identité
+    final own = (_queueAlbumName ?? '').trim();
+    if (own.isEmpty) return null;
+    return own.toLowerCase() == name.toLowerCase() ? _queueAlbumId : null;
+  }
+
   Future<void> _startLocalTrackQueue(
     BuildContext ctx,
     List<TrackRecord> tracks, {
     int? startIndex,
   }) async {
     if (tracks.isEmpty) return;
+    // Réglages → Lecture: écarter les sous-chansons trop courtes. AVANT le
+    // plafond, qui raisonne sur la liste qu'on va réellement enfiler.
+    (tracks, startIndex) = filterQueueSubsongs(tracks, startIndex,
+        minMs: minSubsongMs,
+        fileKey: (t) => t.filePath,
+        durationMs: (t) =>
+            t.durationS == null ? null : (t.durationS! * 1000).round());
+    // Même plafond que _startAlbumQueue, mêmes règles (fenêtre autour de la
+    // piste demandée, plafonnement annoncé).
+    if (tracks.length > kQueueLimit) {
+      final si = (startIndex ?? 0).clamp(0, tracks.length - 1);
+      final from = math.min(si, tracks.length - kQueueLimit);
+      tracks = tracks.sublist(from, from + kQueueLimit);
+      if (startIndex != null) startIndex = si - from;
+      if (mounted) {
+        AppSnack.show(context, context.l10n.queueLimitReached(kQueueLimit),
+            duration: const Duration(seconds: 4));
+      }
+    }
     _exitRadio();
-    _queueAlbumId = tracks
-        .map((t) => t.albumId)
-        .where((id) => id != null && id.isNotEmpty)
+    // La paire vient de la MÊME piste: un id pris chez l'une et un nom chez
+    // l'autre décrirait un album qui n'existe pas.
+    final withAlbum = tracks
+        .where((t) => (t.albumId ?? '').isNotEmpty)
         .firstOrNull;
+    _queueAlbumId   = withAlbum?.albumId;
+    _queueAlbumName = withAlbum?.metaAlbum;
     // TODO: reconstruct a container SearchResult from the local tracks so the
     // subsong link works on recent-album replay too; null for now (no link).
     _playingContainer = null;
@@ -2849,6 +3543,7 @@ class _AppShellState extends State<AppShell>
       ..clear()
       ..addAll([for (final t in tracks) _LocalItem(t, _seq())]);
     _prefetchFailed.clear();
+    _prefetchDone.clear();
     _queueIdx = idx;
     // Fresh "play all" with shuffle ON → first track random too (see
     // _startAlbumQueue); a tapped track stays first.
@@ -2944,7 +3639,8 @@ class _AppShellState extends State<AppShell>
   /// file was playing and the next queue entry took over.
   ///
   /// Must run BEFORE the file's DB rows are deleted (they resolve the entries).
-  Future<bool> _onTrackDeleted(String path, {bool asPrefix = false}) async {
+  Future<bool> _onTrackDeleted(String path,
+      {bool asPrefix = false, bool resume = true}) async {
     if (_queue.isEmpty) return false;
     // The entry that is PLAYING is also matched on the controller's own file
     // path — the cheapest and most reliable identity we have for it.
@@ -2982,10 +3678,19 @@ class _AppShellState extends State<AppShell>
     });
     _syncControllerQueue();
     _refreshQueueNav();
-    // The deleted track was playing: continue with the next queue entry.
-    // Nothing after it → report "no takeover" so the player tears itself down.
+    // L'entrée en cours vient de partir. Ce qui prend sa place ne se met à
+    // jouer QUE si on jouait déjà: supprimer un fichier pendant une pause ne
+    // demande pas à entendre le suivant, et ça s'entendait — effacer un dossier
+    // importé relançait le son. À l'arrêt on se contente d'ARMER la place
+    // libérée, comme la file restaurée au lancement.
+    //
+    // Rien derrière → « pas de reprise », et l'appelant replie le lecteur.
     if (removedCurrent && nextIdx >= 0 && nextIdx < _queue.length) {
-      _playAt(nextIdx);
+      if (resume) {
+        _playAt(nextIdx);
+      } else {
+        unawaited(_primeQueueEntry(_queue[nextIdx]));
+      }
       return true;
     }
     return false;
@@ -3036,9 +3741,26 @@ class _AppShellState extends State<AppShell>
                     stilTitle: s.title,
                     stilArtist: s.artist,
                     stilComment: s.comment,
+                    stilCovers: s.covers,
                   ))
               .toList();
-          await LocalDb.instance.upsertSidInfoCache(md5, subsongs);
+          // Le bloc STIL de l'ENTRÉE part au cache avec la liste: sans lui,
+          // le COMMENT du fichier — l'histoire que Rob Hubbard raconte sur
+          // « Commando » — n'atteignait jamais le panneau ⓘ, alors que le
+          // serveur le rend.
+          final g = info.stilGlobal;
+          await LocalDb.instance.upsertSidInfoCache(md5, subsongs,
+              global: g == null
+                  ? null
+                  : SidSubsongCache(
+                      idx: 0,
+                      stilName:    g.name,
+                      stilAuthor:  g.author,
+                      stilTitle:   g.title,
+                      stilArtist:  g.artist,
+                      stilComment: g.comment,
+                      stilCovers:  g.covers,
+                    ));
           cached = subsongs;
         } else {
           // Server returned nothing — cache empty sentinel so we don't retry
@@ -3063,20 +3785,23 @@ class _AppShellState extends State<AppShell>
           durationS: durS,
           title: sub.stilName,
           artist: sub.stilAuthor,
+          // Défait le résidu d'avant la migration 60 — voir updateSidTrackMeta.
+          coverArtist: sub.stilArtist,
         );
       }
 
-      // Update queue panel entries with STIL titles (0-based subsong_idx =
-      // queue position, since getTracksForFile orders by subsong_idx ASC).
+      // Titres STIL dans le panneau de file — par FICHIER et par SOUS-CHANSON,
+      // jamais par position: la file peut être un mélange de morceaux sans
+      // rapport (rail « Vos tendances »), où l'entrée 0 n'a rien à voir avec la
+      // sous-chanson 0 de ce fichier-ci.
       final queueUpdates = <int, String>{};
       for (final sub in cached) {
-        final qIdx = sub.idx - 1; // 1-based → 0-based
         if (sub.stilName != null && sub.stilName!.isNotEmpty) {
-          queueUpdates[qIdx] = sub.stilName!;
+          queueUpdates[sub.idx - 1] = sub.stilName!;   // 1-based → 0-based
         }
       }
       if (queueUpdates.isNotEmpty) {
-        _controller.updateQueueEntries(queueUpdates);
+        _controller.updateQueueEntries(filePath, queueUpdates);
       }
 
       // Apply to the live controller if still playing this file.
@@ -3128,11 +3853,11 @@ class _AppShellState extends State<AppShell>
   Widget _phoneChrome(BuildContext context, ColorScheme cs,
       List<NavigationDestination> barDestinations) {
     // Filled variants, aligned with barDestinations' selectedIcons.
-    const navIcons = [
-      Icons.home,
-      Icons.search,
-      Icons.library_music,
-      Icons.bar_chart,
+    // L'icône de la pastille condensée: celle de l'onglet courant quand il est
+    // dans la barre, sinon le « Plus » — la barre étant désormais un RÉGLAGE,
+    // une liste figée y aurait montré l'icône d'un autre onglet.
+    final navIcons = [
+      for (final t in _barTabs) t.selectedIcon,
       Icons.more_horiz,
     ];
     return AnimatedBuilder(
@@ -3282,8 +4007,8 @@ class _AppShellState extends State<AppShell>
                                     surfaceTintColor: Colors.transparent,
                                     elevation: 0,
                                     shadowColor: Colors.transparent,
-                                    // Settings(4)/About(5) partagent « Plus ».
-                                    selectedIndex: _index >= 4 ? 4 : _index,
+                                    // Les onglets hors barre partagent « Plus ».
+                                    selectedIndex: _barSelectedIndex,
                                     onDestinationSelected: _onBarSelected,
                                     destinations: barDestinations,
                                   ),
@@ -3304,7 +4029,7 @@ class _AppShellState extends State<AppShell>
                             onTap: () => _setChromeCondensed(false),
                             child: Center(
                               child: Icon(
-                                navIcons[_index >= 4 ? 4 : _index],
+                                navIcons[_barSelectedIndex],
                                 size: 34,
                                 color: _kBrandPink,
                               ),
@@ -3324,12 +4049,25 @@ class _AppShellState extends State<AppShell>
     );
   }
 
-  // Bottom bar routing. Slots 0-3 are direct tabs; slot 4 ("More") is not a
-  // tab but the overflow group {Settings=4, About=5} that doesn't fit a phone
-  // bottom bar → it opens a picker sheet instead of switching directly.
+  // La barre du bas est PILOTÉE PAR LE RÉGLAGE d'ordre (shell_tabs.dart): les
+  // quatre premiers onglets y sont, le reste vit sous « Plus ». Rien n'est plus
+  // codé en dur ici — un onglet ajouté ou déplacé n'a que l'ordre à changer.
+  List<ShellTab> get _phoneOrder => UserSettings.instance.phoneTabOrder;
+  List<ShellTab> get _barTabs => splitPhoneTabs(_phoneOrder).$1;
+  List<ShellTab> get _overflowTabs => splitPhoneTabs(_phoneOrder).$2;
+
+  /// L'emplacement SÉLECTIONNÉ dans la barre: la position de l'onglet courant
+  /// quand il y est, sinon le « Plus » (dernier emplacement).
+  int get _barSelectedIndex {
+    final at = _barTabs.indexWhere((t) => t.index == _index);
+    return at < 0 ? kPhoneBarSlots : at;
+  }
+
+  /// Slot 0..3 = un onglet; le dernier n'est pas un onglet mais l'ouverture du
+  /// reste (une barre de téléphone ne tient pas sept destinations).
   void _onBarSelected(int i) {
-    if (i < 4) {
-      _onTabSelected(i);
+    if (i < _barTabs.length) {
+      _onTabSelected(_barTabs[i].index);
     } else {
       _showMoreMenu();
     }
@@ -3343,25 +4081,17 @@ class _AppShellState extends State<AppShell>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: Icon(
-                  _index == 4 ? Icons.settings : Icons.settings_outlined),
-              title: Text(l10n.navSettings),
-              selected: _index == 4,
-              onTap: () {
-                Navigator.pop(ctx);
-                _onTabSelected(4);
-              },
-            ),
-            ListTile(
-              leading: Icon(_index == 5 ? Icons.info : Icons.info_outline),
-              title: Text(l10n.navAbout),
-              selected: _index == 5,
-              onTap: () {
-                Navigator.pop(ctx);
-                _onTabSelected(5);
-              },
-            ),
+            for (final t in _overflowTabs)
+              ListTile(
+                leading: Icon(
+                    _index == t.index ? t.selectedIcon : t.icon),
+                title: Text(t.label(l10n)),
+                selected: _index == t.index,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _onTabSelected(t.index);
+                },
+              ),
             // Download queue — live counter, pause/resume/edit inside.
             ListenableBuilder(
               listenable: Listenable.merge(
@@ -3395,7 +4125,9 @@ class _AppShellState extends State<AppShell>
 
   /// Index de la ligne « Téléchargements » du rail: la dernière, après les six
   /// vrais onglets. Elle ne se SÉLECTIONNE pas — elle pousse un écran.
-  static const _kDownloadsRailIndex = 6;
+  // Après le dernier onglet: le rail porte une destination de PLUS que les
+  // onglets (Téléchargements pousse un écran, la sélection n'y va jamais).
+  static final _kDownloadsRailIndex = ShellTab.values.length;
 
   void _onTabSelected(int i) {
     if (i == _kDownloadsRailIndex) {
@@ -3408,14 +4140,14 @@ class _AppShellState extends State<AppShell>
       // Already on this tab → pop to its root
       _navKeys[i].currentState?.popUntil((route) => route.isFirst);
       // Re-selecting the search tab also resets every search criterion.
-      if (i == 1) _searchResetTick.value++;
+      if (i == ShellTab.search.index) _searchResetTick.value++;
       // Re-tapping home is the manual refresh gesture (there's no pull-to-
       // refresh: the home scroll view is a full-bleed shader-masked stack).
-      if (i == 0) HomeRefresh.instance.refresh(force: true);
+      if (i == ShellTab.home.index) HomeRefresh.instance.refresh(force: true);
     } else {
       setState(() => _index = i);
       // Coming back to home: refetch if the data has gone stale.
-      if (i == 0) HomeRefresh.instance.refresh();
+      if (i == ShellTab.home.index) HomeRefresh.instance.refresh();
     }
   }
 
@@ -3431,7 +4163,12 @@ class _AppShellState extends State<AppShell>
     // it directly; songId lets each subsong resolve its cached track for play).
     final fp       = _controller.filePath;
     final onlineId = _controller.currentOnlineId;
-    if (fp == null || onlineId == null) return null;
+    // ⚠️ PAS d'`onlineId` requis: un fichier PUREMENT LOCAL a lui aussi des
+    // sous-chansons, et l'écran de conteneur les gère (songId vide = conteneur
+    // local, `_openSubsongList` clefe alors sur le chemin). Exiger un id
+    // privait tout SID/NSF/module local du lien « sous-chansons » — et avec
+    // lui du NOM DU FICHIER dans le lecteur, qui vient de là.
+    if (fp == null) return null;
     // The native probe cannot count UADE subsongs — only the songdb knows —
     // so it answers 1 for every Amiga module and the subsong link never
     // appeared on a TFMX/AHX file. Fall back to what the songdb already told
@@ -3446,7 +4183,9 @@ class _AppShellState extends State<AppShell>
     if (count <= 1) return null;
     final artist = _controller.currentArtist;
     return SearchResult(
-      songId:       onlineId,
+      // '' = conteneur purement local, la convention que lisent
+      // `_openSubsongList` et ContainerSubsongScreen.
+      songId:       onlineId ?? '',
       // Container-level name, NOT _controller.fileName (which is the CURRENT
       // subsong's title after STIL merge) — otherwise the subsong list would
       // fall back to that one name for every row. Per-subsong titles still
@@ -3504,6 +4243,67 @@ class _AppShellState extends State<AppShell>
       if (token != _playerIntentSeq) return;   // expired: the user moved on
       _openFullPlayer();
     });
+  }
+
+  /// L'écran d'ALBUM, sur l'onglet courant. Extrait d'une lambda pour que la
+  /// feuille de choix puisse l'atteindre elle aussi ([globalOnNavigateAlbum]):
+  /// « Voir l'album » n'a pas à être recodé dans chaque liste.
+  void _pushAlbumScreen(String albumName,
+      {String? collection, String? platform, String? artworkUrl,
+       String? albumId}) {
+    _pushOnTab('album:${albumId ?? albumName}', (ctx) => AlbumDetailScreen(
+        albumName:       albumName,
+        albumId:         albumId,
+        platformName:    platform,
+        collectionSlug:  collection,
+        artworkUrl:      artworkUrl,
+        onTap:           (c, r) => _downloadAndPlayOnline(c, r),
+        onPlayAlbum:     _startAlbumQueue,
+        onPlayLocalAlbum: _startLocalTrackQueue,
+        onQueueAdd:      _onQueueAdd,
+        onAlbumQueueAdd: _onAlbumQueueAdd,
+        onArtistTap:     (name) => Navigator.of(ctx).push(MaterialPageRoute(
+          builder: (_) => ArtistResultsScreen(
+            artistName:      name,
+            onTap:           (c, r) => _downloadAndPlayOnline(c, r),
+            onPlayAlbum:     _startAlbumQueue,
+            onQueueAdd:      _onQueueAdd,
+            onAlbumQueueAdd: _onAlbumQueueAdd,
+            onNavigateTag:   _pushTagSearch,
+          ),
+        )),
+    ));
+  }
+
+  /// La liste des sous-chansons d'une ligne LOCALE (rails d'accueil, stats,
+  /// bibliothèque): on fabrique le conteneur ICI, où vit déjà la règle
+  /// d'identité — `songId` VIDE veut dire « conteneur purement local », la
+  /// convention que lisent `_openSubsongList` et ContainerSubsongScreen.
+  ///
+  /// ⚠️ `localPath` est ce qui compte: l'écran SONDE le fichier. Et le titre
+  /// passe par `UadeInfoService.displayName`, pas par un basename sans
+  /// extension — un nom Amiga porte son FORMAT avant le point
+  /// (« mdat.monkey island »), dont le second rendrait « mdat ».
+  void _openSubsongListForTrack(TrackRecord t) {
+    if (t.filePath.isEmpty) return;
+    _openSubsongList(SearchResult(
+      songId:       t.onlineId ?? '',
+      collection:   t.collectionSlug ?? '',
+      title:        UadeInfoService.displayName(t.filePath),
+      filename:     p.basename(t.filePath),
+      album:        t.metaAlbum,
+      albumId:      t.albumId,
+      formatExt:    t.formatExt ?? '',
+      downloadUrl:  null,
+      fileSize:     0,
+      year:         t.year,
+      artistNames:  [if (t.artist != null && t.artist!.isNotEmpty) t.artist!],
+      totalCount:   -1,
+      platform:     t.platformName,
+      artworkUrl:   t.artworkUrl,
+      subsongCount: t.subsongCount,
+      localPath:    t.filePath,
+    ));
   }
 
   void _openSubsongList(SearchResult container) {
@@ -3599,42 +4399,46 @@ class _AppShellState extends State<AppShell>
   /// The player widget itself. Built fresh on each frame the overlay is
   /// mounted; every navigation callback closes it through `onHostClose`.
   PlayerScreen _buildPlayerScreen() {
-    final container = _currentContainerResult();
     return PlayerScreen(
       controller:    _controller,
       onHostClose:   _closePlayerOverlay,
       hostController: _playerCtrl,
-      onNavigateSubsongs:
-          container == null ? null : () => _openSubsongList(container),
+      // ⚠️ Résolu À L'APPEL, jamais capturé: ce widget est bâti UNE fois (il
+      // est le `child:` de l'AnimatedBuilder du overlay, exprès — le sous-arbre
+      // est lourd), donc un conteneur capturé ici survivait au changement de
+      // piste. Le rappel, lui, redemande à chaque build du lecteur.
+      onNavigateSubsongs: () {
+        final c = _currentContainerResult();
+        if (c != null) _openSubsongList(c);
+      },
       // Le NOM du conteneur, pour que la ligne d'album l'affiche au lieu d'un
       // libellé générique quand le fichier n'appartient à aucun album — le cas
       // de hvsc/asma/modland.
-      subsongContainerName: container?.displayTitle,
+      // `containerName` et non `displayTitle`: la ligne d'un conteneur EST
+      // celle de sa sous-chanson 0, qui porte son propre titre (STIL nomme la
+      // piste 1 de « One Man and his Droid » « Space Game ») — voir
+      // SearchResult.containerName.
+      subsongContainerName: () => _currentContainerResult()?.containerName,
       onRedownload: _redownloadCurrentTrack,
-      onNavigateAlbum: (albumName, {collection, platform, artworkUrl, albumId}) {
-        _pushOnTab('album:${albumId ?? albumName}', (ctx) => AlbumDetailScreen(
-            albumName:       albumName,
-            albumId:         albumId,
-            platformName:    platform,
-            collectionSlug:  collection,
-            artworkUrl:      artworkUrl,
-            onTap:           (c, r) => _downloadAndPlayOnline(c, r),
-            onPlayAlbum:     _startAlbumQueue,
-            onPlayLocalAlbum: _startLocalTrackQueue,
-            onQueueAdd:      _onQueueAdd,
-            onAlbumQueueAdd: _onAlbumQueueAdd,
-            onArtistTap:     (name) => Navigator.of(ctx).push(MaterialPageRoute(
-              builder: (_) => ArtistResultsScreen(
-                artistName:      name,
-                onTap:           (c, r) => _downloadAndPlayOnline(c, r),
-                onPlayAlbum:     _startAlbumQueue,
-                onQueueAdd:      _onQueueAdd,
-                onAlbumQueueAdd: _onAlbumQueueAdd,
-                onNavigateTag:   _pushTagSearch,
-              ),
-            )),
-        ));
+      // Raccourci vers l'onglet Réglages: le lecteur est un OVERLAY, il se
+      // ferme (comme pour album/artiste) puis on bascule d'onglet — pousser
+      // une route par-dessus laisserait le lecteur monté derrière.
+      // ⚠️ JAMAIS un index LITTÉRAL: l'index d'un onglet est celui de son
+      // rang dans l'enum, et insérer un onglet au milieu les décale tous.
+      // C'est arrivé — « Local » ajouté en 3e position a fait pointer ce
+      // raccourci sur STATS (4 = Réglages avant, Stats après), et le menu
+      // « … » du lecteur ouvrait le mauvais écran sans rien signaler.
+      onNavigateSettings: () => _onTabSelected(ShellTab.settings.index),
+      // Réglages du MOTEUR: poussés DANS l'onglet courant, pas sur le
+      // navigateur racine. C'est ce qui les affiche avec le mini-lecteur — un
+      // push racine recouvre toute la coquille —, et `_pushOnTab` arme en plus
+      // la promesse de retour au lecteur plein écran.
+      onNavigateEngineSettings: (slug) {
+        final screen = engineSettingsScreen(slug);
+        if (screen == null) return;
+        _pushOnTab('engine-settings:$slug', (_) => screen);
       },
+      onNavigateAlbum: _pushAlbumScreen,
       onNavigateArtist: (artistName, {collection, artistId}) {
         _pushOnTab('artist:${artistId ?? artistName}', (_) => ArtistResultsScreen(
           artistName:      artistName,
@@ -3661,10 +4465,33 @@ class _AppShellState extends State<AppShell>
 
   @override
   Widget build(BuildContext context) {
+    // Mini lecteur (bureau): l'hôte met la coquille HORS SCÈNE sans la
+    // démonter — la file vit dans CET état. Le `Builder` donne à la coquille
+    // un contexte SOUS le MediaQuery gelé de l'hôte, sinon elle lirait la
+    // largeur de la fenêtre rétrécie et basculerait en disposition téléphone.
+    return MiniWindowHost(
+      mini: MiniWindowPlayer(controller: _controller),
+      child: Builder(builder: _buildShell),
+    );
+  }
+
+  Widget _buildShell(BuildContext context) {
     final l10n = context.l10n;
     final cs = Theme.of(context).colorScheme;
     final width = MediaQuery.sizeOf(context).width;
     final isDesktop = width >= _desktopBreakpoint;
+    // Clavier virtuel ouvert: le chrome du bas (mini-lecteur + barre de
+    // navigation) s'efface le temps de la saisie. Sur un téléphone il occupe
+    // ~120 px sous un clavier qui en prend déjà la moitié de l'écran, et ce
+    // n'est jamais ce qu'on regarde en tapant — la croix d'annulation du champ
+    // (voir CancelField) est la contrepartie: c'est elle qui referme le
+    // clavier, donc qui rend le chrome.
+    //
+    // La mesure est prise ICI, AU-DESSUS du Scaffold: son `body` est déjà
+    // redimensionné pour éviter le clavier, ce qui met à zéro le `viewInsets`
+    // que voient ses descendants — le lire plus bas répondrait toujours « pas
+    // de clavier ».
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final extendRail = width >= _kExtendedNavRailBreakpoint;
     // A single-track play leaves the queue empty; the panel then shows a
     // one-entry stand-in for the loaded track (see _sidebarQueue), so the
@@ -3681,7 +4508,7 @@ class _AppShellState extends State<AppShell>
       index: _index,
       children: [
         for (int i = 0; i < _screens.length; i++)
-          i == 0
+          i == ShellTab.home.index
               ? _screens[i]
               : AnimatedPadding(
                   duration: const Duration(milliseconds: 200),
@@ -3692,37 +4519,17 @@ class _AppShellState extends State<AppShell>
       ],
     );
 
+    // Le rail montre TOUS les onglets, dans l'ordre canonique (celui de
+    // `ShellTab`, qui est aussi celui des écrans): un rail n'a pas de « Plus »,
+    // et la place ne manque pas.
     final railDestinations = <NavigationRailDestination>[
-      NavigationRailDestination(
-        icon: const Icon(Icons.home_outlined),
-        selectedIcon: const Icon(Icons.home),
-        label: Text(l10n.navHome),
-      ),
-      NavigationRailDestination(
-        icon: const Icon(Icons.search_outlined),
-        selectedIcon: const Icon(Icons.search),
-        label: Text(l10n.navSearch),
-      ),
-      NavigationRailDestination(
-        icon: const Icon(Icons.library_music_outlined),
-        selectedIcon: const Icon(Icons.library_music),
-        label: Text(l10n.navLibrary),
-      ),
-      NavigationRailDestination(
-        icon: const Icon(Icons.bar_chart_outlined),
-        selectedIcon: const Icon(Icons.bar_chart),
-        label: Text(l10n.navStats),
-      ),
-      NavigationRailDestination(
-        icon: const Icon(Icons.settings_outlined),
-        selectedIcon: const Icon(Icons.settings),
-        label: Text(l10n.navSettings),
-      ),
-      NavigationRailDestination(
-        icon: const Icon(Icons.info_outline),
-        selectedIcon: const Icon(Icons.info),
-        label: Text(l10n.navAbout),
-      ),
+      for (final t in kShellTabsDefault)
+        NavigationRailDestination(
+          icon: Icon(t.icon),
+          selectedIcon: Icon(t.selectedIcon),
+          label: Text(t.label(l10n),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
       // Téléchargements: pas un onglet (la sélection n'y va jamais, la ligne
       // pousse un écran), mais une VRAIE destination quand même. Posée en
       // `trailing`, il fallait refaire à la main l'alignement, la typographie
@@ -3742,29 +4549,14 @@ class _AppShellState extends State<AppShell>
     // 38×38 dessiné par _NavSquareIcon — plein à la sélection, fantôme au
     // survol (le voile natif, coupé, avait la forme du rectangle 64×32).
     final barDestinations = <NavigationDestination>[
-      NavigationDestination(
-        icon: const _NavSquareIcon(Icons.home_outlined),
-        selectedIcon: const _NavSquareIcon(Icons.home, selected: true),
-        label: l10n.navHome,
-      ),
-      NavigationDestination(
-        icon: const _NavSquareIcon(Icons.search_outlined),
-        selectedIcon: const _NavSquareIcon(Icons.search, selected: true),
-        label: l10n.navSearch,
-      ),
-      NavigationDestination(
-        icon: const _NavSquareIcon(Icons.library_music_outlined),
-        selectedIcon:
-            const _NavSquareIcon(Icons.library_music, selected: true),
-        label: l10n.navLibrary,
-      ),
-      NavigationDestination(
-        icon: const _NavSquareIcon(Icons.bar_chart_outlined),
-        selectedIcon: const _NavSquareIcon(Icons.bar_chart, selected: true),
-        label: l10n.navStats,
-      ),
-      // 5th slot stands in for the {Settings, About} overflow group (a phone
-      // bottom bar can't hold 6 comfortably) — tapping it opens a picker sheet.
+      for (final t in _barTabs)
+        NavigationDestination(
+          icon: _NavSquareIcon(t.icon),
+          selectedIcon: _NavSquareIcon(t.selectedIcon, selected: true),
+          label: t.label(l10n),
+        ),
+      // Dernier emplacement: le groupe qui ne tient pas dans la barre d'un
+      // téléphone — il ouvre une feuille au lieu de basculer directement.
       NavigationDestination(
         icon: const _NavDownloadBadge(
             child: _NavSquareIcon(Icons.more_horiz)),
@@ -3793,7 +4585,7 @@ class _AppShellState extends State<AppShell>
       onDragExited:  (_) { if (mounted) setState(() => _dragOver = false); },
       onDragDone: (detail) async {
         if (mounted) setState(() => _dragOver = false);
-        await _openLocalPaths([for (final f in detail.files) f.path]);
+        await _openDroppedItems(detail.files);
       },
       child: Stack(children: [
         Scaffold(
@@ -3815,8 +4607,10 @@ class _AppShellState extends State<AppShell>
                 indicatorColor: cs.secondaryContainer.withValues(alpha: 0.6),
                 selectedIconTheme:
                     const IconThemeData(color: _kBrandPink),
-                selectedLabelTextStyle: const TextStyle(
-                    color: _kBrandPink, fontWeight: FontWeight.w600),
+                // Un style brut REMPLACE le style hérité ici: sans l'aide, le
+                // libellé sélectionné perdait le repli CJK (font_fallback.dart).
+                selectedLabelTextStyle: withCjkFallback(const TextStyle(
+                    color: _kBrandPink, fontWeight: FontWeight.w600)),
               ),
               const VerticalDivider(width: 1, thickness: 1),
             ],
@@ -3842,29 +4636,67 @@ class _AppShellState extends State<AppShell>
                     builder: (context, child) => MediaQuery(
                       data: MediaQuery.of(context).copyWith(
                         padding: MediaQuery.of(context).padding.copyWith(
+                              // La réserve ne vaut que ce que le chrome
+                              // RECOUVRE encore. Il attend au bas de la fenêtre
+                              // pendant que le clavier est là (voir la note du
+                              // Transform plus bas), donc la part qui mord sur
+                              // le contenu est ce qui dépasse du clavier — et
+                              // elle grandit CONTINÛMENT à mesure qu'il se
+                              // referme. Une bascule tout-ou-rien sur « clavier
+                              // présent » ferait sauter le contenu d'un bloc à
+                              // la toute fin de l'animation, le pop qu'on vient
+                              // d'enlever au chrome lui-même.
                               bottom: MediaQuery.of(context).padding.bottom +
-                                  (isDesktop
-                                      ? _kGlassInset
-                                      : _kNavBarHeight +
-                                          _kNavBarLift +
-                                          _kGlassGap) +
-                                  (_controller.hasFile
-                                      ? (1 - _chromeT.value) *
-                                          (_kMiniPlayerHeight + _kGlassGap)
-                                      : 0),
+                                  math.max(
+                                      0.0,
+                                      (isDesktop
+                                              ? _kGlassInset
+                                              : _kNavBarHeight +
+                                                  _kNavBarLift +
+                                                  _kGlassGap) +
+                                          (_controller.hasFile
+                                              ? (1 - _chromeT.value) *
+                                                  (_kMiniPlayerHeight +
+                                                      _kGlassGap)
+                                              : 0) -
+                                          keyboardInset),
                             ),
                       ),
                       child: child!,
                     ),
                     // Un scroll vertical, n'importe où dans le contenu,
-                    // condense le chrome (façon Apple Music); revenir TOUT EN
-                    // HAUT le ré-étend, comme le tap sur l'icône condensée ou
-                    // un changement d'onglet.
+                    // condense le chrome (façon Apple Music); le chrome ne se
+                    // ré-étend QUE si l'utilisateur revient TOUT EN HAUT, ou
+                    // par le tap sur l'icône condensée / un changement
+                    // d'onglet. Il ne se ré-étend JAMAIS tout seul.
+                    //
+                    // ⚠️ Le scroll qui pilote le chrome est celui que le DOIGT
+                    // manipule, et rien d'autre. Les titres de cartes de
+                    // l'accueil sont des MarqueeText VERTICAUX: leur retour
+                    // animé émet un ScrollUpdateNotification vertical à
+                    // pixels == 0, indistinguable ici d'un « revenu tout en
+                    // haut » — le chrome se défaisait donc tout seul une
+                    // seconde ou deux après l'arrêt du scroll. On retient donc
+                    // la PROFONDEUR du scrollable dont le drag a démarré
+                    // (dragDetails non nul: une animation de marquee n'en a
+                    // pas) et on n'écoute que celui-là, jusqu'à la fin de son
+                    // activité balistique.
                     child: NotificationListener<ScrollNotification>(
                       onNotification: (n) {
                         if (isDesktop || !_controller.hasFile) return false;
                         if (n.metrics.axis != Axis.vertical) return false;
+                        if (n is ScrollStartNotification) {
+                          if (n.dragDetails != null) _chromeDragDepth = n.depth;
+                          return false;
+                        }
+                        if (n is ScrollEndNotification) {
+                          if (n.depth == _chromeDragDepth) {
+                            _chromeDragDepth = null;
+                          }
+                          return false;
+                        }
                         if (n is! ScrollUpdateNotification) return false;
+                        if (n.depth != _chromeDragDepth) return false;
                         final atTop = n.metrics.pixels <=
                             n.metrics.minScrollExtent + 1;
                         if (atTop) {
@@ -3971,6 +4803,38 @@ class _AppShellState extends State<AppShell>
                     // doit pas toucher le bas de la fenêtre pour autant.
                     bottom: (isDesktop ? _kGlassInset : _kNavBarLift) +
                         MediaQuery.of(context).padding.bottom,
+                    // Le chrome ATTEND SOUS le clavier au lieu de disparaître.
+                    //
+                    // Le démonter tant que `viewInsets.bottom > 0` le faisait
+                    // « pop » à la fin: cet inset ne tombe pas d'un coup, il
+                    // décroît sur toute l'animation de fermeture du clavier, et
+                    // le seuil n'est franchi qu'au dernier instant — le chrome
+                    // apparaissait donc d'un bloc une fois le clavier parti.
+                    //
+                    // Le `body` du Scaffold est déjà rétréci pour éviter le
+                    // clavier: sans rien faire, le chrome se poserait SUR le
+                    // clavier (ce qu'on ne veut pas non plus). On le retranslate
+                    // donc de la hauteur exacte de l'inset, ce qui le remet au
+                    // bas de la FENÊTRE — hors champ derrière le clavier, et il
+                    // remonte en verrouillage avec lui, sans transition à nous.
+                    // Rien à masquer: le clavier est une surface du SYSTÈME,
+                    // dessinée par-dessus la fenêtre.
+                    // Une fois le chrome ENTIÈREMENT hors fenêtre, on cesse
+                    // de le peindre: sa dalle de verre porte un BackdropFilter,
+                    // qu'il serait dommage de payer à chaque frame de frappe.
+                    // Le seuil est franchi alors qu'il est déjà invisible, donc
+                    // ça ne réintroduit aucun « pop » — et `Offstage` garde
+                    // l'état (le sous-arbre porte un GlobalKey, il ne doit
+                    // surtout pas être désactivé).
+                    child: Offstage(
+                    offstage: keyboardInset >
+                        _kNavBarHeight +
+                            _kNavBarLift +
+                            _kGlassGap +
+                            _kMiniPlayerHeight +
+                            MediaQuery.of(context).padding.bottom,
+                    child: Transform.translate(
+                    offset: Offset(0, keyboardInset),
                     child: AnimatedPadding(
                       duration: const Duration(milliseconds: 200),
                       curve: Curves.easeInOut,
@@ -3993,6 +4857,10 @@ class _AppShellState extends State<AppShell>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const DownloadBanner(),
+                          // Import / suppression locale en cours (LocalOps):
+                          // visible d'où qu'on soit, pas seulement sur
+                          // l'écran Local.
+                          const LocalOpsBanner(),
                           // Carried up with the opening player while the two
                           // cross-fade, so the bar does not sit still under a
                           // screen that is visibly growing out of it.
@@ -4013,6 +4881,8 @@ class _AppShellState extends State<AppShell>
                             _phoneChrome(context, cs, barDestinations),
                         ],
                       ),
+                    ),
+                    ),
                     ),
                   ),
 

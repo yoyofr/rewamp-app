@@ -11,6 +11,7 @@ import 'podium_badge.dart';
 import 'hover_grow.dart';
 import 'local_db.dart';
 import 'rewamp_db.dart';
+import 'scrolling_text.dart';
 import 'track_options_sheet.dart';
 
 /// THE canonical song row — used by search results, browse lists, artist
@@ -23,6 +24,22 @@ import 'track_options_sheet.dart';
 /// and the '…' options sheet. Previously duplicated as search's _SongTile and
 /// browse's _BrowseSongTile, which had drifted apart (no star / no album row /
 /// missing album navigation depending on the copy).
+/// La ligne de sous-titre d'une tuile de morceau: ce que le morceau EST.
+///
+/// ⚠️ La COLLECTION n'y est PAS — elle dit d'où il vient, pas ce qu'il est, et
+/// elle a sa propre ligne en dessous. L'y remettre la noierait au milieu de six
+/// autres mentions, ce qui était le cas avant et la rendait illisible sur une
+/// recherche qui brasse dix collections.
+String songTileSubtitle(SearchResult r) => [
+      if (r.matchSubsongTitle != null) r.displayTitle,
+      if (r.artistLabel.isNotEmpty) r.artistLabel,
+      if (r.album != null && r.album!.isNotEmpty && r.album != r.displayTitle)
+        r.album,
+      if (r.platform != null && r.platform!.isNotEmpty) r.platform,
+      if (r.formatExt.isNotEmpty) r.formatExt.toUpperCase(),
+      if (r.fileSize > 0) r.fileSizeLabel,
+    ].join(' · ');
+
 class SongTile extends StatefulWidget {
   final SearchResult result;
   final Future<void> Function(BuildContext, SearchResult) onTap;
@@ -34,8 +51,9 @@ class SongTile extends StatefulWidget {
   /// same options sheet on long-press). [small] = compact grid.
   final bool grid;
   final bool small;
-  /// Mention the row's collection in the subtitle — used by lists that mix
-  /// several collections (artist screen).
+  /// Montre la COLLECTION de la ligne, sur une seconde ligne de sous-titre en
+  /// petit — pour les listes qui en mélangent plusieurs (recherche, écran
+  /// artiste, écran groupe).
   final bool showCollection;
 
   /// Whether a row may be treated as a WHOLE ALBUM (tap opens the album, and
@@ -100,7 +118,11 @@ class _SongTileState extends State<SongTile> {
     final r = widget.result;
     final choice = await showPlayChoiceSheet(ctx,
         title: row.displayTitle,
-        subtitle: r.artistLabel.isEmpty ? null : r.artistLabel);
+        subtitle: r.artistLabel.isEmpty ? null : r.artistLabel,
+        // La ligne elle-même: la feuille y lit de quoi proposer « Voir
+        // l'album » / « Voir les subsongs ». `r` et non `row` — `row` est la
+        // ligne RÉSOLUE pour la lecture, `r` porte l'identité du conteneur.
+        result: r);
     if (choice == null || !ctx.mounted) return;
     if (choice == PlayChoice.now) {
       // « Lire maintenant » REMPLACE la file — c'est sa promesse, et le popup
@@ -187,35 +209,11 @@ class _SongTileState extends State<SongTile> {
     // container (GBS). Server sets match_track_* only when the track beat the
     // title/album match.
     if (r.matchSubsongTitle != null) {
-      if (r.albumId != null) {
-        try {
-          final tracks = await RewampDb.albumTracks(albumId: r.albumId!);
-          if (tracks.isNotEmpty) {
-            final rows = RewampDb.subsongRowsFromServer(tracks.first);
-            SearchResult? pick;
-            if (r.matchSubsongIndex != null) {
-              for (final x in rows) {
-                if (x.subsongIdx == r.matchSubsongIndex) { pick = x; break; }
-              }
-            }
-            pick ??= () {
-              for (final x in rows) {
-                if (x.title == r.matchSubsongTitle) return x;
-              }
-              return null;
-            }();
-            if (pick != null && context.mounted) {
-              await _playOrQueue(context, pick);
-              return;
-            }
-          }
-        } catch (_) {}
-      }
-      // Fallback (no album_id): single-file subsong via the player index.
-      if (context.mounted) {
-        await _playOrQueue(context,
-            r.matchSubsongIndex != null ? r.withSubsong(r.matchSubsongIndex!) : r);
-      }
+      // Une seule définition de « quelle piste le serveur a nommé » —
+      // partagée avec « Tout lire » (RewampDb.resolveMatchedTracks), sinon les
+      // deux chemins divergent et le bouton joue autre chose que le tap.
+      final pick = await RewampDb.resolveMatchedTrack(r);
+      if (context.mounted) await _playOrQueue(context, pick);
       return;
     }
     // Whole-album row → album detail.
@@ -358,6 +356,8 @@ class _SongTileState extends State<SongTile> {
   Widget build(BuildContext context) {
     if (widget.grid) return _buildGridCell(context);
     final r  = widget.result;
+    final showCollectionLine =
+        widget.showCollection && r.collection.isNotEmpty;
     return ListTile(
       leading: Stack(
         clipBehavior: Clip.none,
@@ -394,8 +394,11 @@ class _SongTileState extends State<SongTile> {
       // game/album as context underneath (the tap plays that subsong directly).
       title: Row(children: [
         Flexible(
-          child: Text(r.matchSubsongTitle ?? r.displayTitle,
-              maxLines: 1, overflow: TextOverflow.ellipsis),
+          // shrinkWrap: le badge podium et l'icône vidéo suivent le titre
+          // dans cette Row; sans lui la vue défilante prendrait toute la
+          // largeur et les pousserait au bord droit même sur un titre court.
+          child: ScrollingText(
+              text: r.matchSubsongTitle ?? r.displayTitle, shrinkWrap: true),
         ),
         if (r.podium != null)
           Padding(
@@ -410,23 +413,52 @@ class _SongTileState extends State<SongTile> {
                 size: 14, color: Theme.of(context).colorScheme.primary),
           ),
       ]),
-      subtitle: Text(
-        [
-          if (r.matchSubsongTitle != null) r.displayTitle,
-          if (r.artistLabel.isNotEmpty) r.artistLabel,
-          if (r.album != null && r.album!.isNotEmpty && r.album != r.displayTitle)
-            r.album,
-          if (widget.showCollection && r.collection.isNotEmpty) r.collection,
-          if (r.platform != null && r.platform!.isNotEmpty) r.platform,
-          if (r.formatExt.isNotEmpty) r.formatExt.toUpperCase(),
-          if (r.fileSize > 0) r.fileSizeLabel,
-        ].join(' · '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      // La COLLECTION va sur une SECONDE ligne, en petit, et non dans la liste
+      // pointée du dessus: cette liste dit ce qu'est le morceau (artiste,
+      // album, plateforme, format, taille), la collection dit D'OÙ IL VIENT.
+      // Noyée au milieu des autres, elle était illisible sur une recherche qui
+      // en mélange dix — et c'est justement là qu'on la cherche.
+      isThreeLine: showCollectionLine,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            songTileSubtitle(r),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (showCollectionLine)
+            Text(
+              // Le NOM, pas le slug: « jw_dsf » ne dit rien à personne.
+              RewampDb.collectionLabel(r.collection),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              // Même corps que la note et le « Top N % » de la ligne: c'est la
+              // taille des mentions accessoires de cette tuile.
+              style: TextStyle(
+                  fontSize: 10,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+        ],
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Durée: celle du FICHIER pour un conteneur (`total_length_ms`),
+          // celle du morceau sinon — voir RewampDb.listDurationMs. Inconnue =
+          // rien d'affiché, jamais « 0:00 »: des collections entières n'ont
+          // aucune durée en base.
+          if (RewampDb.listDurationMs(r) != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Text(
+                RewampDb.formatDurationMs(RewampDb.listDurationMs(r)!),
+                style: TextStyle(
+                    fontSize: 10,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ),
           if (r.rating != null)
             Text(
               '★ ${r.rating!.toStringAsFixed(1)}',

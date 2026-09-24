@@ -16,6 +16,7 @@ import 'viz_gl_ownership.dart';
 
 import 'user_settings.dart';
 import 'viz_platform_view.dart';
+import 'font_fallback.dart';
 
 /// Per-channel oscilloscope grid for VGM/S98/GYM/DRO playback.
 /// Shows one mini waveform cell per active chip channel, with note name overlay.
@@ -59,6 +60,12 @@ class _ChannelScopeWidgetState extends State<ChannelScopeWidget>
 
   // One native buffer reused every tick — avoids per-call heap allocation.
   Pointer<Int8>? _nativeBuf;
+  // Idem pour les instruments courants: un seul appel FFI rend les N voies,
+  // et la comparaison se fait sur des entiers. C'est ce qui permet de suivre
+  // un changement d'instrument à ~8 Hz sans allouer ni décoder une chaîne.
+  Pointer<Int32>? _instrBuf;   // instruments datés (timeline, tête ENTENDUE)
+  Pointer<Int32>? _instrLive;  // repli: l'instant du producteur
+  List<int> _lastInstr = const [];
 
   int _count = 0;
 
@@ -89,6 +96,8 @@ class _ChannelScopeWidgetState extends State<ChannelScopeWidget>
   }
 
   void _applySettings() {
+    // Un réglage a changé: l'image doit suivre même à l'arrêt.
+    widget.audio.vizWake();
     final s = UserSettings.instance;
     widget.audio.scopeSetGrid(s.vizVoiceGrid);
     widget.audio.setVizLineWidth(s.vizLineThickness);
@@ -125,6 +134,10 @@ class _ChannelScopeWidgetState extends State<ChannelScopeWidget>
     }
     final p = _nativeBuf;
     if (p != null) { calloc.free(p); _nativeBuf = null; }
+    final ip = _instrBuf;
+    if (ip != null) { calloc.free(ip); _instrBuf = null; }
+    final lp = _instrLive;
+    if (lp != null) { calloc.free(lp); _instrLive = null; }
     super.dispose();
   }
 
@@ -134,12 +147,75 @@ class _ChannelScopeWidgetState extends State<ChannelScopeWidget>
   List<String> _names = const [];
   int _nameTick = 0;
 
+  /// Les instruments ont-ils changé depuis la dernière lecture ? Un appel FFI
+  /// groupé + une comparaison d'entiers: assez bon marché pour tourner à
+  /// cadence rapide, là où relire les NOMS ne l'est pas.
+  bool _instrumentsChanged(int count) {
+    if (count <= 0) return false;
+    final buf  = _instrBuf  ??= calloc<Int32>(_maxCh);
+    final live = _instrLive ??= calloc<Int32>(_maxCh);
+    // La TIMELINE d'abord: son instrument est celui de la tête de lecture
+    // ENTENDUE, donc synchrone avec la forme d'onde affichée, là où
+    // vgm_last_instr[] décrit le producteur (200 ms à 2 s d'avance).
+    final nTl = widget.audio.notesVoiceInstrumentsInto(buf, _maxCh);
+    // ⚠️ Repli PAR VOIE, pas « tout ou rien »: une voie peut n'avoir aucun
+    // instrument daté (rien capturé à cet instant) alors que les autres en
+    // ont. Un repli global ne partait jamais et TOUS les libellés restaient
+    // sur le nom de voie — c'est ce qui donnait « ça ne suit pas ».
+    final nLive = widget.audio.voiceInstrumentsInto(live, _maxCh);
+    final n = nTl > nLive ? nTl : nLive;
+    if (n <= 0) return false;
+    final lim = count < n ? count : n;
+    int at(int v) {
+      final tl = v < nTl ? buf[v] : 0;
+      if (tl > 0) return tl;
+      return v < nLive ? live[v] : 0;
+    }
+    if (_lastInstr.length != lim) {
+      _lastInstr = [for (var v = 0; v < lim; v++) at(v)];
+      return true;
+    }
+    var changed = false;
+    for (var v = 0; v < lim; v++) {
+      final now = at(v);
+      if (_lastInstr[v] != now) { _lastInstr[v] = now; changed = true; }
+    }
+    return changed;
+  }
+
+  /// Vrai quand un instrument a changé. AUCUN maintien ici (demande
+  /// utilisateur, 2026-09-12): le libellé de l'oscilloscope doit être
+  /// SYNCHRONE avec la forme d'onde affichée, quitte à changer vite.
+  bool _instrModeChanged(int count) {
+    final s = UserSettings.instance;
+    if (!s.vizVoiceNames || s.vizVoiceNameSource != 1) return false;
+    return _instrumentsChanged(count);
+  }
+
+  /// Instrument de la voie [v] tel qu'on l'ENTEND (dernière lecture groupée,
+  /// rafraîchie par _instrumentsChanged); 0 si aucun.
+  int _instrumentOf(int v) =>
+      (v >= 0 && v < _lastInstr.length) ? _lastInstr[v] : 0;
+
   void _refreshNames(int count) {
-    if (!UserSettings.instance.vizVoiceNames) {
+    final s = UserSettings.instance;
+    if (!s.vizVoiceNames) {
       if (_names.isNotEmpty) setState(() => _names = const []);
       return;
     }
-    final next = [for (var v = 0; v < count; v++) widget.audio.voiceName(v)];
+    // Le libellé dit la VOIE, ou l'INSTRUMENT qu'elle joue en ce moment — et
+    // celui-là change en cours de morceau (un canal MIDI change de programme,
+    // une voie de tracker d'échantillon), d'où la même cadence de
+    // rafraîchissement pour les deux. Sans instrument (SID, UADE, puces sans
+    // notion d'échantillon), on garde le nom de la voie: « Inst 0 » ne dirait
+    // rien à personne.
+    final next = [
+      for (var v = 0; v < count; v++)
+        if (s.vizVoiceNameSource == 1 && _instrumentOf(v) > 0)
+          widget.audio.instrumentName(_instrumentOf(v))
+        else
+          widget.audio.voiceName(v),
+    ];
     if (next.length != _names.length ||
         !Iterable<int>.generate(next.length).every((i) => next[i] == _names[i])) {
       setState(() => _names = next);
@@ -151,12 +227,23 @@ class _ChannelScopeWidgetState extends State<ChannelScopeWidget>
     // its own thread and leaves _gpuTextureId at -1): the C side draws the
     // waveforms, but the name overlay still needs the live voice count.
     if (widget.audio.vizGpuAvailable) {
-      if (_gpuTextureId >= 0) widget.audio.scopeRenderAndNotify();
+      if (_gpuTextureId >= 0 && widget.audio.vizFrameDue) {
+        // Voir src/rewamp_viz_idle.h. Le comptage des voix et les noms, eux,
+        // restent vivants: ils viennent du greffon, pas de l'image.
+        widget.audio.scopeRenderAndNotify();
+      }
       final count = widget.audio.channelCount.clamp(0, _maxCh);
+      // En veille (pause, grâce écoulée) rien ne bouge: ni les instruments
+      // entendus ni les noms. Seul le COMPTE de voies reste surveillé (un
+      // chargement en pause change de morceau). Règle de rewamp_viz_idle.h.
+      final awake = widget.audio.vizShouldRender;
       if (count != _count) {
         setState(() => _count = count);
         _refreshNames(count);
-      } else if (++_nameTick >= 30) {
+      } else if (awake && _instrModeChanged(count)) {
+        _nameTick = 0;
+        _refreshNames(count);
+      } else if (awake && ++_nameTick >= 30) {
         _nameTick = 0;
         _refreshNames(count); // names can land after the count (plugin open)
       }
@@ -196,8 +283,14 @@ class _ChannelScopeWidgetState extends State<ChannelScopeWidget>
       // Paused: ptr frozen → keep last frame as-is (no counter advance).
     }
 
+    // Chemin CustomPaint: la lecture groupée des instruments doit tourner ici
+    // aussi, sinon _lastInstr reste vide et un libellé « par instrument » ne
+    // trouve jamais son instrument (le chemin GL a le sien dans _onTick).
+    final instrMoved = widget.audio.vizShouldRender && _instrModeChanged(count);
     if (changed) {
       setState(() => _count = count);
+      _refreshNames(count);
+    } else if (instrMoved) {
       _refreshNames(count);
     }
   }
@@ -345,7 +438,7 @@ class _VoiceNamesOverlay extends StatelessWidget {
                   names[v],
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: withCjkFallback(TextStyle(
                     fontSize: size,
                     height: 1.1,
                     fontWeight: FontWeight.w600,
@@ -355,7 +448,7 @@ class _VoiceNamesOverlay extends StatelessWidget {
                     shadows: const [
                       Shadow(blurRadius: 3, color: Color(0xCC000000)),
                     ],
-                  ),
+                  )),
                 ),
               ),
         ],
@@ -441,7 +534,7 @@ class _ChannelPainter extends CustomPainter {
           final tp = TextPainter(
             text: TextSpan(
               text: note,
-              style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold),
+              style: withCjkFallback(TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold)),
             ),
             textDirection: TextDirection.ltr,
           )..layout(maxWidth: cellW - 4);

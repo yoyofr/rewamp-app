@@ -8,12 +8,15 @@
 #include "ModizerVoicesData.h"   // m_voice_buff / m_voice_current_ptr / vgm_last_*
 #include "ModizerConstants.h"    // SOUND_BUFFER_SIZE_SAMPLE, SOUND_MAXVOICES_BUFFER_FX
 
+#include <zlib.h>      // .dmf/.fur sont zlib-compressés: la magie est SOUS
 #include "FurnacePlayer.h"   // third_party/furnace/src/modizer (added to include path)
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>   // strcasecmp
+#include <mutex>
+#include <string>
 
 // Furnace output is always stereo; pick a fixed device rate (miniaudio resamples).
 static const int FURNACE_RATE = 44100;
@@ -35,6 +38,9 @@ struct RewampDecoder {
     int            patRows;     // subsong patLen (same for every order)
     int            patChannels; // total channel count (NOT capped like voiceCount)
     int*           patEffRows;  // per-order EFFECTIVE rows (cut by 0B/0D/FF jumps)
+    // Chemin NETTOYÉ (sans `?subsong=`) — la clé de mise en réserve à la
+    // fermeture. Gardé ici parce que `close()` ne reçoit que le décodeur.
+    char           path[4096];
 };
 
 // Furnace native ".fur" + the FamiTracker family it imports (.ftm and the
@@ -44,15 +50,139 @@ struct RewampDecoder {
 // (no magic match, ext not listed → score 0) stays with libopenmpt.
 static const char* const kFurnaceExts[] = { "fur", "ftm", "0cc", "dnm", "eft", NULL };
 
+/// La magie d'un fichier zlib-compressé, lue SOUS la compression.
+///
+/// ⚠️ **Un `.dmf` DefleMask est compressé** (`78 9c`), et un `.fur` Furnace
+/// aussi: leur magie n'est donc PAS dans l'en-tête brut. Le probe ne voyait
+/// que des octets deflate, rendait 0, et le fichier partait chez libopenmpt —
+/// qui réclame `dmf` par extension pour le format X-Tracker, homonyme sans
+/// rapport, et échouait à l'ouvrir. Résultat: aucun `.dmf` DefleMask ne jouait
+/// (vérifié sur modland: les deux premiers essais commencent par `78 9c`).
+///
+/// On dépaquette donc les quelques octets nécessaires. C'est ce qui permet de
+/// NE PAS mettre `dmf` dans la liste d'extensions: la magie décompressée est
+/// sans ambiguïté, là où l'extension est partagée avec X-Tracker.
+static bool furnace_inflate_magic(const uint8_t* hdr, size_t hdrSize,
+                                  uint8_t* out, size_t outSize) {
+    // En-tête zlib: 0x78 puis un octet de contrôle dont (CMF<<8|FLG) % 31 == 0.
+    if (hdrSize < 2 || hdr[0] != 0x78) return false;
+    if ((((unsigned)hdr[0] << 8) | hdr[1]) % 31 != 0) return false;
+
+    z_stream zs;
+    memset(&zs, 0, sizeof(zs));
+    if (inflateInit(&zs) != Z_OK) return false;
+    zs.next_in   = const_cast<Bytef*>(hdr);
+    zs.avail_in  = (uInt)hdrSize;
+    zs.next_out  = out;
+    zs.avail_out = (uInt)outSize;
+    // Z_OK (sortie pleine) et Z_STREAM_END (fichier minuscule) valent tous deux
+    // succès; seul compte d'avoir produit assez d'octets pour la magie.
+    const int rc = inflate(&zs, Z_NO_FLUSH);
+    const bool ok = (rc == Z_OK || rc == Z_STREAM_END || rc == Z_BUF_ERROR) &&
+                    zs.total_out >= outSize;
+    inflateEnd(&zs);
+    return ok;
+}
+
 static int furnace_probe(const char* ext, const uint8_t* hdr, size_t hdrSize) {
-    // Header magics are decisive (uncompressed files; compressed ones rely on ext).
+    // Header magics are decisive.
     if (hdr) {
         if (hdrSize >= 16 && memcmp(hdr, "-Furnace module-", 16) == 0) return 95;
         if (hdrSize >= 18 && memcmp(hdr, "FamiTracker Module", 18) == 0) return 95;
         if (hdrSize >= 21 && memcmp(hdr, "Dn-FamiTracker Module", 21) == 0) return 95;
         if (hdrSize >= 16 && memcmp(hdr, ".DelekDefleMask.", 16) == 0) return 95;
+        // …et les mêmes magies SOUS zlib, qui est la forme courante des deux
+        // formats (DefleMask compresse toujours, Furnace par défaut).
+        uint8_t magic[21];
+        if (furnace_inflate_magic(hdr, hdrSize, magic, sizeof(magic))) {
+            if (memcmp(magic, ".DelekDefleMask.", 16) == 0) return 95;
+            if (memcmp(magic, "-Furnace module-", 16) == 0) return 95;
+            if (memcmp(magic, "Dn-FamiTracker Module", 21) == 0) return 95;
+            if (memcmp(magic, "FamiTracker Module", 18) == 0) return 95;
+        }
     }
     return (ext && rewamp_ext_in_list(ext, kFurnaceExts)) ? 70 : 0;
+}
+
+// ⚠️ DivEngine s'initialise par INSTANCE, et deux instances sont
+// indépendantes (`systemsRegistered`/`romExportsRegistered` sont des membres,
+// et `engine.cpp` n'a aucun global) — SAUF le fichier de log. `preInit` appelle
+// `startLogFile`, qui se garde sur `logFileAvail`: un `std::atomic<bool>`, mais
+// testé PUIS posé, donc deux inits simultanés peuvent tous deux le lire à faux,
+// faire tourner la rotation de fichiers et ouvrir le log deux fois.
+//
+// Le cas n'est pas théorique chez nous: la SONDE tourne sur le fil Dart pendant
+// que le relais gapless ouvre le morceau suivant sur le fil PRODUCTEUR. On
+// sérialise donc les seules initialisations de DivEngine du binaire — elles
+// sont courtes, et c'est la seule fenêtre partagée.
+static std::mutex s_furnace_init_mtx;
+
+// Furnace pose `logLevel = LOGLEVEL_TRACE` en dur (log.cpp, « until done »):
+// une ouverture de module déverse alors des centaines de lignes sur la sortie
+// standard. C'est le réglage d'un TRACKER qu'on lance à la main, pas d'un
+// lecteur qui ouvre des modules en arrière-plan. Posé une fois, sous le même
+// verrou que l'init.
+// `logLevel` vit dans `furnace/src/ta-log.h`, qui n'est PAS sur le chemin
+// d'inclusion de ce fichier (seuls `src/momo`, `src/icon` et `src/modizer` y
+// sont) — et l'y ajouter exposerait des en-têtes aux noms très génériques
+// (`engine.h`, `song.h`…) à tout le pod. On redéclare donc le symbole: c'est un
+// `int` global de C++, la liaison est la même des deux côtés.
+extern int logLevel;
+#define FURNACE_LOGLEVEL_ERROR 0   // ta-log.h
+
+// ── Cache d'UN module chargé ─────────────────────────────────────────────────
+//
+// Mesuré sur « Shovel Knight » (.ftm, macOS): `init` 0,8 ms, `select` 0,0 ms,
+// **`load` 900 ms**. Or changer de sous-chanson passe par un `open()` complet,
+// donc rechargeait le module entier pour un travail qui coûte zéro. Le parseur
+// FTM tourne en plus sur un fil à 8 Mo de pile (il déborde la pile normale),
+// ce qui explique l'ordre de grandeur.
+//
+// On garde donc le DERNIER lecteur, clefé par son chemin, au lieu de le
+// détruire. Un `open()` sur le même fichier le reprend et ne fait plus qu'un
+// `selectSong`.
+//
+// ⚠️ UNE seule place, et le lecteur en est RETIRÉ quand on le reprend: deux
+// décodeurs vivants sur le même module sont exactement ce que le relais gapless
+// interdit (il ferme N avant d'ouvrir N+1, précisément pour les moteurs qui ne
+// supportent pas deux instances). Le cache ne peut donc pas en fabriquer un
+// second.
+//
+// ⚠️ On ne `close()` PAS le lecteur mis en réserve — `close()` DÉCHARGE le
+// module, ce qui annulerait tout l'intérêt.
+static FurnacePlayer* s_cached_player = NULL;
+static char           s_cached_path[4096] = { 0 };
+
+// Reprend le lecteur en réserve s'il porte ce chemin, sinon NULL. Le mutex
+// couvre l'accès: la sonde tourne sur le fil Dart, l'ouverture sur le fil
+// producteur.
+static FurnacePlayer* furnace_cache_take(const char* path) {
+    std::lock_guard<std::mutex> lk(s_furnace_init_mtx);
+    if (!s_cached_player || strcmp(s_cached_path, path) != 0) return NULL;
+    FurnacePlayer* p = s_cached_player;
+    s_cached_player = NULL;
+    s_cached_path[0] = '\0';
+    return p;
+}
+
+// Met un lecteur CHARGÉ en réserve. Celui qui s'y trouvait est détruit.
+static void furnace_cache_put(FurnacePlayer* player, const char* path) {
+    FurnacePlayer* evicted = NULL;
+    {
+        std::lock_guard<std::mutex> lk(s_furnace_init_mtx);
+        evicted = s_cached_player;
+        s_cached_player = player;
+        strncpy(s_cached_path, path, sizeof(s_cached_path) - 1);
+        s_cached_path[sizeof(s_cached_path) - 1] = '\0';
+    }
+    if (evicted) { evicted->stop(); evicted->close(); delete evicted; }
+}
+
+static void furnace_quiet_logs_once() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    logLevel = FURNACE_LOGLEVEL_ERROR;
 }
 
 static RewampDecoder* furnace_open(const char* path, RewampAudioFormat* outFormat) {
@@ -79,15 +209,31 @@ static RewampDecoder* furnace_open(const char* path, RewampAudioFormat* outForma
     fclose(f);
     if (got != (size_t)len) { free(data); return NULL; }
 
-    FurnacePlayer* player = new FurnacePlayer();
-    if (!player->init(FURNACE_RATE) || !player->load(data, (size_t)len, clean)) {
-        free(data);
-        delete player;
-        return NULL;
+    // Même module que la dernière fois ? On reprend le lecteur en réserve: le
+    // rechargement coûte ~900 ms, la sélection zéro.
+    FurnacePlayer* player = furnace_cache_take(clean);
+    const bool reused = (player != NULL);
+
+    if (!reused) {
+        player = new FurnacePlayer();
+        bool ok;
+        {
+            std::lock_guard<std::mutex> lk(s_furnace_init_mtx);
+            furnace_quiet_logs_once();
+            ok = player->init(FURNACE_RATE);
+        }
+        if (!ok || !player->load(data, (size_t)len, clean)) {
+            free(data);
+            delete player;
+            return NULL;
+        }
     }
     free(data);
 
-    if (subsong > 0) player->selectSong(subsong);
+    // Inconditionnel sur un lecteur REPRIS: il est resté sur la sous-chanson
+    // précédente, et `selectSong` est aussi ce qui remet la lecture à son
+    // début (`changeSongP` + `play`).
+    if (subsong > 0 || reused) player->selectSong(subsong);
 
     FurnaceSongInfo info = player->getInfo();
     int voices = info.channels;
@@ -145,6 +291,8 @@ static RewampDecoder* furnace_open(const char* path, RewampAudioFormat* outForma
     dec->player     = player;
     dec->rate       = FURNACE_RATE;
     dec->subsong    = subsong;
+    strncpy(dec->path, clean, sizeof(dec->path) - 1);
+    dec->path[sizeof(dec->path) - 1] = '\0';
     dec->voiceCount = voices;
     dec->pcm        = NULL;
     dec->pcmFrames  = 0;
@@ -282,19 +430,48 @@ static uint64_t furnace_read(RewampDecoder* dec, float* out, uint64_t frameCount
 }
 
 static void furnace_seek(RewampDecoder* dec, uint64_t frameIndex) {
-    if (dec && dec->player) dec->player->seek((double)frameIndex / dec->rate);
+    if (!dec || !dec->player) return;
+    /* ⚠️ **Un seek ne relance pas un morceau TERMINÉ.** `FurnacePlayer::seek`
+     * ne fait qu'un `engine->setOrder(...)`; il ne remet pas le moteur en
+     * marche. Or `furnace_read` sort immédiatement sur `isEndOfSong()`, qui
+     * vaut `!userStopped && !engine->isPlaying()` — donc vrai tant que le
+     * moteur n'a pas été redémarré. Une fois le morceau fini, tout seek en
+     * arrière rendait un décodeur muet.
+     *
+     * Le greffon n'a pas de boucle native (`configure_loop` est NULL), donc
+     * c'est le repli générique de Dart qui relance par `seek(0)` + `play()`:
+     * sans ce redémarrage, la boucle infinie ne pouvait pas fonctionner.
+     * Même panne que vgmstream, autre bibliothèque.
+     *
+     * `setPlaying(true)` appelle `engine->play()`. On ne le fait QUE si le
+     * morceau était terminé — un seek en cours de lecture ne doit rien
+     * changer à l'état du moteur. */
+    const bool wasEnded = dec->player->isEndOfSong();
+    dec->player->seek((double)frameIndex / dec->rate);
+    if (wasEnded) dec->player->setPlaying(true);
 }
 
 static uint64_t furnace_length(RewampDecoder* dec) {
     if (!dec || !dec->player) return 0;
-    double secs = dec->player->getTotalDuration();
+    // ⚠️ `getDuration()`, PAS `getTotalDuration()`: le second SOMME toutes les
+    // sous-chansons du module (`for i in count: total += …`). Un `.ftm`
+    // FamiTracker à une dizaine de morceaux annonçait donc 105:10 pour la
+    // piste en cours. Les deux noms se ressemblent et rendent un double de
+    // secondes; seul celui-ci décrit ce qu'on joue.
+    double secs = dec->player->getDuration();
     if (secs <= 0) return 0;
     return (uint64_t)(secs * dec->rate);
 }
 
 static void furnace_close(RewampDecoder* dec) {
     if (!dec) return;
-    if (dec->player) { dec->player->stop(); dec->player->close(); delete dec->player; }
+    if (dec->player) {
+        // En RÉSERVE plutôt qu'à la poubelle: la sous-chanson suivante du même
+        // module fait un `open()`, et c'est le `load` (~900 ms) qu'on évite.
+        // Pas de `close()` ici — il déchargerait justement le module.
+        dec->player->stop();
+        furnace_cache_put(dec->player, dec->path);
+    }
     free(dec->patEffRows);
     free(dec->pcm);
     free(dec);
@@ -394,5 +571,126 @@ static const RewampPluginVTable kFurnaceVTable = {
 };
 
 extern "C" const RewampPluginVTable* rewamp_furnace_plugin(void) { return &kFurnaceVTable; }
+
+// ── Sonde de sous-chansons — cache statique lu par les accesseurs ────────────
+//
+// Un `.ftm` FamiTracker porte couramment une dizaine de morceaux, et Furnace
+// les importe en SOUS-CHANSONS. Le décodeur savait déjà en jouer une
+// (`?subsong=N` → `selectSong`) et le panneau ⓘ annonçait leur nombre, mais
+// `rewamp_probe_subsong_count` n'avait aucune branche Furnace: il rendait donc
+// le compte d'un AUTRE moteur, ou 1. Vu de l'utilisateur, un module à dix
+// morceaux n'en proposait aucun et s'entendait comme une piste unique qui les
+// enchaîne.
+//
+// ⚠️ Garde d'EXTENSION obligatoire, contrairement aux branches openmpt et
+// zxtune qui se contentent d'essayer d'ouvrir: initialiser DivEngine et
+// charger le module coûte cher, et cette fonction est appelée sur des fichiers
+// que Furnace n'a aucune raison de revendiquer.
+
+#define FURNACE_PROBE_MAX 256
+
+static int  s_fprobe_count = 0;
+static char s_fprobe_titles[FURNACE_PROBE_MAX][256];
+static int  s_fprobe_durations_ms[FURNACE_PROBE_MAX];
+// Dernier chemin sondé, pour ne pas recharger le module deux fois de suite:
+// l'ouverture locale demande le COMPTE puis les TITRES (deux appels d'affilée
+// sur le même fichier), ce qui est gratuit chez libgme mais vaut deux
+// initialisations de DivEngine ici.
+static char s_fprobe_path[4096] = { 0 };
+
+extern "C" int rewamp_furnace_probe_subsong_info(const char* path) {
+    if (!path) { s_fprobe_count = 0; s_fprobe_path[0] = '\0'; return 0; }
+
+    char clean[4096];
+    strncpy(clean, path, sizeof(clean) - 1);
+    clean[sizeof(clean) - 1] = '\0';
+    char* q = strrchr(clean, '?');
+    if (q && strncmp(q, "?subsong=", 9) == 0) *q = '\0';
+
+    // Même fichier que l'appel précédent: le cache est encore bon.
+    if (s_fprobe_count > 0 && strcmp(s_fprobe_path, clean) == 0)
+        return s_fprobe_count;
+
+    s_fprobe_count = 0;
+    s_fprobe_path[0] = '\0';
+
+    const char* dot = strrchr(clean, '.');
+    if (!dot || !rewamp_ext_in_list(dot + 1, kFurnaceExts)) return 0;
+
+    FILE* f = fopen(clean, "rb");
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (len <= 0) { fclose(f); return 0; }
+    uint8_t* data = (uint8_t*)malloc((size_t)len);
+    if (!data) { fclose(f); return 0; }
+    size_t got = fread(data, 1, (size_t)len, f);
+    fclose(f);
+    if (got != (size_t)len) { free(data); return 0; }
+
+    FurnacePlayer* player = new FurnacePlayer();
+    bool ok;
+    {
+        std::lock_guard<std::mutex> lk(s_furnace_init_mtx);
+        furnace_quiet_logs_once();
+        ok = player->init(FURNACE_RATE);
+    }
+    if (!ok || !player->load(data, (size_t)len, clean)) {
+        free(data);
+        delete player;
+        return 0;
+    }
+    free(data);
+
+    int count = player->getInfo().subsongCount;
+    if (count < 1) count = 1;
+    if (count > FURNACE_PROBE_MAX) count = FURNACE_PROBE_MAX;
+
+    // Noms ET durées. Mesuré: `selectSong` 0,0 ms et `getDuration()` (donc
+    // `calcSongTimestamps`) sous la milliseconde — la lenteur initialement
+    // attribuée à ce calcul venait en réalité du déluge de `printf` de Furnace,
+    // chacun passant par `fmt::sprintf`. Une fois les journaux coupés, une
+    // durée par sous-chanson est gratuite, et c'est elle qui évite d'afficher
+    // « -- » jusqu'à ce que chaque sous-chanson ait été jouée une fois.
+    for (int i = 0; i < count; i++) {
+        s_fprobe_titles[i][0]    = '\0';
+        s_fprobe_durations_ms[i] = -1;
+        // `getSubsongName` LIT le nom sans sélectionner — inutile de payer un
+        // `changeSongP` + `play` juste pour une chaîne.
+        const std::string nm = player->getSubsongName(i);
+        if (!nm.empty()) {
+            strncpy(s_fprobe_titles[i], nm.c_str(),
+                    sizeof(s_fprobe_titles[i]) - 1);
+            s_fprobe_titles[i][sizeof(s_fprobe_titles[i]) - 1] = '\0';
+        }
+        // La durée, elle, EXIGE la sélection: les timestamps sont calculés pour
+        // la sous-chanson courante.
+        if (player->selectSong(i)) {
+            const double secs = player->getDuration();
+            if (secs > 0) s_fprobe_durations_ms[i] = (int)(secs * 1000.0);
+        }
+    }
+
+    // En RÉSERVE, pas à la poubelle: la lecture qui suit la sonde vise le même
+    // fichier, et c'est le `load` (~900 ms) qu'on lui épargne.
+    player->stop();
+    furnace_cache_put(player, clean);
+
+    s_fprobe_count = count;
+    strncpy(s_fprobe_path, clean, sizeof(s_fprobe_path) - 1);
+    s_fprobe_path[sizeof(s_fprobe_path) - 1] = '\0';
+    return count;
+}
+
+extern "C" const char* rewamp_furnace_probe_get_title(int idx) {
+    if (idx < 0 || idx >= s_fprobe_count) return "";
+    return s_fprobe_titles[idx];
+}
+
+extern "C" int rewamp_furnace_probe_get_duration_ms(int idx) {
+    if (idx < 0 || idx >= s_fprobe_count) return -1;
+    return s_fprobe_durations_ms[idx];
+}
 
 #endif /* REWAMP_WITH_FURNACE */

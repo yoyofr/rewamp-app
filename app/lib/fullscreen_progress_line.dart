@@ -98,6 +98,8 @@ class FullscreenSeekBar extends StatefulWidget {
     required this.position,
     required this.duration,
     required this.onSeek,
+    this.elapsed,
+    this.infinite = false,
     this.onPointerDown,
     this.width = 148,
     this.height = 4,
@@ -106,7 +108,19 @@ class FullscreenSeekBar extends StatefulWidget {
   });
 
   final double position;
+
+  /// Le compteur de GAUCHE, quand il diffère de [position]. Sous boucle
+  /// infinie la barre sature à la durée nominale (on ne sait pas où la musique
+  /// est repartie) alors que le temps écoulé, lui, continue de monter. Null =
+  /// les deux sont la même grandeur.
+  final double? elapsed;
   final double duration;
+
+  /// Boucle infinie armée: la durée affichée n'est alors plus une FIN, c'est
+  /// la longueur d'UNE passe — celle qui sert d'échelle à la barre. On dit les
+  /// deux, « ∞ (2:30) », plutôt que de laisser croire que le morceau s'arrête
+  /// là.
+  final bool infinite;
   final ValueChanged<double> onSeek;
 
   /// Fires on EVERY pointer landing on the touch area, before any recogniser
@@ -134,6 +148,15 @@ class _FullscreenSeekBarState extends State<FullscreenSeekBar> {
   double? _dragSeconds;
 
   bool get _seekable => widget.duration > 0;
+
+  /// Le libellé de DROITE. Sans durée connue, `--:--` plutôt qu'un zéro qui se
+  /// lirait comme un morceau de longueur nulle — et sous boucle infinie sans
+  /// durée, le symbole seul: il n'y a rien à mettre entre parenthèses.
+  String get _totalLabel {
+    if (!_seekable) return widget.infinite ? '∞' : '--:--';
+    final d = _fmtTime(widget.duration);
+    return widget.infinite ? '∞ ($d)' : d;
+  }
 
   double _secondsAt(double dx) =>
       (dx / widget.width).clamp(0.0, 1.0) * widget.duration;
@@ -220,13 +243,14 @@ class _FullscreenSeekBarState extends State<FullscreenSeekBar> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _OutlinedTime(_fmtTime(_dragSeconds ?? widget.position)),
+        _OutlinedTime(
+            _fmtTime(_dragSeconds ?? widget.elapsed ?? widget.position)),
         const SizedBox(width: 6),
         bar,
         const SizedBox(width: 6),
         // An unknown length prints the same --:-- as the main seek bar rather
         // than a zero, which would read as a track of no duration.
-        _OutlinedTime(_seekable ? _fmtTime(widget.duration) : '--:--'),
+        _OutlinedTime(_totalLabel),
       ],
     );
   }

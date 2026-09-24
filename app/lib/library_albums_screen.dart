@@ -6,6 +6,7 @@ import 'local_badge.dart';
 import 'artwork_image.dart';
 import 'local_db.dart';
 import 'l10n.dart';
+import 'library_presence.dart';
 import 'hover_grow.dart';
 import 'scrolling_text.dart';
 import 'library_toolbar.dart';
@@ -33,6 +34,9 @@ class LibraryAlbumsScreen extends StatefulWidget {
 
 class _LibraryAlbumsScreenState extends State<LibraryAlbumsScreen> {
   List<LibraryItem> _items = [];
+  /// Albums locaux dont aucun fichier n'est ICI — voir library_presence.
+  Set<String> _missing = const {};
+  bool _elsewhere(LibraryItem it) => _missing.contains(it.refId);
   bool _loading = true;
   String _query = '';
   LibrarySort _sort = LibrarySortLabel.fromPref(
@@ -54,15 +58,25 @@ class _LibraryAlbumsScreenState extends State<LibraryAlbumsScreen> {
   }
 
   void _reload() {
-    LocalDb.instance.getLibraryItems(type: 'album').then((items) {
-      if (mounted) setState(() { _items = items; _loading = false; });
+    LocalDb.instance.getLibraryItems(type: 'album').then((items) async {
+      final missing = await missingLocalLibraryRefs(items);
+      if (!mounted) return;
+      setState(() { _items = items; _missing = missing; _loading = false; });
     });
   }
 
   List<LibraryItem> get _visible =>
       sortLibraryItems(filterLibraryItems(_items, _query), _sort, _asc);
 
-  void _open(LibraryItem item) => widget.onNavigateAlbum?.call(
+  void _open(LibraryItem item) {
+    if (_elsewhere(item)) {
+      AppSnack.show(context, libraryElsewhereLabel(context));
+      return;
+    }
+    _navigate(item);
+  }
+
+  void _navigate(LibraryItem item) => widget.onNavigateAlbum?.call(
         item.name,
         collection: item.collectionSlug,
         platform:   item.platformName,
@@ -152,8 +166,8 @@ class _LibraryAlbumsScreenState extends State<LibraryAlbumsScreen> {
           ),
           onDismissed: (_) => _remove(item),
           child: ListTile(
-            leading: SizedBox(
-              width: 40, height: 40,
+            leading: LocalBadgedArtwork(
+              show: item.isLocal,
               child: RailArtwork(
                 url:          item.artworkUrl,
                 artist:       item.artist,
@@ -163,13 +177,19 @@ class _LibraryAlbumsScreenState extends State<LibraryAlbumsScreen> {
                 size:         40,
               ),
             ),
+            enabled: !_elsewhere(item),
             title: ScrollingText(text: item.name),
-            subtitle: (item.artist == null || item.artist!.isEmpty)
-                ? null
-                : Text(item.artist!,
+            subtitle: _elsewhere(item)
+                ? Text(libraryElsewhereLabel(context),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: cs.onSurfaceVariant)),
+                    style: TextStyle(color: cs.onSurfaceVariant))
+                : (item.artist == null || item.artist!.isEmpty)
+                    ? null
+                    : Text(item.artist!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: cs.onSurfaceVariant)),
             trailing: item.isFavorite
                 ? const Icon(Icons.star_rounded, size: 20, color: kFavoriteColor)
                 : null,
@@ -197,6 +217,7 @@ class _LibraryAlbumsScreenState extends State<LibraryAlbumsScreen> {
       itemCount: items.length,
       itemBuilder: (_, i) => _AlbumCard(
         item: items[i], cs: cs,
+        elsewhere: _elsewhere(items[i]),
         onTap: () => _open(items[i]),
         onRemove: () => _remove(items[i]),
       ),
@@ -209,9 +230,12 @@ class _AlbumCard extends StatelessWidget {
   final ColorScheme       cs;
   final VoidCallback?     onTap;
   final VoidCallback?     onRemove;
+  /// Sur un autre appareil (library_presence): grisée, la deuxième ligne le dit.
+  final bool              elsewhere;
 
   const _AlbumCard(
-      {required this.item, required this.cs, this.onTap, this.onRemove});
+      {required this.item, required this.cs, this.onTap, this.onRemove,
+      this.elsewhere = false});
 
   @override
   Widget build(BuildContext context) {
@@ -221,7 +245,9 @@ class _AlbumCard extends StatelessWidget {
           ? null
           : () => showLibraryItemMenu(context,
               title: item.name, onRemove: onRemove!),
-      child: Column(
+      child: Opacity(
+        opacity: elsewhere ? 0.45 : 1.0,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // EXACTEMENT la pochette des rails de l'accueil (voir RailArtwork).
@@ -272,7 +298,13 @@ class _AlbumCard extends StatelessWidget {
                   text: item.name,
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
-                if (item.artist != null)
+                if (elsewhere)
+                  ScrollingText(
+                    text: libraryElsewhereLabel(context),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: cs.onSurfaceVariant),
+                  )
+                else if (item.artist != null)
                   ScrollingText(
                     text: item.artist!,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -282,6 +314,7 @@ class _AlbumCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     ));
   }

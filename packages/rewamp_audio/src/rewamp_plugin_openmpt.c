@@ -15,8 +15,13 @@
 #include <string.h>
 #include <strings.h>   /* strcasecmp */
 
-// libopenmpt renders at whatever rate we ask; miniaudio resamples to the device.
-#define OPENMPT_RENDER_RATE     48000
+// libopenmpt renders at whatever rate we ask — so ask for the RING's rate
+// (REWAMP_RING_RATE, 44100) directly: the decode-ahead ring runs at 44100
+// fixed since the crossfade work, and rendering at 48000 was paying one
+// producer-side resample for nothing. The module's own samples are
+// interpolated by libopenmpt to the requested rate either way; there is no
+// "native" module rate to preserve.
+#define OPENMPT_RENDER_RATE     44100
 #define OPENMPT_RENDER_CHANNELS 2
 
 struct RewampDecoder {
@@ -229,6 +234,11 @@ static RewampDecoder* openmpt_open(const char* path, RewampAudioFormat* outForma
                 const char* nm = openmpt_module_get_instrument_name(mod, i);
                 rewamp_track_message_append("%02d: %s\n", i + 1,
                                             (nm && nm[0]) ? nm : "");
+                /* La timeline des viz porte le NUMÉRO d'instrument lu dans le
+                 * motif (1-based): le même index nomme la légende « par
+                 * instrument ». Un module à instruments les nomme ici, un
+                 * module à échantillons seuls plus bas. */
+                if (nm && nm[0]) rewamp_instrument_set_name((int)i + 1, nm);
                 openmpt_free_string(nm);
             }
         }
@@ -236,6 +246,9 @@ static RewampDecoder* openmpt_open(const char* path, RewampAudioFormat* outForma
             rewamp_track_message_append("\nSamples:\n");
             for (int32_t i = 0; i < ns; i++) {
                 const char* nm = openmpt_module_get_sample_name(mod, i);
+                /* Sans table d'instruments, la colonne du motif désigne
+                 * l'ÉCHANTILLON: c'est lui qui nomme la légende. */
+                if (ni <= 0 && nm && nm[0]) rewamp_instrument_set_name((int)i + 1, nm);
                 rewamp_track_message_append("%02d: %s\n", i + 1,
                                             (nm && nm[0]) ? nm : "");
                 openmpt_free_string(nm);
@@ -289,6 +302,15 @@ static uint64_t openmpt_read(RewampDecoder* dec, float* out, uint64_t frameCount
         for (int j = 0; j < nch; j++) {
             float vu = openmpt_module_get_current_channel_vu_mono(dec->mod, j);
             g_active_instr[j] = (vu > 0.001f) ? dec->lastInstr[j] : 0;
+            // La timeline des viz notation/piano (rewamp_notes_capture) lit
+            // vgm_last_instr[], pas g_active_instr[] — sans cette ligne le
+            // piano « par instrument » recevait 0 pour toutes les voix d'un
+            // module et peignait tout de la couleur de l'instrument 0
+            // (constaté à l'écran le 2026-09-08). Le DERNIER instrument
+            // déclenché, sans porte VU: une note qui démarre a un VU encore
+            // nul et changerait de couleur après son attaque.
+            if (j < SOUND_MAXVOICES_BUFFER_FX)
+                vgm_last_instr[j] = dec->lastInstr[j];
             // Per-channel level for the pattern viz volume meters (and any
             // rewamp_channel_volume consumer): Modizer's exact formula, VU*255
             // clamped. libopenmpt otherwise never fills vgm_last_vol[].

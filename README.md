@@ -14,7 +14,7 @@ Several playback engines customization are reusing the work I've done previously
 
 ## Main features
 
-- **1235 file extensions, 40 decoding engines** — Amiga MOD, C64 SID, NSF, SPC,
+- **1247 file extensions, 42 decoding engines** — Amiga MOD, C64 SID, NSF, SPC,
   GBS, PSF, VGM, SNDH, ZX Spectrum AY, PC-98, X68000, game streams (Wwise,
   FSB…). Real chip emulation, not renderings: a 6502 runs the NSF driver, a
   68000 runs the Amiga replayers.
@@ -169,15 +169,21 @@ xcconfig that `flutter pub get` generates. `flutter clean` wipes it, so run
 
 ### Pointing at a backend
 
-The catalogue, artwork and account features talk to a server. **The default URL
-is empty in this repository**, on purpose — a build made without configuring
-anything talks to nobody, rather than to the project's own instance:
+The catalogue, artwork and account features talk to a server. A build made
+here defaults to the project's own instance, `https://api.rewamp.app`, which is
+what the published binaries are built against. Point a build at your own server
+instead:
 
 ```bash
 flutter run --dart-define=REWAMP_API_URL=https://your-instance
 ```
 
-Local playback of your own files needs no server at all.
+That server is run for the published app, not as a public API: treat it as
+something that may rate-limit, change shape or require an authenticated client
+without notice. A fork meant for other people should host its own.
+
+Local playback of your own files needs no server at all — the catalogue is
+entirely optional.
 
 ### Turning engines off
 

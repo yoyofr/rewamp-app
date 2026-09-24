@@ -808,6 +808,16 @@ genericlibload
 
 	move.l d0,d5		; segment BPRT
 
+	; rewamp: dos_loadseg FAILURE was never tested. With d5 = 0 the resident
+	; scan below started at address 8 and walked LOW MEMORY until a stray
+	; $4afc matched -- vector table, score, player, whatever -- then built a
+	; "library" out of that garbage and handed its base to the caller. A
+	; custom that opens a library uade does not ship (req.library, Lemmings)
+	; then jsr'd through junk vectors: "Illegal instruction at 0000010c".
+	; Upstream semantics restored: warn like upstream, return d0 = 0, and
+	; the player copes with a NULL library base (Lemmings does).
+	beq	genericlibfail
+
 	; call lib's init code (easier done here than on C side)
 	move.l d5,d4		; calc start of lib-file data:
 	lsl.l #2,d4			; BPTR -> APTR
@@ -849,6 +859,17 @@ mklibdone
 ;	bsr put_value	; print lib address
 
 	move.l d0,a0	; a0 still used by caller..
+	rts
+
+genericlibfail
+	; a1 = library name (restored by the pull above)
+	move.l	a1,a0
+	lea	openlibwarnname(pc),a1
+	moveq	#31,d0
+	bsr	strlcpy
+	lea	openlibwarnmsg(pc),a0
+	bsr	put_string
+	moveq	#0,d0
 	rts
 
 
@@ -4108,9 +4129,14 @@ not_icon_lib
 	bsr genericlibload
 
 return_open_lib
+	; rewamp: d0 = 0 means "no library" (genericlibfail) -- a0 then still
+	; holds the NAME string, and stamping LIB_IDSTRING/LIB_OPENCNT through it
+	; would corrupt the caller's memory.
+	tst.l	d0
+	beq.b	open_lib_none
 	move.l a1,LIB_IDSTRING(a0)
 	move.w #$101,LIB_OPENCNT(a0)	; hack: don't want anyone to expunge "unused" library
-
+open_lib_none
 	pull	d1-d7/a0-a6
 	tst.l	d0
 	rts

@@ -35,6 +35,7 @@ class DecoderEngine {
   /// falls back to the French [description] for an unknown engine.
   String descriptionOf(AppLocalizations l10n) => switch (name) {
         'libopenmpt'                 => l10n.engineDescOpenmpt,
+        'libxmp'                     => l10n.engineDescXmp,
         'libvgm'                     => l10n.engineDescVgm,
         'Game Music Emu (libgme)'    => l10n.engineDescGme,
         'NSFPlay (libnsfplay)'       => l10n.engineDescNsfplay,
@@ -49,6 +50,7 @@ class DecoderEngine {
         'ASAP'                       => l10n.engineDescAsap,
         'AdPlug + libbinio'          => l10n.engineDescAdplug,
         'FluidLite + TinyMidiLoader' => l10n.engineDescMidi,
+        'munt mt32emu'               => l10n.engineDescMt32,
         'Highly Experimental'        => l10n.engineDescHighlyExp,
         'libgsf (VBA)'               => l10n.engineDescGsf,
         'vio2sf (Cog / melonDS)'     => l10n.engineDescVio2sf,
@@ -87,6 +89,16 @@ const List<DecoderEngine> kEngines = [
     formats: kTrackerExts,
   ),
   DecoderEngine(
+    // ⚠️ Le NOM est la clé du switch de descriptionOf: le renommer sans
+    // toucher au switch fait sortir la description en français partout.
+    name: 'libxmp',
+    url: 'https://github.com/libxmp/libxmp',
+    author: 'Claudio Matsuoka, Hipolito Carraro Jr',
+    license: 'MIT',
+    description: 'Modules que libopenmpt ne lit pas (.musx, .liq, .fnk…)',
+    formats: kXmpExts,
+  ),
+  DecoderEngine(
     name: 'libvgm',
     url: 'https://github.com/ValleyBell/libvgm',
     author: 'ValleyBell',
@@ -115,8 +127,8 @@ const List<DecoderEngine> kEngines = [
     url: 'https://github.com/mmitch/gbsplay',
     author: 'Christian Garbs, Maximilian Rehkopf',
     license: 'GPL-1.0+',
-    description: 'Game Boy GBS',
-    formats: {'gbs'},
+    description: 'Game Boy GBS/GBR',
+    formats: {'gbs', 'gbr'},
   ),
   DecoderEngine(
     name: 'libsidplayfp',
@@ -199,6 +211,14 @@ const List<DecoderEngine> kEngines = [
     formats: kMidiExts,
   ),
   DecoderEngine(
+    name: 'munt mt32emu',
+    url: 'https://github.com/munt/munt',
+    author: 'Dean Beeler, Jerome Fisher, Sergey V. Mikayev',
+    license: 'LGPL-2.1',
+    description: 'Émulation Roland MT-32 / CM-32L pour le MIDI (.mid/.midi/.kar/.rmi)',
+    formats: kMidiExts,
+  ),
+  DecoderEngine(
     name: 'Highly Experimental',
     url: 'https://github.com/kode54/Highly_Experimental',
     author: 'Neill Corlett ; Chris Moeller (kode54)',
@@ -216,7 +236,9 @@ const List<DecoderEngine> kEngines = [
   ),
   DecoderEngine(
     name: 'vio2sf (Cog / melonDS)',
-    url: 'https://github.com/kode54/vio2sf',
+    // kode54/vio2sf a disparu de GitHub (404 en 2026-08); le plugin vit
+    // désormais dans Cog, le lecteur du même auteur.
+    url: 'https://github.com/losnoco/Cog',
     author: 'Chris Moeller (kode54) ; melonDS : Arisotura',
     license: 'GPL-3.0',
     description: 'Nintendo DS .2sf/.mini2sf',
@@ -270,7 +292,8 @@ const List<DecoderEngine> kEngines = [
   ),
   DecoderEngine(
     name: 'libLazyusf (Mupen64plus)',
-    url: 'https://github.com/kode54/lazyusf2',
+    // Idem: kode54/lazyusf2 a disparu, Cog en garde une copie vivante.
+    url: 'https://github.com/losnoco/Cog',
     author: 'Chris Moeller (kode54) ; Mupen64Plus team',
     license: 'GPL-2.0',
     description: 'Nintendo 64 .usf — émulation R4300 + RSP audio',
@@ -430,9 +453,29 @@ class BundledComponent {
 }
 
 const List<BundledComponent> kComponents = [
+  // FAC Soundtracker: le `.MUS` est enveloppé avec FST2.BIN — le replayer FAC
+  // d'ORIGINE, redistribué tel quel — dans une image KSS que la VM Z80 de
+  // libkss exécute. Le binaire porte « (C)1990/1991 FAC / All rights
+  // reserved »: il est redistribué, donc il se crédite, comme les drivers MSX
+  // que libkss embarque déjà (son propre LICENSE.md exclut explicitement
+  // kss-drivers de sa licence). Le convertisseur, lui, vient d'un script de
+  // NYYRIKKI porté en C.
+  BundledComponent('FAC Soundtracker (FST2.BIN + mus2kss)',
+      'Replayer © FAC, tous droits réservés',
+      url: 'https://www.msx.org/wiki/FAC_Soundtracker',
+      author: 'FAC ; conversion : NYYRIKKI'),
   BundledComponent('ProWizard (libxmp)', 'MIT',
       url: 'https://xmp.sourceforge.net/',
       author: "Claudio Matsuoka ; ProWizard : Sylvain 'Asle' Chipaux"),
+  // Table MT-32 → General MIDI: un MIDI écrit pour MT-32 numérote ses
+  // programmes dans la liste d'usine du MT-32, sans rapport avec le GM. Sans
+  // ROMs Roland, FluidLite les traduit avec cette table. Vendorée depuis la
+  // v2.0.0 de ScummVM et PAS depuis son master: les valeurs sont identiques,
+  // mais la v2.0.0 est GPL-2.0-or-later là où master est passé en GPL-3 —
+  // autant ne pas ajouter un composant GPL-3 de plus (voir LICENSING.md).
+  BundledComponent('ScummVM (table MT-32 → General MIDI)', 'GPL-2.0-or-later',
+      url: 'https://github.com/scummvm/scummvm',
+      author: 'ScummVM team'),
   BundledComponent('webUADE (patches audio.device)', 'GPL-2.0',
       url: 'https://www.wothke.ch/', author: 'Jürgen Wothke'),
   BundledComponent('projectM', 'LGPL-2.1',

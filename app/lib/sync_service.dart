@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart' show DatabaseExecutor;
 
 import 'local_db.dart';
 import 'playlist_sync.dart';
@@ -393,10 +394,209 @@ class SyncService extends ChangeNotifier {
   /// device's change we have not pulled yet, so jumping the cursor to it would
   /// skip that change for ever. Letting the next delta return our own rows once
   /// costs nothing — every apply is idempotent.
+  /// Gestes livrés EN PARALLÈLE par le drain. `set_library` ne prend qu'un
+  /// item par appel, donc vider une file de plusieurs centaines d'entrées —
+  /// « tout supprimer » dans Données → Stockage en produit une par fichier —
+  /// coûtait autant d'allers-retours SÉQUENTIELS. Six en vol masquent la
+  /// latence sans ressembler à une rafale.
+  static const int _kOutboxConcurrency = 6;
+
+  /// Cadence de livraison de l'outbox et recul sur 429.
+  ///
+  /// L'API est derrière un `limit_req` nginx à 60 req/min, rafale 20 (voir
+  /// docs/server_auth_proposal.md). Importer puis supprimer un dossier de
+  /// plusieurs centaines de pistes en local fait autant de `set_library`:
+  /// six en vol sans cadence, quatre passes, et le serveur répondait 429 par
+  /// centaines (macOS, 2026-09-08). Rien n'était perdu — la ligne reste dans
+  /// l'outbox, `attempts` ne fait que compter — mais on martelait, et chaque
+  /// passe rejouait les mêmes refus. Donc: un créneau global d'environ
+  /// 1,1 s entre deux livraisons (≈ 55/min, le reste du budget aux pulls), et
+  /// au premier 429 le drain S'ARRÊTE pour 65 s (la fenêtre nginx), reprise
+  /// programmée. La vraie parade est un `set_library_batch` côté serveur
+  /// (docs/set_library_batch_proposal.md): 300 gestes = un appel.
+  static const Duration _kOutboxMinGap = Duration(milliseconds: 1100);
+  static const Duration _kRateLimitCooldown = Duration(seconds: 65);
+  DateTime _outboxNextSlot = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime? _rateLimitedUntil;
+
+  /// `set_library_batch` (mig serveur 271): null = pas encore su, false = le
+  /// serveur a répondu 404 (fonction absente) — mémorisé pour le processus,
+  /// même patron que `p_collections`. Le lot est essayé d'abord: 300 gestes =
+  /// deux appels au lieu de 300 sous cadence.
+  bool? _batchSupported;
+  static const int _kBatchMax = 200;
+
+  bool get _rateLimited =>
+      _rateLimitedUntil != null && DateTime.now().isBefore(_rateLimitedUntil!);
+
+  Future<void> _paceOutbox() async {
+    final now = DateTime.now();
+    final slot = _outboxNextSlot.isAfter(now) ? _outboxNextSlot : now;
+    _outboxNextSlot = slot.add(_kOutboxMinGap);
+    final wait = slot.difference(now);
+    if (wait > Duration.zero) await Future<void>.delayed(wait);
+  }
+
+  void _onRateLimited(int pending) {
+    if (_rateLimited) return;   // déjà en recul: un seul message, un seul timer
+    _rateLimitedUntil = DateTime.now().add(_kRateLimitCooldown);
+    debugPrint('[SyncService] serveur saturé (429): drain suspendu '
+        '${_kRateLimitCooldown.inSeconds} s, $pending geste(s) en attente');
+    _retry?.cancel();
+    _retry = Timer(_kRateLimitCooldown + const Duration(seconds: 1),
+        () => unawaited(syncNow()));
+  }
+
   Future<void> _drainOutbox() async {
     if (!UserSettings.instance.hasAuthToken) return;
+    // Jusqu'à ce que l'outbox soit VIDE, pas un seul instantané: des lignes
+    // enfilées PENDANT la livraison (une suppression en cours) attendaient
+    // sinon le cycle suivant — derrière un pull complet. Borné, au cas où un
+    // producteur ne s'arrêterait jamais.
+    for (var pass = 0; pass < 4; pass++) {
+      if (_rateLimited) return;   // voir _kRateLimitCooldown
+      final rows = await LocalDb.instance.pendingSyncChanges();
+      if (rows.isEmpty) return;
+      await _drainOutboxRows(rows);
+    }
+  }
 
-    for (final row in await LocalDb.instance.pendingSyncChanges()) {
+  /// Les paramètres d'un geste de l'outbox, tels que `set_library_batch` les
+  /// attend (sans `p_`) — les MÊMES règles que [_deliverOutboxRow], en un
+  /// seul endroit (test `outbox_batch_params_test.dart`): un ♥ pur ne porte pas `value`, l'instantané `ext_ref` ne
+  /// part que pour un AJOUT. Rend null pour une ligne que personne ne peut
+  /// livrer (ni item, ni clé).
+  @visibleForTesting
+  static Map<String, dynamic>? outboxRowParams(Map<String, Object?> row) {
+    final itemId   = (row['item_id'] as String?) ?? '';
+    final itemType = (row['item_type'] as String?) ?? 'song';
+    final value    = (row['value'] as int? ?? 0) == 1;
+    final favRaw   = row['favourite'] as int?;
+    final favourite = favRaw == null ? null : favRaw == 1;
+    final extKey   = row['ext_key'] as String?;
+    final rawRef   = row['ext_ref'] as String?;
+    if (itemId.isEmpty && (extKey == null || extKey.isEmpty)) return null;
+    return {
+      if (itemId.isNotEmpty) 'item_id': catalogueSongId(itemId) ?? itemId,
+      'item_type': itemType,
+      if (favourite == null) 'value': value,
+      if (favourite != null) 'favourite': favourite,
+      if (itemId.isNotEmpty) 'subsong_index': row['subsong_idx'] as int? ?? 0,
+      if (extKey != null && extKey.isNotEmpty) 'ext_key': extKey,
+      if ((value || favourite == true) && rawRef != null)
+        'ext_ref': Map<String, dynamic>.from(jsonDecode(rawRef) as Map),
+    };
+  }
+
+  /// Livraison PAR LOTS. Rend false si le serveur n'a pas la fonction (404):
+  /// l'appelant retombe sur l'unitaire. Sur 429, réseau ou autre erreur, les
+  /// lignes sont gardées et le drain s'arrête pour cette passe (true).
+  Future<bool> _drainOutboxBatch(List<Map<String, Object?>> rows) async {
+    for (var at = 0; at < rows.length; at += _kBatchMax) {
+      if (_rateLimited) return true;
+      final packet = rows.sublist(
+          at, at + _kBatchMax > rows.length ? rows.length : at + _kBatchMax);
+      final items = <Map<String, dynamic>>[];
+      final ids = <int>[];   // id de la ligne pour chaque élément du lot
+      for (final row in packet) {
+        final id = row['id'] as int;
+        final params = outboxRowParams(row);
+        if (params == null) {
+          await LocalDb.instance.deleteSyncChange(id);
+          continue;
+        }
+        items.add(params);
+        ids.add(id);
+      }
+      if (items.isEmpty) continue;
+      await _paceOutbox();
+      try {
+        final res = await RewampDb.setLibraryBatch(items);
+        final rejectedAt = <int, LibraryBatchRejection>{
+          for (final r in res.rejected) r.index: r,
+        };
+        var dropped = 0;
+        for (var i = 0; i < ids.length; i++) {
+          final rej = rejectedAt[i];
+          if (rej == null || rej.code == '23514') {
+            // Appliqué — ou REFUSÉ pour de bon (contrainte): le rejouer ne
+            // changerait rien, et une ligne coincée gèle les retraits
+            // (voir _deliverOutboxRow).
+            if (rej != null) dropped++;
+            await LocalDb.instance.deleteSyncChange(ids[i]);
+          } else {
+            await LocalDb.instance.bumpSyncAttempts(ids[i]);
+          }
+        }
+        debugPrint('[SyncService] outbox lot: ${res.applied} appliqué(s), '
+            '${res.rejected.length} rejeté(s) dont $dropped jeté(s)');
+      } on RewampRpcException catch (e) {
+        if (e.statusCode == 404) {
+          _batchSupported = false;
+          debugPrint('[SyncService] set_library_batch absent (404): '
+              'livraison unitaire');
+          return false;
+        }
+        if (e.statusCode == 429 || e.isRateLimited) {
+          _onRateLimited(await LocalDb.instance.pendingSyncCount());
+          return true;
+        }
+        for (final id in ids) {
+          await LocalDb.instance.bumpSyncAttempts(id);
+        }
+        debugPrint('[SyncService] outbox lot kept: $e');
+        return true;
+      } catch (e) {
+        for (final id in ids) {
+          await LocalDb.instance.bumpSyncAttempts(id);
+        }
+        debugPrint('[SyncService] outbox lot kept: $e');
+        return true;
+      }
+    }
+    _batchSupported = true;
+    return true;
+  }
+
+  Future<void> _drainOutboxRows(List<Map<String, Object?>> rows) async {
+    // Le LOT d'abord (set_library_batch): les lignes arrivent triées par
+    // date, et le serveur applique dans l'ordre — les chaînes par item
+    // ci-dessous ne servent qu'au repli unitaire.
+    if (_batchSupported != false) {
+      if (await _drainOutboxBatch(rows)) return;
+    }
+    // ⚠️ Deux gestes sur le MÊME item doivent rester ORDONNÉS (ajouter puis
+    // retirer ne vaut pas l'inverse), et la file arrive déjà triée par date.
+    // On ne parallélise donc qu'ENTRE items: une chaîne séquentielle par clé,
+    // plusieurs chaînes en vol.
+    final chains = <String, List<Map<String, Object?>>>{};
+    for (final row in rows) {
+      final key = '${row['item_type']}|${row['item_id']}|'
+          '${row['ext_key']}|${row['subsong_idx']}';
+      (chains[key] ??= <Map<String, Object?>>[]).add(row);
+    }
+    final queue = chains.values.toList();
+    var next = 0;
+    Future<void> worker() async {
+      while (next < queue.length && !_rateLimited) {
+        final chain = queue[next++];
+        for (final row in chain) {
+          if (_rateLimited) return;
+          await _paceOutbox();
+          await _deliverOutboxRow(row);
+        }
+      }
+    }
+    await Future.wait([
+      for (var i = 0; i < _kOutboxConcurrency && i < queue.length; i++)
+        worker(),
+    ]);
+  }
+
+  /// Livre UN geste de l'outbox. Extrait du drain pour qu'il puisse en tenir
+  /// plusieurs en vol (voir [_kOutboxConcurrency]).
+  Future<void> _deliverOutboxRow(Map<String, Object?> row) async {
+    {
       final id       = row['id'] as int;
       final itemId   = (row['item_id'] as String?) ?? '';
       final itemType = (row['item_type'] as String?) ?? 'song';
@@ -412,7 +612,7 @@ class SyncService extends ChangeNotifier {
       // one with neither cannot be delivered to anyone.
       if (itemId.isEmpty && (extKey == null || extKey.isEmpty)) {
         await LocalDb.instance.deleteSyncChange(id);
-        continue;
+        return;
       }
 
       try {
@@ -444,6 +644,10 @@ class SyncService extends ChangeNotifier {
           await LocalDb.instance.deleteSyncChange(id);
           debugPrint('[SyncService] outbox $id REFUSÉ par le serveur '
               '(${e.code}): ${e.message}');
+        } else if (e.statusCode == 429 || e.isRateLimited) {
+          // Pas la faute de la ligne: on ne compte pas de tentative, on ne
+          // rejoue pas, on attend la fenêtre suivante (voir _onRateLimited).
+          _onRateLimited(await LocalDb.instance.pendingSyncCount());
         } else {
           await LocalDb.instance.bumpSyncAttempts(id);
           debugPrint('[SyncService] outbox $id kept: $e');
@@ -1018,14 +1222,38 @@ class SyncService extends ChangeNotifier {
       // le conteneur — son titre est le nom de l'album et son url celle de
       // l'archive entière. Les appliquer sur l'entrée d'une piste la renommait
       // « Wild Arms » et faisait retélécharger l'album à la lecture.
+      // ⚠️ **Le NIVEAU du nom doit suivre le NIVEAU de l'entrée.**
+      // La ligne locale gagne pour une entrée de PISTE (voir juste au-dessus:
+      // `user_songs` ne connaît que le morceau du catalogue, donc pour un
+      // album conteneur c'est le conteneur, et l'appliquer à une piste la
+      // renommait « Wild Arms »). Mais une entrée de CONTENEUR (refId SANS
+      // suffixe `?subsong=`) vise le FICHIER ENTIER, et la ligne locale qu'on
+      // résout pour elle est celle de sa SOUS-CHANSON 0 — dont le titre est
+      // numéroté. Le pull renommait donc l'entrée « Commando (1) », juste
+      // après que le geste l'eut nommée « Commando ». Symétrique du piège
+      // ci-dessus, et c'est la même règle qui répare les deux.
       await LocalDb.instance.addToLibrary(
         type:        'track',
         refId:       refId,
-        name:        localTrack?.title ?? s.title ?? '?',
+        name:        libraryEntryName(
+          containerEntry: splitLibraryRefId(refId).$2 == null,
+          localTitle:     localTrack?.title,
+          catalogueTitle: s.title,
+          fileName:       localTrack?.filePath.split(Platform.pathSeparator).last,
+        ),
         artist:      localTrack?.artist,
         album:       localTrack?.metaAlbum ?? s.album,
         artworkUrl:  localTrack?.artworkUrl ?? s.artworkUrl,
-        downloadUrl: s.downloadUrl,
+        // Même règle que le titre et la pochette juste au-dessus, et le
+        // dernier champ à l'avoir ignorée: `user_songs` porte l'url que le
+        // CATALOGUE avait quand la ligne a été écrite. Elle peut être périmée
+        // — « Inside The BORG Cube » y garde le zip scene.org alors que le
+        // serveur ne rend plus que l'override mp3 —, et jouer depuis la
+        // bibliothèque repartait sur l'archive puis EFFAÇAIT le rendu déjà
+        // téléchargé. Ce qu'on a réellement téléchargé fait donc foi.
+        downloadUrl:
+            await LocalDb.instance.getDownloadSourceUrl(s.songId) ??
+                s.downloadUrl,
         collectionSlug: s.collection,
         platformName:   s.platform,
         explicit:    true,
@@ -1345,6 +1573,145 @@ class SyncService extends ChangeNotifier {
       ref.title != null &&
       ref.title == ref.fileName;
 
+  /// Retire les entrées de bibliothèque qui nomment un fichier local ABSENT —
+  /// localement ET du compte. Rend le nombre retiré.
+  ///
+  /// Pourquoi une action explicite plutôt qu'un nettoyage automatique: une
+  /// entrée locale absente d'ICI peut être présente sur un AUTRE appareil du
+  /// compte, et la purge est globale (elle emporte aussi l'historique
+  /// d'écoute de cette clé). C'est à l'utilisateur de le demander, en le
+  /// sachant.
+  ///
+  /// Et pourquoi ça ne peut PAS être seulement local: le reset de la base
+  /// remet les curseurs à zéro, donc le pull suivant re-matérialise tout
+  /// depuis le compte. Supprimer ici sans purger là-bas ne fait que différer.
+  ///
+  /// ⚠️ La clé ext est RECALCULÉE, et deux variantes partent: avec le chemin
+  /// relatif et sans. Les entrées d'avant le correctif des deux racines ont
+  /// été poussées avec un `relPath` NUL (le fichier n'était relatif à rien),
+  /// donc leur clé serveur ne se recalcule pas de la même façon que celle
+  /// d'une entrée récente. Envoyer les deux coûte un élément de liste et
+  /// rattrape les deux générations; une clé qui ne correspond à rien est
+  /// ignorée par le serveur.
+  /// ⚠️ **Chaque étape est BORNÉE dans le temps et se NOMME** ([onStage]).
+  ///
+  /// Ce geste tient l'écran derrière une barrière non annulable, et il enchaîne
+  /// une synchro complète, un appel serveur par lot de 500 clés et une
+  /// transaction: n'importe laquelle peut être longue sur une grosse
+  /// bibliothèque, et une barrière opaque rend « long » indistinguable de
+  /// « bloqué » — c'est exactement ce qui a été rapporté sur macOS. Les
+  /// délais ne sont pas des correctifs de sûreté déguisés: chaque étape a un
+  /// REPLI correct (garder les clés recalculées, supprimer localement quand
+  /// même), donc l'abandonner en cours ne fait que revenir à ce que le code
+  /// faisait déjà quand le réseau manque.
+  static Future<int> purgeMissingLocalLibraryEntries(
+      {void Function(String stage)? onStage}) async {
+    final t0 = DateTime.now();
+    void stage(String s) {
+      debugPrint('[SyncService] nettoyage: $s '
+          '(+${DateTime.now().difference(t0).inMilliseconds} ms)');
+      onStage?.call(s);
+    }
+
+    // Passe COMPLÈTE ensuite, mais SEULEMENT si elle sert à quelque chose:
+    // elle n'existe que pour hydrater les `ext_key` manquantes (colonne
+    // neuve), et c'est de loin l'étape la plus lente — tout le catalogue de
+    // bibliothèque du compte, sans curseur. Quand toutes les entrées
+    // candidates portent déjà leur clé, on s'en passe et le nettoyage est
+    // immédiat.
+    stage('scan');
+    // « Anonyme » se lit sur un drapeau RÉSOLU: son défaut est « on ne sait
+    // pas encore » (accountHasEmailKnown), et le prendre pour « anonyme »
+    // retirerait du compte les entrées d'un autre appareil.
+    final solo = UserSettings.instance.accountHasEmailKnown &&
+        !UserSettings.instance.accountHasEmail;
+    var victims =
+        await LocalDb.instance.missingLocalLibraryEntries(soloAccount: solo);
+    debugPrint('[SyncService] nettoyage: ${victims.length} entrée(s) visée(s)');
+    final needKeys = victims.any((v) => (v.$4 ?? '').isEmpty);
+    if (needKeys && UserSettings.instance.hasAuthToken) {
+      try {
+        UserSettings.instance.libraryCursor = null;
+        stage('sync');
+        // Bornée: la synchro sert UNIQUEMENT à hydrater les clés manquantes,
+        // et son repli — recalculer la clé, deux variantes — existe déjà
+        // ci-dessous. La laisser sans limite, c'est faire dépendre un geste
+        // local d'une passe serveur complète qui, elle, n'a pas de fin promise.
+        await instance
+            .syncNow(force: true)
+            .timeout(const Duration(seconds: 45), onTimeout: () {
+          debugPrint('[SyncService] nettoyage: sync trop longue, on continue '
+              'avec les clés recalculées');
+        });
+      } catch (e) {
+        debugPrint('[SyncService] pull préalable au nettoyage échoué: $e');
+      }
+      stage('scan');
+      victims =
+          await LocalDb.instance.missingLocalLibraryEntries(soloAccount: solo);
+    }
+    if (victims.isEmpty) return 0;
+    final keys = <String>{};
+    for (final (refId, _, sub, stored) in victims) {
+      // La clé STOCKÉE d'abord — c'est celle que le compte connaît.
+      if (stored != null && stored.isNotEmpty) {
+        keys.add(stored);
+        continue;
+      }
+      // Entrée antérieure à la colonne: on RECALCULE, en deux variantes (avec
+      // et sans chemin relatif), parce que celles d'avant le correctif des
+      // deux racines ont été poussées avec un relPath NUL. Une clé qui ne
+      // correspond à rien est ignorée par le serveur.
+      final (base, parsedSub) = splitLibraryRefId(refId);
+      final fileName = base.split(Platform.pathSeparator).last;
+      final rel = await LocalDb.instance.relPathOf(base);
+      // Aucun suffixe ⇒ l'entrée vise le fichier ENTIER, et sa clé de compte
+      // porte le jeton `whole` (voir localLibraryKey): la recalculer sans lui
+      // désignerait la sous-chanson 0, une AUTRE entrée.
+      final whole = parsedSub == null;
+      keys.add(localLibraryKey(
+          fileName: fileName, subsongIdx: sub, whole: whole));
+      if (rel != null && rel.isNotEmpty) {
+        keys.add(localLibraryKey(
+            fileName: fileName, relPath: rel, subsongIdx: sub, whole: whole));
+      }
+    }
+    try {
+      if (UserSettings.instance.hasAuthToken) {
+        stage('purge');
+        // Bornée aussi: un lot de 500 clés par appel, et le commentaire
+        // ci-dessous dit déjà quoi faire d'un échec — on supprime localement.
+        await RewampDb.purgeExtLibrary(keys.toList())
+            .timeout(const Duration(minutes: 2));
+      }
+    } catch (e) {
+      debugPrint('[SyncService] purge ext échouée: $e');
+      // On supprime quand même localement: l'utilisateur a demandé le
+      // nettoyage, et une entrée que le compte renverra reviendra visible —
+      // ce qui est un état honnête, pas une perte.
+    }
+    stage('delete');
+    if (kDebugMode) {
+      // Le détail de ce qui part, pour remonter au geste qui l'a écrit: la
+      // FORME de la clé dit d'où vient l'entrée (`opened/`, `local_archives/`,
+      // un `Caches/`… — voir libraryRefIsDeadIdentity), la clé de compte dit
+      // si elle a été synchronisée.
+      for (final (refId, name, sub, stored) in victims) {
+        debugPrint('[purge] library_items: "$name" sub=$sub'
+            ' ext_key=${(stored ?? '').isEmpty ? '-' : stored}'
+            ' | $refId');
+      }
+    }
+    await LocalDb.instance.runBatchWrites((db) async {
+      for (final (refId, _, _, _) in victims) {
+        await LocalDb.instance
+            .removeFromLibrary('track', refId, db: db, notify: false);
+      }
+    });
+    stage('done');
+    return victims.length;
+  }
+
   /// Hard-deletes the fabricated keys this pull met (migration 203). Best
   /// effort: a failure leaves them on the account, where the check above keeps
   /// ignoring them — exactly the state before the RPC existed.
@@ -1409,23 +1776,52 @@ class SyncService extends ChangeNotifier {
     final path = existing?.filePath ??
         await LocalDb.instance.expectedPathFor(
             relPath: ref.relPath, fileName: ref.fileName);
-    final refId = '$path?subsong=$subsong';
+    // Une entrée qui vise le FICHIER ENTIER se reconnaît à l'absence de
+    // suffixe (`localImportRefId`, `ContainerSubsongScreen._songRefId`), et le
+    // compte le porte désormais explicitement — sans quoi il ne pourrait pas
+    // la distinguer d'une entrée posée sur la sous-chanson 0.
+    var refId = ref.whole ? path : '$path?subsong=$subsong';
+    // ÉPOQUE ANTÉRIEURE: une entrée poussée avant `whole` porte
+    // `subsong_idx = 0` et rien d'autre. Quand l'entrée CONTENEUR est déjà là,
+    // c'est elle que cette ligne décrit: fabriquer la jumelle `?subsong=0`
+    // DOUBLERAIT le fichier en bibliothèque, et la doublure ne jouerait que la
+    // 1re sous-chanson. On ADOPTE donc l'entrée existante — même remède que
+    // pour une playlist orpheline (voir PlaylistSync.pull). ⚠️ Borné à ce cas
+    // d'époque: une entrée `whole` neuve et une entrée sur la sous-chanson 0
+    // ont maintenant deux clés de compte distinctes et coexistent.
+    if (!ref.whole && subsong == 0 &&
+        await LocalDb.instance.isInLibrary('track', path)) {
+      refId = path;
+    }
 
     if (!s.inLibrary) {
       if (canRemove) await LocalDb.instance.removeFromLibrary('track', refId);
       return;
     }
 
-    await LocalDb.instance.upsertTrack(
-      filePath:   path,
-      entryPath:  ref.entryPath,
-      subsongIdx: subsong,
-      title:      ref.title,
-      artist:     ref.artist,
-      metaAlbum:  ref.album,
-      durationS:  ref.durationS,
-      formatExt:  ref.formatExt,
-    );
+    // La ligne `tracks` seulement si le fichier est ICI (ou déjà connu). Une
+    // ligne « là où le fichier irait » était la façon d'avant de rendre
+    // l'entrée visible; depuis `library_presence` c'est `library_items` seule
+    // qui la montre, grisée, « sur un autre appareil ». Et cette ligne fantôme
+    // avait un coût: le nettoyage la comptait ORPHELINE (fichier absent),
+    // l'effaçait, et le pull suivant — delta INCLUSIF, donc la même entrée
+    // revient à chaque passe — la refabriquait: « local/F-Zero.rsn » dans le
+    // journal de purge à CHAQUE lancement (macOS, 2026-09-08). Une fois le
+    // fichier copié ici, l'import crée la ligne, et `findTrackForSnapshot` la
+    // lie au pull suivant.
+    final present = existing != null || await File(path).exists();
+    if (present) {
+      await LocalDb.instance.upsertTrack(
+        filePath:   path,
+        entryPath:  ref.entryPath,
+        subsongIdx: subsong,
+        title:      ref.title,
+        artist:     ref.artist,
+        metaAlbum:  ref.album,
+        durationS:  ref.durationS,
+        formatExt:  ref.formatExt,
+      );
+    }
     await LocalDb.instance.addToLibrary(
       type:      'track',
       refId:     refId,
@@ -1435,6 +1831,11 @@ class SyncService extends ChangeNotifier {
       formatExt: ref.formatExt,
       filename:  ref.fileName,
       explicit:  true,
+      // La clé que le COMPTE utilise, gardée telle quelle: c'est la seule
+      // façon de retirer un jour cette entrée du compte à COUP SÛR. La
+      // recalculer rate dès que le chemin a bougé depuis l'écriture (racine
+      // différente, conteneur iOS renouvelé, relPath nul à l'époque).
+      extKey:    s.extKey,
     );
   }
 
@@ -1471,29 +1872,59 @@ class SyncService extends ChangeNotifier {
     for (final item in await LocalDb.instance.getLibraryItems(type: 'track')) {
       final base = splitLibraryRefId(item.refId).$1;
       if (base.startsWith('/') || base.contains(':\\')) {
-        // Local file: compared through its ext_key.
-        final key = localLibraryKey(
-          fileName: base.split(Platform.pathSeparator).last,
-          subsongIdx: splitLibraryRefId(item.refId).$2 ?? 0,
-        );
-        if (serverExt.contains(key)) continue;
+        // Fichier LOCAL: comparé par sa clé hors catalogue.
+        //
+        // ⚠️ **La clé STOCKÉE d'abord — c'est celle que le compte connaît**,
+        // exactement la règle du nettoyage (`_cleanup`). La RECALCULER doit
+        // reproduire tout le matériel du hachage, et cette boucle en oubliait
+        // le `relPath`, que la poussée envoie pourtant
+        // (`recordTrackMembership` le résout par `relPathOf`). Résultat: la
+        // clé d'une entrée de fichier local ne correspondait à rien dans
+        // `serverExt`, la réconciliation la SUPPRIMAIT (« 19 library item(s)
+        // removed elsewhere »), le pull suivant la re-fabriquait — et les
+        // « Ajoutés récemment » clignotaient à chaque cycle de synchro.
+        //
+        // Le jeton `whole` fait partie du même matériel: sans lui une entrée
+        // de CONTENEUR (refId sans suffixe) se recalcule en clé de
+        // sous-chanson 0, une AUTRE entrée.
+        final parsedSub = splitLibraryRefId(item.refId).$2;
+        final stored = item.extKey;
+        if (stored != null && stored.isNotEmpty) {
+          if (serverExt.contains(stored)) continue;
+        } else {
+          final fileName = base.split(Platform.pathSeparator).last;
+          final rel = await LocalDb.instance.relPathOf(base);
+          final whole = parsedSub == null;
+          final candidates = <String>{
+            localLibraryKey(
+                fileName: fileName, relPath: rel,
+                subsongIdx: parsedSub ?? 0, whole: whole),
+            // Variante SANS chemin relatif: les entrées d'avant le correctif
+            // des deux racines sont parties avec un relPath nul (même repli
+            // que `_cleanup`).
+            localLibraryKey(
+                fileName: fileName,
+                subsongIdx: parsedSub ?? 0, whole: whole),
+          };
+          if (candidates.any(serverExt.contains)) continue;
+        }
         // Key mismatch is possible for pre-sync rows (different material) —
         // only remove when the account HOLDS ext favourites at all, else a
         // legacy install would lose its local favourites on first sync.
         if (serverExt.isEmpty) continue;
-        await LocalDb.instance.removeFromLibrary('track', item.refId);
+        await LocalDb.instance.removeFromLibrary('track', item.refId, notify: false);
         removed++;
         continue;
       }
       if (serverSongs.contains(base)) continue;
-      await LocalDb.instance.removeFromLibrary('track', item.refId);
+      await LocalDb.instance.removeFromLibrary('track', item.refId, notify: false);
       removed++;
     }
     for (final item in await LocalDb.instance.getLibraryItems(type: 'album')) {
       final id = item.albumId;
       if (id == null || id.isEmpty) continue; // local-only album
       if (serverAlbums.contains(id)) continue;
-      await LocalDb.instance.removeFromLibrary('album', item.refId);
+      await LocalDb.instance.removeFromLibrary('album', item.refId, notify: false);
       removed++;
     }
     // Saved server playlists travel through the same snapshot (kind
@@ -1501,11 +1932,16 @@ class SyncService extends ChangeNotifier {
     // syncLibraryPlaylists only ever ADDS.
     for (final item in await LocalDb.instance.getLibraryItems(type: 'playlist')) {
       if (serverPlaylists.contains(item.refId)) continue;
-      await LocalDb.instance.removeFromLibrary('playlist', item.refId);
+      await LocalDb.instance.removeFromLibrary('playlist', item.refId, notify: false);
       removed++;
     }
     if (removed > 0) {
       debugPrint('[SyncService] $removed library item(s) removed elsewhere');
+      // UNE notification pour tout le lot: chaque retrait en émettait une, et
+      // chaque écran monté re-requêtait la base à chacune — la grille
+      // « Ajoutés récemment » se réorganisait sous les yeux, entrée par
+      // entrée.
+      LocalDb.instance.notifyListeners();
     }
   }
 
@@ -1614,6 +2050,17 @@ class SyncService extends ChangeNotifier {
       UserSettings.instance.albumMaterialisedReset = true;
       debugPrint('[SyncService] album materialisation markers reset');
     }
+    // Marqueurs que la base DÉMENT — ceux laissés par l'ancienne purge, qui
+    // retirait les lignes de catalogue non téléchargées sans toucher au
+    // marqueur. Sans ça l'album reste figé sur une liste amputée: le marqueur
+    // dit « complet », le heal passe son chemin. À CHAQUE passe et non une
+    // seule fois: c'est un contrôle de cohérence, pas une migration — une
+    // suppression d'album efface désormais le marqueur elle-même
+    // (deleteEntriesUnderPath), mais un chemin oublié se rattraperait ici.
+    final pruned = await LocalDb.instance.pruneStaleAlbumMaterialised();
+    if (pruned > 0) {
+      debugPrint('[SyncService] $pruned marqueur(s) album périmé(s) retiré(s)');
+    }
     var healed = 0;
     for (final item in await LocalDb.instance.getLibraryItems(type: 'album')) {
       if (healed >= _kHealAlbumsPerRun) break;
@@ -1659,12 +2106,18 @@ class SyncService extends ChangeNotifier {
     String? relPath,
     String entryPath = '',
     int subsongIdx = 0,
+    /// L'entrée vise le FICHIER ENTIER (voir [PlaylistExtRef.whole]). Le jeton
+    /// n'est AJOUTÉ que dans ce cas: une entrée ordinaire garde la clé qu'elle
+    /// avait avant ce paramètre, donc aucune entrée de compte existante ne
+    /// change d'identité.
+    bool whole = false,
   }) {
     final material = [
       fileName.toLowerCase(),
       (relPath ?? '').toLowerCase(),
       entryPath.toLowerCase(),
       '$subsongIdx',
+      if (whole) 'whole',
     ].join('|');
     return 'local:${sha256.convert(utf8.encode(material))}';
   }
@@ -1683,17 +2136,24 @@ class SyncService extends ChangeNotifier {
     String? relPath,
     String entryPath = '',
     int subsongIdx = 0,
+    /// L'entrée vise le FICHIER ENTIER (voir [PlaylistExtRef.whole]).
+    bool whole = false,
     String? title,
     String? artist,
     String? album,
     String? formatExt,
     double? durationS,
+    DatabaseExecutor? db,
+    /// La clé que le compte tient DÉJÀ pour cette entrée, quand on la connaît:
+    /// elle prime sur le recalcul. Voir LocalDb.libraryExtKeyOf.
+    String? extKey,
   }) async {
     final ref = PlaylistExtRef(
       fileName:   fileName,
       relPath:    relPath,
       entryPath:  entryPath,
       subsongIdx: subsongIdx,
+      whole:      whole,
       title:      title,
       artist:     artist,
       album:      album,
@@ -1701,14 +2161,15 @@ class SyncService extends ChangeNotifier {
       durationS:  durationS,
     );
     await LocalDb.instance.queueLibraryChange(
+      db:         db,
       itemType:   itemType,
       itemId:     '', // no server identity — kept until the contract lands
       value:      value,
       favourite:  favourite,
       subsongIdx: subsongIdx,
-      extKey:     localLibraryKey(
+      extKey:     extKey ?? localLibraryKey(
         fileName: fileName, relPath: relPath,
-        entryPath: entryPath, subsongIdx: subsongIdx),
+        entryPath: entryPath, subsongIdx: subsongIdx, whole: whole),
       // Same snapshot the playlists use — a favourite and a playlist entry
       // point at a file the same way.
       extRef:     jsonEncode(ref.toJson()),
@@ -1769,6 +2230,38 @@ class SyncService extends ChangeNotifier {
     instance.nudge(delay: const Duration(seconds: 30));
   }
 
+  /// Le nom d'une entrée de bibliothèque appliquée par le pull.
+  ///
+  /// ⚠️ **Le NIVEAU du nom doit suivre le NIVEAU de l'entrée**, et les deux
+  /// erreurs symétriques ont été payées:
+  /// - une entrée de PISTE nommée par le catalogue prenait le nom du
+  ///   CONTENEUR (`user_songs` ne connaît que le morceau du catalogue, or pour
+  ///   un album conteneur c'est le conteneur): la piste se renommait « Wild
+  ///   Arms » et la lecture retéléchargeait l'album. D'où la ligne locale
+  ///   d'abord;
+  /// - une entrée de CONTENEUR (refId SANS suffixe `?subsong=`) prenait la
+  ///   ligne locale, qui est celle de sa SOUS-CHANSON 0 — titre numéroté. Le
+  ///   pull renommait « Commando » en « Commando (1) », juste après le geste.
+  ///   D'où le titre de CATALOGUE d'abord, puis le nom de fichier.
+  @visibleForTesting
+  static String libraryEntryName({
+    required bool containerEntry,
+    String? localTitle,
+    String? catalogueTitle,
+    String? fileName,
+  }) {
+    String? pick(List<String?> candidates) {
+      for (final c in candidates) {
+        if (c != null && c.isNotEmpty) return c;
+      }
+      return null;
+    }
+    return (containerEntry
+            ? pick([catalogueTitle, fileName, localTitle])
+            : pick([localTitle, catalogueTitle])) ??
+        '?';
+  }
+
   /// Fait suivre au COMPTE une appartenance de MORCEAU, quelle que soit la
   /// porte d'entrée de l'UI. [refId] est la clé locale
   /// (`<uuid|chemin>?subsong=N`); l'identité catalogue et l'identité de
@@ -1786,22 +2279,41 @@ class SyncService extends ChangeNotifier {
     String? artist,
     String? album,
     String? formatExt,
+    /// Écriture en LOT: exécuteur de la transaction en cours (voir
+    /// LocalDb.runBatchWrites) — l'outbox s'écrit dans le MÊME commit.
+    DatabaseExecutor? db,
   }) async {
     if (!UserSettings.instance.hasAuthToken) return;
     final (base, sub) = splitLibraryRefId(refId);
     if (base.isEmpty) return;
     final isPath = base.startsWith('/') || base.contains(':\\');
     if (isPath) {
+      // Un RETRAIT part sous la clé que le compte TIENT, jamais sous une clé
+      // recalculée: la forme de l'entrée (nue ou `?subsong=0`) entre dans le
+      // hachage et peut différer entre l'appareil qui a ajouté et celui qui
+      // retire — le retrait viserait alors une clé que le compte n'a pas, et
+      // l'entrée y resterait pour toujours (mesuré sur `F-Zero.rsn`: ajoutée
+      // ailleurs en `?subsong=0`, tenue ici en forme nue). Un AJOUT, lui,
+      // définit la clé: on la calcule.
+      final stored = value
+          ? null
+          : await LocalDb.instance.libraryExtKeyOf('track', refId, db: db);
       await recordLocalLibraryChange(
         itemType:   'song',
         fileName:   base.split(Platform.pathSeparator).last,
         relPath:    await LocalDb.instance.relPathOf(base),
         value:      value,
+        extKey:     stored,
+        // Pas de suffixe `?subsong=` ⇒ l'entrée vise le FICHIER ENTIER. Le
+        // dire au compte est ce qui la distingue d'un favori posé sur la
+        // sous-chanson 0 (voir PlaylistExtRef.whole).
         subsongIdx: sub ?? 0,
+        whole:      sub == null,
         title:      title,
         artist:     artist,
         album:      album,
         formatExt:  formatExt,
+        db:         db,
       );
       return;
     }

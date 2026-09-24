@@ -15,6 +15,29 @@ class AppLocalizationsPl extends AppLocalizations {
   String get navSearch => 'Szukaj';
 
   @override
+  String get navLocal => 'Lokalne';
+
+  @override
+  String get settingsTabsOrderTitle => 'Kolejność kart';
+
+  @override
+  String get settingsTabsOrderSubtitle =>
+      'Przeciągaj, aby uporządkować. Pierwsze cztery trafiają na dolny pasek, reszta do „Więcej”.';
+
+  @override
+  String get settingsTabsInBar => 'Na pasku';
+
+  @override
+  String get settingsTabsInMore => 'W „Więcej”';
+
+  @override
+  String get settingsLaunchTab => 'Karta przy starcie';
+
+  @override
+  String get settingsLaunchTabSubtitle =>
+      'Od której karty otwiera się aplikacja';
+
+  @override
   String get navLibrary => 'Biblioteka';
 
   @override
@@ -42,6 +65,16 @@ class AppLocalizationsPl extends AppLocalizations {
   @override
   String playbackFileGone(String file) {
     return 'Pliku już nie ma na serwerze: $file';
+  }
+
+  @override
+  String playbackTrackNotInArchive(String file) {
+    return 'Pliku $file nie ma w archiwum albumu — rip go wymienia, ale nie dostarcza.';
+  }
+
+  @override
+  String playbackSourceTimeout(String host) {
+    return '$host nie odpowiedział. Sprawdź połączenie i spróbuj ponownie.';
   }
 
   @override
@@ -130,16 +163,29 @@ class AppLocalizationsPl extends AppLocalizations {
   String get noRecentTracks => 'Brak ostatnio odtwarzanych utworów';
 
   @override
-  String get openLocalFile => 'Otwórz plik lokalny';
-
-  @override
   String get playerSourceLocal => 'lokalny';
 
   @override
-  String get browseFiles => 'Przeglądaj pliki';
+  String get homePlayFiles => 'Odtwórz pliki';
 
   @override
-  String countTotal(int loaded, int total) {
+  String get homePlayFolder => 'Odtwórz folder';
+
+  @override
+  String get homeSectionsOrderTitle => 'Kolejność sekcji';
+
+  @override
+  String get homeSectionsOrderSubtitle =>
+      'Przeciągaj, aby ułożyć ekran główny po swojemu.';
+
+  @override
+  String get homeSectionsOrderReset => 'Kolejność domyślna';
+
+  @override
+  String get homeSectionsOrderSettings => 'Kolejność sekcji ekranu głównego';
+
+  @override
+  String countTotal(int loaded, String total) {
     return 'Wyniki: $loaded / $total';
   }
 
@@ -565,6 +611,16 @@ class AppLocalizationsPl extends AppLocalizations {
   String get searchMinRating => 'Ocena ≥';
 
   @override
+  String get searchPodium => 'Podium';
+
+  @override
+  String get searchPodiumAny => 'Dowolne podium';
+
+  @override
+  String get searchPodiumUnavailable =>
+      'Filtr podium nie jest jeszcze dostępny na serwerze';
+
+  @override
   String searchRatingValue(String value) {
     return '★ $value';
   }
@@ -645,7 +701,7 @@ class AppLocalizationsPl extends AppLocalizations {
   String get searchSurpriseTooltip => 'Losowy utwór';
 
   @override
-  String searchTabWithCount(String label, int count) {
+  String searchTabWithCount(String label, String count) {
     return '$label ($count)';
   }
 
@@ -707,6 +763,10 @@ class AppLocalizationsPl extends AppLocalizations {
   String get engineDescOpenmpt => 'Moduły tracker (MOD/XM/S3M/IT/…)';
 
   @override
+  String get engineDescXmp =>
+      'Moduły, których libopenmpt nie odczytuje (.musx, .liq, .fnk…)';
+
+  @override
   String get engineDescVgm =>
       'VGM/S98/GYM/DRO — układy dźwiękowe, oscyloskop na kanał';
 
@@ -718,7 +778,7 @@ class AppLocalizationsPl extends AppLocalizations {
   String get engineDescNsfplay => 'NES NSF/NSFe — głosy na kanał';
 
   @override
-  String get engineDescGbsplay => 'Game Boy GBS';
+  String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
   String get engineDescSidplayfp => 'Commodore 64 SID (silnik reSIDfp)';
@@ -1095,6 +1155,9 @@ class AppLocalizationsPl extends AppLocalizations {
   }
 
   @override
+  String get subsongDefaultTrack => 'Utwór domyślny';
+
+  @override
   String subsongCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -1186,6 +1249,21 @@ class AppLocalizationsPl extends AppLocalizations {
   String get libraryRemovedArtist => 'Wykonawca usunięty z biblioteki';
 
   @override
+  String get libraryImportBeforeAddTitle => 'Najpierw zaimportować?';
+
+  @override
+  String get libraryImportBeforeAddBody =>
+      'Ten plik jest odtwarzany z tymczasowej lokalizacji, którą system może wyczyścić. Zaimportować go do biblioteki lokalnej, aby wpis przetrwał?';
+
+  @override
+  String get libraryImportBeforeAddArchiveBody =>
+      'Ten utwór pochodzi z archiwum otwartego w tymczasowej pamięci podręcznej. Całe archiwum zostanie zaimportowane do biblioteki lokalnej, wraz z plikami towarzyszącymi.';
+
+  @override
+  String get libraryAddNeedsCatalogueId =>
+      'Nie można dodać tego utworu: jego identyfikator katalogowy jest nieznany na tym urządzeniu.';
+
+  @override
   String songTilePlayFailed(String message) {
     return 'Odtwarzanie nie powiodło się: $message';
   }
@@ -1261,6 +1339,9 @@ class AppLocalizationsPl extends AppLocalizations {
   String get vizNotes => 'Nuty';
 
   @override
+  String get vizPiano => 'Pianino';
+
+  @override
   String get vizPatterns => 'Patterny';
 
   @override
@@ -1268,6 +1349,9 @@ class AppLocalizationsPl extends AppLocalizations {
 
   @override
   String get patternSmoothScroll => 'Płynne przewijanie';
+
+  @override
+  String get patternPinnedRow => 'Przypięty aktywny wiersz';
 
   @override
   String get patternVolumeBars => 'Paski głośności';
@@ -1426,6 +1510,9 @@ class AppLocalizationsPl extends AppLocalizations {
 
   @override
   String get playerAddToPlaylist => 'Dodaj do playlisty';
+
+  @override
+  String get playerEngineSettings => 'Ustawienia silnika';
 
   @override
   String get queueAddToPlaylist => 'Dodaj kolejkę do playlisty';
@@ -1966,9 +2053,6 @@ class AppLocalizationsPl extends AppLocalizations {
   String get playlistEmpty => 'Pusta playlista';
 
   @override
-  String get playlistRemoveEntry => 'Usuń z playlisty';
-
-  @override
   String get trackOptionsAddToLibrary => 'Dodaj do biblioteki';
 
   @override
@@ -2342,9 +2426,6 @@ class AppLocalizationsPl extends AppLocalizations {
   String get settingsLineThickness => 'Grubość linii';
 
   @override
-  String get settingsColors => 'Kolory';
-
-  @override
   String get settingsScopeVoiceColor => 'Oscyloskop głosów';
 
   @override
@@ -2366,9 +2447,6 @@ class AppLocalizationsPl extends AppLocalizations {
   String get settingsStereoRightColor => 'Stereo prawy';
 
   @override
-  String get settingsNotation => 'Notacja (nuty)';
-
-  @override
   String get settingsNotePalette => 'Paleta kolorów';
 
   @override
@@ -2381,10 +2459,21 @@ class AppLocalizationsPl extends AppLocalizations {
   String get settingsNoteStyleBox => 'Box';
 
   @override
-  String get settingsCrtEffects => 'Efekty CRT';
+  String get settingsVizAll => 'Wszystkie wizualizacje';
 
   @override
-  String get settingsCrtGlow => 'Poświata (glow)';
+  String get settingsVizScopes => 'Oscyloskopy (stereo i na głos)';
+
+  @override
+  String get settingsVizFrameRate => 'Liczba klatek';
+
+  @override
+  String get settingsVizFrameRateScreen => 'Ekran';
+
+  @override
+  String settingsValueFps(int value) {
+    return '$value kl./s';
+  }
 
   @override
   String get settingsCrtSpeed => 'Intensywność / szybkość';
@@ -2407,6 +2496,174 @@ class AppLocalizationsPl extends AppLocalizations {
 
   @override
   String get settingsSilenceDetection => 'Wykrywanie ciszy';
+
+  @override
+  String get settingsCrossfade => 'Płynne przejście';
+
+  @override
+  String get localActionPlay => 'Odtwórz pliki lub folder';
+
+  @override
+  String get localActionImport => 'Importuj pliki lub folder';
+
+  @override
+  String localOpsImporting(String name) {
+    return 'Importowanie $name…';
+  }
+
+  @override
+  String get localOpsImportingSelection => 'Importowanie wybranych plików…';
+
+  @override
+  String localOpsDeleting(String name) {
+    return 'Usuwanie $name…';
+  }
+
+  @override
+  String get localOpsPhaseCopying => 'kopiowanie';
+
+  @override
+  String get localOpsPhaseExtracting => 'rozpakowywanie';
+
+  @override
+  String get localOpsPhaseRegistering => 'dodawanie do biblioteki';
+
+  @override
+  String get localOpsPhaseDeleting => 'usuwanie plików';
+
+  @override
+  String get localImportFiles => 'Importuj pliki';
+
+  @override
+  String get storageLocalImports => 'Importy lokalne';
+
+  @override
+  String get settingsVgmJapaneseTags => 'Japońskie tagi (GD3)';
+
+  @override
+  String get settingsVgmJapaneseTagsHelp =>
+      'Preferuje japońskie pola (tytuł, gra, artysta) tagów VGM, gdy istnieją.';
+
+  @override
+  String get localImportFolder => 'Importuj folder';
+
+  @override
+  String get localLibraryTitle => 'Na tym urządzeniu';
+
+  @override
+  String get libraryOnAnotherDevice => 'Na innym urządzeniu';
+
+  @override
+  String get localLibraryEmpty =>
+      'Brak lokalnych importów. Użyj „Importuj pliki” lub „Importuj folder” na ekranie głównym.';
+
+  @override
+  String queueLimitReached(int count) {
+    return 'Kolejka ograniczona do pierwszych $count utworów';
+  }
+
+  @override
+  String localDeleteTrackConfirm(String name) {
+    return 'Usunąć „$name”? Plik i pliki towarzyszące (okładka…) zostaną skasowane.';
+  }
+
+  @override
+  String localDeleteFolderConfirm(String name, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Usunąć folder „$name” i $count utworu?',
+      many: 'Usunąć folder „$name” i $count utworów?',
+      few: 'Usunąć folder „$name” i $count utwory?',
+      one: 'Usunąć folder „$name” i $count utwór?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String localImportDone(int count) {
+    return 'Zaimportowano do biblioteki: $count';
+  }
+
+  @override
+  String localImportDoneAlbums(int tracks, int albums) {
+    return 'Zaimportowano utwory: $tracks — albumy: $albums';
+  }
+
+  @override
+  String localImportFailed(String error) {
+    return 'Import nie powiódł się: $error';
+  }
+
+  @override
+  String get settingsCrossfadeHelp =>
+      'Miesza koniec każdego utworu z początkiem następnego. Przy 0 odtwarzanie pozostaje bez przerw.';
+
+  @override
+  String get settingsMinSubsongSection => 'Zbyt krótkie podutwory';
+
+  @override
+  String get settingsMinSubsongTitle => 'Minimalny czas trwania';
+
+  @override
+  String get settingsMinSubsongHelp =>
+      'Krótsze podutwory nie trafiają na listę ani do kolejki — plik z gry często zawiera więcej efektów dźwiękowych niż muzyki. Przy 0 nic nie jest pomijane; nieznany czas trwania nigdy nie uchodzi za krótki.';
+
+  @override
+  String get localNewFolder => 'Nowy folder';
+
+  @override
+  String get localFolderName => 'Nazwa folderu';
+
+  @override
+  String get localRename => 'Zmień nazwę';
+
+  @override
+  String get localMoveTo => 'Przenieś do…';
+
+  @override
+  String get localMove => 'Przenieś';
+
+  @override
+  String get localMoveNothing => 'Nic nie przeniesiono';
+
+  @override
+  String get localNameInvalid => 'Nieprawidłowa nazwa';
+
+  @override
+  String get localNameTaken => 'Ta nazwa jest już zajęta';
+
+  @override
+  String get localMoveIntoItself =>
+      'Nie można przenieść folderu do niego samego';
+
+  @override
+  String get localManageFailed => 'Operacja nie powiodła się';
+
+  @override
+  String subsongSkippedShort(int seconds) {
+    return 'Nie trafia do kolejki: poniżej $seconds s (Ustawienia → Odtwarzanie)';
+  }
+
+  @override
+  String get settingsQueuePrefetchSection => 'Pobieranie kolejki';
+
+  @override
+  String get settingsQueuePrefetchTitle => 'Pobierz całą kolejkę';
+
+  @override
+  String get settingsQueuePrefetchSubtitle =>
+      'Po jednym pliku; następny brakujący utwór startuje, gdy poprzedni się pobierze. Wyłączone: tylko następny utwór.';
+
+  @override
+  String get settingsCdRipDeclickSection => 'Ripy CD';
+
+  @override
+  String get settingsCdRipDeclickTitle => 'Usuwaj trzaski na początku utworu';
+
+  @override
+  String get settingsCdRipDeclickSubtitle =>
+      'Wadliwe ripy CD (mp3, ape, ogg, flac…) często zaczynają się kilkoma uszkodzonymi próbkami. Są naprawiane, aż zagra 200 ms prawdziwej muzyki; potem filtr się wyłącza.';
 
   @override
   String get settingsSilenceSkipTitle =>
@@ -2476,6 +2733,10 @@ class AppLocalizationsPl extends AppLocalizations {
   String get settingsEngineOpenmptSubtitle => 'Trackery — MOD, XM, S3M, IT…';
 
   @override
+  String get settingsEngineXmpSubtitle =>
+      'Moduły, których libopenmpt nie odczytuje — .musx, .liq, .fnk…';
+
+  @override
   String get settingsEngineGmeSubtitle =>
       'SPC, VGM(gme), KSS, AY… — korektor, stereo';
 
@@ -2517,6 +2778,9 @@ class AppLocalizationsPl extends AppLocalizations {
   String get settingsMasterVolume => 'Głośność główna';
 
   @override
+  String get settingsAmplification => 'Wzmocnienie';
+
+  @override
   String get settingsAmigaFilter => 'Filtr Amiga';
 
   @override
@@ -2530,6 +2794,17 @@ class AppLocalizationsPl extends AppLocalizations {
 
   @override
   String get settingsChorus => 'Chorus';
+
+  @override
+  String get playbackMt32NoRoms =>
+      'Ten plik MIDI napisano dla Rolanda MT-32. Bez jego ROM-ów gra na SoundFoncie, z instrumentami przełożonymi na General MIDI — zaimportuj ROM-y w Ustawienia › Silniki › Munt.';
+
+  @override
+  String get settingsMidiMt32ToGm => 'Dostosuj pliki MT-32';
+
+  @override
+  String get settingsMidiMt32ToGmSubtitle =>
+      'MIDI napisane dla Rolanda MT-32 numeruje programy według listy MT-32: po przełożeniu na najbliższy odpowiednik General MIDI brzmi wiarygodnie zamiast przypadkowo.';
 
   @override
   String get settingsInterpNone => 'Brak';
@@ -3006,6 +3281,154 @@ class AppLocalizationsPl extends AppLocalizations {
   }
 
   @override
+  String get storageTitle => 'Pamięć';
+
+  @override
+  String get storageSubtitle => 'Co aplikacja trzyma na dysku, z usuwaniem';
+
+  @override
+  String get storageDownloads => 'Pobrane';
+
+  @override
+  String get storageArtworkCache => 'Pamięć okładek';
+
+  @override
+  String get storageSoundfonts => 'SoundFonty';
+
+  @override
+  String get storagePresets => 'Presety wizualizera';
+
+  @override
+  String get storageOpenedFiles => 'Otwarte pliki';
+
+  @override
+  String get storageOpenedEmpty =>
+      'Pliki otwarte z zewnątrz (udostępnianie, „Otwórz w”, wybieranie na telefonie) są tu kopiowane.';
+
+  @override
+  String get storageInUse => 'na playliście lub w bibliotece';
+
+  @override
+  String get storageDeleteAll => 'Usuń wszystko';
+
+  @override
+  String get storageClear => 'Wyczyść';
+
+  @override
+  String get storageDeleteSelection => 'Usuń zaznaczone';
+
+  @override
+  String get storageSelectAll => 'Zaznacz wszystko';
+
+  @override
+  String get storageFilterHint => 'Filtruj po nazwie';
+
+  @override
+  String get storageNoMatch => 'Żaden plik nie pasuje do tego filtra.';
+
+  @override
+  String storageSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count zaznaczonego',
+      many: '$count zaznaczonych',
+      few: '$count zaznaczone',
+      one: '$count zaznaczony',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Usunąć $count pliku?',
+      many: 'Usunąć $count plików?',
+      few: 'Usunąć $count pliki?',
+      one: 'Usunąć $count plik?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionInUseBody(int count, int inUse) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Usunąć $count plików? $inUse są używane przez playlistę lub bibliotekę — te wpisy stracą swój plik.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get storageDownloadsClearBody =>
+      'Usunąć wszystkie pobrane pliki i ich wpisy w bibliotece? Ulubione i playlisty zachowają wpisy, ale pliki trzeba będzie pobrać ponownie.';
+
+  @override
+  String get storageSoundfontsClearBody =>
+      'Usunąć wszystkie SoundFonty, także zaimportowane? Katalogowe pobiorą się ponownie; zaimportowane przepadną.';
+
+  @override
+  String get storagePresetsClearBody =>
+      'Usunąć pobrane paczki presetów i zaimportowane presety? Wbudowane presety zostają; paczki pobiorą się ponownie, zaimportowane przepadną.';
+
+  @override
+  String get storageOpenedDeleteAllTitle => 'Usuń otwarte pliki';
+
+  @override
+  String get storageInUseDeleteTitle => 'Plik w użyciu';
+
+  @override
+  String get storageInUseDeleteBody =>
+      'Playlista lub biblioteka nadal wskazuje na ten plik. Po usunięciu te wpisy zostaną bez pliku.';
+
+  @override
+  String storageCategoryStat(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count pliku — $size',
+      many: '$count plików — $size',
+      few: '$count pliki — $size',
+      one: '$count plik — $size',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDownloadsSubtitle(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count pliku — $size · zarządzanie z albumów i utworów',
+      many: '$count plików — $size · zarządzanie z albumów i utworów',
+      few: '$count pliki — $size · zarządzanie z albumów i utworów',
+      one: '$count plik — $size · zarządzanie z albumów i utworów',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageOpenedDeleteAllBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Usunąć $count pliku? Pliki używane przez playlistę lub bibliotekę zostaną zachowane.',
+      many:
+          'Usunąć $count plików? Pliki używane przez playlistę lub bibliotekę zostaną zachowane.',
+      few:
+          'Usunąć $count pliki? Pliki używane przez playlistę lub bibliotekę zostaną zachowane.',
+      one:
+          'Usunąć $count plik? Pliki używane przez playlistę lub bibliotekę zostaną zachowane.',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetStats => 'Zresetuj statystyki';
 
   @override
@@ -3033,6 +3456,39 @@ class AppLocalizationsPl extends AppLocalizations {
   String get settingsResetDbTitle => 'Zresetować bazę danych?';
 
   @override
+  String get settingsCleanLocalTitle => 'Wyczyść niedziałające wpisy lokalne';
+
+  @override
+  String get cleanStageScan => 'Analizowanie wpisów…';
+
+  @override
+  String get cleanStageSync => 'Synchronizacja z kontem…';
+
+  @override
+  String get cleanStagePurge => 'Usuwanie z konta…';
+
+  @override
+  String get cleanStageDelete => 'Usuwanie lokalne…';
+
+  @override
+  String get settingsCleanLocalBody =>
+      'Wpisy biblioteki wskazujące plik, którego nie ma już na tym urządzeniu. Zostaną też usunięte z konta, a więc z innych urządzeń.';
+
+  @override
+  String settingsCleanLocalDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Usunięto $count wpisu',
+      many: 'Usunięto $count wpisów',
+      few: 'Usunięto $count wpisy',
+      one: 'Usunięto $count wpis',
+      zero: 'Nie ma czego czyścić',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetDbBody =>
       'Trwale usunięte zostaną:\n• cała historia słuchania\n• wszystkie liczniki\n• wszystkie ulubione\n• wszystkie playlisty\n• wszystkie metadane z pamięci podręcznej\n\nTwoje pliki audio nie zostaną usunięte.';
 
@@ -3045,6 +3501,33 @@ class AppLocalizationsPl extends AppLocalizations {
   @override
   String get settingsDeleteDownloadsSubtitle =>
       'Usuwa wszystkie pliki z folderu online (utwory, okładki)';
+
+  @override
+  String get settingsCleanAll => 'Wyczyść lokalną bazę i pamięć podręczną';
+
+  @override
+  String get settingsCleanAllSubtitle =>
+      'Usuwa wpisy bez pliku, wpisy biblioteki wskazujące pliki na innym urządzeniu oraz opróżnia pamięć podręczną okładek i metadanych';
+
+  @override
+  String get settingsCleanAllConfirmBody =>
+      'Wpisy biblioteki wskazujące pliki na innym urządzeniu zostaną usunięte także z konta, a więc z pozostałych urządzeń. Okładki i metadane zostaną pobrane ponownie przy następnym odtworzeniu.';
+
+  @override
+  String get settingsDataAdvanced => 'Zaawansowane';
+
+  @override
+  String get settingsDataAdvancedSubtitle =>
+      'Każdy krok czyszczenia osobno, pamięć podręczna i resetowanie';
+
+  @override
+  String get settingsDataGroupDb => 'Baza danych';
+
+  @override
+  String get settingsDataGroupCache => 'Pamięć podręczna';
+
+  @override
+  String get settingsDataGroupReset => 'Resetowanie';
 
   @override
   String get settingsDeleteDownloadsTitle => 'Usunąć pobrane pliki?';
@@ -3301,6 +3784,10 @@ class AppLocalizationsPl extends AppLocalizations {
   String get accountErrorCodeLength => 'Kod ma 6 cyfr';
 
   @override
+  String get albumOfflinePartial =>
+      'Offline — pokazujemy to, co już jest na tym urządzeniu';
+
+  @override
   String get accountErrorNetwork => 'Brak połączenia, spróbuj ponownie';
 
   @override
@@ -3543,6 +4030,9 @@ class AppLocalizationsPl extends AppLocalizations {
   String get commonSave => 'Zapisz';
 
   @override
+  String get commonImport => 'Importuj';
+
+  @override
   String get accountDisplayName => 'Nazwa publiczna';
 
   @override
@@ -3668,46 +4158,63 @@ class AppLocalizationsPl extends AppLocalizations {
   String get settingsSpectrumModeRing => 'Pierścień';
 
   @override
+  String get settingsPianoMode => 'Wygląd pianina';
+
+  @override
+  String get settingsPianoModeRoll => 'Klawiatury';
+
+  @override
+  String get settingsPianoModeFalling => 'Spadające nuty';
+
+  @override
+  String get settingsPianoColor => 'Kolory';
+
+  @override
+  String get settingsPianoColorVoice => 'Według głosu';
+
+  @override
+  String get settingsPianoColorInstrument => 'Według instrumentu';
+
+  @override
+  String get settingsPianoGlow => 'Poświata na uderzonych klawiszach';
+
+  @override
+  String get settingsPianoLighting => 'Światło i cienie na klawiszach';
+
+  @override
+  String get settingsPianoVoiceNames => 'Nazwy głosów';
+
+  @override
+  String get featuredAdditionsHeader => 'Nowości w katalogu';
+
+  @override
+  String get featuredAdditionsCard => 'Świeżo dodane';
+
+  @override
+  String get featuredAdditionsPlaylist => 'Świeżo dodane utwory';
+
+  @override
   String get releaseNotesTitle => 'Nowości';
 
   @override
-  String get releaseNotesV4Downloads =>
-      'Pobieranie: długie pobieranie można przerwać w trakcie, a archiwum albumu nie jest już pobierane kilka razy.';
+  String get releaseNotesV7Cpu =>
+      'Aplikacja nie pracuje już w tle, gdy nic nie gra: znacznie mniejsze zużycie procesora i baterii.';
 
   @override
-  String get releaseNotesV4Queue =>
-      'Kolejka: przycisk do jej wyczyszczenia, z potwierdzeniem — zatrzymuje też odtwarzanie.';
+  String get releaseNotesV7VizIdle =>
+      'Wizualizacje zatrzymują się, gdy odtwarzanie jest wstrzymane, i są ograniczone do 60 klatek na sekundę (regulowane).';
 
   @override
-  String get releaseNotesV4DropFiles =>
-      'Pliki upuszczone na okno: odtwórz teraz, następnie albo na końcu; okładki i pliki towarzyszące są pomijane, a lista zawarta w archiwum jest respektowana (prawdziwe tytuły, bez martwych ścieżek).';
+  String get releaseNotesV7Subsongs =>
+      'Naprawiono: na PC Engine, Master System i Atari ST (.sndh) niektóre utwory uruchamiały sąsiednią piosenkę.';
 
   @override
-  String get releaseNotesV4Soundfont =>
-      'MIDI: zaimportuj własny SoundFont z urządzenia, obok tych z serwera.';
+  String get releaseNotesV7Piano =>
+      'Wizualizacja pianina pozostawała pusta przy muzyce z PC Engine.';
 
   @override
-  String get releaseNotesV4Formats =>
-      'Strumienie gier Wwise, FSB i OGL wreszcie grają (własny Vorbis).';
-
-  @override
-  String get releaseNotesV4Chips =>
-      'Sześć układów dźwiękowych więcej, wybór rdzenia emulacji dla układu (SameBoy dla Game Boya) i poprawna wysokość dźwięku w układach samplowych.';
-
-  @override
-  String get releaseNotesV4Zx =>
-      'ZX Spectrum: pliki .vt2 grają, a widoki nut i patternów obejmują całą rodzinę ZX.';
-
-  @override
-  String get releaseNotesV4Loop =>
-      'Powtarzanie utworu naprawdę zapętla zamiast przeładowywać, a licznik nie zamiera przy nieskończonej pętli.';
-
-  @override
-  String get releaseNotesV4Info =>
-      'Panel ⓘ wymienia pliki, które utwór naprawdę otworzył — łącznie z towarzyszącymi i bibliotekami.';
-
-  @override
-  String get releaseNotesV4Linux => 'Wersja na Linuksa.';
+  String get releaseNotesV7Database =>
+      'Baza danych uszkodzona przez aktualizację naprawia się teraz sama, zamiast blokować dostęp do biblioteki.';
 
   @override
   String get releaseNotesDataReset =>
@@ -3751,7 +4258,7 @@ class AppLocalizationsPl extends AppLocalizations {
       other: '$count pominiętych presetów',
       many: '$count pominiętych presetów',
       few: '$count pominięte presety',
-      one: '1 pominięty preset',
+      one: '$count pominięty preset',
     );
     return '$_temp0';
   }
@@ -4014,4 +4521,167 @@ class AppLocalizationsPl extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get browseCharts => 'Listy przebojów';
+
+  @override
+  String get chartsGlobal => 'Globalne';
+
+  @override
+  String get chartsByCollection => 'Wg kolekcji';
+
+  @override
+  String get chartsTopSongs => 'Top utwory';
+
+  @override
+  String get chartsTopAlbums => 'Top albumy';
+
+  @override
+  String get chartsRewampSection => 'Top rewamp';
+
+  @override
+  String get chartsPublishedSection => 'Opublikowane listy';
+
+  @override
+  String chartsUpdated(String date) {
+    return 'Zaktualizowano $date';
+  }
+
+  @override
+  String get chartsSource => 'Źródło';
+
+  @override
+  String get settingsMidiSynth => 'Syntezator MIDI';
+
+  @override
+  String get settingsMidiSynthAuto =>
+      'Automatycznie (MT-32, gdy plik tego wymaga)';
+
+  @override
+  String get settingsMidiSynthSoundfont => 'SoundFont (FluidLite)';
+
+  @override
+  String get settingsMidiSynthMt32 => 'Roland MT-32 (emulacja)';
+
+  @override
+  String get settingsMt32Section => 'Emulacja Roland MT-32';
+
+  @override
+  String get settingsMt32RomsTitle => 'ROM-y MT-32';
+
+  @override
+  String get settingsMt32RomsMissing =>
+      'Brak użytecznego zestawu ROM — zaimportuj ROM sterujący i PCM z MT-32 lub CM-32L';
+
+  @override
+  String settingsMt32RomsActive(String set) {
+    return 'Aktywny zestaw: $set';
+  }
+
+  @override
+  String get settingsMt32Import => 'Importuj pliki ROM…';
+
+  @override
+  String get settingsMt32ImportSubtitle =>
+      'ROM sterujący + ROM PCM (.rom/.bin), połówki MAME są akceptowane. ROM-y nie są dostarczane z aplikacją.';
+
+  @override
+  String settingsMt32ImportRejected(String name) {
+    return '$name nie jest znanym ROM-em MT-32 / CM-32L';
+  }
+
+  @override
+  String settingsMt32ImportDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Zaimportowano $count pliku ROM',
+      many: 'Zaimportowano $count plików ROM',
+      few: 'Zaimportowano $count pliki ROM',
+      one: 'Zaimportowano $count plik ROM',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsMt32Model => 'Model';
+
+  @override
+  String get settingsMt32ModelAuto => 'Automatycznie (CM-32L, jeśli dostępny)';
+
+  @override
+  String get settingsMt32Reverb => 'Pogłos';
+
+  @override
+  String get engineDescMt32 =>
+      'Emulacja Roland MT-32 / CM-32L dla MIDI (.mid/.midi/.kar/.rmi)';
+
+  @override
+  String get miniWindowEnter => 'Miniodtwarzacz';
+
+  @override
+  String get miniWindowExit => 'Wróć do głównego okna';
+
+  @override
+  String get miniWindowIdle => 'Nic nie jest odtwarzane';
+
+  @override
+  String get settingsAlwaysOnTopTitle => 'Zawsze na wierzchu';
+
+  @override
+  String get settingsAlwaysOnTopSubtitle =>
+      'Utrzymuje okno nad pozostałymi — zarówno główne, jak i miniodtwarzacz';
+
+  @override
+  String get windowAlwaysOnTopOn => 'Zawsze na wierzchu: włączone';
+
+  @override
+  String get miniWindowCoverFill => 'Powiększ okładkę, by wypełniła pole';
+
+  @override
+  String get miniWindowCoverFit => 'Pokaż całą okładkę';
+
+  @override
+  String get releaseNotesV7Mt32 =>
+      'Nowy silnik Roland MT-32 do muzyki MIDI z gier, z własnymi ROM-ami. Bez ROM-ów plik MIDI napisany dla MT-32 jest dostosowywany do General MIDI.';
+
+  @override
+  String get releaseNotesV7Xmp =>
+      'Odtwarzanych jest teraz dziesięć rzadkich formatów modułów (Archimedes Tracker .musx, .liq, .fnk…).';
+
+  @override
+  String get releaseNotesV7AmigaAdlib =>
+      'Muzyka AdLib Westwood (.adl) odtwarza wszystkie swoje utwory, a BP SoundMon V1 jest rozpoznawany na Amidze.';
+
+  @override
+  String get releaseNotesV7MiniPlayer =>
+      'Mac: miniodtwarzacz, kompaktowy lub z wizualizacją, oraz opcja „Zawsze na wierzchu”.';
+
+  @override
+  String get releaseNotesV7Instruments =>
+      'Oscyloskop, nuty i pianino mogą nazywać i kolorować każdy instrument, nie tylko każdy głos.';
+
+  @override
+  String get releaseNotesV7Podium =>
+      'Wyszukiwanie: filtruj utwory, które zajęły 1., 2. lub 3. miejsce w konkursie demosceny.';
+
+  @override
+  String get releaseNotesV7ShortSubsongs =>
+      'Zbyt krótkie podutwory (efekty dźwiękowe z gier) są pomijane w „Odtwórz wszystko” — próg w Ustawienia → Odtwarzanie.';
+
+  @override
+  String get releaseNotesV7LocalFolders =>
+      'Twoje importy: upuść cały folder (archiwa zostaną rozpakowane) oraz twórz, zmieniaj nazwy lub przenoś foldery.';
+
+  @override
+  String get releaseNotesV7Midi =>
+      'MIDI: perkusja nie brzmi już jak pianino, a głośność nie przesterowuje.';
+
+  @override
+  String get releaseNotesV7ProjectM =>
+      'projectM: presety nie powtarzają się już między kolejnymi uruchomieniami, a preset nie jest już błędnie odrzucany po pauzie.';
+
+  @override
+  String get libraryFileMissing => 'Brak pliku';
 }

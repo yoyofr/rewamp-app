@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'engines.dart';
 import 'l10n.dart';
-import 'shell_insets.dart';
 
 /// Full list of playable formats, grouped by playback engine. Reached from
 /// Settings → À propos → "Formats lus".
@@ -18,7 +17,7 @@ class EngineFormatsScreen extends StatelessWidget {
       body: ListView(
         children: [
           Padding(
-            padding: shellInset(context, const EdgeInsets.fromLTRB(16, 16, 16, 8)),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
               l10n.enginesFormatsSummary(kTotalFormatCount, kEngines.length),
               style: tt.bodyMedium,

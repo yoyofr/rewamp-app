@@ -53,7 +53,19 @@ void
 fluid_channel_init(fluid_channel_t* chan)
 {
   chan->prognum = 0;
-  chan->banknum = 0;
+  /* rewamp: the drum channel (MIDI 10 = index 9) re-initialises to the
+   * PERCUSSION bank, as it is set up at synth creation. Upstream reset every
+   * channel to bank 0 here, so fluid_synth_system_reset() — which the MIDI
+   * plugin calls after its voice-name pass and on every rewind — left channel
+   * 10 on bank 0 program 0, a PIANO: every file that does not send its own
+   * program change on channel 10 had its drums played on the piano (32 of 61
+   * LucasArts MIDIs, 21 of 36 Indy 4 arrangements). fluid_synth_program_change
+   * already special-cases channel 9 the same way; this makes the reset agree. */
+  if (chan->channum == 9 && chan->synth &&
+      fluid_settings_str_equal(chan->synth->settings, "synth.drums-channel.active", "yes"))
+    chan->banknum = DRUM_INST_BANK;
+  else
+    chan->banknum = 0;
   chan->sfontnum = 0;
 
   if (chan->preset) delete_fluid_preset (chan->preset);

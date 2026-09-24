@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'font_fallback.dart';
 import 'package:flutter/material.dart';
 
 /// Single-line text that auto-scrolls (ping-pong) when it overflows its
@@ -9,12 +10,24 @@ class ScrollingText extends StatefulWidget {
   final int        pauseMs;
   final double     pixelsPerSecond;
 
+  /// Prend la largeur du TEXTE quand il tient, au lieu de toute la largeur
+  /// offerte.
+  ///
+  /// Une vue défilante horizontale occupe par défaut TOUTE la contrainte qu'on
+  /// lui donne — ce qui convient au titre d'un `ListTile` (aligné à gauche,
+  /// pleine largeur de toute façon) mais casse une ligne où le titre est suivi
+  /// d'un badge dans une `Row`: le badge partirait au bord droit même derrière
+  /// un titre de trois mots. Sans effet quand le texte déborde, la largeur
+  /// étant alors celle du conteneur dans les deux cas.
+  final bool shrinkWrap;
+
   const ScrollingText({
     super.key,
     required this.text,
     this.style,
     this.pauseMs        = 1500,
     this.pixelsPerSecond = 40,
+    this.shrinkWrap     = false,
   });
 
   @override
@@ -83,7 +96,7 @@ class _ScrollingTextState extends State<ScrollingText> {
     return LayoutBuilder(
       builder: (ctx, constraints) {
         final cw    = constraints.maxWidth.isFinite ? constraints.maxWidth : 0.0;
-        final style = widget.style ?? DefaultTextStyle.of(ctx).style;
+        final style = withCjkFallback(widget.style ?? DefaultTextStyle.of(ctx).style);
         final tp = TextPainter(
           text:      TextSpan(text: widget.text, style: style),
           maxLines:  1,
@@ -102,7 +115,7 @@ class _ScrollingTextState extends State<ScrollingText> {
           });
         }
 
-        return ClipRect(
+        final view = ClipRect(
           child: SingleChildScrollView(
             controller:      _scroll,
             scrollDirection: Axis.horizontal,
@@ -113,6 +126,8 @@ class _ScrollingTextState extends State<ScrollingText> {
             ),
           ),
         );
+        if (!widget.shrinkWrap || !constraints.maxWidth.isFinite) return view;
+        return SizedBox(width: tw < cw ? tw : cw, child: view);
       },
     );
   }

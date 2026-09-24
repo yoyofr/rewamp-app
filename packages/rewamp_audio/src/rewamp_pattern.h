@@ -31,6 +31,18 @@ void rewamp_pattern_cursor_reset(void);
 /* Bumped by every reset — the GL pattern renderer watches it to drop its
  * cached tessellation (track change / seek). */
 unsigned rewamp_pattern_song_generation(void);
+/* Relais gapless: le décodeur vient d'être échangé, mais l'oreille est encore
+ * DANS le morceau précédent. On n'efface donc RIEN — on ouvre une nouvelle
+ * époque: les captures suivantes décrivent le morceau suivant et sont
+ * étiquetées, celles d'avant restent lisibles jusqu'à ce que la position
+ * entendue les dépasse. Voir le commentaire d'époque dans rewamp_pattern.c. */
+void rewamp_pattern_cursor_new_epoch(void);
+/* Époque que le PRODUCTEUR capture (le morceau que le décodeur joue) et époque
+ * de la dernière position LUE (le morceau qu'on entend). Différentes ⇒ une
+ * frontière gapless est en attente: le contenu statique (`rewamp_pattern_order`
+ * et consorts) décrit déjà le morceau suivant et ne doit PAS être relu. */
+unsigned rewamp_pattern_live_epoch(void);
+unsigned rewamp_pattern_heard_epoch(void);
 /* Producer: store the live (order,row) tagged with [producerSamplePos]. */
 void rewamp_pattern_cursor_capture(int64_t producerSamplePos, int order, int row);
 /* Consumer: update the heard sample position. */

@@ -1,9 +1,15 @@
+import 'collection_families.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'app_snack.dart';
 import 'l10n.dart';
+import 'library_toolbar.dart' show ListFilterField, kListFilterThreshold,
+    matchesFilterQuery;
+import 'cancel_field.dart';
+import 'scrolling_text.dart';
 import 'view_mode_picker.dart';
+import 'collection_chip_axis.dart';
 import 'rewamp_db.dart';
 import 'artwork_image.dart';
 import 'album_detail_screen.dart';
@@ -12,6 +18,7 @@ import 'library_button.dart';
 import 'search_screen.dart'
     show playAlbumFromList, ArtistResultsScreen, openGroup;
 import 'hover_grow.dart';
+import 'entity_play_actions.dart';
 import 'radio_surprise_buttons.dart';
 import 'song_tile.dart';
 import 'track_options_sheet.dart';
@@ -62,6 +69,40 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
   Timer?  _debounce;
   String? _activeFilter; // non-null → search_music mode
 
+  /// Puce choisie sur l'axe de la collection (null = toutes). Voir
+  /// collection_chip_axis.dart: une collection comme `midi` mélange du General
+  /// MIDI et du MT-32, qui ne s'écoutent pas de la même façon.
+  String? _chipTag;
+
+  /// Les tags RÉELLEMENT envoyés: ceux de la destination plus, le cas échéant,
+  /// la puce choisie. Un seul point de vérité — les trois requêtes de l'écran
+  /// (morceaux, sonde d'albums, radio) et l'onglet Albums doivent filtrer
+  /// PAREIL, sinon l'onglet annonce des albums que la liste ne montre pas.
+  List<String> get _tags =>
+      _chipTag == null ? widget.tags : [...widget.tags, _chipTag!];
+
+  /// Radio (n = 50) / Surprise (n = 1) sur la portée de l'écran: le serveur
+  /// tire au hasard DANS les facettes courantes — ce n'est pas un mélange de
+  /// la page chargée, qui ne verrait que les 50 premières lignes.
+  Future<void> _playRandomScope(int n) async {
+    final seed = DateTime.now().microsecondsSinceEpoch.toString();
+    try {
+      final songs = await RewampDb.browse(
+        collection: widget.collection,
+        artistName: widget.artistName,
+        platform: widget.platform,
+        formatFilter: widget.formatFilter,
+        tags: _tags,
+        tagCategories: widget.tagCategories,
+        sortBy: 'random',
+        seed: seed,
+        limit: n,
+      );
+      if (!mounted || songs.isEmpty) return;
+      (widget.onPlayAlbum ?? globalOnPlayAlbum)?.call(context, songs);
+    } catch (_) {}
+  }
+
   int    _total       = 0;
   int    _offset      = 0;
   bool   _hasMore     = false;
@@ -88,13 +129,13 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
   /// de tags n'ont aucun album, et un onglet vide est pire que pas d'onglet.
   /// Silencieux en cas d'échec: c'est une affordance, pas le contenu.
   Future<void> _probeAlbums() async {
-    if (widget.platform == null && widget.tags.isEmpty) return;
+    if (widget.platform == null && _tags.isEmpty) return;
     try {
       final res = await RewampDb.searchAlbums(
         '',
         collection:    widget.collection,
         platform:      widget.platform,
-        tags:          widget.tags,
+        tags:          _tags,
         tagCategories: widget.tagCategories,
         sortBy:        'name',
         sortDir:       'asc',
@@ -104,6 +145,12 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
       setState(() => _albumCount = res.isEmpty ? 0 : res.first.totalCount);
     } catch (_) {/* pas d'affordance, tant pis */}
   }
+
+  /// La rangée de puces coiffe les deux onglets — elle les filtre tous les
+  /// deux, donc elle ne peut pas vivre dans l'un d'eux.
+  Widget _withChipRow(Widget? chipRow, Widget body) => chipRow == null
+      ? body
+      : Column(children: [chipRow, Expanded(child: body)]);
 
   @override
   void dispose() {
@@ -118,6 +165,16 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
     if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 200) {
       _loadMore();
     }
+  }
+
+  /// Change de puce: tout est refait — la liste, la sonde d'albums (une puce
+  /// peut n'avoir aucun album alors que l'autre en a 554) et, par sa clé,
+  /// l'onglet Albums.
+  void _onChipAxis(String? tag) {
+    if (_chipTag == tag) return;
+    setState(() { _chipTag = tag; _albumCount = 0; });
+    _reload();
+    _probeAlbums();
   }
 
   void _onFilterChanged(String text) {
@@ -139,7 +196,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
         artistName:   widget.artistName,
         platform:     widget.platform,
         formatFilter: widget.formatFilter,
-        tags:         widget.tags,
+        tags:         _tags,
         tagCategories: widget.tagCategories,
         sortBy:       widget.sortBy,
         limit:        50,
@@ -151,7 +208,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
       artistName:   widget.artistName,
       platform:     widget.platform,
       formatFilter: widget.formatFilter,
-      tags:         widget.tags,
+      tags:         _tags,
         tagCategories: widget.tagCategories,
       sortBy:       widget.sortBy,
       limit:        50,
@@ -196,20 +253,53 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    // Axe de PUCE de la collection (General MIDI / MT-32 sur `midi`): une
+    // rangée de puces au-dessus des deux onglets, parce qu'elle les filtre
+    // TOUS LES DEUX. Rien à afficher pour une collection qui n'en déclare pas.
+    final chipAxis = chipAxisFor(widget.collection);
+    Widget? chipRow;
+    if (chipAxis.isNotEmpty) {
+      chipRow = Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        child: Wrap(
+          spacing: 8,
+          children: [
+            ChoiceChip(
+              label: Text(l10n.searchCollectionAll),
+              selected: _chipTag == null,
+              onSelected: (_) => _onChipAxis(null),
+            ),
+            // Noms de tags, pas de slugs: c'est ce que le serveur apparie, et
+            // ce sont des noms propres — rien à traduire.
+            for (final tag in chipAxis)
+              ChoiceChip(
+                label: Text(tag),
+                selected: _chipTag == tag,
+                onSelected: (_) => _onChipAxis(tag),
+              ),
+          ],
+        ),
+      );
+    }
+
     final songsBody = Column(
       children: [
         if (widget.showFilter)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: TextField(
+            child: CancelField(
               controller: _filterCtrl,
-              decoration: InputDecoration(
-                hintText: l10n.browseFilterByTitle,
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                border: const OutlineInputBorder(),
+              onCleared: _onFilterChanged,
+              builder: (_) => TextField(
+                controller: _filterCtrl,
+                decoration: InputDecoration(
+                  hintText: l10n.browseFilterByTitle,
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: _onFilterChanged,
               ),
-              onChanged: _onFilterChanged,
             ),
           ),
         Expanded(child: _buildBody()),
@@ -224,7 +314,9 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
     if (_albumCount <= 0) {
       return Scaffold(
         appBar: AppBar(title: Text(widget.label)),
-        body: songsBody,
+        body: chipRow == null
+            ? songsBody
+            : Column(children: [chipRow, Expanded(child: songsBody)]),
       );
     }
     return DefaultTabController(
@@ -237,19 +329,22 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
             Tab(text: l10n.tabAlbums),
           ]),
         ),
-        body: TabBarView(children: [
+        body: _withChipRow(chipRow, TabBarView(children: [
           songsBody,
           CollectionAlbumsScreen(
+            // La clé porte la puce: l'écran d'albums charge dans son
+            // initState, donc sans elle changer de puce ne rechargeait rien.
+            key:           ValueKey(_chipTag),
             collection:    widget.collection,
             platform:      widget.platform,
-            tags:          widget.tags,
+            tags:          _tags,
             tagCategories: widget.tagCategories,
             title:         widget.label,
             embedded:      true,
             onTap:         widget.onTap,
             onPlayAlbum:   widget.onPlayAlbum,
           ),
-        ]),
+        ])),
       ),
     );
   }
@@ -262,8 +357,27 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
     }
     return ValueListenableBuilder<List<SearchResult>>(
       valueListenable: _notifier,
-      builder: (_, results, __) {
-        if (results.isEmpty) {
+      builder: (_, raw, __) {
+        // Sous filtre TEXTE le flux est search_music: il ramène aussi les
+        // pistes d'un album dont seul le NOM d'album matche, et la ligne de
+        // l'album entier. Cette liste est celle des MORCEAUX — même règle que
+        // l'onglet Morceaux de la recherche, sinon « Tout lire » et la liste
+        // ne montrent pas la même chose.
+        final filter = _activeFilter;
+        final results = filter == null
+            ? raw
+            : [
+                for (final r in raw)
+                  if (!RewampDb.isWholeAlbumRow(r) &&
+                      !RewampDb.matchedAlbumNameOnly(r, filter))
+                    r,
+              ];
+        // Page entièrement filtrée: la ListView serait vide, ne défilerait pas,
+        // et plus rien ne rappellerait loadMore.
+        if (results.isEmpty && raw.isNotEmpty && _hasMore && !_loadingMore) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => _loadMore());
+        }
+        if (raw.isEmpty) {
           return Center(
             child: Text(
               _activeFilter != null ? l10n.searchNoResults : l10n.browseNoSongs,
@@ -272,7 +386,39 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
         }
         return Column(
           children: [
-            _BrowseCountBar(loaded: results.length, total: _total, loading: _loadingMore),
+            _BrowseCountBar(
+              loaded: results.length,
+              total: _total,
+              loading: _loadingMore,
+              // « Tout lire » sur les MORCEAUX chargés: une ligne qui
+              // représente un ALBUM ENTIER (archive joshw, flux search_music
+              // sous filtre texte) n'en est pas un. ⚠️ Prédicat ÉTROIT
+              // (isWholeAlbumRow): `isAlbumLevelMatch` attrape aussi les
+              // membres d'archive sans url à eux, qui sont des morceaux — les
+              // écarter vidait la liste et rendait le bouton muet.
+              // Radio / Surprise: la MÊME portée (collection, artiste,
+              // plateforme, format, tags), tirée au hasard côté serveur — une
+              // station sur ce qu'on parcourt, pas sur la page chargée.
+              onRadio: () => _playRandomScope(50),
+              onSurprise: () => _playRandomScope(1),
+              onPlayAll: () async {
+                final songs = _activeFilter == null
+                    ? results
+                    : [
+                        for (final r in results)
+                          if (!RewampDb.isWholeAlbumRow(r) &&
+                              !RewampDb.matchedAlbumNameOnly(r, _activeFilter!))
+                            r,
+                      ];
+                if (songs.isEmpty) return;
+                // Ligne dont le serveur a nommé la piste → cette piste, pas le
+                // conteneur.
+                final resolved = await RewampDb.resolveMatchedTracks(songs);
+                if (!mounted) return;
+                (widget.onPlayAlbum ?? globalOnPlayAlbum)
+                    ?.call(context, resolved);
+              },
+            ),
             Expanded(
               child: ListView.builder(
                 controller: _scroll,
@@ -288,7 +434,13 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
                   return SongTile(
                       result:      results[i],
                       onTap:       widget.onTap,
-                      onPlayAlbum: widget.onPlayAlbum);
+                      onPlayAlbum: widget.onPlayAlbum,
+                      // Les navigateurs par facette qui ne sont PAS bornés à
+                      // une collection (plateforme, puce, éditeur, année…)
+                      // brassent tout le catalogue: d'où vient chaque ligne
+                      // est une information — en petit, sur sa propre ligne.
+                      // Borné à une collection, elle serait du bruit répété.
+                      showCollection: widget.collection == null);
                 },
               ),
             ),
@@ -301,6 +453,34 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
 
 enum _CountKind { songs, albums, artists }
 
+/// Rangée d'actions seule — les écrans d'angle qui n'ont pas de barre de
+/// comptage (groupes, pays, formats, valeurs de facette) portent la MÊME
+/// famille de trois boutons que le reste de l'application. Aucune action = la
+/// rangée ne s'affiche pas.
+class _ActionsBar extends StatelessWidget {
+  final VoidCallback? onPlayAll, onRadio, onSurprise;
+  const _ActionsBar({this.onPlayAll, this.onRadio, this.onSurprise});
+
+  @override
+  Widget build(BuildContext context) {
+    if (onPlayAll == null && onRadio == null && onSurprise == null) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Row(children: [
+        const Spacer(),
+        RadioSurpriseButtons(
+          onPlayAll: onPlayAll,
+          onRadio: onRadio,
+          onSurprise: onSurprise,
+          dense: true,
+        ),
+      ]),
+    );
+  }
+}
+
 class _BrowseCountBar extends StatelessWidget {
   final int  loaded;
   final int  total;
@@ -309,12 +489,24 @@ class _BrowseCountBar extends StatelessWidget {
   /// languages decline the noun with the number ("2 песни" vs "340 песен"), so
   /// each kind needs its own plural-aware message.
   final _CountKind kind;
+  /// « Tout lire » — lance ce qui est AFFICHÉ (les lignes chargées, pas le
+  /// total serveur). Plafond de file en aval (kQueueLimit, annoncé).
+  final VoidCallback? onPlayAll;
+  /// Radio / Surprise: la MÊME famille de trois boutons que partout ailleurs
+  /// (recherche, artiste, palmarès). Une barre sans aucune des trois actions
+  /// n'affiche RIEN — un bouton grisé sur une liste vide laissait croire
+  /// qu'il y a quelque chose à lancer.
+  final VoidCallback? onRadio;
+  final VoidCallback? onSurprise;
 
   const _BrowseCountBar(
       {required this.loaded,
       required this.total,
       required this.loading,
-      this.kind = _CountKind.songs});
+      this.kind = _CountKind.songs,
+      this.onPlayAll,
+      this.onRadio,
+      this.onSurprise});
 
   @override
   Widget build(BuildContext context) {
@@ -342,6 +534,15 @@ class _BrowseCountBar extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
           ],
+          if (onPlayAll != null || onRadio != null || onSurprise != null) ...[
+            const Spacer(),
+            RadioSurpriseButtons(
+              onPlayAll: onPlayAll,
+              onRadio: onRadio,
+              onSurprise: onSurprise,
+              dense: true,
+            ),
+          ],
         ],
       ),
     );
@@ -364,6 +565,11 @@ class FacetValuesScreen extends StatefulWidget {
   final String title;
   /// Tag category slug ('group', 'chip', …) — null means collections mode.
   final String? tagCategory;
+  /// Mode collections: clé d'une FAMILLE (`joshw`) dont on liste les seuls
+  /// membres, à plat. Null = la liste racine, où les familles sont repliées en
+  /// une ligne chacune (voir collection_families.dart). L'écran se réutilise
+  /// donc tel quel comme niveau de descente — même recherche, même hub.
+  final String? collectionFamily;
   final Future<void> Function(BuildContext, SearchResult) onTap;
   /// Queue playback (parties: play a compo in ranking order). Optional.
   final OnPlayAlbum? onPlayAlbum;
@@ -372,6 +578,7 @@ class FacetValuesScreen extends StatefulWidget {
     super.key,
     required this.title,
     this.tagCategory,
+    this.collectionFamily,
     required this.onTap,
     this.onPlayAlbum,
   });
@@ -435,16 +642,55 @@ class _FacetValuesScreenState extends State<FacetValuesScreen> {
         final cols = await RewampDb.fetchCollections();
         if (!mounted || id != _reqId) return;
         final q = _query.toLowerCase();
+        final family = widget.collectionFamily;
+        final visible = cols
+            .where((c) => c.filesCount > 0)
+            // Niveau famille: ses membres et rien d'autre.
+            .where((c) => family == null ||
+                collectionFamilyOf(c.slug)?.key == family)
+            .where((c) =>
+                q.isEmpty || c.name.toLowerCase().contains(q) ||
+                c.slug.toLowerCase().contains(q))
+            .toList();
+        // À la racine, au repos: les familles se replient en une ligne (clé
+        // `family:<key>`, résolue au tap). Sous recherche la liste reste
+        // PLATE — on a tapé, on veut des correspondances, pas de la structure.
+        // Au niveau famille, les membres perdent le nom qu'ils répètent
+        // (« joshw SPC (SNES) » → « SPC (SNES) »).
+        final rows = <({String label, String key, int? count})>[];
+        if (family != null) {
+          final label = kCollectionFamilies
+              .firstWhere((f) => f.key == family)
+              .label;
+          rows.addAll(visible.map((c) => (
+                label: collectionMemberLabel(c, label),
+                key: c.slug,
+                count: c.filesCount)));
+        } else if (q.isNotEmpty) {
+          rows.addAll(visible.map((c) => (
+                label: c.name.isNotEmpty ? c.name : c.slug,
+                key: c.slug,
+                count: c.filesCount)));
+        } else {
+          for (final e in groupCollections(visible)) {
+            rows.add(switch (e) {
+              SingleCollectionEntry(:final collection) => (
+                  label: collection.name.isNotEmpty
+                      ? collection.name
+                      : collection.slug,
+                  key: collection.slug,
+                  count: collection.filesCount),
+              CollectionFamilyEntry() => (
+                  label: e.label,
+                  key: 'family:${e.key}',
+                  count: e.filesCount),
+            });
+          }
+        }
         setState(() {
           _values
             ..clear()
-            ..addAll(cols
-                .where((c) => c.filesCount > 0)
-                .where((c) =>
-                    q.isEmpty || c.name.toLowerCase().contains(q) ||
-                    c.slug.toLowerCase().contains(q))
-                .map((c) => (label: c.name.isNotEmpty ? c.name : c.slug,
-                             key: c.slug, count: c.filesCount)));
+            ..addAll(rows);
           _hasMore = false;
           _loading = false;
         });
@@ -524,6 +770,20 @@ class _FacetValuesScreenState extends State<FacetValuesScreen> {
     // get_collection_overview counts, so a collection only offers the axes
     // it actually has (groups, countries, formats, top…).
     if (_isCollections) {
+      // Une FAMILLE descend d'un niveau (le même écran, filtré à ses
+      // membres); une collection ouvre son hub, comme toujours. Le slug qui
+      // part au serveur reste celui d'un membre — jamais la famille.
+      if (v.key.startsWith('family:')) {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => FacetValuesScreen(
+            title:            v.label,
+            collectionFamily: v.key.substring('family:'.length),
+            onTap:            widget.onTap,
+            onPlayAlbum:      widget.onPlayAlbum,
+          ),
+        ));
+        return;
+      }
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => CollectionHubScreen(
           collection:  v.key,
@@ -557,15 +817,19 @@ class _FacetValuesScreenState extends State<FacetValuesScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: TextField(
+            child: CancelField(
               controller: _filterCtrl,
-              decoration: InputDecoration(
-                hintText: context.l10n.browseFilterFacet(widget.title.toLowerCase()),
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                border: const OutlineInputBorder(),
+              onCleared: _onFilterChanged,
+              builder: (_) => TextField(
+                controller: _filterCtrl,
+                decoration: InputDecoration(
+                  hintText: context.l10n.browseFilterFacet(widget.title.toLowerCase()),
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: _onFilterChanged,
               ),
-              onChanged: _onFilterChanged,
             ),
           ),
           if (_error != null)
@@ -573,6 +837,28 @@ class _FacetValuesScreenState extends State<FacetValuesScreen> {
               padding: const EdgeInsets.all(16),
               child: Text(_error!, style: const TextStyle(color: Colors.red)),
             ),
+          // Une VALEUR de facette se déplie par `browse_music`: la collection
+          // elle-même en mode collections, le tag dans sa catégorie sinon.
+          if (!_loading && _values.isNotEmpty)
+            Builder(builder: (ctx) {
+              final a = entityPlayActions<({String label, String key, int? count})>(
+                ctx,
+                _values,
+                (v) => _isCollections
+                    ? RewampDb.browse(
+                        collection: v.key, sortBy: 'name', limit: 200)
+                    : RewampDb.browse(
+                        tags: [v.key],
+                        tagCategories: [widget.tagCategory!],
+                        sortBy: 'name',
+                        limit: 200),
+                onPlayAlbum: widget.onPlayAlbum,
+              );
+              return _ActionsBar(
+                  onPlayAll: a.playAll,
+                  onRadio: a.radio,
+                  onSurprise: a.surprise);
+            }),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -601,8 +887,7 @@ class _FacetValuesScreenState extends State<FacetValuesScreen> {
                                 color: cs.onPrimaryContainer),
                           ),
                         ),
-                        title: Text(v.label,
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        title: ScrollingText(text: v.label),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -761,8 +1046,7 @@ class _PartyDetailScreenState extends State<PartyDetailScreen> {
                           dense: true,
                           leading: Icon(Icons.emoji_events_outlined,
                               color: cs.primary),
-                          title: Text(p.name,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          title: ScrollingText(text: p.name),
                           subtitle: Text([
                             l10n.browseCompoEntries(p.trackCount),
                             // Author of a published user playlist (mig 193);
@@ -885,7 +1169,8 @@ class _PlaylistHeader extends StatelessWidget {
                   Text(l10n.playlistByAuthor(playlist.authorName!),
                       style: tt.bodySmall?.copyWith(color: cs.primary)),
                 ],
-                if (note != null && note!.isNotEmpty) ...[
+                // Une note IDENTIQUE à la description ne dit rien deux fois.
+                if (note != null && note!.isNotEmpty && note != desc) ...[
                   const SizedBox(height: 6),
                   Text(note!,
                       style: tt.bodySmall?.copyWith(
@@ -930,6 +1215,23 @@ class PlaylistTracksScreen extends StatefulWidget {
 class _PlaylistTracksScreenState extends State<PlaylistTracksScreen> {
   List<SearchResult>? _tracks;
   String? _error;
+  String _query = '';
+
+  /// Les indices, dans `_tracks`, des lignes que la liste MONTRE.
+  ///
+  /// ⚠️ **Le filtre sert à TROUVER, pas à redéfinir la playlist**: la lecture
+  /// porte sur la liste ENTIÈRE et l'index de la ligne tapée est celui de
+  /// cette liste-là ([_playFrom]). Le rang affiché aussi — c'est une position
+  /// dans la playlist, pas dans ce qu'on a filtré.
+  List<int> get _visibleIdx {
+    final t = _tracks ?? const <SearchResult>[];
+    return [
+      for (var i = 0; i < t.length; i++)
+        if (matchesFilterQuery(_query,
+            [t[i].displayTitle, t[i].artistLabel, t[i].album]))
+          i,
+    ];
+  }
 
   @override
   void initState() {
@@ -983,10 +1285,20 @@ class _PlaylistTracksScreenState extends State<PlaylistTracksScreen> {
               child: Text(_error!, style: const TextStyle(color: Colors.red)))
           : _tracks == null
               ? const Center(child: CircularProgressIndicator())
-              : ListView.builder(
+              : Builder(builder: (context) {
+                final visible = _visibleIdx;
+                return Column(children: [
+                  // Le filtre n'apparaît qu'au-delà du seuil: en dessous, l'œil
+                  // va plus vite que le clavier.
+                  if (_tracks!.length > kListFilterThreshold)
+                    ListFilterField(
+                      query: _query,
+                      onQuery: (v) => setState(() => _query = v),
+                    ),
+                  Expanded(child: ListView.builder(
                   // Row 0 = playlist info, row 1 = "play the playlist",
                   // then the tracks.
-                  itemCount: _tracks!.length + 2,
+                  itemCount: visible.length + 2,
                   itemBuilder: (ctx, idx) {
                     if (idx == 0) {
                       return _PlaylistHeader(
@@ -1030,7 +1342,7 @@ class _PlaylistTracksScreenState extends State<PlaylistTracksScreen> {
                         ]),
                       );
                     }
-                    final i    = idx - 2;
+                    final i    = visible[idx - 2];
                     final r    = _tracks![i];
                     final meta = r.playlistMeta;
                     // Compo rank from playlist_items.meta (may repeat: several
@@ -1159,7 +1471,9 @@ class _PlaylistTracksScreenState extends State<PlaylistTracksScreen> {
                       },
                     );
                   },
-                ),
+                )),
+                ]);
+              }),
     );
   }
 }
@@ -1409,9 +1723,10 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
     }
   }
 
-  // « Tout lire » / shuffle: queue up to _queueMax songs of the WHOLE subtree
-  // (recursive — an artist folder may hold album subdirs) via path_prefix.
-  Future<void> _playSubtree({required bool shuffle}) async {
+  // « Tout lire » / radio / surprise: queue up to [count] songs of the WHOLE
+  // subtree (recursive — an artist folder may hold album subdirs) via
+  // path_prefix. [count] null = _queueMax; 1 = surprise.
+  Future<void> _playSubtree({required bool shuffle, int? count}) async {
     final onPlay = widget.onPlayAlbum;
     if (onPlay == null || _queueBusy) return;
     setState(() => _queueBusy = true);
@@ -1421,9 +1736,9 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
         pathPrefix: widget.folder.isEmpty ? null : '${widget.folder}/',
         sortBy:     shuffle ? 'random' : 'title',
         seed:       shuffle
-            ? DateTime.now().millisecondsSinceEpoch.toString()
+            ? DateTime.now().microsecondsSinceEpoch.toString()
             : null,
-        limit:      _queueMax,
+        limit:      count ?? _queueMax,
       );
       if (!mounted) return;
       if (songs.isNotEmpty) await onPlay(context, songs);
@@ -1481,7 +1796,11 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
                 ));
               },
             ),
-          if (widget.onPlayAlbum != null && widget.folder.isNotEmpty) ...[
+          // Même famille que partout: Tout lire / Radio / Surprise sur le
+          // SOUS-ARBRE (path_prefix). Radio = le sous-arbre mélangé, surprise
+          // = un morceau au hasard dedans. Offert aussi à la RACINE: la liste
+          // des dossiers est un angle du navigateur, pas une page d'accueil.
+          if (widget.onPlayAlbum != null) ...[
             if (_queueBusy)
               const Padding(
                 padding: EdgeInsets.only(right: 12),
@@ -1490,18 +1809,16 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
                         width: 18, height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2))),
               )
-            else ...[
-              IconButton(
-                icon: const Icon(Icons.play_arrow),
-                tooltip: l10n.browsePlayAll,
-                onPressed: () => _playSubtree(shuffle: false),
+            else
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: RadioSurpriseButtons(
+                  onPlayAll: () => _playSubtree(shuffle: false),
+                  onRadio: () => _playSubtree(shuffle: true),
+                  onSurprise: () => _playSubtree(shuffle: true, count: 1),
+                  dense: true,
+                ),
               ),
-              IconButton(
-                icon: const Icon(Icons.shuffle),
-                tooltip: l10n.browseShuffle,
-                onPressed: () => _playSubtree(shuffle: true),
-              ),
-            ],
           ],
         ],
       ),
@@ -1509,17 +1826,21 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: TextField(
+            child: CancelField(
               controller: _filterCtrl,
-              decoration: InputDecoration(
-                hintText: _recursive
-                    ? l10n.browseSearchInFolder
-                    : l10n.browseFilterThisList,
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                border: const OutlineInputBorder(),
+              onCleared: _onFilterChanged,
+              builder: (_) => TextField(
+                controller: _filterCtrl,
+                decoration: InputDecoration(
+                  hintText: _recursive
+                      ? l10n.browseSearchInFolder
+                      : l10n.browseFilterThisList,
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: _onFilterChanged,
               ),
-              onChanged: _onFilterChanged,
             ),
           ),
           // The two filter scopes are a real distinction (this list vs the whole
@@ -1599,8 +1920,7 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
           final d = dirs[i];
           return ListTile(
             leading: Icon(Icons.folder, color: cs.primary),
-            title: Text(_displayName(d.name),
-                maxLines: 1, overflow: TextOverflow.ellipsis),
+            title: ScrollingText(text: _displayName(d.name)),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1829,7 +2149,7 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
       final all = await RewampDb.searchFacets('',
           grain:         'album',
           collection:    widget.collection,
-          tags:          widget.tags,
+          tags:          _tags,
           tagCategories: widget.tagCategories);
       if (!mounted) return;
       // Tri par VOLUME, redevenu pertinent maintenant que l'unité est la bonne.
@@ -1857,11 +2177,20 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
     });
   }
 
+  /// Puce choisie sur l'axe de la collection (null = toutes) — voir
+  /// collection_chip_axis.dart. ⚠️ Cet écran est AUSSI l'onglet Albums de
+  /// BrowseResultsScreen, qui filtre déjà par la puce et passe le tag dans
+  /// `widget.tags`: la rangée n'apparaît donc que pour la carte Albums d'un
+  /// hub de collection (`embedded == false`), jamais deux fois.
+  String? _chipTag;
+  List<String> get _tags =>
+      _chipTag == null ? widget.tags : [...widget.tags, _chipTag!];
+
   Future<List<ArtistAlbum>> _fetch(int offset) => RewampDb.searchAlbums(
         _query,
         collection:    widget.collection ?? _selCollection,
         platform:      widget.platform ?? _selPlatform,
-        tags:          widget.tags,
+        tags:          _tags,
         tagCategories: widget.tagCategories,
         // Empty q: relevance is meaningless → stable alphabetical browse.
         sortBy:  _query.isEmpty ? 'name' : 'relevance',
@@ -1869,6 +2198,16 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
         limit:   _pageSize,
         offset:  offset,
       );
+
+  /// Change de puce: la liste ET les facettes (plateforme/format) sont
+  /// refaites — les valeurs proposées doivent être celles qui existent sous la
+  /// puce choisie, pas sous la collection entière.
+  void _onChipAxis(String? tag) {
+    if (_chipTag == tag) return;
+    setState(() => _chipTag = tag);
+    _load();
+    _loadFacets();
+  }
 
   Future<void> _load() async {
     final id = ++_reqId;
@@ -1928,21 +2267,49 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
         UserSettings.instance.albumViewMode = v;
       },
     );
+    // Axe de PUCE (General MIDI / MT-32 sur `midi`). Pas quand l'écran est
+    // EMBARQUÉ: il est alors l'onglet Albums d'un écran qui porte déjà la
+    // rangée, et son filtre arrive par widget.tags.
+    final chipAxis = widget.embedded ? const <String>[] : chipAxisFor(widget.collection);
     final content = Column(
       children: [
+        if (chipAxis.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: Text(context.l10n.searchCollectionAll),
+                  selected: _chipTag == null,
+                  onSelected: (_) => _onChipAxis(null),
+                ),
+                for (final tag in chipAxis)
+                  ChoiceChip(
+                    label: Text(tag),
+                    selected: _chipTag == tag,
+                    onSelected: (_) => _onChipAxis(tag),
+                  ),
+              ],
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Row(children: [
             Expanded(
-              child: TextField(
+              child: CancelField(
                 controller: _filterCtrl,
-                decoration: InputDecoration(
-                  hintText: context.l10n.browseSearchAlbum,
-                  prefixIcon: const Icon(Icons.search),
-                  isDense: true,
-                  border: const OutlineInputBorder(),
+                onCleared: _onFilterChanged,
+                builder: (_) => TextField(
+                  controller: _filterCtrl,
+                  decoration: InputDecoration(
+                    hintText: context.l10n.browseSearchAlbum,
+                    prefixIcon: const Icon(Icons.search),
+                    isDense: true,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: _onFilterChanged,
                 ),
-                onChanged: _onFilterChanged,
               ),
             ),
             // Embarqué: pas d'AppBar à soi, le sélecteur de disposition
@@ -2035,11 +2402,30 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
     }
     return Column(
       children: [
-        _BrowseCountBar(
-            loaded:  _albums.length,
-            total:   _total > 0 ? _total : 0,
-            loading: _loadingMore,
-            kind:    _CountKind.albums),
+        Builder(builder: (ctx) {
+          // Les entrées sont des ALBUMS: elles se déplient en pistes. Un album
+          // CONTENEUR (archive joshw sans détail serveur) reste UNE entrée —
+          // jeté, il faisait démarrer la lecture à l'album SUIVANT.
+          final a = entityPlayActions<ArtistAlbum>(
+            ctx,
+            _albums,
+            (al) => RewampDb.browse(
+                albumName: al.name,
+                collection: al.collection,
+                platform: al.platform,
+                sortBy: 'position',
+                limit: 500),
+            onPlayAlbum: widget.onPlayAlbum,
+          );
+          return _BrowseCountBar(
+              loaded: _albums.length,
+              total: _total > 0 ? _total : 0,
+              loading: _loadingMore,
+              kind: _CountKind.albums,
+              onPlayAll: a.playAll,
+              onRadio: a.radio,
+              onSurprise: a.surprise);
+        }),
         Expanded(
           child: _viewMode == 'list' ? _buildList() : _buildGrid(),
         ),
@@ -2075,10 +2461,29 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
           ),
           title: Text(a.name,
               maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            _albumSubtitle(a),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          // Même règle que SongTile: la COLLECTION dit d'où vient l'album, pas
+          // ce qu'il est — sa propre ligne, en petit, et seulement quand cet
+          // écran parcourt TOUT le catalogue (la carte « Albums »).
+          isThreeLine: widget.collection == null,
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _albumSubtitle(a),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (widget.collection == null)
+                Text(
+                  RewampDb.collectionLabel(a.collection),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                ),
+            ],
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -2116,6 +2521,7 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
           );
         }
         return _AlbumGridTile(
+          showCollection: widget.collection == null,
           album:  _albums[i],
           small:  small,
           onTap:  () => _openAlbum(_albums[i]),
@@ -2154,12 +2560,16 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
 class _AlbumGridTile extends StatelessWidget {
   final ArtistAlbum album;
   final bool small;
+  /// Voir la liste de cet écran: la collection ne s'affiche que sur le
+  /// parcours TOUT-catalogue.
+  final bool showCollection;
   final VoidCallback onTap;
   final Future<void> Function()? onPlay;
 
   const _AlbumGridTile({
     required this.album,
     required this.small,
+    this.showCollection = false,
     required this.onTap,
     this.onPlay,
   });
@@ -2206,6 +2616,11 @@ class _AlbumGridTile extends StatelessWidget {
           if (!small)
             Text(
               [
+                // En GRILLE la hauteur de cellule est FIXE (childAspectRatio):
+                // pas de troisième ligne possible, la collection rejoint la
+                // ligne existante — la liste, elle, a sa ligne dédiée.
+                if (showCollection)
+                  RewampDb.collectionLabel(album.collection),
                 if (album.platform != null && album.platform!.isNotEmpty)
                   album.platform!,
                 context.l10n.browseTracksCount(album.songCount),
@@ -2405,15 +2820,19 @@ class _CollectionArtistsScreenState extends State<CollectionArtistsScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: TextField(
+            child: CancelField(
               controller: _filterCtrl,
-              decoration: InputDecoration(
-                hintText: context.l10n.browseSearchArtist,
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                border: const OutlineInputBorder(),
+              onCleared: _onFilterChanged,
+              builder: (_) => TextField(
+                controller: _filterCtrl,
+                decoration: InputDecoration(
+                  hintText: context.l10n.browseSearchArtist,
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: _onFilterChanged,
               ),
-              onChanged: _onFilterChanged,
             ),
           ),
           Expanded(child: _buildBody(cs)),
@@ -2436,11 +2855,29 @@ class _CollectionArtistsScreenState extends State<CollectionArtistsScreen> {
     }
     return Column(
       children: [
-        _BrowseCountBar(
-            loaded:  _artists.length,
-            total:   _total > 0 ? _total : 0,
-            loading: _loadingMore,
-            kind:    _CountKind.artists),
+        Builder(builder: (ctx) {
+          // Les entrées sont des ARTISTES: chacune se déplie en ses morceaux
+          // DANS cette collection (l'écran a été atteint par elle).
+          final a = entityPlayActions<ArtistResult>(
+            ctx,
+            _artists,
+            (ar) => RewampDb.browse(
+                collection: widget.collection,
+                artistId: ar.artistId.isEmpty ? null : ar.artistId,
+                artistName: ar.artistId.isEmpty ? ar.name : null,
+                sortBy: 'name',
+                limit: 200),
+            onPlayAlbum: widget.onPlayAlbum,
+          );
+          return _BrowseCountBar(
+              loaded: _artists.length,
+              total: _total > 0 ? _total : 0,
+              loading: _loadingMore,
+              kind: _CountKind.artists,
+              onPlayAll: a.playAll,
+              onRadio: a.radio,
+              onSurprise: a.surprise);
+        }),
         Expanded(
           child: ListView.builder(
             controller: _scroll,
@@ -2681,7 +3118,7 @@ class _CollectionHubScreenState extends State<CollectionHubScreen> {
             backgroundColor: cs.primaryContainer,
             child: Icon(icon, color: cs.onPrimaryContainer, size: 20),
           ),
-          title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          title: ScrollingText(text: title),
           subtitle: subtitle != null
               ? Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis)
               : null,
@@ -3007,16 +3444,20 @@ class _CollectionGroupsScreenState extends State<CollectionGroupsScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: TextField(
+            child: CancelField(
               controller: _filterCtrl,
-              decoration: InputDecoration(
-                hintText: l10n.browseFilterFacet(
-                    l10n.searchCategoryGroup.toLowerCase()),
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                border: const OutlineInputBorder(),
+              onCleared: _onFilterChanged,
+              builder: (_) => TextField(
+                controller: _filterCtrl,
+                decoration: InputDecoration(
+                  hintText: l10n.browseFilterFacet(
+                      l10n.searchCategoryGroup.toLowerCase()),
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: _onFilterChanged,
               ),
-              onChanged: _onFilterChanged,
             ),
           ),
           Expanded(child: _buildBody(cs, l10n)),
@@ -3034,7 +3475,27 @@ class _CollectionGroupsScreenState extends State<CollectionGroupsScreen> {
     if (_groups.isEmpty) {
       return Center(child: Text(l10n.searchNoResults));
     }
-    return ListView.builder(
+    // Un GROUPE se déplie en ses morceaux DANS cette collection — même
+    // requête que le tap d'une ligne (browse_music sur le tag 'group'), pas
+    // une recherche texte qui ramènerait tout ce qui contient le nom.
+    final actions = entityPlayActions<CollectionGroupRow>(
+      context,
+      _groups,
+      (g) => RewampDb.browse(
+          collection: widget.collection,
+          tags: [g.name],
+          tagCategories: const ['group'],
+          sortBy: 'name',
+          limit: 200),
+      onPlayAlbum: widget.onPlayAlbum,
+    );
+    return Column(children: [
+      _ActionsBar(
+          onPlayAll: actions.playAll,
+          onRadio: actions.radio,
+          onSurprise: actions.surprise),
+      Expanded(
+        child: ListView.builder(
       controller: _scroll,
       itemCount: _groups.length + (_hasMore ? 1 : 0),
       itemBuilder: (ctx, i) {
@@ -3051,7 +3512,7 @@ class _CollectionGroupsScreenState extends State<CollectionGroupsScreen> {
             backgroundColor: cs.primaryContainer,
             child: Icon(Icons.groups, color: cs.onPrimaryContainer, size: 20),
           ),
-          title: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          title: ScrollingText(text: g.name),
           subtitle: Text(
             '${l10n.browseLoadedArtists(g.artistCount)} · '
             '${l10n.browseLoadedSongs(g.songCount)}',
@@ -3080,7 +3541,9 @@ class _CollectionGroupsScreenState extends State<CollectionGroupsScreen> {
           )),
         );
       },
-    );
+        ),
+      ),
+    ]);
   }
 }
 
@@ -3112,7 +3575,42 @@ class _CollectionCountriesScreen extends StatelessWidget {
     final cs   = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: Text('$title · ${l10n.browseCountries}')),
-      body: ListView.builder(
+      body: Column(children: [
+      // ⚠️ Un PAYS n'est pas une portée que `browse_music` sait filtrer:
+      // `p_country` n'existe que sur `search_artists` (mig 213). Un pays se
+      // déplie donc en DEUX temps — ses artistes, puis leurs morceaux — d'où
+      // des plafonds serrés (5 artistes × 50 morceaux): c'est un lancement,
+      // pas un inventaire du pays.
+      Builder(builder: (ctx) {
+        final a = entityPlayActions<({String country, int artists})>(
+          ctx,
+          countries,
+          (c) async {
+            final artists = await RewampDb.searchArtists('',
+                collection: collection, country: c.country, limit: 5);
+            if (artists.isEmpty) return const <SearchResult>[];
+            final lists = await Future.wait([
+              for (final ar in artists)
+                RewampDb.browse(
+                        collection: collection,
+                        artistId: ar.artistId.isEmpty ? null : ar.artistId,
+                        artistName: ar.artistId.isEmpty ? ar.name : null,
+                        sortBy: 'name',
+                        limit: 50)
+                    .catchError((_) => const <SearchResult>[]),
+            ]);
+            return [for (final l in lists) ...l];
+          },
+          onPlayAlbum: onPlayAlbum,
+          maxExpand: 5,
+        );
+        return _ActionsBar(
+            onPlayAll: countries.isEmpty ? null : a.playAll,
+            onRadio: countries.isEmpty ? null : a.radio,
+            onSurprise: countries.isEmpty ? null : a.surprise);
+      }),
+      Expanded(
+        child: ListView.builder(
         itemCount: countries.length,
         itemBuilder: (_, i) {
           final c = countries[i];
@@ -3141,7 +3639,9 @@ class _CollectionCountriesScreen extends StatelessWidget {
             )),
           );
         },
+        ),
       ),
+      ]),
     );
   }
 }
@@ -3151,7 +3651,7 @@ class _CollectionCountriesScreen extends StatelessWidget {
 // Tap → the collection filtered on that extension.
 // ---------------------------------------------------------------------------
 
-class _CollectionFormatsScreen extends StatelessWidget {
+class _CollectionFormatsScreen extends StatefulWidget {
   final String collection;
   final String title;
   final List<({String ext, int count})> formats;
@@ -3167,15 +3667,73 @@ class _CollectionFormatsScreen extends StatelessWidget {
   });
 
   @override
+  State<_CollectionFormatsScreen> createState() =>
+      _CollectionFormatsScreenState();
+}
+
+class _CollectionFormatsScreenState extends State<_CollectionFormatsScreen> {
+  // modland liste des CENTAINES de formats — sans filtre, en trouver un est
+  // une lecture intégrale (demande utilisateur). Filtrage en mémoire: la
+  // liste est déjà là, servie par get_collection_overview.
+  final _filterCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _filterCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final cs   = Theme.of(context).colorScheme;
+    final q = _filterCtrl.text.trim().toLowerCase();
+    final shown = q.isEmpty
+        ? widget.formats
+        : [for (final f in widget.formats) if (f.ext.toLowerCase().contains(q)) f];
     return Scaffold(
-      appBar: AppBar(title: Text('$title · ${l10n.browseByFormat}')),
-      body: ListView.builder(
-        itemCount: formats.length,
+      appBar: AppBar(title: Text('${widget.title} · ${l10n.browseByFormat}')),
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: CancelField(
+            controller: _filterCtrl,
+            onCleared: (_) => setState(() {}),
+            builder: (_) => TextField(
+              controller: _filterCtrl,
+              decoration: InputDecoration(
+                isDense: true,
+                prefixIcon: const Icon(Icons.search, size: 18),
+                hintText: l10n.storageFilterHint,
+                border: const OutlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+        ),
+        // Les actions portent sur ce qui est AFFICHÉ (liste filtrée): un
+        // format se déplie par `browse_music` sur son extension.
+        Builder(builder: (ctx) {
+          final a = entityPlayActions<({String ext, int count})>(
+            ctx,
+            shown,
+            (f) => RewampDb.browse(
+                collection: widget.collection,
+                formatFilter: f.ext,
+                sortBy: 'name',
+                limit: 200),
+            onPlayAlbum: widget.onPlayAlbum,
+          );
+          return _ActionsBar(
+              onPlayAll: shown.isEmpty ? null : a.playAll,
+              onRadio: shown.isEmpty ? null : a.radio,
+              onSurprise: shown.isEmpty ? null : a.surprise);
+        }),
+        Expanded(
+            child: ListView.builder(
+        itemCount: shown.length,
         itemBuilder: (_, i) {
-          final f = formats[i];
+          final f = shown[i];
           return ListTile(
             leading: CircleAvatar(
               backgroundColor: cs.primaryContainer,
@@ -3194,17 +3752,18 @@ class _CollectionFormatsScreen extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(MaterialPageRoute(
               builder: (_) => BrowseResultsScreen(
-                label:        '$title · ${f.ext.toUpperCase()}',
-                collection:   collection,
+                label:        '${widget.title} · ${f.ext.toUpperCase()}',
+                collection:   widget.collection,
                 formatFilter: f.ext,
                 showFilter:   true,
-                onTap:        onTap,
-                onPlayAlbum:  onPlayAlbum,
+                onTap:        widget.onTap,
+                onPlayAlbum:  widget.onPlayAlbum,
               ),
             )),
           );
         },
-      ),
+      )),
+      ]),
     );
   }
 }

@@ -1,5 +1,6 @@
 #include "rewamp_pattern.h"
 
+#include <stdint.h>
 #include <string.h>
 
 /* Smooth, per-frame consumer position from the notes clock (wall-clock
@@ -37,16 +38,46 @@ static volatile int64_t g_pat_played = 0;   /* consumer sample position */
 static volatile int     g_pat_active = 0;   /* 1 once a cursor is captured */
 static volatile unsigned g_pat_gen   = 0;   /* bumped per track load / seek */
 
+/* ── ÉPOQUE DE MORCEAU ────────────────────────────────────────────────────────
+ * Un relais gapless échange le décodeur des SECONDES avant que l'oreille
+ * n'atteigne la frontière (le viz-pattern demande lui-même une avance
+ * proportionnelle à une demi-hauteur d'écran). Effacer la réserve à ce
+ * moment-là jetait précisément la queue du morceau EN COURS: le motif
+ * s'arrêtait avant la fin, et c'est le viz qui creusait son propre angle mort.
+ *
+ * La réserve est clefée par position ABSOLUE, donc elle peut porter les DEUX
+ * morceaux à la fois. Il suffit d'étiqueter chaque capture: le lecteur rend
+ * celle qui correspond à la position ENTENDUE avec son époque, et l'appelant
+ * (le renderer GL) sait alors s'il regarde encore le morceau précédent — auquel
+ * cas il ne doit surtout pas rafraîchir sa table d'ordres, qui décrirait déjà
+ * le suivant. La bascule se fait quand l'oreille franchit, comme tout le reste
+ * du gapless. */
+static uint16_t          g_pat_ep[PAT_COLS];
+static volatile unsigned g_pat_live_ep = 0;   /* époque que le producteur capture */
+static volatile unsigned g_pat_heard_ep = 0;  /* époque de la dernière lecture */
+
 unsigned rewamp_pattern_song_generation(void) { return g_pat_gen; }
+unsigned rewamp_pattern_live_epoch(void)  { return g_pat_live_ep; }
+unsigned rewamp_pattern_heard_epoch(void) { return g_pat_heard_ep; }
 
 void rewamp_pattern_cursor_reset(void) {
     g_pat_gen++;   /* GL renderer: drop the cached tessellation */
     g_pat_head   = 0;
     g_pat_played = 0;
     g_pat_active = 0;
+    g_pat_live_ep  = 0;
+    g_pat_heard_ep = 0;
     memset(g_pat_ord, -1, sizeof(g_pat_ord));
     memset(g_pat_row, -1, sizeof(g_pat_row));
     memset(g_pat_pos, 0, sizeof(g_pat_pos));
+    memset(g_pat_ep,  0, sizeof(g_pat_ep));
+}
+
+/* Relais gapless: le décodeur a changé, la réserve NON. Les captures suivantes
+ * décrivent le nouveau morceau et sont étiquetées comme telles; celles d'avant
+ * restent lisibles jusqu'à ce que l'oreille les dépasse. */
+void rewamp_pattern_cursor_new_epoch(void) {
+    g_pat_live_ep++;
 }
 
 void rewamp_pattern_cursor_capture(int64_t producerSamplePos, int order, int row) {
@@ -54,6 +85,7 @@ void rewamp_pattern_cursor_capture(int64_t producerSamplePos, int order, int row
     g_pat_ord[slot] = (int16_t)order;
     g_pat_row[slot] = (int16_t)row;
     g_pat_pos[slot] = producerSamplePos;
+    g_pat_ep[slot]  = (uint16_t)g_pat_live_ep;
     g_pat_head++;
     g_pat_active = 1;
 }
@@ -84,6 +116,7 @@ int rewamp_pattern_cursor(int* order, int* row) {
     }
     if (order) *order = g_pat_ord[slot];
     if (row)   *row   = g_pat_row[slot];
+    g_pat_heard_ep = g_pat_ep[slot];
     return 1;
 }
 
@@ -122,6 +155,7 @@ int rewamp_pattern_cursor_frac(int* order, int* row, float* frac) {
     const int16_t curRow = g_pat_row[slot];
     if (order) *order = curOrd;
     if (row)   *row   = curRow;
+    g_pat_heard_ep = g_pat_ep[slot];
 
     /* Sub-ROW fraction. The producer captures once per decode CHUNK, not once per
      * row, so a single row can span several captures with the same (order,row):
@@ -135,12 +169,16 @@ int rewamp_pattern_cursor_frac(int* order, int* row, float* frac) {
     int64_t rowStart = g_pat_pos[slot];
     for (int64_t i = found - 1; i >= oldest; i--) {
         int s = (int)(i & (PAT_COLS - 1));
+        if (g_pat_ep[s] != g_pat_ep[slot]) break;   /* autre morceau */
         if (g_pat_ord[s] != curOrd || g_pat_row[s] != curRow) break;
         rowStart = g_pat_pos[s];
     }
     int64_t nextStart = -1;
     for (int64_t i = found + 1; i < head; i++) {
         int s = (int)(i & (PAT_COLS - 1));
+        /* Une capture du morceau SUIVANT ne borne pas la ligne en cours: la
+         * fraction glisserait vers un temps qui n'appartient pas à ce motif. */
+        if (g_pat_ep[s] != g_pat_ep[slot]) break;
         if (g_pat_ord[s] != curOrd || g_pat_row[s] != curRow) { nextStart = g_pat_pos[s]; break; }
     }
     if (nextStart > rowStart && played >= rowStart) {

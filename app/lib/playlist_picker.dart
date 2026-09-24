@@ -7,6 +7,8 @@ import 'app_snack.dart';
 import 'l10n.dart';
 import 'local_db.dart';
 import 'playlist_sync.dart';
+import 'scrolling_text.dart';
+import 'cancel_field.dart';
 import 'rewamp_db.dart' show RewampDb, SearchResult;
 
 /// "Ajouter à la playlist" — overlay sheet listing the playlist tree with a
@@ -300,24 +302,20 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
             // Search filter.
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextField(
+              child: CancelField(
                 controller: _searchCtrl,
-                decoration: InputDecoration(
-                  hintText: l10n.playlistFilterHint,
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  suffixIcon: _searching
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () {
-                            _searchCtrl.clear();
-                            _reload();
-                          })
-                      : null,
-                  isDense: true,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                onCleared: (_) => _reload(),
+                builder: (_) => TextField(
+                  controller: _searchCtrl,
+                  decoration: InputDecoration(
+                    hintText: l10n.playlistFilterHint,
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    isDense: true,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onChanged: (_) => _reload(),
                 ),
-                onChanged: (_) => _reload(),
               ),
             ),
             // Breadcrumb (folder navigation).
@@ -359,8 +357,7 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
                       for (final f in _folders)
                         ListTile(
                           leading: const Icon(Icons.folder_outlined),
-                          title: Text(f.name,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          title: ScrollingText(text: f.name),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () {
                             setState(() => _crumbs.add(f));
@@ -370,8 +367,7 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
                       for (final p in _playlists)
                         CheckboxListTile(
                           secondary: const Icon(Icons.queue_music),
-                          title: Text(p.name,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          title: ScrollingText(text: p.name),
                           subtitle: Text(l10n.playlistTrackCount(p.trackCount)),
                           value: _selected.contains(p.id),
                           onChanged: (v) => setState(() {

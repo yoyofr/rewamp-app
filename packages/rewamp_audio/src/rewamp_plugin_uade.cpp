@@ -139,7 +139,78 @@ static const char* const kUadeSharedExts[] = {
     "mod", "med", "mmd0", "mmd1", "mmd2", "mmd3", "okt", "digi", "stp", NULL,
 };
 
+/* BP SoundMon V1 (« BPSM ») — converti en V.2 AVANT de le donner à UADE.
+ *
+ * UADE n'embarque que les replays V.2 et V.2.2, dont le contrôle de format
+ * exige « V.2 » / « V.3 » à l'offset 26: un module V1 est refusé net
+ * (« module check failed »), et UADE AMONT ne connaît pas non plus cette
+ * magie. Or les deux versions ne diffèrent QUE par l'en-tête — 26 octets de
+ * titre, puis 4 octets « BPSM » en V1 contre « V.2 » suivi du NOMBRE DE TABLES
+ * D'ONDE en V.2 (un module V1 n'a pas ce bloc, donc zéro table). Instruments
+ * (nom sur 24 octets + longueur / loop / repeat / volume), table de steps,
+ * motifs et effets sont identiques; seule la V.3 ajoute des cas particuliers.
+ *
+ * ⚠️ La voie essayée d'abord — ajouter le replay Eagleplayer « SoundMon »,
+ * qui lui accepte « BPSM » — a été ÉCARTÉE: il joue, mais il repointe la voie
+ * sur deux octets nuls du module avec `AUDxLEN = 0`, ce qui vaut 65536 mots
+ * sur Paula. À la fin de chaque percussion (`repeat == 2`, donc sans boucle) le
+ * DMA continuait alors à lire le MODULE comme un échantillon, à la période de
+ * la note: craquements réguliers sur la voie 1. Le replay Delitracker d'UADE
+ * écrit `LEN = 1` au même endroit — vérifié sur le même module V.2, mêmes
+ * notes, seul ce mot diffère (385 × 0 contre 386 × 1). Mesuré sur « reaching
+ * for the sky »: 45 discontinuités et un bruit HF de 622 par le replay EP,
+ * 21 et 502 par celui-ci, les 21 restants étant des attaques de percussion. */
+static bool uade_is_bpsm_v1(const unsigned char* h, size_t n) {
+    return h != NULL && n >= 30 && memcmp(h + 26, "BPSM", 4) == 0;
+}
+
+/* Le fichier entier en mémoire, magie réécrite — NULL si ce n'est pas un V1
+ * (le cas courant: on ne lit alors que l'en-tête). L'appelant libère. */
+static unsigned char* uade_bpsm_v1_to_v2(const char* path, size_t* outSize) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    unsigned char head[30];
+    size_t got = fread(head, 1, sizeof(head), f);
+    if (!uade_is_bpsm_v1(head, got)) { fclose(f); return NULL; }
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return NULL; }
+    long size = ftell(f);
+    /* Un module SoundMon tient dans quelques centaines de kilo-octets. */
+    if (size < 30 || size > (long)(8 * 1024 * 1024)) { fclose(f); return NULL; }
+    rewind(f);
+    unsigned char* buf = (unsigned char*)malloc((size_t)size);
+    if (!buf) { fclose(f); return NULL; }
+    if (fread(buf, 1, (size_t)size, f) != (size_t)size) {
+        free(buf); fclose(f); return NULL;
+    }
+    fclose(f);
+    memcpy(buf + 26, "V.2\0", 4);   /* « V.2 » + zéro table d'onde */
+    *outSize = (size_t)size;
+    return buf;
+}
+
 static int uade_probe(const char* ext, const uint8_t* hdr, size_t n) {
+    /* Règle NÉGATIVE, avant tout le reste: `.sng` n'est pas UNE chose. C'est
+     * l'extension d'un module ZoundMonitor AMIGA (`eagleplayer.conf`,
+     * `prefixes=sng`) — que UADE joue — MAIS aussi celle d'un morceau
+     * GoatTracker 2, qui est du C64 et que rien ici ne lit. La magie tranche:
+     * `GTS3`/`GTS4`/`GTS5` en tête. Sans ce refus, UADE réclame le fichier par
+     * sa seule extension et confie du 6502 au 68k.
+     *
+     * Mesuré sur la release scene.org « eightbm_tomarkus_chipcompo »: son
+     * `.sng` de 21 288 octets est le SOURCE GoatTracker du morceau, dont le
+     * `.prg` voisin — 4 200 octets, joué sans broncher par libsidplayfp — est
+     * la version exécutable. */
+    if (ext && strcasecmp(ext, "sng") == 0 && hdr && n >= 3 &&
+        hdr[0] == 'G' && hdr[1] == 'T' && hdr[2] == 'S') {
+        return 0;
+    }
+
+    /* BP SoundMon V1: `uade_filemagic` ne connaît pas « BPSM » (ni chez nous ni
+     * en amont), donc la détection par contenu ci-dessous le manquerait — et un
+     * rip à la mode AMIGA (« BP.morceau ») n'a pas non plus d'extension utile.
+     * Même score qu'une extension reconnue: [uade_open] le convertit en V.2. */
+    if (uade_is_bpsm_v1(hdr, n)) return 58;
+
     // 1. Suffix match (covers song.ahx / song.tfmx / …).
     if (ext && rewamp_ext_in_list(ext, kUadeExts)) return 58;
     if (ext && rewamp_ext_in_list(ext, kUadeSharedExts)) return 40;
@@ -159,6 +230,109 @@ static int uade_probe(const char* ext, const uint8_t* hdr, size_t n) {
     }
     return 0;
 }
+
+/* Le voisin est-il une vraie TABLE D'INSTRUMENTS de synthèse ?
+ *
+ * ⚠️ `mod32check` d'amifilemagic conclut « Audio Sculpture » dès qu'un fichier
+ * `.as` OU `.nt` EXISTE à côté d'un Startrekker — il ne regarde jamais son
+ * contenu. On vérifie donc la MAGIE, mais on accepte les TROIS familles, parce
+ * que le player Audio Sculpture d'UADE joue aussi les Startrekker AM: mesuré
+ * sur `Startrekker AM/Backlash/war hawk.st1.3.mod` (+ `.nt`, « ST1.3
+ * ModuleINFO »), qui tourne 12 s sans un avertissement.
+ *
+ * N'exiger que « AudioSculpture10 » était une erreur de ma part: ça renvoyait
+ * tous les Startrekker AM à libopenmpt, qui les joue SANS leurs instruments de
+ * synthèse (il sait les lire, mais seulement sous `MPT_EXTERNAL_SAMPLES` et
+ * depuis un CHEMIN — deux choses que la bibliothèque n'offre pas: son API ne
+ * transmet jamais de nom de fichier).
+ *
+ * La magie sert donc seulement à écarter un `.as`/`.nt` qui n'est pas une table
+ * du tout. */
+static bool uade_companion_is_audiosculpture(const char* path,
+                                            char* outComp, size_t outCompSize) {
+    if (!path || !path[0]) return false;
+    static const char* kSuffixes[] = { ".as", ".AS", ".nt", ".NT" };
+    for (size_t i = 0; i < sizeof(kSuffixes) / sizeof(kSuffixes[0]); i++) {
+        char cand[4200];
+        if (snprintf(cand, sizeof(cand), "%s%s", path, kSuffixes[i]) <= 0)
+            continue;
+        FILE* f = fopen(cand, "rb");
+        if (!f) continue;
+        char magic[16] = {0};
+        size_t got = fread(magic, 1, sizeof(magic), f);
+        fclose(f);
+        if (got < sizeof(magic)) continue;
+        /* Les TROIS familles, et c'est mesuré:
+         *   « AudioSculpture10 » — Audio Sculpture (`NOM.adsc` + `.adsc.as`).
+         *   « ST1.2 ModuleINFO » — Startrekker AM 1.2 (`false dreams.mod`).
+         *   « ST1.3 ModuleINFO » — Startrekker AM 1.3 (`war hawk.st1.3.mod`).
+         * Les deux derniers tournent sans un avertissement sous le player
+         * Audio Sculpture d'UADE, alors que libopenmpt les joue SANS leurs
+         * instruments de synthèse.
+         *
+         * N'accepter que « AudioSculpture10 » était une sur-restriction de ma
+         * part, prise quand la boucle 68k n'était pas encore bornée: un lecteur
+         * parti dans le décor tuait l'app (uadecore est un THREAD chez nous,
+         * un sous-processus en amont). Ce garde-fou est maintenant dans
+         * `m68k_run_1` — voir `uadecore_pc_is_mapped` — donc un module que le
+         * player ne digère pas rend la main au lieu d'emporter le processus.
+         *
+         * ⚠️ Le sous-chant 1 de `m.mod` (Forni) échoue EN AMONT aussi
+         * (« dsklen striken » puis « Invalid event » à 2,4 s, `uade123` 3.05,
+         * avec ou sans son `.as`, et même avec celui d'un autre module): c'est
+         * une limite du player Amiga, pas un défaut de routage. Ses sept autres
+         * sous-chants jouent. */
+        bool ok = memcmp(magic, "AudioSculpture", 14) == 0 ||
+                  (memcmp(magic, "ST1.", 4) == 0 &&
+                   memcmp(magic + 5, " ModuleINFO", 11) == 0);
+        if (ok) {
+            if (outComp && outCompSize) snprintf(outComp, outCompSize, "%s", cand);
+            return true;
+        }
+    }
+    return false;
+}
+
+
+/* Variante avec le CHEMIN et la TAILLE RÉELLE — voir `probe_path` dans
+ * rewamp_plugin.h.
+ *
+ * Ce que ça débloque: **Audio Sculpture**. C'est un Startrekker dont le SEUL
+ * signe distinctif est un fichier voisin `.as` (`NOM.mod` + `NOM.mod.as`).
+ * `mod32check` sait déjà le reconnaître — `has_as_or_nt_file(path)` — mais on
+ * lui passait un chemin VIDE et une taille égale à l'en-tête, donc la branche
+ * n'était jamais atteinte et le fichier partait chez libopenmpt, qui le joue
+ * comme un Startrekker ordinaire: les échantillons synthétiques du `.as` sont
+ * muets.
+ *
+ * Le score doit BATTRE libopenmpt (100 quand il confirme un `.mod` par
+ * l'en-tête, ce qu'il fait ici puisque c'est un vrai module 31 instruments).
+ * On ne monte au-dessus que sur une identification EXPLICITE d'Audio
+ * Sculpture — pas sur une reconnaissance UADE quelconque, sinon on volerait
+ * tous les MOD à libopenmpt, qui les joue mieux. */
+static int uade_probe_path(const char* ext, const uint8_t* hdr, size_t n,
+                           const char* path, uint64_t fileSize) {
+    if (hdr && n > 0 && path && path[0]) {
+        char pre[64] = {0};
+        uade_filemagic((unsigned char*)hdr, n, pre,
+                       fileSize ? (size_t)fileSize : n, path, 0);
+        /* ⚠️ MAJUSCULES: `uade_filemagic` rend le NOM D'ÉNUMÉRATION
+         * (« MOD_ADSC4 », table `.str` d'amifilemagic.c), pas le `file_ext`
+         * en minuscules qui figure dix lignes plus haut dans le même fichier.
+         * Comparé en minuscules, ça ne matchait jamais — et l'échec était
+         * SILENCIEUX: on retombait sur `uade_probe`, donc le fichier partait
+         * chez libopenmpt exactement comme avant le correctif. */
+        if ((strcasecmp(pre, "MOD_ADSC4") == 0 ||
+             strcasecmp(pre, "MOD_ADSC8") == 0) &&
+            uade_companion_is_audiosculpture(path, NULL, 0))
+            return 110;
+    }
+    return uade_probe(ext, hdr, n);
+}
+
+/* Instantané des boucles forcées, posé par rewamp_audio.c avant open().
+ * 0 = off, 1 = n fois, 2 = infini. */
+extern "C" int g_force_loop_mode;
 
 static RewampDecoder* uade_open(const char* path, RewampAudioFormat* outFormat) {
     if (!path) return NULL;
@@ -182,34 +356,116 @@ static RewampDecoder* uade_open(const char* path, RewampAudioFormat* outFormat) 
     int hasSlash = (dl > 0 && dataDir[dl - 1] == '/');
     snprintf(baseDir, sizeof(baseDir), "%s%suade", dataDir, hasSlash ? "" : "/");
 
-    struct uade_config* uc = uade_new_config();
-    if (!uc) return NULL;
-    uade_config_set_option(uc, UC_BASE_DIR, baseDir);
-    /* Paula filter model: 0 = A500 (library default), 1 = A1200, 2 = none.
-     * Initialised per song (UC_FILTER_TYPE). */
-    {
-        int ft = (int)rewamp_get_engine_param("uade", "filter_type", 0);
-        uade_config_set_option(uc, UC_FILTER_TYPE,
-                               ft == 2 ? "none" : (ft == 1 ? "a1200" : "a500"));
-    }
-    /* LED forced state must also be part of the song config so led_forced is
-     * set from the start (live toggles then use uade_set_filter_state). */
-    {
-        int led = (int)rewamp_get_engine_param("uade", "led", 0);
-        if (led != 0)
-            uade_config_set_option(uc, UC_FORCE_LED, led == 1 ? "on" : "off");
-    }
+    /* La config est CONSOMMÉE par uade_new_state, donc elle se refabrique à
+     * l'identique pour la seconde chance ci-dessous. */
+    auto makeState = [&](int ignorePlayerCheck) -> struct uade_state* {
+        struct uade_config* uc = uade_new_config();
+        if (!uc) return NULL;
+        uade_config_set_option(uc, UC_BASE_DIR, baseDir);
+        /* Paula filter model: 0 = A500 (library default), 1 = A1200, 2 = none.
+         * Initialised per song (UC_FILTER_TYPE). */
+        {
+            int ft = (int)rewamp_get_engine_param("uade", "filter_type", 0);
+            uade_config_set_option(uc, UC_FILTER_TYPE,
+                                   ft == 2 ? "none" : (ft == 1 ? "a1200" : "a500"));
+        }
+        /* LED forced state must also be part of the song config so led_forced is
+         * set from the start (live toggles then use uade_set_filter_state). */
+        {
+            int led = (int)rewamp_get_engine_param("uade", "led", 0);
+            if (led != 0)
+                uade_config_set_option(uc, UC_FORCE_LED, led == 1 ? "on" : "off");
+        }
+        if (ignorePlayerCheck)
+            uade_config_set_option(uc, UC_IGNORE_PLAYER_CHECK, NULL);
+        /* Boucle INFINIE: on ignore la fin annoncée par l'eagleplayer
+         * (l'option `-n` d'uade123).
+         *
+         * Sans ça le décodeur rend « terminé » à la fin de la sous-chanson, le
+         * repli générique relance par un seek, et le player — qui a déjà
+         * enchaîné en interne — se retrouve AILLEURS: la lecture continue mais
+         * sur la sous-chanson SUIVANTE. C'est le symptôme rapporté.
+         *
+         * Mesuré sur « aquatic games.sng » (modland, Richard Joseph), une seule
+         * sous-chanson forcée: sans l'option la piste s'arrête à 30,8 s (RMS
+         * 1670); avec, elle tient les 60 s de la mesure (RMS 1659) et la
+         * seconde moitié est toujours de la musique (RMS 1661) — même
+         * sous-chanson, jouée en boucle par le replayer lui-même, ce qui est
+         * exactement ce qu'on demande en repeat infini.
+         *
+         * ⚠️ Réservé au mode INFINI: en mode normal la fin annoncée est ce qui
+         * fait avancer la file, et l'ignorer partout ferait jouer chaque module
+         * Amiga pour toujours. L'instantané est pris à l'OUVERTURE, comme tout
+         * le reste des boucles forcées. */
+        if (g_force_loop_mode == 2)
+            uade_config_set_option(uc, UC_NO_EP_END, NULL);
+        struct uade_state* s = uade_new_state(uc);
+        free(uc);                   // uade_new_state copies the config
+        return s;
+    };
 
-    struct uade_state* st = uade_new_state(uc);
-    free(uc);                       // uade_new_state copies the config
-    if (!st) return NULL;
+    /* BP SoundMon V1 → V.2 (voir [uade_bpsm_v1_to_v2]). NULL pour tout le reste,
+     * qui continue de passer par le CHEMIN: `uade_play_from_buffer` ne sait pas
+     * charger les compagnons d'un format multi-fichiers. */
+    size_t bpsmSize = 0;
+    unsigned char* bpsm = uade_bpsm_v1_to_v2(clean, &bpsmSize);
+    auto playSong = [&](struct uade_state* s) -> int {
+        const int sub = subsong > 0 ? subsong : -1;
+        return bpsm ? uade_play_from_buffer(clean, bpsm, bpsmSize, sub, s)
+                    : uade_play(clean, sub, s);
+    };
+
+    struct uade_state* st = makeState(0);
+    if (!st) { free(bpsm); return NULL; }
 
     // subsong=0 means "default subsong" by rewamp convention → pass -1 to UADE.
-    int playret = uade_play(clean, subsong > 0 ? subsong : -1, st);
+    int playret = playSong(st);
     if (playret != 1) {             // 0 = unplayable, -1 = fatal
         uade_cleanup_state(st);
-        return NULL;
+        st = NULL;
+        /* SECONDE CHANCE: le CONTRÔLE DU PLAYER refuse des fichiers que le
+         * player joue parfaitement.
+         *
+         * Le player 68k vérifie le module avant de le prendre (`EP_Check3`), et
+         * ce contrôle est plus strict que le player lui-même. Mesuré sur les 20
+         * premiers « Richard Joseph » de modland (paires `NOM.sng` + `NOM.ins`):
+         * DIX-NEUF passent, un seul est refusé — « aquatic games » — et il joue
+         * 6 sous-chansons parfaitement dès qu'on ignore le contrôle (RMS 1572,
+         * identique à ses voisins; sans son `.ins` la sortie est vide, donc le
+         * compagnon est bien chargé). `uade123` 3.05 amont échoue exactement
+         * pareil, et réussit pareil avec son option `-i`: ce n'est donc pas un
+         * défaut de notre portage, et le corriger dans le player demanderait de
+         * désassembler un binaire 68k dont l'arbre amont n'a pas la source.
+         *
+         * ⚠️ Second essai UNIQUEMENT si UADE a RECONNU le contenu: sans cette
+         * garde, n'importe quel fichier que la sonde a laissé passer par son
+         * extension serait joué en bruit au lieu d'être proprement refusé —
+         * `.sng` désigne aussi bien un ZoundMonitor qu'autre chose. */
+        char pre[64] = {0};
+        FILE* hf = fopen(clean, "rb");
+        if (hf) {
+            unsigned char hdr[1024];
+            size_t got = fread(hdr, 1, sizeof(hdr), hf);
+            fclose(hf);
+            if (got > 0)
+                uade_filemagic(hdr, got, pre, got, clean, 0);
+        }
+        if (bpsm || (pre[0] != '\0' && strcmp(pre, "reject") != 0 &&
+                     strcmp(pre, "packed") != 0)) {
+            st = makeState(1);
+            if (st) {
+                playret = playSong(st);
+                if (playret != 1) {
+                    uade_cleanup_state(st);
+                    st = NULL;
+                }
+            }
+        }
+        if (!st) { free(bpsm); return NULL; }
     }
+    /* UADE a copié ce qu'il lui fallait (« buf can be freed after call »). */
+    free(bpsm);
+    bpsm = NULL;
 
     int rate = uade_get_sampling_rate(st);
     if (rate <= 0) rate = 44100;
@@ -329,6 +585,16 @@ static const RewampPluginVTable kUadeVTable = {
     0,                   /* supportsNativeFadeout */
     "uade",              /* engine_id */
     uade_param_changed,  /* live settings */
+    /* ⚠️ Les vtables sont initialisées PAR POSITION: tout champ intercalé doit
+     * être énuméré, même à NULL. Un initialiseur trop court ne « saute » pas —
+     * il décale, et le compilateur ne le voit que si les types diffèrent (ici
+     * il l'a vu; il aurait pu ne pas le voir). */
+    NULL,                /* pattern_song_info */
+    NULL,                /* pattern_order     */
+    NULL,                /* pattern_num_rows  */
+    NULL,                /* pattern_get       */
+    NULL,                /* pattern_cursor    */
+    uade_probe_path,     /* Audio Sculpture: identité portée par un VOISIN */
 };
 
 extern "C" const RewampPluginVTable* rewamp_uade_plugin(void) { return &kUadeVTable; }

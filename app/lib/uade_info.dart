@@ -19,13 +19,27 @@ class UadeSubsong {
   final String? songend;
   const UadeSubsong({required this.idx, this.lengthMs, this.songend});
 
-  /// The songdb precalc found this subsong produces NO SOUND at all — an empty
-  /// slot in the module, not a missing measurement (e.g. Turrican II
-  /// "World 5" idx 3, whose music is really idx 4). Upstream's own plugin
-  /// filters these out by default (`skip_broken_subsongs`).
-  bool get isNoSound =>
-      (lengthMs ?? 0) == 0 &&
+  /// Le précalcul de la songdb a établi que ce sous-chant ne donne RIEN — un
+  /// emplacement vide du module, pas une mesure manquante. Amont filtre ces
+  /// entrées par défaut (`skip_broken_subsongs`), et son critère est la
+  /// **longueur MESURÉE à zéro**, quel que soit le code de statut
+  /// (`plugin.cc:117-122`) — pas seulement `n` (NOSOUND).
+  ///
+  /// ⚠️ On l'avait restreint à `n`, si bien qu'un slot `e` (erreur, 0 ms)
+  /// restait dans la liste: le premier sous-chant de « m.mod » (Phornee,
+  /// modland) s'y trouvait, sans durée, et le lecteur s'y arrêtait — un
+  /// morceau qui ne produit rien n'a pas de fin à signaler, donc la file
+  /// n'avançait jamais.
+  ///
+  /// ⚠️ `null` n'est PAS zéro: une durée inconnue reste jouable (beaucoup de
+  /// formats n'en ont aucune). Seul un zéro EXPLICITE est un verdict.
+  bool get isBroken =>
+      lengthMs == 0 ||
       (songend ?? '').split(RegExp(r'[,+]')).contains('n');
+
+  @Deprecated('Renommé isBroken: le critère amont est la longueur nulle, pas '
+      'le seul code NOSOUND.')
+  bool get isNoSound => isBroken;
 }
 
 @immutable
@@ -62,9 +76,13 @@ class UadeInfo {
   ///
   /// Callers must take the idx AND the duration from the same entry — do not
   /// mix this filtered list with [durationMsFor], which indexes the FULL one.
+  ///
+  /// Garde-fou d'amont conservé: si TOUT serait filtré, on garde la première
+  /// entrée — mieux vaut un sous-chant douteux qu'un fichier qui n'a plus
+  /// aucune piste.
   List<UadeSubsong> get playableSubsongs {
     if (subsongs.isEmpty) return subsongs;
-    final kept = subsongs.where((s) => !s.isNoSound).toList();
+    final kept = subsongs.where((s) => !s.isBroken).toList();
     return kept.isEmpty ? [subsongs.first] : kept;
   }
 
@@ -145,6 +163,35 @@ class UadeInfoService {
     return _kUadeExts.contains(name.substring(dot + 1).toLowerCase());
   }
 
+  /// Un `.mod` que UADE joue: il porte un COMPAGNON de synthèse.
+  ///
+  /// Startrekker AM et Audio Sculpture sont des modules 31 instruments
+  /// ordinaires — extension `.mod`, en-tête de ProTracker — dont le seul signe
+  /// distinctif est un fichier VOISIN `NOM.mod.as` / `.nt` portant les
+  /// instruments de synthèse. [isUadePath], qui ne regarde que le nom, répond
+  /// donc NON, et `mod` n'a rien à faire dans les extensions UADE (on volerait
+  /// tous les MOD à libopenmpt, qui les joue mieux). Même règle que la sonde
+  /// native `uade_companion_is_audiosculpture`, sans la lecture de magie: ici
+  /// on ne décide pas du MOTEUR, seulement s'il vaut la peine d'interroger la
+  /// songdb — le pire cas est une requête pour rien.
+  ///
+  /// Mesuré le 2026-09-06: « m.mod » (Phornee, modland) + « m.mod.as » est
+  /// connu de la songdb (8 sous-chants, durées), et l'écran de détail
+  /// n'affichait AUCUNE durée faute de passer ce portillon.
+  static bool hasAmigaSynthCompanion(String path) {
+    if (path.isEmpty) return false;
+    for (final suffix in const ['.as', '.AS', '.nt', '.NT']) {
+      if (File('$path$suffix').existsSync()) return true;
+    }
+    return false;
+  }
+
+  /// [isUadePath] pour un chemin RÉEL: le nom, ou le compagnon de synthèse.
+  /// À n'utiliser que là où le fichier est déjà sur le disque — ailleurs, le
+  /// test de nom reste le seul possible.
+  static bool isUadeFileAt(String path) =>
+      isUadePath(path) || hasAmigaSynthCompanion(path);
+
   /// Display name of an Amiga file, prefix convention included.
   ///
   /// `p.basenameWithoutExtension` is WRONG here: modland names a TFMX module
@@ -182,7 +229,11 @@ class UadeInfoService {
   /// Returns UADE info for [path], hitting the local cache first, then the
   /// server. Returns null if the file isn't a UADE format or md5 fails.
   Future<UadeInfo?> forPath(String path) async {
-    if (!isUadePath(path)) return null;
+    // ⚠️ Le portillon du SERVICE, pas seulement celui des appelants: il a un
+    // CHEMIN réel (il s'apprête à md5 le fichier), donc il teste aussi le
+    // compagnon de synthèse. Corriger les appelants sans corriger celui-ci
+    // laissait « m.mod » sans durée malgré la branche UADE prise.
+    if (!isUadeFileAt(path)) return null;
     final md5hex = await _md5(path);
     if (md5hex == null) return null;
     _md5ByPath[path] = md5hex;
@@ -227,7 +278,7 @@ class UadeInfoService {
   Future<void> prefetchPaths(List<String> paths) async {
     final want = <String, String>{}; // md5 → (kept for possible future use)
     for (final path in paths) {
-      if (!isUadePath(path)) continue;
+      if (!isUadeFileAt(path)) continue;
       final md5hex = await _md5(path);
       if (md5hex == null || _mem.containsKey(md5hex)) continue;
       if (await LocalDb.instance.getUadeCache(md5hex) != null) continue;
@@ -257,3 +308,8 @@ const _kUadeExts = kUadeExts;
 // que les suffixes (le plugin C sonde le token de préfixe contre la même
 // liste), plus "smpl" (compagnon multifichier, jamais un suffixe).
 final _kUadePrefixes = {...kUadeExts, 'smpl', 'mod'};
+
+/// Le même vocabulaire, pour qui doit décider « ce nom est-il de forme
+/// PRÉFIXE ? » hors de cette classe (la migration des noms de pochettes).
+bool isUadePrefixToken(String token) =>
+    _kUadePrefixes.contains(token.toLowerCase());

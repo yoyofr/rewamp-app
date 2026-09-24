@@ -13,6 +13,7 @@
 
 #include "rewamp_plugin.h"
 #include "rewamp_registry.h"
+#include "rewamp_audio.h"   /* REWAMP_EXPORT + la DÉCLARATION de l'export ci-dessous */
 #include "rewamp_channel_data.h"
 #include "rewamp_assets.h"
 #include "ModizerVoicesData.h"   /* m_voice_buff / vgm_last_note / mute mask */
@@ -21,12 +22,17 @@
 
 #include "fluidlite.h"
 
-#define TML_IMPLEMENTATION
-#include "tml.h"
+#include "tml.h"   /* implémentation dans rewamp_tml.c, partagée avec le greffon MT-32 */
+
+#include "rewamp_mt32_detect.h"   /* « ce MIDI vise-t-il le MT-32 ? » */
+/* Table MT-32 → GM reprise de ScummVM (GPL-2.0-or-later, v2.0.0) — voir son
+ * en-tête pour la provenance exacte et pourquoi c'est cette révision-là. */
+#include "../third_party/scummvm_mt32/mt32_to_gm.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #define MIDI_SAMPLE_RATE 44100
 #define MIDI_TAIL_MS     2000   /* let releases/reverb ring out at the end */
@@ -39,6 +45,7 @@
  * hooks, flushed into the shared voice rings once per 64-frame block). ──── */
 static float g_cap[MIDI_CHANNELS][64];
 static int   g_note_count[MIDI_CHANNELS];   /* active notes per voice */
+static uint8_t g_chan_prog[MIDI_CHANNELS];  /* current program per MIDI channel */
 
 /* Compact channel→voice map: only the channels the FILE actually uses get a
  * scope voice (a 4-channel .mid shows 4 scopes, not 16). -1 = unused. The
@@ -80,9 +87,22 @@ void rewamp_fluid_block_done(int len) {
     }
 }
 
+/* Les notes seulement: ce que le SON perd quand on coupe les canaux. Les
+ * PROGRAMMES survivent — un seek avant ne rejoue que les événements situés
+ * entre le départ et la cible, donc effacer g_chan_prog laisserait le piano
+ * « par instrument » sans programme jusqu'au prochain program change. */
+static void midi_silence_note_state(void) {
+    for (int c = 0; c < MIDI_CHANNELS; c++) {
+        g_note_count[c] = 0;
+        vgm_last_note[c] = 0;
+        vgm_last_vol[c]  = 0;
+    }
+}
+
 static void midi_reset_note_state(void) {
     for (int c = 0; c < MIDI_CHANNELS; c++) {
         g_note_count[c] = 0;
+        g_chan_prog[c]  = 0;
         vgm_last_note[c] = 0;
         vgm_last_vol[c]  = 0;
     }
@@ -94,7 +114,7 @@ static void midi_reset_note_state(void) {
  * user_settings.dart getters (the single source of truth). */
 static void midi_apply_params(fluid_synth_t* s) {
     if (!s) return;
-    double gain = rewamp_get_engine_param("midi", "gain", 0.8);
+    double gain = rewamp_get_engine_param("midi", "gain", 0.5);
     int    poly = (int)rewamp_get_engine_param("midi", "polyphony", 128);
     int    rev  = (int)rewamp_get_engine_param("midi", "reverb", 1);
     int    cho  = (int)rewamp_get_engine_param("midi", "chorus", 1);
@@ -141,7 +161,23 @@ typedef struct {
     tml_message*        next;        /* next event to dispatch */
     double              time_ms;     /* playback clock */
     unsigned            total_ms;    /* last event time + tail */
+    /* Le fichier vise le MT-32 et on le joue quand même en GM: les numéros de
+     * programme passent par la table (voir midi_program_for). */
+    int                 mt32_to_gm;
 } MidiDec;
+
+/* « Le morceau EN COURS est un MIDI MT-32 joué en GM faute de ROMs. »
+ * Lu par Dart après le chargement pour lever le bandeau d'avertissement; posé
+ * à CHAQUE open (y compris à 0), donc jamais périmé d'une piste à l'autre. */
+static int g_mt32_fallback = 0;
+
+REWAMP_EXPORT int rewamp_midi_mt32_fallback(void) { return g_mt32_fallback; }
+
+#ifdef REWAMP_WITH_MT32
+/* Défini par le greffon MT-32: chaîne vide = aucun jeu de ROMs utilisable. */
+extern const char* rewamp_mt32_rom_status(void);
+#endif
+
 
 static const char* const kMidiExts[] = { "mid", "midi", "kar", "rmi", NULL };
 
@@ -154,16 +190,94 @@ static int midi_probe(const char* ext, const uint8_t* header, size_t headerSize)
         magic = 1;
     if (!magic && !extMatch) return 0;
     if (midi_soundfont() == NULL) return 0;   /* nothing to render with */
-    if (magic) return extMatch ? 110 : 100;
+    /* 100, not 110: 110 is >= REWAMP_SCORE_EXCLUSIVE and an exclusive score
+     * passes BEFORE any pin — the « Synthé MIDI: MT-32 » setting could never
+     * win. Both MIDI engines score 100 on a plain file; this one is
+     * registered first, so it wins the tie unless the app pins the other. */
+    if (magic) return extMatch ? 100 : 95;
     return 60;
+}
+
+/* Index d'INSTRUMENT porté par la timeline (vgm_last_instr[], un OCTET).
+ *
+ * ⚠️ Le canal 10 est la BATTERIE: son programme choisit un KIT dans la banque
+ * 128, pas un timbre dans la banque mélodique. Les deux partageaient le même
+ * espace d'index (`programme + 1`), et comme un kit annonce presque toujours
+ * le programme 0, la voie de percussion tombait sur l'index 1 — le PREMIER
+ * preset de la SoundFont, « Piano Merlin » sur celle par défaut (constaté sur
+ * un MIDI de Doom, 2026-09-12) — et son nom de kit écrasait en prime la case
+ * du piano. Les kits vivent donc au-dessus de 128; l'octet plafonne à 255, ce
+ * qui laisse 127 kits, bien plus que ce qu'une SoundFont expose. */
+#define MIDI_DRUM_CHANNEL 9
+#define MIDI_DRUM_INSTR_BASE 129
+
+/* Le programme à envoyer à FluidLite pour ce canal.
+ *
+ * Un MIDI écrit pour MT-32 numérote ses programmes dans la liste d'usine du
+ * MT-32, sans rapport avec le General MIDI: sans conversion, « AcouPiano1 »
+ * (0) tombe juste par hasard et tout le reste est faux. ⚠️ Le canal 10 est
+ * traité à part: sur un MT-32, un program change sur la partie rythmique ne
+ * fait RIEN (ScummVM: « Patch changes on the rhythm channel do nothing on an
+ * MT-32 »), alors qu'il change de KIT sur un synthé GM — le laisser passer
+ * remplacerait la batterie par un kit arbitraire. */
+static int midi_program_for(const MidiDec* d, int chan, int prog) {
+    if (!d->mt32_to_gm) return prog;
+    if (chan == MIDI_DRUM_CHANNEL) return -1;   /* ignoré */
+    return (int)kMt32ToGm[prog & 0x7F];
+}
+
+static unsigned midi_instr_index(int chan) {
+    if (chan < 0 || chan >= MIDI_CHANNELS) return 0;
+    const unsigned prog = (unsigned)g_chan_prog[chan];
+    if (chan == MIDI_DRUM_CHANNEL) {
+        const unsigned idx = MIDI_DRUM_INSTR_BASE + prog;
+        return idx > 255u ? 255u : idx;
+    }
+    return prog + 1u;
+}
+
+/* Le NOM d'une voix suit le programme du canal, et un canal CHANGE
+ * d'instrument en cours de morceau (les fichiers recyclent leurs 16 canaux).
+ * Le nom était figé à l'ouverture sur le PREMIER program change: la légende
+ * de l'oscilloscope, celle du piano et la feuille des voix annonçaient donc
+ * un instrument qui ne jouait plus. Relu à chaque program change, comme le
+ * MT-32 le fait déjà depuis son gestionnaire de rapports.
+ * ⚠️ Posé au temps du PRODUCTEUR, donc jusqu'à 2 s avant l'oreille — c'est
+ * la même avance que les captures, et le nom est une étiquette, pas un
+ * échantillon. */
+static void midi_name_voice(MidiDec* d, int chan) {
+    if (chan < 0 || chan >= MIDI_CHANNELS) return;
+    const int v = g_chan2voice[chan];
+    if (v < 0) return;
+    char nm[MODIZ_VOICE_NAME_MAX_CHAR];
+    const char* pname = NULL;
+    fluid_preset_t* pr = fluid_synth_get_channel_preset(d->synth, chan);
+    if (pr && pr->get_name) pname = pr->get_name(pr);
+    if (chan == MIDI_DRUM_CHANNEL && (!pname || !pname[0])) pname = "Drums";
+    if (pname && pname[0]) snprintf(nm, sizeof(nm), "%.*s", (int)sizeof(nm) - 1, pname);
+    else                   snprintf(nm, sizeof(nm), "Ch %d", chan + 1);
+    rewamp_voice_set_name(v, nm);
+    /* Le nom de l'instrument va dans SA case — celle du kit pour le canal 10,
+     * sinon celle du programme mélodique. */
+    if (pname && pname[0]) rewamp_instrument_set_name((int)midi_instr_index(chan), pname);
 }
 
 static void midi_dispatch(MidiDec* d, const tml_message* m) {
     fluid_synth_t* s = d->synth;
     switch (m->type) {
-        case TML_PROGRAM_CHANGE:
-            fluid_synth_program_change(s, m->channel, m->program);
+        case TML_PROGRAM_CHANGE: {
+            /* En mode MT-32 le numéro est traduit, et le canal 10 ignoré —
+             * g_chan_prog reçoit le programme RÉELLEMENT joué, sinon la
+             * légende « par instrument » et les couleurs du piano nommeraient
+             * un timbre que personne n'entend. */
+            const int prog = midi_program_for(d, m->channel, m->program);
+            if (prog < 0) break;
+            fluid_synth_program_change(s, m->channel, prog);
+            if (m->channel < MIDI_CHANNELS)
+                g_chan_prog[m->channel] = (uint8_t)prog;
+            midi_name_voice(d, m->channel);   /* la légende suit l'instrument */
             break;
+        }
         case TML_NOTE_ON:
             if (m->velocity > 0) {
                 fluid_synth_noteon(s, m->channel, m->key, m->velocity);
@@ -174,6 +288,9 @@ static void midi_dispatch(MidiDec* d, const tml_message* m) {
                     vgm_last_note[v] = (unsigned int)
                         (440.0 * pow(2.0, (m->key - 69) / 12.0) + 0.5);
                     vgm_last_vol[v] = (unsigned int)m->velocity;
+                    /* Piano « par instrument »: le programme GM, 1-based
+                     * (0 = aucun). */
+                    vgm_last_instr[v] = midi_instr_index(m->channel);
                 }
             } else {
                 fluid_synth_noteoff(s, m->channel, m->key);
@@ -242,6 +359,33 @@ static RewampDecoder* midi_open(const char* path, RewampAudioFormat* outFormat) 
     if (!d->events) { free(d); return NULL; }
     d->next = d->events;
 
+    /* MIDI écrit pour un MT-32 joué ici sur une SoundFont GM: ses numéros de
+     * programme ne veulent pas dire la même chose (voir midi_program_for).
+     * On l'ADAPTE — réglage « Adapter les MIDI MT-32 », défaut activé — et on
+     * le DIT: g_mt32_fallback lève le bandeau côté Dart, une ligne le rappelle
+     * dans le panneau ⓘ.
+     *
+     * ⚠️ Le bandeau ne parle de ROMs que s'il en manque vraiment: avec des
+     * ROMs installées, se retrouver ici veut dire que l'utilisateur a épinglé
+     * la SoundFont (« Synthé MIDI: SoundFont »), et lui réclamer des ROMs
+     * qu'il a déjà serait absurde. L'adaptation, elle, reste utile dans les
+     * deux cas. */
+    g_mt32_fallback = 0;
+    {
+        int roms = 0;
+#ifdef REWAMP_WITH_MT32
+        const char* st = rewamp_mt32_rom_status();
+        roms = (st != NULL && st[0] != '\0');
+#endif
+        struct stat mst;
+        const uint64_t fsz = (stat(clean, &mst) == 0) ? (uint64_t)mst.st_size : 0;
+        if (rewamp_get_engine_param("midi", "mt32_to_gm", 1) != 0 &&
+            rewamp_midi_targets_mt32(clean, fsz)) {
+            d->mt32_to_gm = 1;
+            g_mt32_fallback = roms ? 0 : 1;
+        }
+    }
+
     unsigned lastMs = 0;
     int noteCount = 0;
     for (tml_message* m = d->events; m; m = m->next) {
@@ -255,8 +399,11 @@ static RewampDecoder* midi_open(const char* path, RewampAudioFormat* outFormat) 
     fluid_settings_setnum(d->settings, "synth.sample-rate", MIDI_SAMPLE_RATE);
     fluid_settings_setint(d->settings, "synth.polyphony", 128);
     /* FluidSynth's default gain (0.2) is calibrated for 100+ simultaneous
-     * voices and is far too quiet next to the other plugins. */
-    fluid_settings_setnum(d->settings, "synth.gain", 0.8);
+     * voices; pushing it to 0.8 clipped dense files. Halfway: 0.5, here and
+     * in midi_apply_params' fallback (user request, 2026-09-12 —
+     * user_settings.dart's midiGain is the source of truth and re-imposes
+     * 0.5 once in beta 0.6.1). */
+    fluid_settings_setnum(d->settings, "synth.gain", 0.5);
     fluid_settings_setstr(d->settings, "synth.reverb.active", "yes");
     fluid_settings_setstr(d->settings, "synth.chorus.active", "yes");
 
@@ -293,6 +440,37 @@ static RewampDecoder* midi_open(const char* path, RewampAudioFormat* outFormat) 
     rewamp_voices_meta_reset();
     rewamp_voices_add_chip("MIDI", 0, g_voice_count);
     {
+        /* Noms d'INSTRUMENTS pour la légende « par instrument » des viz: la
+         * timeline porte le programme GM + 1 (voir vgm_last_instr plus bas),
+         * donc on nomme l'index p+1 avec le preset p de la banque 0.
+         * ⚠️ `get_preset` ALLOUE un fluid_preset_t (fluid_defsfont.c) dont
+         * l'appelant est propriétaire: le libérer, sinon 128 fuites par
+         * fichier ouvert. */
+        fluid_sfont_t* sf = fluid_synth_get_sfont(d->synth, 0);
+        if (sf && sf->get_preset) {
+            for (unsigned p = 0; p < 128; p++) {
+                /* Banque 0: les timbres mélodiques, index p+1. Banque 128: les
+                 * KITS de batterie, index 129+p — deux espaces disjoints (voir
+                 * midi_instr_index). Une banque peut être creuse: get_preset
+                 * rend NULL et on passe. */
+                fluid_preset_t* pr = sf->get_preset(sf, 0, p);
+                if (pr) {
+                    const char* nm = pr->get_name ? pr->get_name(pr) : NULL;
+                    if (nm && nm[0]) rewamp_instrument_set_name((int)p + 1, nm);
+                    if (pr->free) pr->free(pr);
+                }
+                const unsigned dIdx = MIDI_DRUM_INSTR_BASE + p;
+                if (dIdx > 255u) continue;
+                fluid_preset_t* dr = sf->get_preset(sf, 128, p);
+                if (dr) {
+                    const char* nm = dr->get_name ? dr->get_name(dr) : NULL;
+                    if (nm && nm[0]) rewamp_instrument_set_name((int)dIdx, nm);
+                    if (dr->free) dr->free(dr);
+                }
+            }
+        }
+    }
+    {
         /* Voice names: apply each channel's FIRST program change, read the
          * preset name, then reset the synth (playback re-applies programs
          * at their real event times). */
@@ -300,30 +478,20 @@ static RewampDecoder* midi_open(const char* path, RewampAudioFormat* outFormat) 
         for (tml_message* m = d->events; m; m = m->next) {
             if (m->type == TML_PROGRAM_CHANGE && m->channel < MIDI_CHANNELS &&
                 !seen[m->channel]) {
+                const int prog = midi_program_for(d, m->channel, m->program);
+                if (prog < 0) continue;   /* canal 10 en mode MT-32 */
                 seen[m->channel] = 1;
-                fluid_synth_program_change(d->synth, m->channel, m->program);
+                fluid_synth_program_change(d->synth, m->channel, prog);
             }
         }
-        for (int c = 0; c < MIDI_CHANNELS; c++) {
-            int v = g_chan2voice[c];
-            if (v < 0) continue;
-            char nm[MODIZ_VOICE_NAME_MAX_CHAR];
-            const char* pname = NULL;
-            fluid_preset_t* pr = fluid_synth_get_channel_preset(d->synth, c);
-            if (pr && pr->get_name) pname = pr->get_name(pr);
-            if (c == 9 && (!pname || !pname[0])) pname = "Drums";
-            if (pname && pname[0]) {
-                snprintf(nm, sizeof(nm), "%.*s",
-                         (int)sizeof(nm) - 1, pname);
-            } else {
-                snprintf(nm, sizeof(nm), "Ch %d", c + 1);
-            }
-            rewamp_voice_set_name(v, nm);
-        }
+        for (int c = 0; c < MIDI_CHANNELS; c++) midi_name_voice(d, c);
         fluid_synth_system_reset(d->synth);
     }
 
     rewamp_track_message_append("Format: Standard MIDI\n");
+    if (d->mt32_to_gm)
+        rewamp_track_message_append(
+            "Written for: Roland MT-32 (programs mapped to General MIDI)\n");
     rewamp_track_message_append("Notes: %d\n", noteCount);
     rewamp_track_message_append("Duration: %u:%02u\n",
                                 lastMs / 60000, (lastMs / 1000) % 60);
@@ -357,6 +525,12 @@ static uint64_t midi_read(RewampDecoder* rd, float* out, uint64_t frameCount) {
         uint64_t chunk = (uint64_t)(untilMs * MIDI_SAMPLE_RATE / 1000.0) + 1;
         if (chunk > frameCount - done) chunk = frameCount - done;
 
+        /* Il reste des événements: le morceau n'est pas fini, même si cette
+         * tranche est muette (long silence d'introduction, préambule de
+         * contrôleurs). Sans ce signal, le saut automatique des silences
+         * concluait « fin de piste » et avançait la file. Même règle que le
+         * greffon MT-32, où le préambule sysex dure des secondes. */
+        if (d->next != NULL) rewamp_decoder_activity();
         fluid_synth_write_float(d->synth, (int)chunk,
                                 out + done * 2, 0, 2,
                                 out + done * 2, 1, 2);
@@ -377,6 +551,16 @@ static void midi_seek(RewampDecoder* rd, uint64_t frameIndex) {
         d->time_ms = 0;
         midi_reset_note_state();
     }
+    /* Les notes qui SONNAIENT au point de départ n'auront jamais leur
+     * note-off (l'avance rapide saute les notes): couper d'abord chaque
+     * canal, sinon un seek AVANT laisse l'ancien accord se mélanger au
+     * nouveau — un seek arrière ne le montrait pas, son system_reset faisait
+     * déjà taire le synthé. Même règle que le greffon MT-32. */
+    for (int ch = 0; ch < MIDI_CHANNELS; ch++) {
+        fluid_synth_cc(d->synth, ch, 123, 0);   /* all notes off  */
+        fluid_synth_cc(d->synth, ch, 120, 0);   /* all sound off  */
+    }
+    midi_silence_note_state();                  /* les viz suivent le son */
     /* Fast-forward: apply state-bearing events without rendering so
      * programs/controllers are correct at the target position. */
     while (d->next && d->next->time <= (unsigned)targetMs) {

@@ -16,6 +16,7 @@
 #endif
 
 #include "rewamp_audio.h"
+#include "rewamp_viz_idle.h"   /* plafond de cadence: ce qu'on déclare aux presets */
 #include "rewamp_waveform.h"
 #include "rewamp_gl.h"
 #include "rewamp_assets.h"  // rewamp_get_data_dir
@@ -125,7 +126,8 @@ static char g_preset_name[512] = {0};
 static volatile int g_preset_serial = 0;
 static int g_random_mode = 1;              // 1 = random next, 0 = sequential
 static int g_blend_mode  = 1;              // 1 = soft-cut blend, 0 = hard cut
-static unsigned g_rng = 0x9E3779B9u;       // xorshift state (seeded on first use)
+static unsigned g_rng = 0x9E3779B9u;       // xorshift state (semé au premier tirage)
+static bool     g_rng_seeded = false;      // voir _rng_seed_once
 
 // Tunables (Modizer's projectM settings; pushed from Dart via set_params).
 static double g_preset_duration = 15.0;
@@ -196,6 +198,19 @@ static int _ensure_pm_target(int w, int h) {
 
 static void _apply_params(void) {
     if (!g_pm) return;
+    /* ⚠️ `set_fps` n'est PAS un plafond de rendu: c'est la cadence qu'on
+     * DÉCLARE aux presets. `fps` est une variable de leurs équations par frame
+     * (les amortissements MilkDrop s'écrivent couramment `pow(x, 30/fps)`),
+     * elle part aussi aux shaders dans `_c2.y`, et `1/fps` sert de pas de
+     * temps au lissage du spectre. Annoncer 60 en rendant à 120 fait donc
+     * décroître tout ça deux fois trop vite. On annonce le plafond quand il y
+     * en a un, 60 sinon — faute de connaître le rafraîchissement réel ici. Ici
+     * et pas à l'init: le plafond est un réglage, il peut changer en cours de
+     * route. */
+    {
+        const int cap = rewamp_viz_max_fps();
+        projectm_set_fps(g_pm, cap > 0 ? cap : 60);
+    }
     projectm_set_preset_duration(g_pm, g_preset_duration);
     // Modizer: blend off → soft-cut duration 0 (hard transitions everywhere).
     projectm_set_soft_cut_duration(g_pm, g_blend_mode ? g_blend_time : 0.0);
@@ -212,7 +227,33 @@ static void _apply_params(void) {
     projectm_set_transition_index(g_pm, g_transition_index);
 }
 
+/* ⚠️ Le tirage doit être SEMÉ, et là où le semis se faisait il ne se faisait
+ * presque jamais: il vivait dans la branche « première activation de la
+ * session » de rewamp_projectm_init, or Dart POUSSE sa liste au démarrage
+ * (PresetManager restaure la source et le dernier preset), donc
+ * _playlist_swap_if_pending() rendait vrai et la branche était sautée. L'état
+ * restait la constante de compilation: à CHAQUE lancement, la même suite de
+ * presets, dans le même ordre — « je vois toujours les mêmes » (signalé le
+ * 2026-09-14; vérifié en rejouant le xorshift à la main sur le pack de
+ * l'utilisateur, 278 presets: les huit premiers tirages sont identiques d'un
+ * lancement à l'autre).
+ *
+ * Le semis est donc PARESSEUX, au premier tirage, quel que soit le chemin qui
+ * l'atteint. `time()` ne donne qu'une seconde de résolution — deux lancements
+ * dans la même seconde repartiraient pareil —, d'où l'adresse d'une variable
+ * de pile en second terme: l'ASLR la déplace à chaque lancement. */
+static void _rng_seed_once(void) {
+    if (g_rng_seeded) return;
+    g_rng_seeded = true;
+    unsigned mark = 0;
+    g_rng ^= ((unsigned)time(nullptr) | 1u);
+    g_rng ^= (unsigned)(uintptr_t)&mark;
+    g_rng ^= (unsigned)(uintptr_t)&g_rng >> 3;
+    if (g_rng == 0) g_rng = 0x9E3779B9u;   /* xorshift meurt sur zéro */
+}
+
 static unsigned _rng_next(void) {
+    _rng_seed_once();
     g_rng ^= g_rng << 13; g_rng ^= g_rng >> 17; g_rng ^= g_rng << 5;
     return g_rng;
 }
@@ -369,9 +410,9 @@ static void _sprites_apply(const std::string& path) {
 //
 // Verdict quand le temps de frame cumulé au-delà de kSlowFrameNs atteint
 // kSlowWindowNs
-// sur au moins deux frames, OU qu'UNE frame dépasse kAwfulNs — à ce coût-là il
-// n'y a plus rien à confirmer, et attendre une deuxième frame coûterait presque
-// une seconde de plus. À 5 fps soutenus le verdict tombe en ~0,6 s, à 3 fps en
+// sur au moins deux frames. (Le raccourci « UNE frame > kAwfulNs suffit » a été
+// retiré: un intervalle isolé a trop de causes étrangères au preset — voir la
+// note dans _watch_tick.) À 5 fps soutenus le verdict tombe en ~0,6 s, à 3 fps en
 // deux frames. Ce qui remet à zéro, c'est kHealthyNs de rendu rapide accumulé:
 // « au-dessus de 6 fps depuis plus d'une seconde, c'est bon », même si les
 // presets défilent entre-temps.
@@ -385,7 +426,6 @@ static void _sprites_apply(const std::string& path) {
 //     fil a été suspendu (arrière-plan, appareil endormi).
 static const long long kSlowFrameNs  = 166000000LL;   // > 166 ms = sous 6 fps
 static const long long kSlowWindowNs =  600000000LL;  // 0,6 s de rendu lent
-static const long long kAwfulNs      =  800000000LL;  // une seule frame suffit
 static const long long kHealthyNs    = 1000000000LL;  // 1 s de rendu rapide
 static const long long kGapNs        = 5000000000LL;  // au-delà: un trou
 static long long g_watch_slow_ns    = 0;
@@ -418,8 +458,15 @@ static void _watch_tick(long long renderNs) {
     g_watch_healthy_ns = 0;
     g_watch_slow_ns   += renderNs;
     g_watch_slow_frames++;
-    if (renderNs >= kAwfulNs ||
-        (g_watch_slow_ns >= kSlowWindowNs && g_watch_slow_frames >= 2)) {
+    // ⚠️ Une frame affreuse ISOLÉE ne suffit plus, il en faut DEUX d'affilée
+    // (lentes, pas forcément affreuses). Un intervalle unique de 0,8 à 5 s a
+    // trop de causes qui ne sont pas le preset: fenêtre occultée, mini lecteur
+    // (la coquille est hors scène, son ticker coupé), changement d'espace de
+    // travail — le ticker Flutter s'arrête sans que rewamp_viz_idle le sache.
+    // Un appareil VRAIMENT à 1 image/s enchaîne les frames lentes: il est pris
+    // une frame plus tard, et un trou isolé est effacé par la seconde de rendu
+    // sain qui suit.
+    if (g_watch_slow_ns >= kSlowWindowNs && g_watch_slow_frames >= 2) {
         g_watch_slow_ns     = 0;
         g_watch_slow_frames = 0;
         g_watch_skip        = 2;   // laisse au client le temps d'agir
@@ -526,7 +573,6 @@ extern "C" REWAMP_EXPORT int rewamp_projectm_init(int width, int height) {
         _warm_transitions();
     }
     projectm_set_window_size(g_pm, width >> g_quality_shift, height >> g_quality_shift);
-    projectm_set_fps(g_pm, 60);
     projectm_set_preset_switch_requested_event_callback(g_pm, _on_switch_requested, nullptr);
     _apply_params();
 
@@ -542,7 +588,8 @@ extern "C" REWAMP_EXPORT int rewamp_projectm_init(int width, int height) {
         if (!g_session_active) {
             _adopt_presets(_scan_presets(_default_preset_dir()));
             g_history.clear();
-            g_rng ^= (unsigned)time(nullptr) | 1u;  // vary the shuffle between runs
+            /* (le semis du tirage est PARESSEUX — _rng_seed_once; il vivait
+             * ici, où il ne s'exécutait presque jamais.) */
             g_preset_idx = (g_random_mode && g_presets.size() > 1)
                                ? (size_t)(_rng_next() % g_presets.size())
                                : 0;
@@ -576,7 +623,12 @@ extern "C" REWAMP_EXPORT void rewamp_projectm_render(void) {
     {
         static long long lastEntryNs = 0;
         const long long now = _prof_now_ns();
-        if (lastEntryNs != 0) _watch_tick(now - lastEntryNs);
+        // ⚠️ Un intervalle qui enjambe un SOMMEIL du viz (lecteur en pause, voir
+        // rewamp_viz_idle) n'est pas une frame lente: la boucle n'a simplement
+        // pas été appelée. Lu SANS condition pour que le drapeau soit consommé
+        // même au tout premier passage.
+        const int sleptThrough = rewamp_viz_take_idle_gap();
+        if (lastEntryNs != 0 && !sleptThrough) _watch_tick(now - lastEntryNs);
         lastEntryNs = now;
     }
 
@@ -1070,12 +1122,38 @@ static void _adopt_presets(std::vector<std::string>&& list) {
     g_pl_kick_countdown = -1;   // an armed kick predicted an old-list index
 }
 
+/* Le preset `idx` a-t-il été vu dans les `window` derniers ? g_history porte
+ * déjà les index visités (c'est le « précédent » du navigateur), il suffit
+ * d'en regarder la queue. */
+static bool _recently_shown(size_t idx, size_t window) {
+    size_t n = g_history.size();
+    if (window > n) window = n;
+    for (size_t k = 0; k < window; k++)
+        if (g_history[n - 1 - k] == idx) return true;
+    return false;
+}
+
 static void _pick_next_and_preload(void) {
     if (g_presets.empty()) return;
     size_t next = g_preset_idx;
     if (g_random_mode && g_presets.size() > 1) {
-        while (next == g_preset_idx)
-            next = (size_t)(_rng_next() % g_presets.size());
+        /* Un tirage uniforme n'est pas ce qu'un auditeur appelle « aléatoire »:
+         * sur 278 presets il en ramène un déjà vu toutes les vingtaines de
+         * changements, et la garde d'origine n'excluait QUE le preset courant.
+         * On écarte donc aussi les derniers vus — un quart de la liste, plafonné
+         * à 32 pour qu'une longue liste ne coûte pas une recherche linéaire
+         * démesurée, et borné à n-1 pour qu'il reste toujours un candidat.
+         * Tirage borné en essais: si la fenêtre est saturée (liste courte, ou
+         * historique qui vient d'être vidé), on prend ce qui vient. */
+        const size_t n = g_presets.size();
+        size_t window = n / 4;
+        if (window > 32) window = 32;
+        if (window + 1 >= n) window = n - 1;
+        for (int tries = 0; tries < 64; tries++) {
+            next = (size_t)(_rng_next() % n);
+            if (next != g_preset_idx && !_recently_shown(next, window)) break;
+        }
+        if (next == g_preset_idx) next = (g_preset_idx + 1) % n;
     } else {
         next = (g_preset_idx + 1) % g_presets.size();
     }

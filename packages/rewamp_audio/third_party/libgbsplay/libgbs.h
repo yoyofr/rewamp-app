@@ -209,6 +209,10 @@ void gbs_close(struct gbs* const gbs);
 long gbs_write(const struct gbs* const gbs, const char* const name);
 //YOYOFR
 long gbs_toggle_setmute(struct gbs* const gbs, long channel,long muteval);
+/* Capture par voix (oscilloscopes): 1 par défaut. À 0, cette instance n'écrit
+ * RIEN dans les globales `m_voice_*` — ce que doit faire toute instance qui
+ * n'est pas celle qu'on entend (la sonde de sous-chansons GBR). */
+void gbs_set_voice_capture(struct gbs* const gbs, int on);
 void gbs_set_default_length(struct gbs* const gbs, long length);
 //YOYOFR
 

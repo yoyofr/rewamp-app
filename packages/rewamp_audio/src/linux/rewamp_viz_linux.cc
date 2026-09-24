@@ -29,6 +29,8 @@
 #include "../rewamp_pattern_render.cpp"
 // Spectre (mode 5): idem, sp_-préfixés.
 #include "../rewamp_spectrum_render.cpp"
+// piano (mode 6), pk_-prefixed; after the notes renderer (nv_voice_color, nv_now).
+#include "../rewamp_piano_render.cpp"
 
 // ── Points d'entrée FFI ─────────────────────────────────────────────────────
 // Ils vivent ICI, dans le MOTEUR, et non dans le plugin GTK: Dart ouvre
@@ -97,6 +99,7 @@ static int viz_init_mode(int mode, int w, int h) {
 #endif
         case 4:  return rewamp_patternviz_init(w, h);
         case 5:  return rewamp_spectrum_init(w, h);
+        case 6:  return rewamp_pianoviz_init(w, h);
         default: return rewamp_viz_init(w, h);
     }
 }
@@ -131,6 +134,7 @@ static void viz_render_and_notify(void) {
 #endif
         case 4:  rewamp_patternviz_render(); break;
         case 5:  rewamp_spectrum_render();   break;
+        case 6:  rewamp_pianoviz_render();   break;
         default: rewamp_viz_render();        break;
     }
     if (g_have_texture && g_ops.mark) g_ops.mark(g_ops.user);
@@ -143,12 +147,14 @@ REWAMP_EXPORT int64_t rewamp_scope_register(int w, int h)      { return viz_regi
 REWAMP_EXPORT int64_t rewamp_noteviz_register(int w, int h)    { return viz_register_common(2, w, h); }
 REWAMP_EXPORT int64_t rewamp_patternviz_register(int w, int h) { return viz_register_common(4, w, h); }
 REWAMP_EXPORT int64_t rewamp_spectrum_register(int w, int h)   { return viz_register_common(5, w, h); }
+REWAMP_EXPORT int64_t rewamp_pianoviz_register(int w, int h)   { return viz_register_common(6, w, h); }
 
 REWAMP_EXPORT void rewamp_viz_render_and_notify(void)        { viz_render_and_notify(); }
 REWAMP_EXPORT void rewamp_scope_render_and_notify(void)      { viz_render_and_notify(); }
 REWAMP_EXPORT void rewamp_noteviz_render_and_notify(void)    { viz_render_and_notify(); }
 REWAMP_EXPORT void rewamp_patternviz_render_and_notify(void) { viz_render_and_notify(); }
 REWAMP_EXPORT void rewamp_spectrum_render_and_notify(void)   { viz_render_and_notify(); }
+REWAMP_EXPORT void rewamp_pianoviz_render_and_notify(void)   { viz_render_and_notify(); }
 
 #ifdef REWAMP_WITH_PROJECTM
 REWAMP_EXPORT int64_t rewamp_projectm_register(int w, int h)  { return viz_register_common(3, w, h); }
@@ -160,7 +166,26 @@ REWAMP_EXPORT int rewamp_viz_resize_register(int w, int h) {
     return rewamp_gl_resize(w, h);
 }
 
+// ⚠️ Le fil qui appelle ceci est le fil PRINCIPAL, et sous Linux Flutter y
+// rend lui aussi, dans SON contexte EGL. Nos renderers ne rendent notre
+// contexte courant qu'au RENDU (rewamp_*_render), donc tant que le viz
+// dessine, la frame qui démonte l'a déjà rendu courant juste avant (le ticker
+// passe avant la construction). Mais un viz EN VEILLE (rewamp_viz_should_render
+// = 0, pause + grâce écoulée) ne dessine plus: le contexte courant est alors
+// CELUI DE FLUTTER, et chaque glDelete* des uninit (textures, FBO, programmes
+// de projectM) détruisait les objets de Flutter portant les mêmes numéros.
+// Symptôme: fermer le lecteur en pause figeait l'app sur la fin de
+// l'animation, image qui clignote, plus aucune réaction — la boucle GTK
+// tournait, c'était le rendu de Flutter qui n'avait plus ses objets.
+// D'où: notre contexte d'abord, et celui de Flutter rendu ensuite.
 REWAMP_EXPORT void rewamp_viz_unregister(void) {
+    const EGLDisplay prevDpy  = eglGetCurrentDisplay();
+    const EGLContext prevCtx  = eglGetCurrentContext();
+    const EGLSurface prevDraw = eglGetCurrentSurface(EGL_DRAW);
+    const EGLSurface prevRead = eglGetCurrentSurface(EGL_READ);
+    rewamp_gl_make_current();
+    const EGLContext ours     = eglGetCurrentContext();
+
     switch (g_viz_mode) {
         case 1:  rewamp_scope_uninit();      break;
         case 2:  rewamp_noteviz_uninit();    break;
@@ -169,12 +194,19 @@ REWAMP_EXPORT void rewamp_viz_unregister(void) {
 #endif
         case 4:  rewamp_patternviz_uninit(); break;
         case 5:  rewamp_spectrum_uninit();   break;
+        case 6:  rewamp_pianoviz_uninit();   break;
         default: rewamp_viz_uninit();        break;
     }
     if (g_have_texture && g_ops.destroy) g_ops.destroy(g_ops.user);
     g_have_texture = false;
     g_texture_id = -1;
     rewamp_gl_uninit();
+
+    // Notre contexte vient d'être détruit; celui de Flutter (s'il était là)
+    // redevient courant tel que Flutter l'avait laissé.
+    // (Si c'était déjà le NÔTRE — viz actif —, il n'existe plus: rien à rendre.)
+    if (prevCtx != EGL_NO_CONTEXT && prevCtx != ours && prevDpy != EGL_NO_DISPLAY)
+        eglMakeCurrent(prevDpy, prevDraw, prevRead, prevCtx);
 }
 
 }  // extern "C"

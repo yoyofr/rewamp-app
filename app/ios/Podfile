@@ -130,6 +130,7 @@ post_install do |installer|
       kss_inc = %W[
         -w -I#{kss_root}/src -I#{kss_root}/src/kss -I#{kss_root}/src/vm
         -I#{kss_root}/src/filters -I#{kss_root}/src/rconv -I#{kss_root}/modules
+        -I#{kss_root}/../mus2kss -DMUS2KSS_LIBRARY=1
       ].join(' ') + ' ' + kss_kmz80_defs
 
       # SNSF (snsf9x): the tree carries convert.h, port.h, memmap.h, apu.h,
@@ -335,6 +336,13 @@ post_install do |installer|
       pmd_root = '$(PODS_TARGET_SRCROOT)/../third_party/pmdmini/src'
       pmd_inc = "-w -I#{pmd_root} -I#{pmd_root}/pmdwin -I#{pmd_root}/ymfm -Dymfm=pmd_ymfm"
 
+      # libxmp: le SEUL chemin dont son arbre a besoin est include/ (common.h
+      # atteint "xmp.h" par la recherche d'en-têtes). Scopé ici et PAS pod-wide:
+      # ses en-têtes s'appellent common.h / mixer.h / player.h / format.h /
+      # loader.h. Les défines de build sont cuits dans les wrappers
+      # (Classes/xmp_cores/*), tout le reste se résout en relatif.
+      xmp_inc = '-w -I$(PODS_TARGET_SRCROOT)/../third_party/libxmp/include'
+
       target.source_build_phase.files.each do |bf|
         path = bf.file_ref.respond_to?(:path) ? bf.file_ref.path.to_s : ''
         if path.include?('zxtune_cores') && path.end_with?('.cpp', '.cc')
@@ -396,6 +404,9 @@ post_install do |installer|
         elsif path.include?('projectm_cores')
           flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
           bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{pm_inc}".strip }
+        elsif path.include?('xmp_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{xmp_inc}".strip }
         elsif path.include?('snsf_cores')
           flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
           bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{snsf_inc}".strip }

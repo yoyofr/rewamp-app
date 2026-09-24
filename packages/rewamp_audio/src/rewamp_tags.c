@@ -42,6 +42,13 @@ static char g_tag_title[TAG_VALUE_MAX]  = "";
 static char g_tag_artist[TAG_VALUE_MAX] = "";
 static char g_tag_album[TAG_VALUE_MAX]  = "";
 
+void rewamp_track_tag_set(const char* title, const char* artist,
+                          const char* album) {
+    if (title  != NULL) snprintf(g_tag_title,  sizeof(g_tag_title),  "%s", title);
+    if (artist != NULL) snprintf(g_tag_artist, sizeof(g_tag_artist), "%s", artist);
+    if (album  != NULL) snprintf(g_tag_album,  sizeof(g_tag_album),  "%s", album);
+}
+
 const char* rewamp_tag_title(void)  { return g_tag_title; }
 const char* rewamp_tag_artist(void) { return g_tag_artist; }
 const char* rewamp_tag_album(void)  { return g_tag_album; }

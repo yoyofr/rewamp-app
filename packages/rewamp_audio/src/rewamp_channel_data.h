@@ -62,6 +62,20 @@ void rewamp_voices_meta_reset(void);
 int  rewamp_voices_add_chip(const char* name, int startVoice, int count);
 void rewamp_voice_set_name(int v, const char* name);
 
+/* ── Noms d'INSTRUMENTS (échantillon / programme), indexés comme
+ * vgm_last_instr[]: 0 = aucun, 1..MODIZ_MAX_INSTR-1 = l'instrument. Un
+ * greffon qui CONNAÎT ses noms les pose à l'ouverture (FluidLite: les presets
+ * de la SoundFont; openmpt: les noms d'échantillon/instrument); les autres
+ * n'en posent pas et l'UI retombe sur « Inst n ». Effacés par
+ * rewamp_voices_meta_reset, comme les noms de voix. */
+#define MODIZ_MAX_INSTR 256
+extern char modizInstrName[MODIZ_MAX_INSTR][MODIZ_VOICE_NAME_MAX_CHAR];
+void rewamp_instrument_set_name(int idx, const char* name);
+
+/* Change à chaque nom POSÉ et à chaque remise à zéro: un cache de noms côté
+ * UI se compare à ce compteur au lieu de relire les chaînes. */
+unsigned rewamp_instrument_names_gen(void);
+
 /* Voice muting uses the `generic_mute_mask` global (bit v set ⇒ voice v muted),
  * declared in ModizerVoicesData.h. Adopting plugins read it during decode; the
  * Dart-facing get/set FFI wrappers live in rewamp_audio.c. */
@@ -81,7 +95,32 @@ REWAMP_EXPORT const char* rewamp_track_message(void);
  * mojibake in the info panel. Pure-ASCII input passes through unchanged; on
  * Apple iconv converts the rest; elsewhere (Android has no iconv) each
  * non-ASCII glyph degrades to '?'. `out` is always NUL-terminated. */
+/* Atténue les [frames] derniers échantillons écrits dans l'anneau de CHAQUE
+ * voix, en interpolant linéairement de [gainStart] à [gainEnd]. Sert au fondu
+ * de fin des PSF (voir rewamp_psf_fade.h): sans lui les oscilloscopes restent
+ * à pleine amplitude pendant que le son s'éteint. Appelé par le greffon juste
+ * après son décodage, donc AVANT la copie du producteur vers l'anneau retardé
+ * — c'est ce qui fait que la version affichée est déjà atténuée. */
+void        rewamp_channel_data_fade_recent(int frames, float gainStart,
+                                            float gainEnd);
+
 void        rewamp_sjis_to_utf8(const char* in, char* out, size_t outCap);
+
+/* 1 if `s` is well-formed UTF-8 (ASCII included). */
+int         rewamp_utf8_valid(const char* s);
+
+/* Text of unknown encoding → UTF-8: well-formed UTF-8 is copied as is,
+ * anything else is treated as CP932 (Shift-JIS) — the encoding of every
+ * Japanese chip/tracker/PSF tag met so far. `out` is always NUL-terminated. */
+void        rewamp_text_to_utf8(const char* in, char* out, size_t outCap);
+
+/* PSF-family tag value → `dst`: cut at the first newline (a multi-line tag is
+ * its first line), then rewamp_text_to_utf8. The PSF spec says a tag is
+ * Shift-JIS unless the file carries `utf8=1`; measured on 390 PSF/2sf/dsf/ssf
+ * files on disk, 150 carry non-ASCII tags and NONE declares utf8 — so the
+ * text is sniffed rather than the flag trusted. Shared by the eight PSF
+ * plugins (psf/psf2, gsf, 2sf, ncsf, usf, qsf, ssf/dsf, snsf). */
+void        rewamp_psf_tag_copy(char* dst, size_t dstCap, const char* value);
 
 /* ISO-8859-1 → UTF-8, for tags a format defines as 8-bit Latin (PSID header
  * strings, and every other pre-Unicode container that stores names as raw
@@ -105,6 +144,13 @@ REWAMP_EXPORT const char*    rewamp_track_artwork_mime(void);
 void           rewamp_track_artwork_clear(void);
 
 /* Structured tag fields parsed by rewamp_tags_append_info ('' when absent). */
+/* Pose les tags STRUCTURÉS de la piste (titre/artiste/album) depuis un
+ * PLUGIN — pour les formats dont les métadonnées ne vivent pas dans un
+ * conteneur ID3/Vorbis/RIFF (GD3 des VGM, etc.). Un argument NULL laisse le
+ * champ tel quel. Le store est remis à zéro à chaque load
+ * (rewamp_track_artwork_clear), comme le reste. */
+void rewamp_track_tag_set(const char* title, const char* artist,
+                          const char* album);
 REWAMP_EXPORT const char* rewamp_tag_title(void);
 REWAMP_EXPORT const char* rewamp_tag_artist(void);
 REWAMP_EXPORT const char* rewamp_tag_album(void);

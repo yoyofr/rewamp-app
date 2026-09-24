@@ -81,7 +81,7 @@ class BackupService {
       ..addFile(ArchiveFile(_dbEntry, dbBytes.length, dbBytes))
       ..addFile(_textFile(_settingsEntry, settings))
       ..addFile(_textFile(_manifestEntry, manifest));
-    final zip = ZipEncoder().encode(archive)!;
+    final zip = ZipEncoder().encode(archive);
 
     final name =
         'rewamp_${_dateStamp(stamp)}.$backupExtension';

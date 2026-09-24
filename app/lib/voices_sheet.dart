@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:rewamp_audio/rewamp_audio.dart';
 
@@ -44,7 +45,13 @@ class _Chip {
 
 class _VoicesSheetState extends State<VoicesSheet> {
   late final List<_Chip> _chips;
-  late final List<String> _voiceNames;
+  List<String> _voiceNames = const [];
+  /// Les noms de voix ne sont pas figés: un canal MIDI change d'instrument en
+  /// cours de morceau, et le moteur réécrit alors son étiquette. Relus à
+  /// cadence lente, comme le font déjà les légendes de l'oscilloscope et du
+  /// piano; setState seulement quand un nom a VRAIMENT changé (la feuille est
+  /// interactive, la reconstruire pour rien coûterait plus que la lecture).
+  Timer? _nameTimer;
   late int _voiceCount;
   /// Stereo-only backend: the chip/voice names are UI labels, not engine data,
   /// so they are resolved from [AppLocalizations] in build (never in initState,
@@ -66,6 +73,7 @@ class _VoicesSheetState extends State<VoicesSheet> {
           _Chip(c, a.chipName(c), a.chipVoiceStart(c), a.chipVoiceCount(c)),
       ];
       _voiceNames = [for (var v = 0; v < _voiceCount; v++) a.voiceName(v)];
+      _nameTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _refreshNames());
     } else {
       // Stereo-only backend (APE, vgmstream, miniaudio…): expose the output
       // channels as two pseudo-voices — the datasource mutes L/R on mask
@@ -74,6 +82,21 @@ class _VoicesSheetState extends State<VoicesSheet> {
       _stereoFallback = true;
       _chips = const [];
       _voiceNames = const [];
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameTimer?.cancel();
+    super.dispose();
+  }
+
+  void _refreshNames() {
+    if (!mounted || _stereoFallback) return;
+    final a = widget.audio;
+    final next = [for (var v = 0; v < _voiceCount; v++) a.voiceName(v)];
+    for (var i = 0; i < next.length; i++) {
+      if (next[i] != _voiceNames[i]) { setState(() => _voiceNames = next); return; }
     }
   }
 

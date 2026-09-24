@@ -713,8 +713,15 @@ void update_audio (void)
     //TODO: MODIZER changes start / YOYOFR
     /* Per-voice note + volume detection for the notation/scope overlays.
      * Frequency from the Paula period (SOUNDTICKS = PAL Amiga clock); on a new
-     * output value while the channel is active, latch the note; keyon (set on a
-     * loop-address write = new sample) drives the volume peak. */
+     * output value while the channel is active, latch the note.
+     *
+     * ⚠️ La colonne de VOLUME sert de RÉATTAQUE aux visualiseurs: notation et
+     * piano coupent une note en cours quand le volume MONTE de plus de 2
+     * (rewamp_notes_render / rewamp_piano_render). Une partie de batterie joue
+     * ses échantillons à la MÊME période — donc à la même hauteur — et sans ce
+     * saut elle s'affichait comme UNE note tenue. D'où un contraste franc:
+     * attaque 255, tenue 1. Le volume Paula lui-même n'irait pas: il est
+     * constant d'un coup de batterie au suivant. */
     {
         static int uade_last_output[4];
         for (int i = 0; i < 4; i++) {
@@ -724,8 +731,11 @@ void update_audio (void)
                 audio_channel[i].adk_mask && uade_last_output[i] != output) {
                 vgm_last_note[i]  = (unsigned int)(440.0f * SOUNDTICKS / audio_channel[i].per / 8287);
                 vgm_last_instr[i] = i;
-                if (vgm_last_vol[i] < 1u + (unsigned int)audio_channel[i].keyon)
-                    vgm_last_vol[i] = 1u + (unsigned int)audio_channel[i].keyon;
+                {
+                    const unsigned int want =
+                        audio_channel[i].keyon ? 255u : 1u;
+                    if (vgm_last_vol[i] < want) vgm_last_vol[i] = want;
+                }
                 audio_channel[i].keyon = 0;
             }
             uade_last_output[i] = output;
@@ -768,7 +778,6 @@ void AUDxLCH (int nr, uae_u16 v)
     update_audio ();
 
     audio_channel[nr].lc = (audio_channel[nr].lc & 0xffff) | ((uae_u32)v << 16);
-    audio_channel[nr].keyon = 1; //YOYOFR: loop-address write = note trigger
 }
 
 
@@ -782,7 +791,6 @@ void AUDxLCL (int nr, uae_u16 v)
     update_audio ();
 
     audio_channel[nr].lc = (audio_channel[nr].lc & ~0xffff) | (v & 0xFFFE);
-    audio_channel[nr].keyon = 1; //YOYOFR: loop-address write = note trigger
 }
 
 

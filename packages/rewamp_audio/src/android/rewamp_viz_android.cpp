@@ -53,6 +53,12 @@ static jlong g_current_view_id = -1;
 #include "../rewamp_pattern_render.cpp"
 // spectrum renderer (mode 5): same deal, sp_-prefixed.
 #include "../rewamp_spectrum_render.cpp"
+// piano renderer (mode 6): pk_-prefixed; reuses nv_voice_color/nv_now from the
+// notes renderer, so it must come after it.
+#include "../rewamp_piano_render.cpp"
+
+// « faut-il dessiner cette frame ? » — la MÊME règle que le ticker Dart.
+#include "../rewamp_viz_idle.h"
 
 // projectM (viz mode 3) lives in its OWN TU (src/rewamp_projectm_render.cpp):
 // unity-including it here would drag projectM's private, generic-named headers
@@ -105,6 +111,7 @@ static void* sv_thread_main(void*) {
 #endif
         case 4:  err = rewamp_patternviz_init(g_sv_w, g_sv_h); break;
         case 5:  err = rewamp_spectrum_init(g_sv_w, g_sv_h);   break;
+        case 6:  err = rewamp_pianoviz_init(g_sv_w, g_sv_h);   break;
         default: err = rewamp_viz_init(g_sv_w, g_sv_h);     break;
     }
     g_sv_ok.store(err == 0 ? 1 : -1);
@@ -131,6 +138,19 @@ static void* sv_thread_main(void*) {
         // the actually-shown frames stayed translucent and SurfaceFlinger blended
         // them over a frozen backing buffer (a static ghost showing through the live
         // viz). One render = one opaque swap.
+        // Lecteur en pause et rien qui bouge: on ne redessine pas (voir
+        // rewamp_viz_idle.h). ⚠️ Ne PAS sortir de la boucle ni relâcher le
+        // contexte — le thread doit rester prêt, et la surface garde sa
+        // dernière image tant qu'on ne swap pas. On dort simplement plus
+        // longtemps que le vsync qu'on vient d'attendre.
+        if (!rewamp_viz_should_render()) {
+            usleep(100000);   // 10 Hz de veille: réveil quasi immédiat au play
+            continue;
+        }
+        // Plafond de cadence (Réglages → Visualisation): on a attendu le vsync,
+        // mais l'image n'est pas due. On ne dort PAS — le vsync suivant est
+        // l'échéance suivante, et dormir ici décalerait la grille.
+        if (!rewamp_viz_frame_due()) continue;
         switch (g_sv_mode) {
             case 1:  rewamp_scope_render();   break;
             case 2:  rewamp_noteviz_render(); break;
@@ -139,6 +159,7 @@ static void* sv_thread_main(void*) {
 #endif
             case 4:  rewamp_patternviz_render(); break;
             case 5:  rewamp_spectrum_render();   break;
+            case 6:  rewamp_pianoviz_render();   break;
             default: rewamp_viz_render();     break;
         }
         if (!chor) usleep(8300);
@@ -151,6 +172,7 @@ static void* sv_thread_main(void*) {
 #endif
         case 4:  rewamp_patternviz_uninit(); break;
         case 5:  rewamp_spectrum_uninit();   break;
+        case 6:  rewamp_pianoviz_uninit();   break;
         default: rewamp_viz_uninit();     break;
     }
     // The artwork background's GL objects (texture/program) die with this
@@ -308,6 +330,7 @@ static int64_t android_create_texture(int width, int height, int mode) {
         : (mode == 2) ? rewamp_noteviz_init(width, height)
         : (mode == 4) ? rewamp_patternviz_init(width, height)
         : (mode == 5) ? rewamp_spectrum_init(width, height)
+        : (mode == 6) ? rewamp_pianoviz_init(width, height)
                       : rewamp_viz_init(width, height);
     if (err != 0) { LOGE("shader init failed: %d", err); return err; }
     g_thread_mode = mode;   /* mode dispatch for render_and_notify */
@@ -399,6 +422,14 @@ REWAMP_EXPORT void rewamp_spectrum_render_and_notify(void) {
     rewamp_spectrum_render();
 }
 
+REWAMP_EXPORT int64_t rewamp_pianoviz_register(int width, int height) {
+    return android_create_texture(width, height, 6);
+}
+
+REWAMP_EXPORT void rewamp_pianoviz_render_and_notify(void) {
+    rewamp_pianoviz_render();
+}
+
 REWAMP_EXPORT void rewamp_viz_unregister(void) {
     std::lock_guard<std::mutex> lk(g_sv_lock);
     // Called from the Dart thread on selector close. On the SurfaceView path the
@@ -413,6 +444,7 @@ REWAMP_EXPORT void rewamp_viz_unregister(void) {
     rewamp_noteviz_uninit();
     rewamp_patternviz_uninit();
     rewamp_spectrum_uninit();
+    rewamp_pianoviz_uninit();
     rewamp_gl_uninit();
     android_destroy_texture();
 }

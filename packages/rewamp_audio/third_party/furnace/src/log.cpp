@@ -75,7 +75,12 @@ void appendLogBuf(const LogEntry& entry) {
   const char* msg=toWrite.c_str();
   size_t len=toWrite.size();
 
-  int remaining=(logFilePosO-logFilePosI-1)&TA_LOGFILE_BUF_SIZE;
+  // REWAMP: &MASK, pas &SIZE. La taille est une puissance de deux, donc ce ET
+  // ne pouvait rendre que 0 ou SIZE — soit « place restante nulle » presque
+  // toujours, et le `len>=remaining` juste dessous imprimait « line too long »
+  // pour CHAQUE ligne journalisée (des centaines de printf par ouverture de
+  // module). Les trois lignes suivantes utilisent bien le masque.
+  int remaining=(logFilePosO-logFilePosI-1)&TA_LOGFILE_BUF_MASK;
 
   if (len>=(unsigned int)remaining) {
     printf("line too long to fit in log buffer!\n");

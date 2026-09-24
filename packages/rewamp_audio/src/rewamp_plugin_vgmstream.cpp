@@ -20,15 +20,28 @@ extern "C" int    g_force_loop_count;
 extern "C" int    g_force_fadeout_enabled;
 extern "C" double g_force_fadeout_seconds;
 extern "C" int    g_force_loop_native_veto;
+extern "C" double g_crossfade_seconds;
 
-// Extensions handled natively by miniaudio or by higher-priority plugins —
-// vgmstream returns 0 for these so miniaudio's built-in decoders win.
-// NOT ogg/opus: miniaudio only decodes wav/mp3/flac natively (no Vorbis/Opus
-// backend registered), so those fail there — vgmstream decodes them via FFmpeg
-// (ffmpeg-kit) where enabled; on non-FFmpeg builds vgmstream declines at open()
-// and the miniaudio fallback still runs (same broken state as before, no regression).
+// Extensions vgmstream décline, pour qu'un greffon MIEUX PLACÉ les prenne.
+//
+// ⚠️ Cette liste n'a plus qu'UNE raison d'être, et c'est ce qui la rend
+// lisible: **un format qu'un moteur DÉDIÉ joue mieux**. nsf/gbs/spc/sid/vgm/
+// mod/psf… apportent ce que vgmstream ne peut pas donner — oscilloscope par
+// voie, mutes, sous-chansons, motifs. Ce n'est PAS une liste de « ce que
+// miniaudio sait faire ».
+//
+// Les FLUX (mp3/mp2/mp1, wav, flac, ogg, opus) sont donc À VGMSTREAM, tous:
+// FFmpeg lit les trois couches MPEG là où miniaudio n'a que dr_mp3, le meta
+// RIFF natif lit les points de boucle d'un `.wav` (`smpl`, `wsmp`) et connaît
+// les variantes de jeux, et un FLAC bouclé porte ses marqueurs dans ses
+// commentaires Vorbis. Le chemin vgmstream apporte en plus les `.txtp`, les
+// sous-chansons et un panneau ⓘ qui nomme conteneur et codec réels.
+//
+// Le repli miniaudio n'est pas mort pour autant: sur un build SANS FFmpeg,
+// vgmstream décline à l'`open()` et le décodeur interne reprend la main
+// (`rewamp_audio.c`, § « Fallback »). Voir la mémoire
+// feedback-mp3-goes-through-vgmstream.
 static const char* const kSkipExts[] = {
-    "wav", "mp3", "mp2", "mp1", "flac",
     // formats owned by other rewamp plugins
     "nsf", "nsfe", "gbs", "spc", "hes", "kss", "sap", "ay", "rsn",
     "vgm", "vgz", "s98", "gym", "dro",
@@ -90,6 +103,13 @@ static RewampDecoder* vgm_open_fn(const char* path, RewampAudioFormat* outFormat
     libvgmstream_config_t cfg = {};
     cfg.loop_count            = 2.0;   // pre-existing defaults — kept as-is
     cfg.fade_time             = 10.0;  // when force-loop (Settings → Lecture) is off
+    // Crossfade actif: pas de fondu propre — la piste s'arrête NET au bout de
+    // ses boucles et le producteur fond la queue lui-même par-dessus la
+    // suivante. Fondre ici doublerait l'atténuation.
+    if (g_crossfade_seconds > 0.0) {
+        cfg.fade_time   = 0.0;
+        cfg.ignore_fade = true;
+    }
     cfg.force_sfmt            = LIBVGMSTREAM_SFMT_PCM16;
     cfg.stereo_track          = 1;
     cfg.auto_downmix_channels = 2;
@@ -204,7 +224,25 @@ static uint64_t vgm_read_fn(RewampDecoder* dec, float* out, uint64_t frameCount)
 }
 
 static void vgm_seek_fn(RewampDecoder* dec, uint64_t frameIndex) {
-    if (!dec) return;
+    if (!dec || !dec->lib) return;
+    /* ⚠️ **Un seek ne réveille PAS un flux terminé.** `libvgmstream_fill` sort
+     * immédiatement quand `priv->decode_done` est vrai, et ce drapeau n'est
+     * jamais remis à faux: `update_decoder_info` ne fait que le POSER (sur
+     * RC_RENDER_EOR), et `libvgmstream_seek` l'appelle avec RC_RENDER_OK, ce
+     * qui ne l'efface pas. Une fois le morceau fini, tout seek en arrière
+     * rendait donc un décodeur muet — l'anneau restait vide, `ds_read` rendait
+     * MA_AT_END et le son se re-terminait aussitôt.
+     *
+     * Mesuré sur « MODEL DD8 » (.ogg) en boucle infinie: le repli générique
+     * détectait bien l'arrêt et relançait, `rewamp_play` réussissait, et 120 ms
+     * plus tard le moteur était de nouveau à l'arrêt, en boucle.
+     *
+     * `libvgmstream_reset` est la seule porte de sortie de l'API publique:
+     * `reset_vgmstream` + `libvgmstream_priv_reset`, qui repose
+     * `decode_done = false`. On ne la paie que dans ce cas — un seek ordinaire,
+     * en cours de lecture, ne la touche pas. */
+    if (dec->lib->decoder && dec->lib->decoder->done)
+        libvgmstream_reset(dec->lib);
     libvgmstream_seek(dec->lib, (int64_t)frameIndex);
 }
 
@@ -240,6 +278,20 @@ static const RewampPluginVTable kVgmstreamPlugin = {
     vgm_close_fn,
     vgm_configure_loop_fn,
     /* supportsNativeFadeout */ 1,
+    /* engine_id        */ NULL,
+    /* param_changed    */ NULL,
+    /* pattern_song_info*/ NULL,
+    /* pattern_order    */ NULL,
+    /* pattern_num_rows */ NULL,
+    /* pattern_get      */ NULL,
+    /* pattern_cursor   */ NULL,
+    /* probe_path       */ NULL,
+    /* noPrefixProbe — vgmstream est le FOURRE-TOUT: il rend 50 pour toute
+     * extension hors kSkipExts, donc interrogé avec le RADICAL d'un nom
+     * ordinaire il reprenait le fichier que son extension lui avait fait
+     * refuser. Un `.mp3` partait ainsi chez FFmpeg au lieu du décodeur natif
+     * de miniaudio. Voir le champ dans rewamp_plugin.h. */
+    /* noPrefixProbe    */ 1,
 };
 
 extern "C" const RewampPluginVTable* rewamp_vgmstream_plugin(void) {

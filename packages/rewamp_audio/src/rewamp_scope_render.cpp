@@ -137,8 +137,12 @@ static void scope_alpha_const(float a) {
 }
 
 // Draws the waveform currently in g_scope_verts (SCOPE_SAMPLES pts) with the
-// given color, applying CRT glow + beam-speed alpha at the given levels (0/1/2).
-static void scope_draw_wave(const float* color, int glowLvl, int speedLvl,
+// given color, applying the beam-speed alpha at the given level (0/1/2).
+//
+// ⚠️ Le HALO (« glow ») a été RETIRÉ le 2026-09-15 (demande utilisateur), ici
+// comme sur l'oscilloscope stéréo: deux passes larges et additives sous chaque
+// trace. Les bits 0-1 de `rewamp_set_crt_flags` restent réservés.
+static void scope_draw_wave(const float* color, int speedLvl,
                             float thick, int W, int H) {
     const GLsizei bytes = (GLsizei)(SCOPE_SAMPLES * 4 * sizeof(GLfloat));
 
@@ -149,25 +153,6 @@ static void scope_draw_wave(const float* color, int glowLvl, int speedLvl,
         if (g_scope_alphaLoc >= 0) glEnableVertexAttribArray(g_scope_alphaLoc);
     } else {
         scope_alpha_const(1.0f);
-    }
-
-    if (glowLvl > 0) {
-        const float w1 = glowLvl == 2 ? 6.0f : 4.0f;
-        const float w2 = glowLvl == 2 ? 3.0f : 2.0f;
-        const float a1 = glowLvl == 2 ? 0.28f : 0.18f;
-        const float a2 = glowLvl == 2 ? 0.42f : 0.30f;
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-        build_ribbon(g_scope_verts, SCOPE_SAMPLES, thick * w1, W, H, g_scope_ribbon);
-        glBindBuffer(GL_ARRAY_BUFFER, g_scope_vbo);
-        glBufferData(GL_ARRAY_BUFFER, bytes, g_scope_ribbon, GL_DYNAMIC_DRAW) /* orphan: tiler-safe */;
-        glUniform4f(g_scope_colorLoc, color[0], color[1], color[2], a1);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, SCOPE_SAMPLES * 2);
-
-        build_ribbon(g_scope_verts, SCOPE_SAMPLES, thick * w2, W, H, g_scope_ribbon);
-        glBufferData(GL_ARRAY_BUFFER, bytes, g_scope_ribbon, GL_DYNAMIC_DRAW) /* orphan: tiler-safe */;
-        glUniform4f(g_scope_colorLoc, color[0], color[1], color[2], a2);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, SCOPE_SAMPLES * 2);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
 
     build_ribbon(g_scope_verts, SCOPE_SAMPLES, thick, W, H, g_scope_ribbon);
@@ -194,9 +179,7 @@ REWAMP_EXPORT void rewamp_scope_render(void) {
     float cellW =  2.0f / cols;   // NDC width  per cell
     float cellH =  2.0f / rows;   // NDC height per cell
 
-    const int flags    = rewamp_get_crt_flags();
-    const int glowLvl  = REWAMP_CRT_GLOW_LEVEL(flags);
-    const int speedLvl = REWAMP_CRT_SPEED_LEVEL(flags);
+    const int speedLvl = REWAMP_CRT_SPEED_LEVEL(rewamp_get_crt_flags());
     const float thick = rewamp_get_viz_line_width();
 
     glBindFramebuffer(GL_FRAMEBUFFER, rewamp_gl_get_fbo());
@@ -277,7 +260,7 @@ REWAMP_EXPORT void rewamp_scope_render(void) {
             g_scope_verts[i*2 + 1] = yMid + s * yAmp;
         }
 
-        scope_draw_wave(kWave, glowLvl, speedLvl, thick, (int)W, (int)H);
+        scope_draw_wave(kWave, speedLvl, thick, (int)W, (int)H);
     }
 
     glBindVertexArray(0);

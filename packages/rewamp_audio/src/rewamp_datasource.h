@@ -3,6 +3,7 @@
 
 #include "miniaudio.h"
 #include "rewamp_plugin.h"
+#include "rewamp_declick.h"
 #include <pthread.h>
 #if defined(__APPLE__)
 #include <os/lock.h>
@@ -26,6 +27,12 @@
 #else
   typedef pthread_mutex_t RewampRingLock;
 #endif
+
+/* The one rate the decode-ahead ring runs at (see rewamp_datasource.c). Also
+ * the domain of the generic fadeout window (g_loop_fadeout_*): a decoder whose
+ * native rate differs is resampled by the producer, so frame counts derived
+ * from its native rate must be scaled to this one. */
+#define REWAMP_RING_RATE 44100
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,6 +62,7 @@ typedef struct {
     int                       ringTail;     // read index  (frames) — consumer
     int                       ringFill;     // frames currently buffered
     float*                    stepBuf;      // scratch for one decode step (producer only)
+    int                       stepBufCap;   // frames (a little above DS_STEP_FRAMES)
     int                       channels;
     int64_t                   producerPos;  // frames decoded so far
     int                       eof;          // decoder reached end
@@ -78,6 +86,62 @@ typedef struct {
     // Used to tell a LATE callback (the OS didn't schedule us) from a SLOW one
     // (we blocked on a lock) — the two have opposite fixes.
     int64_t                   lastReadUs;
+
+    // ── Gapless handoff (see rewamp_set_next_file) ──────────────────────────
+    // The producer thread, on decoder EOF, may close the current decoder and
+    // open the staged next track IN PLACE — same ring, same ma_sound — so the
+    // audio callback never sees a break. `handoffFrame` is the absolute ring
+    // frame where the next track's first frame landed; `trackBase` is the
+    // absolute frame where the CURRENT track started (0 for the first one).
+    // The consumer promotes handoffFrame → trackBase when its cursor crosses
+    // it (that is the audible boundary), bumping the global handoff serial
+    // Dart polls to flip title/metadata exactly when the ear hears the change.
+    // While a handoff's open() runs, `decoder` is briefly NULL — every caller
+    // that dereferences it must guard (pattern getters, ds_seek, length).
+    int64_t                   trackBase;      // frames — current track's origin
+    int                       handoffPending; // producer switched, consumer not yet
+    int64_t                   handoffFrame;   // frames — where the next track starts
+
+    // ── Fixed-rate ring: the ring ALWAYS runs at 44100 (DS_RING_RATE) ───────
+    // The producer resamples any decoder whose native rate differs (openmpt
+    // and SID render at 48 kHz, vgmstream/PSF variants at whatever the rip
+    // uses). This is what lets two tracks of DIFFERENT rates share one ring —
+    // gapless across rates, and the crossfade's mix stage. The CAPTURES
+    // (per-voice scopes, notes, pattern cursor) stay keyed in the decoder's
+    // NATIVE domain — their internals never see the resampler — and the
+    // consumer-side reads translate ring→native through the per-segment bases
+    // below. When nativeRate == 44100 the translation is the identity.
+    uint32_t                  nativeRate;         // current decoder's own rate
+    uint32_t                  prevNativeRate;     // outgoing track's, while pending
+    int                       rsActive;           // nativeRate != DS_RING_RATE
+    int                       rsInit;             // ma_linear_resampler is live
+    ma_linear_resampler       rs;
+    float*                    nativeBuf;          // one native decode step
+    int                       nativeBufCap;       // frames
+    int64_t                   producerPosNative;  // native frames decoded (monotonic)
+    int64_t                   trackBaseNative;    // native origin of current track
+    int64_t                   pendingBaseNative;  // native origin of the staged track
+    int64_t                   trackLenRing;       // vt->length in RING frames (0 = unknown)
+
+    // ── Crossfade (producer only): the outgoing track's tail, fully decoded
+    // ahead of the handoff, mixed equal-power over the incoming track's head.
+    // xfMode: 0 = none; 1 = MIX (tail × cos + incoming × sin, the crossfade);
+    // 2 = DRAIN (the handoff could not happen after the tail was already
+    // pulled out of the decoder — play the tail untouched, then resume).
+    float*                    xfTail;             // ring-rate frames, interleaved
+    int64_t                   xfTailLen;
+    int64_t                   xfTailPos;
+    int                       xfMode;
+    // Fondu de sortie armé par le producteur (fin de file sous crossfade) —
+    // à DÉSARMER si un suivant est finalement armé avant la fin, sinon la
+    // fenêtre de ds_read fondrait AUSSI le recouvrement du crossfade.
+    int                       endFadeArmed;
+    // Déclic de début de piste des rips CD (rewamp_declick.h), NULL sinon.
+    // Posé par l'ouverture (rewamp_open_track décide sur le CHEMIN: un `.ape`
+    // est joué par MAC, un `.ogg` par vgmstream — le déchet est dans le
+    // fichier, pas dans le moteur), traversé par TOUTES les lectures du
+    // décodeur, réarmé par un seek à 0, détruit avec le décodeur.
+    RewampDeclick*            declick;
 } RewampDataSource;
 
 // Initialize a data source from an already-opened plugin decoder.
@@ -85,7 +149,23 @@ typedef struct {
 ma_result rewamp_data_source_init(RewampDataSource* ds,
                                   const RewampPluginVTable* vt,
                                   RewampDecoder* decoder,
-                                  RewampAudioFormat format);
+                                  RewampAudioFormat format,
+                                  RewampDeclick* declick);
+
+// ── Gapless handoff plumbing ────────────────────────────────────────────────
+// rewamp_handoff_attempt (rewamp_datasource.c): close the current decoder,
+// open the staged next track and swap it into `ds` — same ring, same sound.
+// Returns 1 on success. Producer thread only, called WITHOUT decodeLock held.
+int rewamp_handoff_attempt(RewampDataSource* ds);
+// rewamp_handoff_open_next (rewamp_audio.c, which owns the open
+// orchestration): consume the staged next track, apply its per-track loop
+// settings and open it through the same registry cascade as rewamp_load_file.
+int rewamp_handoff_open_next(const RewampPluginVTable** outVt,
+                             RewampDecoder** outDec,
+                             RewampAudioFormat* outFmt,
+                             RewampDeclick** outDeclick);
+// 1 when a next track is staged and not yet consumed (rewamp_audio.c).
+int rewamp_next_staged(void);
 
 void rewamp_data_source_uninit(RewampDataSource* ds);
 

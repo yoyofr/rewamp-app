@@ -15,6 +15,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navSearch => '搜索';
 
   @override
+  String get navLocal => '本地';
+
+  @override
+  String get settingsTabsOrderTitle => '标签顺序';
+
+  @override
+  String get settingsTabsOrderSubtitle => '拖动排序。前四个显示在底部栏，其余放在“更多”中。';
+
+  @override
+  String get settingsTabsInBar => '在栏中';
+
+  @override
+  String get settingsTabsInMore => '在“更多”中';
+
+  @override
+  String get settingsLaunchTab => '启动标签';
+
+  @override
+  String get settingsLaunchTabSubtitle => '应用启动时打开的标签';
+
+  @override
   String get navLibrary => '资料库';
 
   @override
@@ -42,6 +63,16 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String playbackFileGone(String file) {
     return '服务器上已无此文件：$file';
+  }
+
+  @override
+  String playbackTrackNotInArchive(String file) {
+    return '$file 不在专辑的压缩包里——该 rip 列出了它，却没有收录。';
+  }
+
+  @override
+  String playbackSourceTimeout(String host) {
+    return '$host 没有响应。请检查网络连接后重试。';
   }
 
   @override
@@ -128,16 +159,28 @@ class AppLocalizationsZh extends AppLocalizations {
   String get noRecentTracks => '暂无最近播放的歌曲';
 
   @override
-  String get openLocalFile => '打开本地文件';
-
-  @override
   String get playerSourceLocal => '本地';
 
   @override
-  String get browseFiles => '浏览文件';
+  String get homePlayFiles => '播放文件';
 
   @override
-  String countTotal(int loaded, int total) {
+  String get homePlayFolder => '播放文件夹';
+
+  @override
+  String get homeSectionsOrderTitle => '板块顺序';
+
+  @override
+  String get homeSectionsOrderSubtitle => '拖动以按你的喜好排列首页。';
+
+  @override
+  String get homeSectionsOrderReset => '默认顺序';
+
+  @override
+  String get homeSectionsOrderSettings => '首页板块顺序';
+
+  @override
+  String countTotal(int loaded, String total) {
     return '$loaded / $total 条结果';
   }
 
@@ -542,6 +585,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get searchMinRating => '评分 ≥';
 
   @override
+  String get searchPodium => '获奖';
+
+  @override
+  String get searchPodiumAny => '所有获奖';
+
+  @override
+  String get searchPodiumUnavailable => '服务器尚不支持获奖筛选';
+
+  @override
   String searchRatingValue(String value) {
     return '★ $value';
   }
@@ -620,7 +672,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get searchSurpriseTooltip => '随机一首歌曲';
 
   @override
-  String searchTabWithCount(String label, int count) {
+  String searchTabWithCount(String label, String count) {
     return '$label ($count)';
   }
 
@@ -676,6 +728,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get engineDescOpenmpt => 'Tracker 模块（MOD/XM/S3M/IT/…）';
 
   @override
+  String get engineDescXmp => 'libopenmpt 无法读取的模块（.musx、.liq、.fnk…）';
+
+  @override
   String get engineDescVgm => 'VGM/S98/GYM/DRO — 声音芯片，分声道示波器';
 
   @override
@@ -685,7 +740,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get engineDescNsfplay => 'NES NSF/NSFe — 分声道声部';
 
   @override
-  String get engineDescGbsplay => 'Game Boy GBS';
+  String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
   String get engineDescSidplayfp => 'Commodore 64 SID（reSIDfp 引擎）';
@@ -1019,6 +1074,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get subsongDefaultTrack => '默认曲目';
+
+  @override
   String subsongCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -1098,6 +1156,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get libraryRemovedArtist => '艺人已从资料库移除';
 
   @override
+  String get libraryImportBeforeAddTitle => '先导入？';
+
+  @override
+  String get libraryImportBeforeAddBody =>
+      '此文件正从系统可能清空的临时位置播放。要将其导入本地音乐库，让该条目得以保留吗？';
+
+  @override
+  String get libraryImportBeforeAddArchiveBody =>
+      '此曲目来自解压到临时缓存的压缩包。整个压缩包连同配套文件将一起导入本地音乐库。';
+
+  @override
+  String get libraryAddNeedsCatalogueId => '无法添加此曲目：本设备上未知其目录标识。';
+
+  @override
   String songTilePlayFailed(String message) {
     return '播放失败：$message';
   }
@@ -1172,6 +1244,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get vizNotes => '音符';
 
   @override
+  String get vizPiano => '钢琴';
+
+  @override
   String get vizPatterns => 'Pattern';
 
   @override
@@ -1179,6 +1254,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get patternSmoothScroll => '平滑滚动';
+
+  @override
+  String get patternPinnedRow => '固定当前播放行';
 
   @override
   String get patternVolumeBars => '音量条';
@@ -1333,6 +1411,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get playerAddToPlaylist => '添加到播放列表';
+
+  @override
+  String get playerEngineSettings => '引擎设置';
 
   @override
   String get queueAddToPlaylist => '将队列添加到播放列表';
@@ -1830,9 +1911,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get playlistEmpty => '播放列表为空';
 
   @override
-  String get playlistRemoveEntry => '从播放列表移除';
-
-  @override
   String get trackOptionsAddToLibrary => '添加到资料库';
 
   @override
@@ -2188,9 +2266,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsLineThickness => '线条粗细';
 
   @override
-  String get settingsColors => '颜色';
-
-  @override
   String get settingsScopeVoiceColor => '声部示波器';
 
   @override
@@ -2212,9 +2287,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsStereoRightColor => '立体声右声道';
 
   @override
-  String get settingsNotation => '记谱（音符）';
-
-  @override
   String get settingsNotePalette => '调色板';
 
   @override
@@ -2227,10 +2299,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsNoteStyleBox => '方块';
 
   @override
-  String get settingsCrtEffects => 'CRT 效果';
+  String get settingsVizAll => '所有可视化';
 
   @override
-  String get settingsCrtGlow => '辉光（glow）';
+  String get settingsVizScopes => '示波器（立体声与分声部）';
+
+  @override
+  String get settingsVizFrameRate => '帧率';
+
+  @override
+  String get settingsVizFrameRateScreen => '屏幕';
+
+  @override
+  String settingsValueFps(int value) {
+    return '$value fps';
+  }
 
   @override
   String get settingsCrtSpeed => '强度 / 速度';
@@ -2252,6 +2335,167 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsSilenceDetection => '静音检测';
+
+  @override
+  String get settingsCrossfade => '交叉淡化';
+
+  @override
+  String get localActionPlay => '播放文件或文件夹';
+
+  @override
+  String get localActionImport => '导入文件或文件夹';
+
+  @override
+  String localOpsImporting(String name) {
+    return '正在导入 $name…';
+  }
+
+  @override
+  String get localOpsImportingSelection => '正在导入所选文件…';
+
+  @override
+  String localOpsDeleting(String name) {
+    return '正在删除 $name…';
+  }
+
+  @override
+  String get localOpsPhaseCopying => '复制';
+
+  @override
+  String get localOpsPhaseExtracting => '解压';
+
+  @override
+  String get localOpsPhaseRegistering => '加入曲库';
+
+  @override
+  String get localOpsPhaseDeleting => '删除文件';
+
+  @override
+  String get localImportFiles => '导入文件';
+
+  @override
+  String get storageLocalImports => '本地导入';
+
+  @override
+  String get settingsVgmJapaneseTags => '日文标签 (GD3)';
+
+  @override
+  String get settingsVgmJapaneseTagsHelp => '当 VGM 标签包含日文标题/游戏/作者字段时优先使用。';
+
+  @override
+  String get localImportFolder => '导入文件夹';
+
+  @override
+  String get localLibraryTitle => '此设备上';
+
+  @override
+  String get libraryOnAnotherDevice => '在另一台设备上';
+
+  @override
+  String get localLibraryEmpty => '还没有本地导入。请在主页使用“导入文件”或“导入文件夹”。';
+
+  @override
+  String queueLimitReached(int count) {
+    return '队列已限制为前 $count 首';
+  }
+
+  @override
+  String localDeleteTrackConfirm(String name) {
+    return '删除“$name”？文件及其关联文件（封面等）将被移除。';
+  }
+
+  @override
+  String localDeleteFolderConfirm(String name, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '删除文件夹“$name”及其中的 $count 首曲目？',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String localImportDone(int count) {
+    return '已将 $count 首曲目导入资料库';
+  }
+
+  @override
+  String localImportDoneAlbums(int tracks, int albums) {
+    return '已导入 $tracks 首 — $albums 张专辑';
+  }
+
+  @override
+  String localImportFailed(String error) {
+    return '导入失败：$error';
+  }
+
+  @override
+  String get settingsCrossfadeHelp => '将每首曲目的结尾与下一首的开头交叠。设为 0 时仍为无缝播放。';
+
+  @override
+  String get settingsMinSubsongSection => '过短的子曲目';
+
+  @override
+  String get settingsMinSubsongTitle => '最短时长';
+
+  @override
+  String get settingsMinSubsongHelp =>
+      '短于此长度的子曲目不会进入列表和播放队列——游戏文件中的音效往往比音乐还多。设为 0 则不排除任何子曲目；时长未知的不会被视为过短。';
+
+  @override
+  String get localNewFolder => '新建文件夹';
+
+  @override
+  String get localFolderName => '文件夹名称';
+
+  @override
+  String get localRename => '重命名';
+
+  @override
+  String get localMoveTo => '移动到…';
+
+  @override
+  String get localMove => '移动';
+
+  @override
+  String get localMoveNothing => '没有移动任何内容';
+
+  @override
+  String get localNameInvalid => '名称无效';
+
+  @override
+  String get localNameTaken => '该名称已被使用';
+
+  @override
+  String get localMoveIntoItself => '无法将文件夹移动到其自身中';
+
+  @override
+  String get localManageFailed => '操作失败';
+
+  @override
+  String subsongSkippedShort(int seconds) {
+    return '不会加入队列：不足 $seconds 秒（设置 → 播放）';
+  }
+
+  @override
+  String get settingsQueuePrefetchSection => '队列下载';
+
+  @override
+  String get settingsQueuePrefetchTitle => '下载整个队列';
+
+  @override
+  String get settingsQueuePrefetchSubtitle =>
+      '一次一个文件；上一个下载完成后立即开始下一个缺失曲目。关闭：仅获取下一曲。';
+
+  @override
+  String get settingsCdRipDeclickSection => 'CD 抓轨';
+
+  @override
+  String get settingsCdRipDeclickTitle => '去除曲目开头的咔哒声';
+
+  @override
+  String get settingsCdRipDeclickSubtitle =>
+      '劣质 CD 抓轨（mp3、ape、ogg、flac…）常以几个损坏的采样开头。在播放 200 毫秒真正的音乐之前会将其修复，之后滤波器不再介入。';
 
   @override
   String get settingsSilenceSkipTitle => '静音时跳到下一首';
@@ -2316,6 +2560,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsEngineOpenmptSubtitle => 'Trackers — MOD, XM, S3M, IT…';
 
   @override
+  String get settingsEngineXmpSubtitle =>
+      'libopenmpt 无法读取的模块 — .musx、.liq、.fnk…';
+
+  @override
   String get settingsEngineGmeSubtitle => 'SPC, VGM(gme), KSS, AY… — EQ、立体声';
 
   @override
@@ -2350,6 +2598,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsMasterVolume => '主音量';
 
   @override
+  String get settingsAmplification => '放大';
+
+  @override
   String get settingsAmigaFilter => 'Amiga 滤波器';
 
   @override
@@ -2363,6 +2614,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsChorus => '合唱';
+
+  @override
+  String get playbackMt32NoRoms =>
+      '此 MIDI 为 Roland MT-32 编写。缺少其 ROM，因此使用 SoundFont 播放，音色已映射到 General MIDI — 可在「设置 › 引擎 › Munt」导入 ROM。';
+
+  @override
+  String get settingsMidiMt32ToGm => '转换 MT-32 文件';
+
+  @override
+  String get settingsMidiMt32ToGmSubtitle =>
+      '为 Roland MT-32 编写的 MIDI 按 MT-32 自己的音色表编号：映射到最接近的 General MIDI 音色后，听到的是合理的乐器而不是随机音色。';
 
   @override
   String get settingsInterpNone => '无';
@@ -2808,6 +3070,131 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get storageTitle => '存储';
+
+  @override
+  String get storageSubtitle => '应用在磁盘上保留的内容及删除';
+
+  @override
+  String get storageDownloads => '下载';
+
+  @override
+  String get storageArtworkCache => '封面缓存';
+
+  @override
+  String get storageSoundfonts => '音色库';
+
+  @override
+  String get storagePresets => '可视化预设';
+
+  @override
+  String get storageOpenedFiles => '打开过的文件';
+
+  @override
+  String get storageOpenedEmpty => '从外部打开的文件（分享、“用其他应用打开”、手机上的文件选择器）会复制到这里。';
+
+  @override
+  String get storageInUse => '在播放列表或资料库中';
+
+  @override
+  String get storageDeleteAll => '全部删除';
+
+  @override
+  String get storageClear => '清空';
+
+  @override
+  String get storageDeleteSelection => '删除所选';
+
+  @override
+  String get storageSelectAll => '全选';
+
+  @override
+  String get storageFilterHint => '按名称筛选';
+
+  @override
+  String get storageNoMatch => '没有文件匹配此筛选条件。';
+
+  @override
+  String storageSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已选 $count 项',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '删除 $count 个文件？',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionInUseBody(int count, int inUse) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '删除 $count 个文件？其中 $inUse 个正被播放列表或资料库使用，这些条目将失去对应文件。',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get storageDownloadsClearBody =>
+      '删除所有已下载文件及其资料库记录？收藏和播放列表保留条目，但文件需要重新下载。';
+
+  @override
+  String get storageSoundfontsClearBody => '删除所有音色库（包括导入的）？目录中的会按需重新下载；导入的将丢失。';
+
+  @override
+  String get storagePresetsClearBody =>
+      '删除已下载的预设包和导入的预设？内置预设保留；预设包会重新下载，导入的将丢失。';
+
+  @override
+  String get storageOpenedDeleteAllTitle => '删除打开过的文件';
+
+  @override
+  String get storageInUseDeleteTitle => '文件正在使用';
+
+  @override
+  String get storageInUseDeleteBody => '播放列表或资料库仍指向此文件。删除后这些条目将失去对应文件。';
+
+  @override
+  String storageCategoryStat(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个文件 — $size',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDownloadsSubtitle(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个文件 — $size · 通过专辑和曲目管理',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageOpenedDeleteAllBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '删除 $count 个文件？播放列表或资料库使用中的文件将保留。',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetStats => '重置统计';
 
   @override
@@ -2833,6 +3220,36 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsResetDbTitle => '重置数据库？';
 
   @override
+  String get settingsCleanLocalTitle => '清理无法播放的本地条目';
+
+  @override
+  String get cleanStageScan => '正在扫描条目…';
+
+  @override
+  String get cleanStageSync => '正在与你的账户同步…';
+
+  @override
+  String get cleanStagePurge => '正在从账户中移除…';
+
+  @override
+  String get cleanStageDelete => '正在本地移除…';
+
+  @override
+  String get settingsCleanLocalBody =>
+      '指向本设备上已不存在文件的资料库条目。它们也会从你的账户中移除，因此会从其他设备上消失。';
+
+  @override
+  String settingsCleanLocalDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已移除 $count 个条目',
+      zero: '没有需要清理的内容',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetDbBody =>
       '此操作将永久删除：\n• 全部收听历史\n• 所有计数\n• 所有收藏\n• 所有播放列表\n• 所有缓存的元数据\n\n你的音频文件不会被删除。';
 
@@ -2844,6 +3261,32 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsDeleteDownloadsSubtitle => '删除 online 文件夹中的所有文件（歌曲、封面）';
+
+  @override
+  String get settingsCleanAll => '清理本地数据库和缓存';
+
+  @override
+  String get settingsCleanAllSubtitle =>
+      '移除文件已丢失的条目、指向其他设备上文件的资料库条目，并清空封面和元数据缓存';
+
+  @override
+  String get settingsCleanAllConfirmBody =>
+      '指向其他设备上文件的资料库条目也会从您的账户中移除，因此也会从您的其他设备移除。封面和元数据将在下次播放时重新下载。';
+
+  @override
+  String get settingsDataAdvanced => '高级';
+
+  @override
+  String get settingsDataAdvancedSubtitle => '逐项清理、缓存和重置';
+
+  @override
+  String get settingsDataGroupDb => '数据库';
+
+  @override
+  String get settingsDataGroupCache => '缓存';
+
+  @override
+  String get settingsDataGroupReset => '重置';
 
   @override
   String get settingsDeleteDownloadsTitle => '删除下载内容？';
@@ -3084,6 +3527,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountErrorCodeLength => '验证码为 6 位数字';
 
   @override
+  String get albumOfflinePartial => '离线 — 显示本设备上已有的内容';
+
+  @override
   String get accountErrorNetwork => '连接失败，请重试';
 
   @override
@@ -3312,6 +3758,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonSave => '保存';
 
   @override
+  String get commonImport => '导入';
+
+  @override
   String get accountDisplayName => '公开名称';
 
   @override
@@ -3427,39 +3876,59 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsSpectrumModeRing => '环形';
 
   @override
+  String get settingsPianoMode => '钢琴外观';
+
+  @override
+  String get settingsPianoModeRoll => '键盘';
+
+  @override
+  String get settingsPianoModeFalling => '下落音符';
+
+  @override
+  String get settingsPianoColor => '颜色';
+
+  @override
+  String get settingsPianoColorVoice => '按声部';
+
+  @override
+  String get settingsPianoColorInstrument => '按乐器';
+
+  @override
+  String get settingsPianoGlow => '按键发光';
+
+  @override
+  String get settingsPianoLighting => '琴键光影';
+
+  @override
+  String get settingsPianoVoiceNames => '声部名称';
+
+  @override
+  String get featuredAdditionsHeader => '目录新增';
+
+  @override
+  String get featuredAdditionsCard => '新近添加';
+
+  @override
+  String get featuredAdditionsPlaylist => '新近添加的曲目';
+
+  @override
   String get releaseNotesTitle => '新功能';
 
   @override
-  String get releaseNotesV4Downloads => '下载：长时间的下载可以中途取消，专辑压缩包也不会被重复下载。';
+  String get releaseNotesV7Cpu => '没有播放时，应用不再在后台运行：大幅减少处理器和电池消耗。';
 
   @override
-  String get releaseNotesV4Queue => '队列：新增清空按钮，带确认——同时会停止播放。';
+  String get releaseNotesV7VizIdle => '播放停止时可视化会静止，帧率上限为每秒 60 帧（可调）。';
 
   @override
-  String get releaseNotesV4DropFiles =>
-      '拖放到窗口的文件：可选择立即播放、下一首或加到末尾；封面和附属文件会被排除，压缩包内自带的播放列表也会被采用（真实曲名，没有空轨）。';
+  String get releaseNotesV7Subsongs =>
+      '已修复：在 PC Engine、Master System 和 Atari ST（.sndh）上，部分曲目会播放相邻的歌曲。';
 
   @override
-  String get releaseNotesV4Soundfont => 'MIDI：除服务器提供的之外，还可从本机导入自己的 SoundFont。';
+  String get releaseNotesV7Piano => '播放 PC Engine 音乐时，钢琴可视化曾保持空白。';
 
   @override
-  String get releaseNotesV4Formats => 'Wwise、FSB 和 OGL 游戏音频终于可以播放（自带 Vorbis）。';
-
-  @override
-  String get releaseNotesV4Chips =>
-      '新增六款声音芯片，可按芯片选择模拟内核（Game Boy 默认 SameBoy），采样类芯片音高也已修正。';
-
-  @override
-  String get releaseNotesV4Zx => 'ZX Spectrum：.vt2 可以播放，音符与图案视图覆盖整个 ZX 系列。';
-
-  @override
-  String get releaseNotesV4Loop => '单曲循环真正循环而不是重新加载，无限循环时计时也不再卡住。';
-
-  @override
-  String get releaseNotesV4Info => 'ⓘ 面板会列出乐曲实际打开的文件——包括附属文件和库文件。';
-
-  @override
-  String get releaseNotesV4Linux => 'Linux 桌面版。';
+  String get releaseNotesV7Database => '被更新损坏的数据库现在会自动修复，不再导致资料库无法访问。';
 
   @override
   String get releaseNotesDataReset => '本次测试版已重置本地数据。媒体库和播放列表将从账号重建；下载需要重新进行。';
@@ -3740,4 +4209,158 @@ class AppLocalizationsZh extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get browseCharts => '排行榜';
+
+  @override
+  String get chartsGlobal => '全局';
+
+  @override
+  String get chartsByCollection => '按合集';
+
+  @override
+  String get chartsTopSongs => '热门歌曲';
+
+  @override
+  String get chartsTopAlbums => '热门专辑';
+
+  @override
+  String get chartsRewampSection => 'Top rewamp';
+
+  @override
+  String get chartsPublishedSection => '公开排行榜';
+
+  @override
+  String chartsUpdated(String date) {
+    return '更新于 $date';
+  }
+
+  @override
+  String get chartsSource => '来源';
+
+  @override
+  String get settingsMidiSynth => 'MIDI 合成器';
+
+  @override
+  String get settingsMidiSynthAuto => '自动（文件要求时使用 MT-32）';
+
+  @override
+  String get settingsMidiSynthSoundfont => 'SoundFont (FluidLite)';
+
+  @override
+  String get settingsMidiSynthMt32 => 'Roland MT-32（模拟）';
+
+  @override
+  String get settingsMt32Section => 'Roland MT-32 模拟';
+
+  @override
+  String get settingsMt32RomsTitle => 'MT-32 ROM';
+
+  @override
+  String get settingsMt32RomsMissing =>
+      '没有可用的 ROM 组合 — 请导入 MT-32 或 CM-32L 的控制 ROM 和 PCM ROM';
+
+  @override
+  String settingsMt32RomsActive(String set) {
+    return '当前组合：$set';
+  }
+
+  @override
+  String get settingsMt32Import => '导入 ROM 文件…';
+
+  @override
+  String get settingsMt32ImportSubtitle =>
+      '控制 ROM + PCM ROM（.rom/.bin），支持 MAME 分半文件。应用不附带 ROM。';
+
+  @override
+  String settingsMt32ImportRejected(String name) {
+    return '$name 不是已知的 MT-32 / CM-32L ROM';
+  }
+
+  @override
+  String settingsMt32ImportDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已导入 $count 个 ROM 文件',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsMt32Model => '型号';
+
+  @override
+  String get settingsMt32ModelAuto => '自动（有 CM-32L 则优先）';
+
+  @override
+  String get settingsMt32Reverb => '混响';
+
+  @override
+  String get engineDescMt32 =>
+      '用于 MIDI 的 Roland MT-32 / CM-32L 模拟（.mid/.midi/.kar/.rmi）';
+
+  @override
+  String get miniWindowEnter => '迷你播放器';
+
+  @override
+  String get miniWindowExit => '返回主窗口';
+
+  @override
+  String get miniWindowIdle => '当前没有播放';
+
+  @override
+  String get settingsAlwaysOnTopTitle => '窗口置顶';
+
+  @override
+  String get settingsAlwaysOnTopSubtitle => '让窗口始终位于其他窗口之上——主窗口和迷你播放器均适用';
+
+  @override
+  String get windowAlwaysOnTopOn => '窗口置顶：已开启';
+
+  @override
+  String get miniWindowCoverFill => '放大封面以填满';
+
+  @override
+  String get miniWindowCoverFit => '显示完整封面';
+
+  @override
+  String get releaseNotesV7Mt32 =>
+      '新增 Roland MT-32 引擎，用于游戏 MIDI 音乐（需自备 ROM）。没有 ROM 时，为 MT-32 编写的 MIDI 会适配为 General MIDI 播放。';
+
+  @override
+  String get releaseNotesV7Xmp =>
+      '新增支持十种少见的模块格式（Archimedes Tracker .musx、.liq、.fnk 等）。';
+
+  @override
+  String get releaseNotesV7AmigaAdlib =>
+      'Westwood 的 AdLib 音乐（.adl）可播放全部曲目，Amiga 上的 BP SoundMon V1 也能识别了。';
+
+  @override
+  String get releaseNotesV7MiniPlayer => 'Mac：新增迷你播放器（紧凑模式或可视化模式），以及“窗口置顶”选项。';
+
+  @override
+  String get releaseNotesV7Instruments => '示波器、乐谱和钢琴视图可为每件乐器（而不仅是每个声部）标注名称和颜色。';
+
+  @override
+  String get releaseNotesV7Podium => '搜索：可筛选在演示场景比赛中获得第 1、2、3 名的曲目。';
+
+  @override
+  String get releaseNotesV7ShortSubsongs =>
+      '过短的子曲目（游戏音效）不再加入“全部播放”——阈值可在 设置 → 播放 中调整。';
+
+  @override
+  String get releaseNotesV7LocalFolders =>
+      '导入：可直接拖入整个文件夹（压缩包会自动解压），也可新建、重命名或移动文件夹。';
+
+  @override
+  String get releaseNotesV7Midi => 'MIDI：鼓声不再以钢琴音色播放，音量也不再失真。';
+
+  @override
+  String get releaseNotesV7ProjectM =>
+      'projectM：预设不再在每次启动时按相同顺序重复，暂停后也不会再误将预设排除。';
+
+  @override
+  String get libraryFileMissing => '文件缺失';
 }

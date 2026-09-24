@@ -66,6 +66,8 @@ typedef _SeekDart = int Function(double seconds);
 
 typedef _SetVolumeNative = Void Function(Float volume);
 typedef _SetVolumeDart = void Function(double volume);
+typedef _SetCrossfadeNative = Void Function(Double seconds);
+typedef _SetCrossfadeDart = void Function(double seconds);
 
 typedef _SetForcedLoopNative = Void Function(
     Int32 mode, Int32 count, Int32 fadeoutEnabled, Double fadeoutSeconds,
@@ -75,6 +77,13 @@ typedef _SetForcedLoopDart = void Function(
     double baseDurationSeconds);
 typedef _HasNativeLoopNative = Int32 Function();
 typedef _HasNativeLoopDart = int Function();
+
+typedef _SetNextFileNative = Void Function(
+    Pointer<Utf8> path, Int32 loopMode, Int32 loopCount, Int32 fadeoutEnabled,
+    Double fadeoutSeconds, Double baseDurationSeconds);
+typedef _SetNextFileDart = void Function(
+    Pointer<Utf8> path, int loopMode, int loopCount, int fadeoutEnabled,
+    double fadeoutSeconds, double baseDurationSeconds);
 
 typedef _BackendNameNative = Pointer<Utf8> Function();
 typedef _BackendNameDart = Pointer<Utf8> Function();
@@ -126,6 +135,10 @@ typedef _VizSetArtworkOpacNative = Void Function(Float);
 typedef _VizSetArtworkOpacDart   = void Function(double);
 typedef _VizSetFrameTimeNative = Void Function(Double);
 typedef _VizSetFrameTimeDart   = void Function(double);
+typedef _VizWakeNative = Void Function();
+typedef _VizWakeDart   = void Function();
+typedef _VizShouldRenderNative = Int32 Function();
+typedef _VizShouldRenderDart   = int Function();
 typedef _VizClearArtworkNative   = Void Function();
 typedef _VizClearArtworkDart     = void Function();
 
@@ -218,8 +231,12 @@ typedef _ProbeSubsongNative      = Int32        Function(Pointer<Utf8> path);
 typedef _ProbeSubsongDart        = int          Function(Pointer<Utf8> path);
 typedef _ProbeGetTitleNative     = Pointer<Utf8> Function(Int32 idx);
 typedef _ProbeGetTitleDart       = Pointer<Utf8> Function(int idx);
+typedef _DecodeTextNative        = Int32 Function(Pointer<Uint8> input, Pointer<Uint8> out, Int32 cap);
+typedef _DecodeTextDart          = int Function(Pointer<Uint8> input, Pointer<Uint8> out, int cap);
 typedef _ProbeGetDurationNative  = Int32        Function(Int32 idx);
 typedef _ProbeGetDurationDart    = int          Function(int idx);
+typedef _ProbeGetIndexNative     = Int32 Function(Int32 idx);
+typedef _ProbeGetIndexDart       = int   Function(int idx);
 
 typedef _ExtractArchiveNative    = Int32        Function(Pointer<Utf8> archivePath, Pointer<Utf8> destDir);
 typedef _ExtractArchiveDart      = int          Function(Pointer<Utf8> archivePath, Pointer<Utf8> destDir);
@@ -339,6 +356,11 @@ class RewampAudio {
   _SetVolumeDart?       _setVolumeFn;
   _SetForcedLoopDart?   _setForcedLoopFn;
   _HasNativeLoopDart?   _hasNativeLoopFn;
+  _SetNextFileDart?     _setNextFileFn;
+  _VizClearArtworkDart? _clearNextFileFn;  // void Function()
+  _GetMaskDart?         _handoffSerialFn;  // int64 Function()
+  _SetCrossfadeDart?    _setCrossfadeFn;
+  _SetCrossfadeDart?    _setTrackEndFn;
   late final _BackendNameDart _backendName;
   _TrackMessageDart? _trackMessageFn;
   _TrackArtworkDart? _trackArtworkFn;
@@ -348,6 +370,10 @@ class RewampAudio {
   _TrackMessageDart? _tagArtistFn;
   _TrackMessageDart? _tagAlbumFn;
   _SetDataDirDart?   _setMidiSoundfontFn;
+  _SetDataDirDart?   _setMt32RomDirFn;
+  _TrackMessageDart? _mt32RomStatusFn;
+  _IsPlayingDart?    _midiMt32FallbackFn;
+  _SidMd5Dart?       _mt32IdentifyRomFn;
   _TrackMessageDart?  _outputDevicesFn;
   _TrackMessageDart?  _loadedFilesFn;
   int Function(int)?  _setOutputDeviceFn;
@@ -382,8 +408,17 @@ class RewampAudio {
   void Function(double)?     _patternvizSetPixelScaleFn;
   double Function()?         _patternvizFutureSecsFn;
   void Function(int)?        _patternvizOpaqueBgFn;
+  void Function(int)?        _patternvizPinnedRowFn;
   _ScopeRegisterDart?        _spectrumRegisterFn;
   _ScopeRenderAndNotifyDart? _spectrumRenderAndNotifyFn;
+  _ScopeRegisterDart?        _pianovizRegisterFn;
+  _ScopeRenderAndNotifyDart? _pianovizRenderAndNotifyFn;
+  void Function(int, int, int, int)? _setPianoOptionsFn;
+  void Function(double, double)? _pianovizSetViewFn;
+  void Function()?               _pianovizSetAutoFn;
+  int Function()?                _pianovizIsManualFn;
+  double Function()?             _pianovizViewLoFn;
+  double Function()?             _pianovizViewSpanFn;
   _ScopeRegisterDart?        _projectmRegisterFn;
   bool                       _projectmAvailable = false;
   _ScopeRenderAndNotifyDart? _projectmRenderAndNotifyFn;
@@ -406,6 +441,10 @@ class RewampAudio {
   _VizSetArtworkDart?        _vizSetArtworkFn;
   _VizSetArtworkOpacDart?    _vizSetArtworkOpacFn;
   _VizSetFrameTimeDart?      _vizSetFrameTimeFn;
+  _VizWakeDart?              _vizWakeFn;
+  _VizShouldRenderDart?      _vizShouldRenderFn;
+  _VizShouldRenderDart?      _vizFrameDueFn;
+  _ScopeSetGridDart?         _vizSetMaxFpsFn;
   _VizClearArtworkDart?      _vizClearArtworkFn;
   _ScopeSetGridDart?         _scopeSetGridFn;
   _SetLineWidthDart?         _setLineWidthFn;
@@ -429,6 +468,20 @@ class RewampAudio {
   _VizSetFrameTimeDart?      _setLookaheadSecsFn; // void(double)
   _SetBicolorDart?           _setNotePaletteFn;  // void(int)
   _SetBicolorDart?           _setNoteStyleFn;    // void(int)
+  _SetBicolorDart?           _setNoteColorModeFn; // void(int)
+  _NameDart?                 _instrumentNameFn;
+  _IntRetIntDart?            _voiceInstrFn;
+  int Function(Pointer<Int32>, int)? _voiceInstrsFn;
+  int Function(double, double, Pointer<Int32>, int)? _instrsWindowFn;
+  int Function(Pointer<Int32>, int)? _notesVoiceInstrsFn;
+  double Function()? _pianoFutureSecsFn;
+  int Function()?            _instrNamesGenFn;
+  /// Cache des noms d'instruments, vidé quand le moteur en change un (la
+  /// génération native bouge). Sans lui, chaque libellé coûtait une allocation
+  /// + un décodage UTF-8 PAR LECTURE, et une voie qui change d'instrument vite
+  /// se relit plusieurs fois par seconde.
+  final Map<int, String> _instrNameCache = {};
+  int _instrNameCacheGen = -1;
   _VizResizeRegisterDart?    _vizResizeRegisterFn;
   _VizRenderAndNotifyDart?   _vizRenderAndNotifyFn;
   _VizUnregisterDart?        _vizUnregisterFn;
@@ -472,8 +525,10 @@ class RewampAudio {
   late final _ProbeSubsongDart    _probeSubsongCount;
   _ProbeSubsongDart?     _canPlayFn;
   _ProbeGetTitleDart?    _probeGetTitleFn;
+  _DecodeTextDart?       _decodeTextFn;
   _ProbeGetDurationDart? _probeGetDurationFn;
   _SimpleDart?           _probeSubsongBaseFn;
+  _ProbeGetIndexDart?    _probeSubsongIndexFn;
   _ExtractArchiveDart?   _extractArchiveFn;
   _ExtractLastErrorDart? _extractLastErrorFn;
   _SidMd5Dart?     _sidMd5Fn;
@@ -512,6 +567,15 @@ class RewampAudio {
       _hasNativeLoopFn = _lib.lookupFunction<_HasNativeLoopNative, _HasNativeLoopDart>('rewamp_has_native_loop_support');
     } catch (_) {
       debugLog('rewamp_audio: native forced-loop functions not found');
+    }
+    try {
+      _setNextFileFn   = _lib.lookupFunction<_SetNextFileNative, _SetNextFileDart>('rewamp_set_next_file');
+      _clearNextFileFn = _lib.lookupFunction<_VizClearArtworkNative, _VizClearArtworkDart>('rewamp_clear_next_file');
+      _handoffSerialFn = _lib.lookupFunction<_GetMaskNative, _GetMaskDart>('rewamp_handoff_serial');
+      _setCrossfadeFn  = _lib.lookupFunction<_SetCrossfadeNative, _SetCrossfadeDart>('rewamp_set_crossfade_seconds');
+      _setTrackEndFn   = _lib.lookupFunction<_SetCrossfadeNative, _SetCrossfadeDart>('rewamp_set_track_end_seconds');
+    } catch (_) {
+      debugLog('rewamp_audio: gapless handoff functions not found');
     }
     _backendName       = _lib.lookupFunction<_BackendNameNative,  _BackendNameDart> ('rewamp_get_backend_name');
     try {
@@ -552,6 +616,12 @@ class RewampAudio {
     }
 
     try {
+      _decodeTextFn = _lib.lookupFunction<_DecodeTextNative, _DecodeTextDart>('rewamp_decode_text');
+    } catch (_) {
+      debugLog('rewamp_audio: rewamp_decode_text not found — Shift-JIS text decode disabled');
+    }
+
+    try {
       _probeGetTitleFn    = _lib.lookupFunction<_ProbeGetTitleNative,    _ProbeGetTitleDart>   ('rewamp_probe_get_title');
       _probeGetDurationFn = _lib.lookupFunction<_ProbeGetDurationNative, _ProbeGetDurationDart>('rewamp_probe_get_duration_ms');
     } catch (_) {
@@ -565,6 +635,13 @@ class RewampAudio {
     }
 
     try {
+      _probeSubsongIndexFn = _lib.lookupFunction<_ProbeGetIndexNative,
+          _ProbeGetIndexDart>('rewamp_probe_subsong_index');
+    } catch (_) {
+      // Moteur antérieur aux listes CREUSES → l'index reste base + position.
+    }
+
+    try {
       _extractArchiveFn   = _lib.lookupFunction<_ExtractArchiveNative,   _ExtractArchiveDart>  ('rewamp_extract_archive');
       _extractLastErrorFn = _lib.lookupFunction<_ExtractLastErrorNative, _ExtractLastErrorDart>('rewamp_extract_last_error');
     } catch (_) {
@@ -575,6 +652,24 @@ class RewampAudio {
       _sidMd5Fn = _lib.lookupFunction<_SidMd5Native, _SidMd5Dart>('rewamp_sid_md5');
     } catch (_) {
       debugLog('rewamp_audio: rewamp_sid_md5 not found — SID MD5 disabled');
+    }
+    // MT-32 (REWAMP_WITH_MT32): its own try, so a binary built without the
+    // engine does not abort the lookups that follow in a shared block.
+    try {
+      _setMt32RomDirFn   = _lib.lookupFunction<_SetDataDirNative, _SetDataDirDart>('rewamp_mt32_set_rom_dir');
+      _mt32RomStatusFn   = _lib.lookupFunction<_TrackMessageNative, _TrackMessageDart>('rewamp_mt32_rom_status');
+      _mt32IdentifyRomFn = _lib.lookupFunction<_SidMd5Native, _SidMd5Dart>('rewamp_mt32_identify_rom');
+    } catch (_) {
+      debugLog('rewamp_audio: rewamp_mt32_* not found — MT-32 engine absent from this binary');
+    }
+
+    try {
+      /* Un MIDI MT-32 joué en GM: le natif l'annonce, la coquille lève le
+       * bandeau. Recherche à part — le binaire peut être bâti sans MIDI. */
+      _midiMt32FallbackFn = _lib.lookupFunction<_IsPlayingNative, _IsPlayingDart>(
+          'rewamp_midi_mt32_fallback');
+    } catch (_) {
+      debugLog('rewamp_audio: rewamp_midi_mt32_fallback absent — pas d\'avertissement MT-32');
     }
 
     try {
@@ -620,6 +715,22 @@ class RewampAudio {
           _spectrumRegisterFn        = _lib.lookupFunction<_ScopeRegisterNative,      _ScopeRegisterDart>     ('rewamp_spectrum_register');
           _spectrumRenderAndNotifyFn = _lib.lookupFunction<_ScopeRenderAndNotifyNative, _ScopeRenderAndNotifyDart>('rewamp_spectrum_render_and_notify');
         } catch (_) {/* spectrum renderer not in this build (stale binary) */}
+        try {
+          _pianovizRegisterFn        = _lib.lookupFunction<_ScopeRegisterNative,      _ScopeRegisterDart>     ('rewamp_pianoviz_register');
+          _pianovizRenderAndNotifyFn = _lib.lookupFunction<_ScopeRenderAndNotifyNative, _ScopeRenderAndNotifyDart>('rewamp_pianoviz_render_and_notify');
+          _setPianoOptionsFn = _lib.lookupFunction<Void Function(Int32, Int32, Int32, Int32),
+              void Function(int, int, int, int)>('rewamp_set_piano_options');
+          _pianovizSetViewFn = _lib.lookupFunction<Void Function(Float, Float),
+              void Function(double, double)>('rewamp_pianoviz_set_view');
+          _pianovizSetAutoFn = _lib.lookupFunction<Void Function(),
+              void Function()>('rewamp_pianoviz_set_auto');
+          _pianovizIsManualFn = _lib.lookupFunction<Int32 Function(),
+              int Function()>('rewamp_pianoviz_is_manual');
+          _pianovizViewLoFn = _lib.lookupFunction<Float Function(),
+              double Function()>('rewamp_pianoviz_view_lo');
+          _pianovizViewSpanFn = _lib.lookupFunction<Float Function(),
+              double Function()>('rewamp_pianoviz_view_span');
+        } catch (_) {/* piano renderer not in this build (stale binary) */}
         // projectM (mode 3). Two symbol groups, looked up SEPARATELY:
         //   - the engine's own (rewamp_projectm_render.cpp) — present wherever
         //     projectM is compiled, Apple AND Android;
@@ -670,6 +781,10 @@ class RewampAudio {
         _vizSetArtworkFn    = _lib.lookupFunction<_VizSetArtworkNative,     _VizSetArtworkDart>    ('rewamp_viz_set_artwork');
         _vizSetArtworkOpacFn = _lib.lookupFunction<_VizSetArtworkOpacNative, _VizSetArtworkOpacDart>('rewamp_viz_set_artwork_opacity');
         _vizSetFrameTimeFn   = _lib.lookupFunction<_VizSetFrameTimeNative,   _VizSetFrameTimeDart>('rewamp_viz_set_frame_time');
+        _vizWakeFn           = _lib.lookupFunction<_VizWakeNative,           _VizWakeDart>          ('rewamp_viz_wake');
+        _vizShouldRenderFn   = _lib.lookupFunction<_VizShouldRenderNative,   _VizShouldRenderDart>  ('rewamp_viz_should_render');
+        _vizFrameDueFn       = _lib.lookupFunction<_VizShouldRenderNative,   _VizShouldRenderDart>  ('rewamp_viz_frame_due');
+        _vizSetMaxFpsFn      = _lib.lookupFunction<_ScopeSetGridNative,      _ScopeSetGridDart>     ('rewamp_viz_set_max_fps');
         _vizClearArtworkFn  = _lib.lookupFunction<_VizClearArtworkNative,   _VizClearArtworkDart>  ('rewamp_viz_clear_artwork');
       } catch (_) {
         debugLog('rewamp_audio: artwork functions not found');
@@ -718,6 +833,27 @@ class RewampAudio {
         _setNotePaletteFn = _lib.lookupFunction<_SetBicolorNative, _SetBicolorDart>('rewamp_set_note_palette');
         _setNoteStyleFn   = _lib.lookupFunction<_SetBicolorNative, _SetBicolorDart>('rewamp_set_note_style');
         try {
+          // Plus récents que le reste: un binaire antérieur les ignore, et la
+          // couleur par instrument retombe alors sur la couleur par voix.
+          _setNoteColorModeFn = _lib.lookupFunction<_SetBicolorNative, _SetBicolorDart>('rewamp_set_note_color_mode');
+          _instrumentNameFn   = _lib.lookupFunction<_NameNative, _NameDart>('rewamp_instrument_name');
+          _voiceInstrFn       = _lib.lookupFunction<_IntRetIntNative, _IntRetIntDart>('rewamp_voice_instrument');
+          _voiceInstrsFn      = _lib.lookupFunction<Int32 Function(Pointer<Int32>, Int32),
+              int Function(Pointer<Int32>, int)>('rewamp_voice_instruments');
+          _instrNamesGenFn    = _lib.lookupFunction<Uint32 Function(), int Function()>(
+              'rewamp_instrument_names_generation');
+          _instrsWindowFn     = _lib.lookupFunction<
+              Int32 Function(Double, Double, Pointer<Int32>, Int32),
+              int Function(double, double, Pointer<Int32>, int)>(
+              'rewamp_notes_instruments_window');
+          _notesVoiceInstrsFn = _lib.lookupFunction<Int32 Function(Pointer<Int32>, Int32),
+              int Function(Pointer<Int32>, int)>('rewamp_notes_voice_instruments');
+          _pianoFutureSecsFn  = _lib.lookupFunction<Double Function(), double Function()>(
+              'rewamp_pianoviz_future_seconds');
+        } catch (_) {
+          debugLog('rewamp_audio: rewamp_set_note_color_mode/instrument_name absents');
+        }
+        try {
           _patternvizSetOptionsFn = _lib.lookupFunction<Void Function(Int32, Int32, Int32, Int32),
               void Function(int, int, int, int)>('rewamp_patternviz_set_options');
           _patternvizSetXScrollFn = _lib.lookupFunction<Void Function(Float),
@@ -730,6 +866,8 @@ class RewampAudio {
               double Function()>('rewamp_patternviz_future_seconds');
           _patternvizOpaqueBgFn = _lib.lookupFunction<Void Function(Int32),
               void Function(int)>('rewamp_patternviz_set_opaque_bg');
+          _patternvizPinnedRowFn = _lib.lookupFunction<Void Function(Int32),
+              void Function(int)>('rewamp_patternviz_set_pinned_row');
         } catch (_) {/* GL pattern renderer not in this build */}
       } catch (_) {
         debugLog('rewamp_audio: notes timeline functions not found');
@@ -852,6 +990,47 @@ class RewampAudio {
   /// should skip its own generic loop/fadeout handling for this file.
   bool get hasNativeLoopSupport => (_hasNativeLoopFn?.call() ?? 0) != 0;
 
+  /// Gapless: stage the NEXT queue entry. When the current decoder ends, the
+  /// native producer opens this path in place and keeps the output running.
+  /// The loop parameters are the per-track snapshot [setForcedLoop] would
+  /// have carried for a plain load of that file. Cleared automatically by a
+  /// manual [loadFile]; call [clearNextFile] on any queue mutation that makes
+  /// the staged choice stale.
+  void setNextFile(String path, int loopMode, int loopCount,
+      {bool fadeoutEnabled = false,
+       double fadeoutSeconds = 0,
+       double baseDurationSeconds = 0}) {
+    final fn = _setNextFileFn;
+    if (fn == null) return;
+    final p = path.toNativeUtf8();
+    try {
+      fn(p, loopMode, loopCount, fadeoutEnabled ? 1 : 0, fadeoutSeconds,
+         baseDurationSeconds);
+    } finally {
+      malloc.free(p);
+    }
+  }
+
+  void clearNextFile() => _clearNextFileFn?.call();
+
+  /// Crossfade duration (seconds). 0 = plain gapless. The native side clamps
+  /// and also suppresses the engines' own default end-fadeouts while active.
+  void setCrossfadeSeconds(double seconds) => _setCrossfadeFn?.call(seconds);
+
+  /// End of the CURRENT track (seconds, 0 = unknown) — lets the native
+  /// producer end/hand off engines that never stop by themselves (SID, NSF…).
+  /// Only cuts when a next track is staged. Reset natively on every load and
+  /// handoff: re-post after each track change and duration correction.
+  void setTrackEndSeconds(double seconds) => _setTrackEndFn?.call(seconds);
+
+  /// Monotonic count of audible gapless boundaries crossed. Poll each tick:
+  /// a change means playback just moved into the staged track — flip the UI
+  /// and advance the queue WITHOUT reloading.
+  int get handoffSerial => _handoffSerialFn?.call() ?? 0;
+
+  /// True when this build carries the gapless handoff (old binaries: false).
+  bool get supportsGapless => _setNextFileFn != null;
+
   String get backendName => _backendName().toDartString();
 
   /// Free-text metadata about the loaded file/subsong (tags, copyright,
@@ -866,6 +1045,33 @@ class RewampAudio {
     var len = 0;
     while (ptr[len] != 0) len++;
     return utf8.decode(ptr.asTypedList(len), allowMalformed: true);
+  }
+
+  /// Décode UNE ligne de texte lue dans un fichier (tag PSF, ligne de M3U)
+  /// par la règle du moteur: UTF-8 valide tel quel, sinon CP932/Shift-JIS.
+  /// Rend `null` quand le binaire natif est antérieur à la fonction — à
+  /// l'appelant alors de garder son repli.
+  ///
+  /// ⚠️ UNE ligne à la fois: CP932 s'arrête au premier octet indécodable, un
+  /// bloc entier perdrait tout ce qui suit. Voir `rewamp_decode_text`.
+  String? decodeLegacyLine(List<int> bytes) {
+    final fn = _decodeTextFn;
+    if (fn == null) return null;
+    if (bytes.isEmpty) return '';
+    // CP932 → UTF-8: au plus 3 octets de sortie pour 2 d'entrée (1 pour 1 en
+    // ASCII), donc 2× suffit; la marge couvre le NUL.
+    final cap = bytes.length * 2 + 8;
+    final input = calloc<Uint8>(bytes.length + 1);
+    final out = calloc<Uint8>(cap);
+    try {
+      input.asTypedList(bytes.length).setAll(0, bytes);
+      input[bytes.length] = 0;
+      final n = fn(input, out, cap);
+      return utf8.decode(out.asTypedList(n), allowMalformed: true);
+    } finally {
+      calloc.free(input);
+      calloc.free(out);
+    }
   }
 
   /// Embedded cover picture of the loaded file (ID3v2 APIC / FLAC PICTURE /
@@ -974,6 +1180,39 @@ class RewampAudio {
     }
   }
 
+  /// MT-32 (mt32emu): the folder holding the user's ROMs. Without a usable set
+  /// the plugin declines .mid files and FluidLite plays.
+  void setMt32RomDir(String path) {
+    final fn = _setMt32RomDirFn;
+    if (fn == null) return;
+    final p = path.toNativeUtf8();
+    fn(p);
+    calloc.free(p);
+  }
+
+  /// Le morceau chargé est-il un MIDI écrit pour MT-32 que FluidLite joue en
+  /// GM faute de ROMs ? (Le natif traduit alors les numéros de programme; c'est
+  /// l'app qui le DIT à l'utilisateur.)
+  bool get midiMt32Fallback => (_midiMt32FallbackFn?.call() ?? 0) != 0;
+
+  /// The ROM set the MT-32 plugin would play with ("" = none usable).
+  String mt32RomStatus() {
+    final fn = _mt32RomStatusFn;
+    if (fn == null) return '';
+    return fn().toDartString();
+  }
+
+  /// What mt32emu makes of ONE file ("MT-32 Control v1.07", "… (half)"), or
+  /// "" when it is not a known ROM — the import gate.
+  String mt32IdentifyRom(String path) {
+    final fn = _mt32IdentifyRomFn;
+    if (fn == null) return '';
+    final p = path.toNativeUtf8();
+    final r = fn(p).toDartString();
+    calloc.free(p);
+    return r;
+  }
+
   /// Points the MIDI plugin at a SoundFont (.sf2). Without it the plugin
   /// falls back to <datadir>/soundfonts/default.sf2, and declines .mid
   /// files when neither exists.
@@ -1041,13 +1280,20 @@ class RewampAudio {
     // Some formats number their subsongs from a non-zero base (KSS: trk_min).
     // ?subsong= wants the ABSOLUTE index, so shift the 0-based position by it.
     final base = _probeSubsongBaseFn?.call() ?? 0;
+    // ⚠️ La liste peut être CREUSE: un `.adl` Westwood garde ENTRE ses
+    // morceaux des entrées qui ne jouent aucune note, et la sonde ne rend que
+    // les vivantes (DUNE19.ADL: 43 sur 74, la 4e portant l'index 20).
+    // `?subsong=` veut le VRAI index, donc la position ne peut pas en tenir
+    // lieu; le natif le dit. Les formats denses répondent `base + i`, la règle
+    // d'avant.
+    final indexFn = _probeSubsongIndexFn;
     return List.generate(count, (i) {
       final title = titleFn != null ? titleFn(i).toDartString() : '';
       final ms    = durationFn != null ? durationFn(i) : -1;
       return SubsongInfo(
         index:      i,
         filePath:   path,
-        subsongIdx: base + i,
+        subsongIdx: indexFn != null ? indexFn(i) : base + i,
         title:      title.isEmpty ? null : title,
         durationMs: ms < 0 ? null : ms,
       );
@@ -1211,6 +1457,37 @@ class RewampAudio {
   /// widget checks vizGpuAvailable — this getter only gates stale binaries.
   bool get hasSpectrum => _spectrumRegisterFn != null;
 
+  /// GPU path: register the piano texture (mode 6). Returns textureId or err.
+  int pianovizRegister(int width, int height) {
+    final fn = _pianovizRegisterFn;
+    if (fn == null) return -1;
+    return fn(width, height);
+  }
+
+  void pianovizRenderAndNotify() => _pianovizRenderAndNotifyFn?.call();
+
+  /// True when the piano renderer is in this build. On Android the SurfaceView
+  /// PlatformView (mode 6) renders it — the options setter is the witness
+  /// there, the register fn being Texture-path only.
+  bool get hasPiano => _setPianoOptionsFn != null;
+
+  /// Piano look: [mode] 0 = one keyboard per voice, 1 = falling notes;
+  /// [colorMode] 0 = by voice (notation palette), 1 = by instrument;
+  /// [glow] = sparkles on the struck keys (falling mode); [light] = a light
+  /// in front of each struck key, casting shadows from the black keys.
+  void setPianoOptions(int mode, int colorMode, bool glow, bool light) =>
+      _setPianoOptionsFn?.call(mode, colorMode, glow ? 1 : 0, light ? 1 : 0);
+
+  /// Piano horizontal view, in WHITE-KEY units over the whole MIDI range
+  /// (75 whites): [lo, lo+span]. Setting it switches the renderer to MANUAL;
+  /// [pianovizSetAuto] returns to the eased auto range.
+  void pianovizSetView(double lo, double span) =>
+      _pianovizSetViewFn?.call(lo, span);
+  void pianovizSetAuto() => _pianovizSetAutoFn?.call();
+  bool get pianovizIsManual => (_pianovizIsManualFn?.call() ?? 0) != 0;
+  double get pianovizViewLo => _pianovizViewLoFn?.call() ?? 14.0;
+  double get pianovizViewSpan => _pianovizViewSpanFn?.call() ?? 28.0;
+
   /// Palette index, scroll mode (0 fixed bar, 1 moving bar) and VU-meter
   /// toggle for the GL pattern renderer. A palette change re-tessellates on
   /// the next frame.
@@ -1223,6 +1500,12 @@ class RewampAudio {
   /// artwork show through — the grid is dense text and a busy cover under it
   /// hurts legibility.
   void setPatternVizOpaqueBg(bool on) => _patternvizOpaqueBgFn?.call(on ? 1 : 0);
+
+  /// Ligne active ÉPINGLÉE sur la barre de surbrillance: le motif continue de
+  /// défiler en continu, mais la barre affiche la ligne ENTENDUE alignée au
+  /// pixel au lieu des deux demi-lignes qui la traversent. Sans effet en mode
+  /// « barre mobile », où la barre suit déjà une ligne entière.
+  void setPatternVizPinnedRow(bool on) => _patternvizPinnedRowFn?.call(on ? 1 : 0);
 
   /// Horizontal scroll (px) of the GL pattern grid — from the drag gesture.
   void setPatternVizXScroll(double px) => _patternvizSetXScrollFn?.call(px);
@@ -1404,6 +1687,57 @@ class RewampAudio {
   /// instead of jittery wall-clock-at-render (removes micro-trembling).
   void vizSetFrameTime(double seconds) => _vizSetFrameTimeFn?.call(seconds);
 
+  /// « Quelque chose a changé, dessine » — repousse la fenêtre de grâce du
+  /// rendu (voir src/rewamp_viz_idle.h). À appeler sur un geste, un réglage,
+  /// une reconstruction de widget: tout ce qui change l'image sans que la
+  /// musique avance.
+  void vizWake() => _vizWakeFn?.call();
+
+  bool? _vizAwake;
+
+  /// Faut-il dessiner cette frame ? Faux quand la lecture est arrêtée depuis
+  /// plus que la fenêtre de grâce: le visualiseur brûlait alors du GPU pour
+  /// redessiner la même image. ⚠️ Un binaire plus ancien n'a pas la fonction —
+  /// on rend dans ce cas, comme avant.
+  ///
+  /// En debug, chaque TRANSITION est tracée. C'est le seul diagnostic qui dit
+  /// pourquoi un visualiseur ne s'endort pas: la veille dépend d'un `wake`
+  /// qu'un appelant peut déclencher en boucle sans le savoir, et sans cette
+  /// ligne on ne peut que le supposer. Une trace par transition, jamais par
+  /// frame — un `print` à 120 img/s fabrique le ralentissement qu'il mesure.
+  bool get vizShouldRender {
+    final fn = _vizShouldRenderFn;
+    if (fn == null) return true;   // binaire antérieur: comme avant
+    final awake = fn() != 0;
+    assert(() {
+      if (awake != _vizAwake) {
+        _vizAwake = awake;
+        debugLog('[viz] ${awake ? "réveil" : "veille"}');
+      }
+      return true;
+    }());
+    return awake;
+  }
+
+  /// Faut-il dessiner MAINTENANT ? Éveillé ([vizShouldRender]) ET l'image est
+  /// due sous le plafond de cadence.
+  ///
+  /// ⚠️ CONSOMME l'image: une seule question par frame, au site qui DESSINE.
+  /// Tout ce qui demande seulement « est-ce que ça bouge ? » (relire les noms
+  /// d'instruments, compter les voies) reste sur [vizShouldRender], que
+  /// plusieurs widgets posent deux fois dans la même frame.
+  bool get vizFrameDue {
+    final fn = _vizFrameDueFn;
+    if (fn == null) return vizShouldRender;   // binaire antérieur: comme avant
+    return fn() != 0;
+  }
+
+  /// Plafond de cadence des visualiseurs, en images par seconde (0 = celle de
+  /// l'écran). Un écran 120 Hz coûte deux fois le GPU et la batterie d'un
+  /// rendu à 60 pour une différence que l'œil ne réclame pas sur une forme
+  /// d'onde.
+  void vizSetMaxFps(int fps)                => _vizSetMaxFpsFn?.call(fps);
+
   void vizClearArtwork()                    => _vizClearArtworkFn?.call();
 
   /// Toggle the per-voice oscilloscope cell grid (GPU path).
@@ -1542,6 +1876,9 @@ class RewampAudio {
   /// Note block style: 0 = flat, 1 = box (beveled relief).
   void setNoteStyle(int style) => _setNoteStyleFn?.call(style);
 
+  /// Notation colouring: 0 = per voice, 1 = per instrument (like the piano).
+  void setNoteColorMode(int mode) => _setNoteColorModeFn?.call(mode);
+
   /// GPU path: unregister texture + tear down GL.
   void vizUnregister() {
     _vizUnregisterFn?.call();
@@ -1659,6 +1996,54 @@ class RewampAudio {
 
   /// Display name for chip [c] (e.g. "Paula", or "—" when ungrouped).
   String chipName(int c) => _readName(_chipNameFn, c);
+
+  /// Display name for instrument [idx] (a sample/preset number as carried by
+  /// the note timeline); "Inst n" when the engine names none.
+  ///
+  /// MÉMOÏSÉ: un nom ne change que lorsque le moteur en pose un autre, ce que
+  /// la génération native signale (changement de piste, timbre MT-32 chargé
+  /// par sysex). L'appel devient alors une lecture de table, et les libellés
+  /// peuvent suivre les changements d'instrument à la cadence de l'image.
+  String instrumentName(int idx) {
+    final gen = _instrNamesGenFn?.call() ?? 0;
+    if (gen != _instrNameCacheGen) {
+      _instrNameCacheGen = gen;
+      _instrNameCache.clear();
+    }
+    final hit = _instrNameCache[idx];
+    if (hit != null) return hit;
+    final nm = _readName(_instrumentNameFn, idx);
+    _instrNameCache[idx] = nm;
+    return nm;
+  }
+
+  /// Les instruments de TOUTES les voies en UN appel, dans [buf] (préalloué
+  /// par l'appelant et réutilisé): rend le nombre d'entrées écrites, 0 si le
+  /// binaire ne connaît pas l'export. C'est ce qui rend une relecture par
+  /// image acceptable — un appel FFI par voie ne l'était pas.
+  int voiceInstrumentsInto(Pointer<Int32> buf, int max) =>
+      _voiceInstrsFn?.call(buf, max) ?? 0;
+
+  /// Les instruments qui SONNENT dans la fenêtre [fromSec, toSec], exprimée en
+  /// secondes relatives à la tête de lecture affichée (négatif = passé) — donc
+  /// DATÉS: le piano en mode chute montre du futur, et sa légende doit nommer
+  /// ce qui est à l'écran, pas ce que le décodeur produit à cet instant.
+  /// Rend le nombre d'entrées écrites (triées), 0 si l'export manque.
+  int instrumentsInWindowInto(
+          Pointer<Int32> buf, int max, double fromSec, double toSec) =>
+      _instrsWindowFn?.call(fromSec, toSec, buf, max) ?? 0;
+
+  /// Instrument de chaque voie à la tête de lecture ENTENDUE (timeline), à
+  /// préférer à [voiceInstrumentsInto] pour un libellé: celui-là décrit le
+  /// producteur, en avance de 200 ms à 2 s sur l'oreille.
+  int notesVoiceInstrumentsInto(Pointer<Int32> buf, int max) =>
+      _notesVoiceInstrsFn?.call(buf, max) ?? 0;
+
+  /// Secondes de FUTUR affichées par le viz-piano (0 en mode claviers).
+  double get pianoFutureSeconds => _pianoFutureSecsFn?.call() ?? 0.0;
+
+  /// Instrument currently played by voice [v] (0 = none).
+  int voiceInstrument(int v) => _voiceInstrFn?.call(v) ?? 0;
 
   /// Live mute mask: bit v set ⇒ voice v muted.
   int get voiceMuteMask => _getMuteMaskFn?.call() ?? 0;

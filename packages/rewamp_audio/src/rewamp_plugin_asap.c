@@ -13,6 +13,7 @@
 
 #include "asap.h"
 
+#include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,6 +47,82 @@ static int asap_probe(const char* ext, const uint8_t* header, size_t headerSize)
     }
     if (!ext) return 0;
     return rewamp_ext_in_list(ext, kAsapExts) ? 65 : 0;
+}
+
+/* ── Sonde de sous-chansons ────────────────────────────────────────────────
+ *
+ * `.sap` (et toute la famille ASAP) n'avait AUCUNE branche dans
+ * rewamp_probe_subsong_count(): la chaîne finissait chez libgme, qui possède
+ * bien un Sap_Emu mais REFUSE les fichiers `TYPE D` — « Digimusic not
+ * supported », un `return` sec dans son parse_info(). gme_open_file échouait
+ * donc, la sonde rendait 0, et l'écran des sous-chansons affichait
+ * « Impossible de lire les pistes » sur un fichier qu'ASAP joue très bien.
+ * Mesuré sur `asma/Games/Ghostbusters.sap` (SAP, TYPE D, SONGS 2).
+ *
+ * Et ça ne concerne pas que le TYPE D: libgme ne connaît AUCUN des autres
+ * formats ASAP (cmc, rmt, tmc, mpt…), donc un `.rmt` à plusieurs morceaux
+ * tombait dans le même trou.
+ *
+ * ASAPInfo suffit — il lit l'en-tête, pas le morceau: pas de moteur créé, pas
+ * de POKEY émulé.
+ */
+#define ASAP_PROBE_MAX 256
+static int s_probe_count = 0;
+static int s_probe_durations_ms[ASAP_PROBE_MAX];
+
+int rewamp_asap_probe_subsong_count(const char* path) {
+    s_probe_count = 0;
+    if (!path) return 0;
+
+    char cleanPath[4096];
+    strncpy(cleanPath, path, sizeof(cleanPath) - 1);
+    cleanPath[sizeof(cleanPath) - 1] = '\0';
+    char* q = strrchr(cleanPath, '?');
+    if (q) *q = '\0';
+
+    const char* dot = strrchr(cleanPath, '.');
+    if (!dot) return 0;
+    char ext[16] = {0};
+    for (int i = 0; dot[i + 1] && i < 15; i++) {
+        ext[i] = (char)tolower((unsigned char)dot[i + 1]);
+    }
+    if (!rewamp_ext_in_list(ext, kAsapExts)) return 0;
+
+    FILE* f = fopen(cleanPath, "rb");
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (len <= 0 || len > 64 * 1024 * 1024) { fclose(f); return 0; }
+    uint8_t* data = (uint8_t*)malloc((size_t)len);
+    if (!data) { fclose(f); return 0; }
+    size_t got = fread(data, 1, (size_t)len, f);
+    fclose(f);
+    if (got != (size_t)len) { free(data); return 0; }
+
+    ASAPInfo* info = ASAPInfo_New();
+    if (!info) { free(data); return 0; }
+    int count = 0;
+    if (ASAPInfo_Load(info, cleanPath, data, (int)len)) {
+        count = ASAPInfo_GetSongs(info);
+        if (count < 0) count = 0;
+        if (count > ASAP_PROBE_MAX) count = ASAP_PROBE_MAX;
+        for (int i = 0; i < count; i++) {
+            /* -1 = durée inconnue, la convention de l'appelant. */
+            s_probe_durations_ms[i] = ASAPInfo_GetDuration(info, i);
+        }
+    }
+    ASAPInfo_Delete(info);
+    free(data);
+    s_probe_count = count;
+    return count;
+}
+
+/* ASAP ne nomme pas ses sous-chansons (ASAPInfo_GetTitle nomme le FICHIER):
+ * pas de fonction de titre, l'appelant laisse alors le champ vide. */
+int rewamp_asap_probe_get_duration_ms(int index) {
+    if (index < 0 || index >= s_probe_count) return -1;
+    return s_probe_durations_ms[index];
 }
 
 static RewampDecoder* asap_open(const char* path, RewampAudioFormat* outFormat) {
@@ -209,34 +286,10 @@ static const RewampPluginVTable kAsapVTable = {
 
 const RewampPluginVTable* rewamp_asap_plugin(void) { return &kAsapVTable; }
 
-/* Subsong probe for the Dart container UI (SAP files list N songs). */
-int rewamp_asap_probe_subsong_count(const char* path) {
-    if (!path) return 0;
-    char cleanPath[4096];
-    strncpy(cleanPath, path, sizeof(cleanPath) - 1);
-    cleanPath[sizeof(cleanPath) - 1] = '\0';
-    char* q = strrchr(cleanPath, '?');
-    if (q) *q = '\0';
-
-    FILE* f = fopen(cleanPath, "rb");
-    if (!f) return 0;
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (len <= 0 || len > 16 * 1024 * 1024) { fclose(f); return 0; }
-    uint8_t* data = (uint8_t*)malloc((size_t)len);
-    if (!data) { fclose(f); return 0; }
-    size_t got = fread(data, 1, (size_t)len, f);
-    fclose(f);
-    if (got != (size_t)len) { free(data); return 0; }
-
-    ASAP* asap = ASAP_New();
-    int songs = 0;
-    if (asap && ASAP_Load(asap, cleanPath, data, (int)len))
-        songs = ASAPInfo_GetSongs(ASAP_GetInfo(asap));
-    if (asap) ASAP_Delete(asap);
-    free(data);
-    return songs;
-}
+/* La sonde de sous-chansons vit plus haut (ASAPInfo seul, bornée par la liste
+ * d'extensions, et elle rend aussi les durées). Celle qui était ici chargeait
+ * le morceau ENTIER par ASAP_Load pour n'en lire que le compte — et surtout
+ * elle n'était APPELÉE DE NULLE PART: `rewamp_probe_subsong_count` passait
+ * directement à libgme, qui refuse les `.sap` de TYPE D. */
 
 #endif /* REWAMP_WITH_ASAP */

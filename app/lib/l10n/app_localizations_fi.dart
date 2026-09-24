@@ -15,6 +15,28 @@ class AppLocalizationsFi extends AppLocalizations {
   String get navSearch => 'Haku';
 
   @override
+  String get navLocal => 'Paikallinen';
+
+  @override
+  String get settingsTabsOrderTitle => 'Välilehtien järjestys';
+
+  @override
+  String get settingsTabsOrderSubtitle =>
+      'Järjestä vetämällä. Neljä ensimmäistä näkyvät alapalkissa, loput ”Lisää”-valikossa.';
+
+  @override
+  String get settingsTabsInBar => 'Palkissa';
+
+  @override
+  String get settingsTabsInMore => 'Kohdassa ”Lisää”';
+
+  @override
+  String get settingsLaunchTab => 'Välilehti käynnistyksessä';
+
+  @override
+  String get settingsLaunchTabSubtitle => 'Millä välilehdellä sovellus avautuu';
+
+  @override
   String get navLibrary => 'Kirjasto';
 
   @override
@@ -42,6 +64,16 @@ class AppLocalizationsFi extends AppLocalizations {
   @override
   String playbackFileGone(String file) {
     return 'Tiedostoa ei enää ole palvelimella: $file';
+  }
+
+  @override
+  String playbackTrackNotInArchive(String file) {
+    return '$file ei ole albumin arkistossa — rip luettelee sen mutta ei sisällä sitä.';
+  }
+
+  @override
+  String playbackSourceTimeout(String host) {
+    return '$host ei vastannut. Tarkista yhteys ja yritä uudelleen.';
   }
 
   @override
@@ -130,16 +162,29 @@ class AppLocalizationsFi extends AppLocalizations {
   String get noRecentTracks => 'Ei viimeksi toistettuja kappaleita';
 
   @override
-  String get openLocalFile => 'Avaa paikallinen tiedosto';
-
-  @override
   String get playerSourceLocal => 'paikallinen';
 
   @override
-  String get browseFiles => 'Selaa tiedostoja';
+  String get homePlayFiles => 'Toista tiedostoja';
 
   @override
-  String countTotal(int loaded, int total) {
+  String get homePlayFolder => 'Toista kansio';
+
+  @override
+  String get homeSectionsOrderTitle => 'Osioiden järjestys';
+
+  @override
+  String get homeSectionsOrderSubtitle =>
+      'Vedä ja järjestä aloitusnäyttö haluamaksesi.';
+
+  @override
+  String get homeSectionsOrderReset => 'Oletusjärjestys';
+
+  @override
+  String get homeSectionsOrderSettings => 'Aloitusnäytön osioiden järjestys';
+
+  @override
+  String countTotal(int loaded, String total) {
     return '$loaded / $total tulosta';
   }
 
@@ -552,6 +597,16 @@ class AppLocalizationsFi extends AppLocalizations {
   String get searchMinRating => 'Arvosana ≥';
 
   @override
+  String get searchPodium => 'Palkintosija';
+
+  @override
+  String get searchPodiumAny => 'Mikä tahansa palkintosija';
+
+  @override
+  String get searchPodiumUnavailable =>
+      'Palkintosijasuodatin ei ole vielä käytettävissä palvelimella';
+
+  @override
   String searchRatingValue(String value) {
     return '★ $value';
   }
@@ -631,7 +686,7 @@ class AppLocalizationsFi extends AppLocalizations {
   String get searchSurpriseTooltip => 'Satunnainen kappale';
 
   @override
-  String searchTabWithCount(String label, int count) {
+  String searchTabWithCount(String label, String count) {
     return '$label ($count)';
   }
 
@@ -689,6 +744,10 @@ class AppLocalizationsFi extends AppLocalizations {
   String get engineDescOpenmpt => 'Tracker-moduulit (MOD/XM/S3M/IT/…)';
 
   @override
+  String get engineDescXmp =>
+      'Moduulit, joita libopenmpt ei lue (.musx, .liq, .fnk…)';
+
+  @override
   String get engineDescVgm =>
       'VGM/S98/GYM/DRO — äänipiirit, kanavakohtainen skooppi';
 
@@ -700,7 +759,7 @@ class AppLocalizationsFi extends AppLocalizations {
   String get engineDescNsfplay => 'NES NSF/NSFe — kanavakohtaiset äänet';
 
   @override
-  String get engineDescGbsplay => 'Game Boy GBS';
+  String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
   String get engineDescSidplayfp => 'Commodore 64 SID (reSIDfp-moottori)';
@@ -1055,6 +1114,9 @@ class AppLocalizationsFi extends AppLocalizations {
   }
 
   @override
+  String get subsongDefaultTrack => 'Oletuskappale';
+
+  @override
   String subsongCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -1140,6 +1202,21 @@ class AppLocalizationsFi extends AppLocalizations {
   String get libraryRemovedArtist => 'Artisti poistettu kirjastostasi';
 
   @override
+  String get libraryImportBeforeAddTitle => 'Tuodaanko ensin?';
+
+  @override
+  String get libraryImportBeforeAddBody =>
+      'Tätä tiedostoa toistetaan väliaikaisesta sijainnista, jonka järjestelmä voi tyhjentää. Tuodaanko se paikalliseen kirjastoon, jotta merkintä säilyy?';
+
+  @override
+  String get libraryImportBeforeAddArchiveBody =>
+      'Tämä kappale tulee arkistosta, joka on purettu väliaikaiseen välimuistiin. Koko arkisto tuodaan paikalliseen kirjastoon oheistiedostoineen.';
+
+  @override
+  String get libraryAddNeedsCatalogueId =>
+      'Kappaletta ei voi lisätä: sen luettelotunniste on tuntematon tällä laitteella.';
+
+  @override
   String songTilePlayFailed(String message) {
     return 'Toisto epäonnistui: $message';
   }
@@ -1215,6 +1292,9 @@ class AppLocalizationsFi extends AppLocalizations {
   String get vizNotes => 'Nuotit';
 
   @override
+  String get vizPiano => 'Piano';
+
+  @override
   String get vizPatterns => 'Patternit';
 
   @override
@@ -1222,6 +1302,9 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get patternSmoothScroll => 'Pehmeä vieritys';
+
+  @override
+  String get patternPinnedRow => 'Kiinnitetty soiva rivi';
 
   @override
   String get patternVolumeBars => 'Äänenvoimakkuuspalkit';
@@ -1300,7 +1383,7 @@ class AppLocalizationsFi extends AppLocalizations {
       count,
       locale: localeName,
       other: '$count formaattia',
-      one: '1 formaatti',
+      one: '$count formaatti',
     );
     return '$license · $_temp0';
   }
@@ -1378,6 +1461,9 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get playerAddToPlaylist => 'Lisää soittolistaan';
+
+  @override
+  String get playerEngineSettings => 'Moottorin asetukset';
 
   @override
   String get queueAddToPlaylist => 'Lisää jono soittolistaan';
@@ -1894,9 +1980,6 @@ class AppLocalizationsFi extends AppLocalizations {
   String get playlistEmpty => 'Tyhjä soittolista';
 
   @override
-  String get playlistRemoveEntry => 'Poista soittolistalta';
-
-  @override
   String get trackOptionsAddToLibrary => 'Lisää kirjastoon';
 
   @override
@@ -2269,9 +2352,6 @@ class AppLocalizationsFi extends AppLocalizations {
   String get settingsLineThickness => 'Viivan paksuus';
 
   @override
-  String get settingsColors => 'Värit';
-
-  @override
   String get settingsScopeVoiceColor => 'Ääniskooppi';
 
   @override
@@ -2293,9 +2373,6 @@ class AppLocalizationsFi extends AppLocalizations {
   String get settingsStereoRightColor => 'Stereo oikea';
 
   @override
-  String get settingsNotation => 'Nuotinnus (nuotit)';
-
-  @override
   String get settingsNotePalette => 'Väripaletti';
 
   @override
@@ -2308,10 +2385,21 @@ class AppLocalizationsFi extends AppLocalizations {
   String get settingsNoteStyleBox => 'Box';
 
   @override
-  String get settingsCrtEffects => 'CRT-efektit';
+  String get settingsVizAll => 'Kaikki visualisoinnit';
 
   @override
-  String get settingsCrtGlow => 'Hehku (glow)';
+  String get settingsVizScopes => 'Oskilloskoopit (stereo ja ääni kerrallaan)';
+
+  @override
+  String get settingsVizFrameRate => 'Kuvataajuus';
+
+  @override
+  String get settingsVizFrameRateScreen => 'Näyttö';
+
+  @override
+  String settingsValueFps(int value) {
+    return '$value fps';
+  }
 
   @override
   String get settingsCrtSpeed => 'Voimakkuus / nopeus';
@@ -2334,6 +2422,172 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get settingsSilenceDetection => 'Hiljaisuuden tunnistus';
+
+  @override
+  String get settingsCrossfade => 'Ristihäivytys';
+
+  @override
+  String get localActionPlay => 'Toista tiedostoja tai kansio';
+
+  @override
+  String get localActionImport => 'Tuo tiedostoja tai kansio';
+
+  @override
+  String localOpsImporting(String name) {
+    return 'Tuodaan $name…';
+  }
+
+  @override
+  String get localOpsImportingSelection => 'Tuodaan valitut tiedostot…';
+
+  @override
+  String localOpsDeleting(String name) {
+    return 'Poistetaan $name…';
+  }
+
+  @override
+  String get localOpsPhaseCopying => 'kopioidaan';
+
+  @override
+  String get localOpsPhaseExtracting => 'puretaan';
+
+  @override
+  String get localOpsPhaseRegistering => 'lisätään kirjastoon';
+
+  @override
+  String get localOpsPhaseDeleting => 'poistetaan tiedostoja';
+
+  @override
+  String get localImportFiles => 'Tuo tiedostoja';
+
+  @override
+  String get storageLocalImports => 'Paikalliset tuonnit';
+
+  @override
+  String get settingsVgmJapaneseTags => 'Japanilaiset tagit (GD3)';
+
+  @override
+  String get settingsVgmJapaneseTagsHelp =>
+      'Suosii VGM-tagien japanilaisia kenttiä (nimi, peli, artisti), kun ne ovat olemassa.';
+
+  @override
+  String get localImportFolder => 'Tuo kansio';
+
+  @override
+  String get localLibraryTitle => 'Tällä laitteella';
+
+  @override
+  String get libraryOnAnotherDevice => 'Toisella laitteella';
+
+  @override
+  String get localLibraryEmpty =>
+      'Ei vielä paikallisia tuonteja. Käytä aloitusnäytön toimintoja ”Tuo tiedostoja” tai ”Tuo kansio”.';
+
+  @override
+  String queueLimitReached(int count) {
+    return 'Jonoon lisättiin vain ensimmäiset $count kappaletta';
+  }
+
+  @override
+  String localDeleteTrackConfirm(String name) {
+    return 'Poistetaanko ”$name”? Tiedosto ja siihen liittyvät tiedostot (kansikuva…) poistetaan.';
+  }
+
+  @override
+  String localDeleteFolderConfirm(String name, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Poistetaanko kansio ”$name” ja sen $count kappaletta?',
+      one: 'Poistetaanko kansio ”$name” ja sen $count kappale?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String localImportDone(int count) {
+    return '$count kappaletta tuotu kirjastoon';
+  }
+
+  @override
+  String localImportDoneAlbums(int tracks, int albums) {
+    return 'Tuotu $tracks kappaletta — $albums albumia';
+  }
+
+  @override
+  String localImportFailed(String error) {
+    return 'Tuonti epäonnistui: $error';
+  }
+
+  @override
+  String get settingsCrossfadeHelp =>
+      'Häivyttää kappaleen lopun seuraavan alkuun. Arvolla 0 toisto jatkuu saumattomana.';
+
+  @override
+  String get settingsMinSubsongSection => 'Liian lyhyet aliraidat';
+
+  @override
+  String get settingsMinSubsongTitle => 'Vähimmäiskesto';
+
+  @override
+  String get settingsMinSubsongHelp =>
+      'Tätä lyhyemmät aliraidat jäävät pois listalta ja jonosta – pelitiedostossa on usein enemmän ääniefektejä kuin musiikkia. Arvolla 0 mitään ei jätetä pois; tuntematonta kestoa ei koskaan pidetä lyhyenä.';
+
+  @override
+  String get localNewFolder => 'Uusi kansio';
+
+  @override
+  String get localFolderName => 'Kansion nimi';
+
+  @override
+  String get localRename => 'Nimeä uudelleen';
+
+  @override
+  String get localMoveTo => 'Siirrä kohteeseen…';
+
+  @override
+  String get localMove => 'Siirrä';
+
+  @override
+  String get localMoveNothing => 'Mitään ei siirretty';
+
+  @override
+  String get localNameInvalid => 'Virheellinen nimi';
+
+  @override
+  String get localNameTaken => 'Nimi on jo käytössä';
+
+  @override
+  String get localMoveIntoItself => 'Kansiota ei voi siirtää itsensä sisään';
+
+  @override
+  String get localManageFailed => 'Toiminto epäonnistui';
+
+  @override
+  String subsongSkippedShort(int seconds) {
+    return 'Ei jonoon: alle $seconds s (Asetukset → Toisto)';
+  }
+
+  @override
+  String get settingsQueuePrefetchSection => 'Jonon lataukset';
+
+  @override
+  String get settingsQueuePrefetchTitle => 'Lataa koko jono';
+
+  @override
+  String get settingsQueuePrefetchSubtitle =>
+      'Yksi tiedosto kerrallaan; seuraava puuttuva kappale alkaa heti kun edellinen on valmis. Pois: vain seuraava kappale.';
+
+  @override
+  String get settingsCdRipDeclickSection => 'CD-ripit';
+
+  @override
+  String get settingsCdRipDeclickTitle =>
+      'Poista napsahdukset kappaleen alusta';
+
+  @override
+  String get settingsCdRipDeclickSubtitle =>
+      'Huonot CD-ripit (mp3, ape, ogg, flac…) alkavat usein muutamalla vioittuneella näytteellä. Ne korjataan, kunnes oikeaa musiikkia on soinut 200 ms; sen jälkeen suodin väistyy.';
 
   @override
   String get settingsSilenceSkipTitle =>
@@ -2403,6 +2657,10 @@ class AppLocalizationsFi extends AppLocalizations {
   String get settingsEngineOpenmptSubtitle => 'Trackerit — MOD, XM, S3M, IT…';
 
   @override
+  String get settingsEngineXmpSubtitle =>
+      'Moduulit, joita libopenmpt ei lue — .musx, .liq, .fnk…';
+
+  @override
   String get settingsEngineGmeSubtitle =>
       'SPC, VGM(gme), KSS, AY… — EQ, stereo';
 
@@ -2443,6 +2701,9 @@ class AppLocalizationsFi extends AppLocalizations {
   String get settingsMasterVolume => 'Kokonaisäänenvoimakkuus';
 
   @override
+  String get settingsAmplification => 'Vahvistus';
+
+  @override
   String get settingsAmigaFilter => 'Amiga-suodatin';
 
   @override
@@ -2456,6 +2717,17 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get settingsChorus => 'Chorus';
+
+  @override
+  String get playbackMt32NoRoms =>
+      'Tämä MIDI on kirjoitettu Roland MT-32:lle. Ilman sen ROM-tiedostoja se soi SoundFontilla, soittimet General MIDI -vastineiksi muunnettuina — tuo ROM-tiedostot kohdassa Asetukset › Moottorit › Munt.';
+
+  @override
+  String get settingsMidiMt32ToGm => 'Mukauta MT-32-tiedostot';
+
+  @override
+  String get settingsMidiMt32ToGmSubtitle =>
+      'Roland MT-32:lle kirjoitettu MIDI numeroi ohjelmansa MT-32:n oman listan mukaan: lähimmiksi General MIDI -soittimiksi muunnettuina ne kuulostavat uskottavilta satunnaisten sijaan.';
 
   @override
   String get settingsInterpNone => 'Ei mitään';
@@ -2926,6 +3198,143 @@ class AppLocalizationsFi extends AppLocalizations {
   }
 
   @override
+  String get storageTitle => 'Tallennustila';
+
+  @override
+  String get storageSubtitle =>
+      'Mitä sovellus säilyttää levyllä, poisto mukana';
+
+  @override
+  String get storageDownloads => 'Lataukset';
+
+  @override
+  String get storageArtworkCache => 'Kansikuvavälimuisti';
+
+  @override
+  String get storageSoundfonts => 'SoundFontit';
+
+  @override
+  String get storagePresets => 'Visualisoijan esiasetukset';
+
+  @override
+  String get storageOpenedFiles => 'Avatut tiedostot';
+
+  @override
+  String get storageOpenedEmpty =>
+      'Ulkopuolelta avatut tiedostot (jako, ”Avaa sovelluksessa”, valitsin mobiilissa) kopioidaan tänne.';
+
+  @override
+  String get storageInUse => 'soittolistalla tai kirjastossa';
+
+  @override
+  String get storageDeleteAll => 'Poista kaikki';
+
+  @override
+  String get storageClear => 'Tyhjennä';
+
+  @override
+  String get storageDeleteSelection => 'Poista valinta';
+
+  @override
+  String get storageSelectAll => 'Valitse kaikki';
+
+  @override
+  String get storageFilterHint => 'Suodata nimellä';
+
+  @override
+  String get storageNoMatch => 'Yksikään tiedosto ei vastaa suodatinta.';
+
+  @override
+  String storageSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count valittu',
+      one: '$count valittu',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Poistetaanko $count tiedostoa?',
+      one: 'Poistetaanko $count tiedosto?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionInUseBody(int count, int inUse) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Poistetaanko $count tiedostoa? Niistä $inUse on soittolistan tai kirjaston käytössä — ne kohteet menettävät tiedostonsa.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get storageDownloadsClearBody =>
+      'Poistetaanko kaikki ladatut tiedostot ja niiden kirjastorivit? Suosikit ja soittolistat säilyttävät kohteensa, mutta tiedostot on ladattava uudelleen.';
+
+  @override
+  String get storageSoundfontsClearBody =>
+      'Poistetaanko kaikki SoundFontit, myös tuodut? Luettelon fontit latautuvat tarvittaessa uudelleen; tuodut menetetään.';
+
+  @override
+  String get storagePresetsClearBody =>
+      'Poistetaanko ladatut preset-paketit ja tuodut presetit? Mukana tulevat säilyvät; paketit latautuvat uudelleen, tuodut menetetään.';
+
+  @override
+  String get storageOpenedDeleteAllTitle => 'Poista avatut tiedostot';
+
+  @override
+  String get storageInUseDeleteTitle => 'Tiedosto käytössä';
+
+  @override
+  String get storageInUseDeleteBody =>
+      'Soittolista tai kirjasto viittaa yhä tähän tiedostoon. Poisto jättää nämä kohteet ilman tiedostoa.';
+
+  @override
+  String storageCategoryStat(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tiedostoa — $size',
+      one: '$count tiedosto — $size',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDownloadsSubtitle(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tiedostoa — $size · hallinta albumeista ja kappaleista',
+      one: '$count tiedosto — $size · hallinta albumeista ja kappaleista',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageOpenedDeleteAllBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Poistetaanko $count tiedostoa? Soittolistan tai kirjaston käyttämät tiedostot säilytetään.',
+      one:
+          'Poistetaanko $count tiedosto? Soittolistan tai kirjaston käyttämät tiedostot säilytetään.',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetStats => 'Nollaa tilastot';
 
   @override
@@ -2953,6 +3362,38 @@ class AppLocalizationsFi extends AppLocalizations {
   String get settingsResetDbTitle => 'Nollataanko tietokanta?';
 
   @override
+  String get settingsCleanLocalTitle =>
+      'Siivoa toimimattomat paikalliset merkinnät';
+
+  @override
+  String get cleanStageScan => 'Merkintöjä tarkistetaan…';
+
+  @override
+  String get cleanStageSync => 'Synkronoidaan tiliisi…';
+
+  @override
+  String get cleanStagePurge => 'Poistetaan tililtäsi…';
+
+  @override
+  String get cleanStageDelete => 'Poistetaan paikallisesti…';
+
+  @override
+  String get settingsCleanLocalBody =>
+      'Kirjastomerkinnät, joiden tiedostoa ei enää ole tällä laitteella. Ne poistetaan myös tililtäsi eli muilta laitteiltasi.';
+
+  @override
+  String settingsCleanLocalDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count merkintää poistettu',
+      one: '$count merkintä poistettu',
+      zero: 'Ei siivottavaa',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetDbBody =>
       'Tämä poistaa pysyvästi:\n• koko kuunteluhistorian\n• kaikki laskurit\n• kaikki suosikit\n• kaikki soittolistat\n• kaikki välimuistiin tallennetut metatiedot\n\nÄänitiedostojasi ei poisteta.';
 
@@ -2965,6 +3406,33 @@ class AppLocalizationsFi extends AppLocalizations {
   @override
   String get settingsDeleteDownloadsSubtitle =>
       'Poistaa kaikki tiedostot online-kansiosta (kappaleet, kansikuvat)';
+
+  @override
+  String get settingsCleanAll => 'Siivoa paikallinen tietokanta ja välimuisti';
+
+  @override
+  String get settingsCleanAllSubtitle =>
+      'Poistaa merkinnät, joiden tiedosto on kadonnut, kirjaston merkinnät toisella laitteella oleviin tiedostoihin, ja tyhjentää kansi- ja metatietovälimuistin';
+
+  @override
+  String get settingsCleanAllConfirmBody =>
+      'Toisella laitteella oleviin tiedostoihin viittaavat kirjaston merkinnät poistetaan myös tililtäsi, siis muilta laitteiltasi. Kannet ja metatiedot ladataan uudelleen seuraavalla toistolla.';
+
+  @override
+  String get settingsDataAdvanced => 'Lisäasetukset';
+
+  @override
+  String get settingsDataAdvancedSubtitle =>
+      'Jokainen siivousvaihe erikseen, välimuisti ja nollaukset';
+
+  @override
+  String get settingsDataGroupDb => 'Tietokanta';
+
+  @override
+  String get settingsDataGroupCache => 'Välimuisti';
+
+  @override
+  String get settingsDataGroupReset => 'Nollaus';
 
   @override
   String get settingsDeleteDownloadsTitle => 'Poistetaanko lataukset?';
@@ -3222,6 +3690,10 @@ class AppLocalizationsFi extends AppLocalizations {
   String get accountErrorCodeLength => 'Koodissa on 6 numeroa';
 
   @override
+  String get albumOfflinePartial =>
+      'Ei verkkoyhteyttä — näytetään se, mikä on jo tällä laitteella';
+
+  @override
   String get accountErrorNetwork => 'Yhteys epäonnistui, yritä uudelleen';
 
   @override
@@ -3462,6 +3934,9 @@ class AppLocalizationsFi extends AppLocalizations {
   String get commonSave => 'Tallenna';
 
   @override
+  String get commonImport => 'Tuo';
+
+  @override
   String get accountDisplayName => 'Julkinen nimi';
 
   @override
@@ -3588,46 +4063,63 @@ class AppLocalizationsFi extends AppLocalizations {
   String get settingsSpectrumModeRing => 'Rengas';
 
   @override
+  String get settingsPianoMode => 'Pianon ulkoasu';
+
+  @override
+  String get settingsPianoModeRoll => 'Koskettimistot';
+
+  @override
+  String get settingsPianoModeFalling => 'Putoavat nuotit';
+
+  @override
+  String get settingsPianoColor => 'Värit';
+
+  @override
+  String get settingsPianoColorVoice => 'Äänen mukaan';
+
+  @override
+  String get settingsPianoColorInstrument => 'Soittimen mukaan';
+
+  @override
+  String get settingsPianoGlow => 'Hehku painetuilla koskettimilla';
+
+  @override
+  String get settingsPianoLighting => 'Valo ja varjot koskettimilla';
+
+  @override
+  String get settingsPianoVoiceNames => 'Äänten nimet';
+
+  @override
+  String get featuredAdditionsHeader => 'Uutta luettelossa';
+
+  @override
+  String get featuredAdditionsCard => 'Juuri lisätty';
+
+  @override
+  String get featuredAdditionsPlaylist => 'Juuri lisätyt kappaleet';
+
+  @override
   String get releaseNotesTitle => 'Uutta';
 
   @override
-  String get releaseNotesV4Downloads =>
-      'Lataukset: pitkän latauksen voi perua kesken, eikä albumin arkistoa haeta enää useaan kertaan.';
+  String get releaseNotesV7Cpu =>
+      'Sovellus ei enää työskentele taustalla, kun mitään ei soi: paljon vähemmän suoritinta ja akkua.';
 
   @override
-  String get releaseNotesV4Queue =>
-      'Jono: painike sen tyhjentämiseen, vahvistuksella — se myös pysäyttää toiston.';
+  String get releaseNotesV7VizIdle =>
+      'Visualisoinnit pysähtyvät, kun toisto on pysäytetty, ja niiden kuvataajuus on rajattu 60 kuvaan sekunnissa (säädettävissä).';
 
   @override
-  String get releaseNotesV4DropFiles =>
-      'Ikkunaan pudotetut tiedostot: toista nyt, seuraavaksi tai lopuksi; kansikuvat ja oheistiedostot jäävät pois, ja arkiston mukana tullutta soittolistaa noudatetaan (oikeat nimet, ei kuolleita raitoja).';
+  String get releaseNotesV7Subsongs =>
+      'Korjattu: PC Enginellä, Master Systemillä ja Atari ST:llä (.sndh) osa kappaleista käynnisti viereisen kappaleen.';
 
   @override
-  String get releaseNotesV4Soundfont =>
-      'MIDI: tuo oma SoundFont laitteelta palvelimen tarjoamien rinnalle.';
+  String get releaseNotesV7Piano =>
+      'Piano-visualisointi pysyi tyhjänä PC Engine -musiikilla.';
 
   @override
-  String get releaseNotesV4Formats =>
-      'Wwise-, FSB- ja OGL-pelivirrat soivat vihdoin (oma Vorbis).';
-
-  @override
-  String get releaseNotesV4Chips =>
-      'Kuusi äänipiiriä lisää, emulointiytimen valinta piirikohtaisesti (SameBoy Game Boylle) ja oikea sävelkorkeus näytepiireillä.';
-
-  @override
-  String get releaseNotesV4Zx =>
-      'ZX Spectrum: .vt2-kappaleet soivat, ja nuotti- ja kuvionäkymät kattavat koko ZX-perheen.';
-
-  @override
-  String get releaseNotesV4Loop =>
-      'Kappaleen toisto kiertää oikeasti sen sijaan että lataisi uudelleen, eikä laskuri jäädy loputtomassa kierrossa.';
-
-  @override
-  String get releaseNotesV4Info =>
-      'ⓘ-paneeli listaa tiedostot, jotka kappale todella avasi — oheistiedostot ja kirjastot mukaan lukien.';
-
-  @override
-  String get releaseNotesV4Linux => 'Linux-työpöytäversio.';
+  String get releaseNotesV7Database =>
+      'Päivityksen vahingoittama tietokanta korjaa nyt itsensä sen sijaan, että kirjasto jäisi saavuttamattomiin.';
 
   @override
   String get releaseNotesDataReset =>
@@ -3669,7 +4161,7 @@ class AppLocalizationsFi extends AppLocalizations {
       count,
       locale: localeName,
       other: '$count esiasetusta jätetty pois',
-      one: '1 esiasetus jätetty pois',
+      one: '$count esiasetus jätetty pois',
     );
     return '$_temp0';
   }
@@ -3920,4 +4412,165 @@ class AppLocalizationsFi extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get browseCharts => 'Listat';
+
+  @override
+  String get chartsGlobal => 'Globaali';
+
+  @override
+  String get chartsByCollection => 'Kokoelmittain';
+
+  @override
+  String get chartsTopSongs => 'Top-kappaleet';
+
+  @override
+  String get chartsTopAlbums => 'Top-albumit';
+
+  @override
+  String get chartsRewampSection => 'Top rewamp';
+
+  @override
+  String get chartsPublishedSection => 'Julkaistut listat';
+
+  @override
+  String chartsUpdated(String date) {
+    return 'Päivitetty $date';
+  }
+
+  @override
+  String get chartsSource => 'Lähde';
+
+  @override
+  String get settingsMidiSynth => 'MIDI-syntetisaattori';
+
+  @override
+  String get settingsMidiSynthAuto =>
+      'Automaattinen (MT-32, kun tiedosto sitä pyytää)';
+
+  @override
+  String get settingsMidiSynthSoundfont => 'SoundFont (FluidLite)';
+
+  @override
+  String get settingsMidiSynthMt32 => 'Roland MT-32 (emulointi)';
+
+  @override
+  String get settingsMt32Section => 'Roland MT-32 -emulointi';
+
+  @override
+  String get settingsMt32RomsTitle => 'MT-32-ROMit';
+
+  @override
+  String get settingsMt32RomsMissing =>
+      'Ei käyttökelpoista ROM-sarjaa — tuo MT-32:n tai CM-32L:n ohjaus- ja PCM-ROM';
+
+  @override
+  String settingsMt32RomsActive(String set) {
+    return 'Käytössä oleva sarja: $set';
+  }
+
+  @override
+  String get settingsMt32Import => 'Tuo ROM-tiedostoja…';
+
+  @override
+  String get settingsMt32ImportSubtitle =>
+      'Ohjaus-ROM + PCM-ROM (.rom/.bin), MAME-puolikkaat kelpaavat. ROMeja ei toimiteta sovelluksen mukana.';
+
+  @override
+  String settingsMt32ImportRejected(String name) {
+    return '$name ei ole tunnettu MT-32-/CM-32L-ROM';
+  }
+
+  @override
+  String settingsMt32ImportDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ROM-tiedostoa tuotu',
+      one: '$count ROM-tiedosto tuotu',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsMt32Model => 'Malli';
+
+  @override
+  String get settingsMt32ModelAuto => 'Automaattinen (CM-32L jos saatavilla)';
+
+  @override
+  String get settingsMt32Reverb => 'Kaiku';
+
+  @override
+  String get engineDescMt32 =>
+      'Roland MT-32-/CM-32L-emulointi MIDIlle (.mid/.midi/.kar/.rmi)';
+
+  @override
+  String get miniWindowEnter => 'Minisoitin';
+
+  @override
+  String get miniWindowExit => 'Takaisin pääikkunaan';
+
+  @override
+  String get miniWindowIdle => 'Ei toistoa';
+
+  @override
+  String get settingsAlwaysOnTopTitle => 'Aina päällimmäisenä';
+
+  @override
+  String get settingsAlwaysOnTopSubtitle =>
+      'Pitää ikkunan muiden yläpuolella — sekä pääikkunan että minisoittimen';
+
+  @override
+  String get windowAlwaysOnTopOn => 'Aina päällimmäisenä: päällä';
+
+  @override
+  String get miniWindowCoverFill => 'Zoomaa kansi täyttämään tila';
+
+  @override
+  String get miniWindowCoverFit => 'Näytä koko kansi';
+
+  @override
+  String get releaseNotesV7Mt32 =>
+      'Uusi Roland MT-32 -moottori pelien MIDI-musiikille omilla ROM-tiedostoillasi. Ilman ROM-tiedostoja MT-32:lle kirjoitettu MIDI sovitetaan General MIDIin.';
+
+  @override
+  String get releaseNotesV7Xmp =>
+      'Kymmenen harvinaista moduulimuotoa soi nyt (Archimedes Tracker .musx, .liq, .fnk…).';
+
+  @override
+  String get releaseNotesV7AmigaAdlib =>
+      'Westwoodin AdLib-musiikki (.adl) soittaa kaikki kappaleensa, ja BP SoundMon V1 tunnistetaan Amigalla.';
+
+  @override
+  String get releaseNotesV7MiniPlayer =>
+      'Mac: minisoitin, kompakti tai visualisoinnilla, sekä asetus ”Aina päällimmäisenä”.';
+
+  @override
+  String get releaseNotesV7Instruments =>
+      'Oskilloskooppi, nuotit ja piano voivat nimetä ja värittää jokaisen soittimen, ei vain jokaista ääntä.';
+
+  @override
+  String get releaseNotesV7Podium =>
+      'Haku: suodata kappaleet, jotka sijoittuivat demoskene-kilpailussa 1., 2. tai 3. sijalle.';
+
+  @override
+  String get releaseNotesV7ShortSubsongs =>
+      'Liian lyhyet alikappaleet (pelien ääniefektit) jätetään pois toiminnosta ”Toista kaikki” — raja kohdassa Asetukset → Toisto.';
+
+  @override
+  String get releaseNotesV7LocalFolders =>
+      'Tuontisi: pudota kokonainen kansio (arkistot puretaan), ja luo, nimeä uudelleen tai siirrä kansioita.';
+
+  @override
+  String get releaseNotesV7Midi =>
+      'MIDI: rummut eivät enää soi pianona, eikä äänenvoimakkuus enää säröydy.';
+
+  @override
+  String get releaseNotesV7ProjectM =>
+      'projectM: esiasetukset eivät enää toistu käynnistyskerrasta toiseen, eikä esiasetusta enää hylätä virheellisesti tauon jälkeen.';
+
+  @override
+  String get libraryFileMissing => 'Tiedosto puuttuu';
 }

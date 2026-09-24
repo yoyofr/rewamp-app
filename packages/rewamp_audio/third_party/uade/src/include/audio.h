@@ -35,7 +35,7 @@ extern struct audio_channel_data {
     int sinc_queue_time;
     int sinc_queue_head;
     int vol;
-    int keyon; //YOYOFR: set on loop-address write, consumed by note detection
+    int keyon; //YOYOFR: DMA off->on (Paula key on), consumed by note detection
     uae_u16 dat, nextdat, per, len;
 
     /* Debug variables */

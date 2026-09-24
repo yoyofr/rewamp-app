@@ -4,6 +4,8 @@
 
 #if defined(__APPLE__)
 #include <iconv.h>
+#elif !defined(_WIN32)
+#include <dlfcn.h>   /* iconv résolu à l'exécution: bionic ≥ API 28, glibc */
 #endif
 
 #include <limits.h>
@@ -68,6 +70,9 @@ char              modizChipsetStartVoice[MODIZ_MAX_CHIPS];
 char              modizChipsetVoicesCount[MODIZ_MAX_CHIPS];
 char              modizChipsetName[MODIZ_MAX_CHIPS][MODIZ_CHIP_NAME_MAX_CHAR];
 char              modizVoicesName[SOUND_MAXVOICES_BUFFER_FX][MODIZ_VOICE_NAME_MAX_CHAR];
+char              modizInstrName[MODIZ_MAX_INSTR][MODIZ_VOICE_NAME_MAX_CHAR];
+static unsigned   g_instr_name_gen = 0;
+unsigned rewamp_instrument_names_gen(void) { return g_instr_name_gen; }
 char              modizChipsetCount = 0;
 
 /* libsidplayfp oscilloscope state (SID.cpp Modizer patches) */
@@ -303,6 +308,28 @@ void rewamp_channel_data_capture_delayed(int64_t startFramePos, int frames) {
     (void)g_dprev;
 }
 
+
+void rewamp_channel_data_fade_recent(int frames, float gainStart, float gainEnd) {
+    if (frames <= 0 || (gainStart >= 1.0f && gainEnd >= 1.0f)) return;
+    const int rsize = g_ring_write_size;
+    if (rsize <= 0) return;
+    if (frames > rsize) frames = rsize;
+    for (int v = 0; v < g_channel_count; v++) {
+        signed char* buf = m_voice_buff[v];
+        /* Le PUITS est partagé par toutes les voies au-delà du compte alloué:
+         * l'atténuer reviendrait à le faire N fois, et il ne s'affiche pas. */
+        if (!buf || buf == g_voice_sink) continue;
+        const int64_t cnt = m_voice_current_ptr[v] >> MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
+        for (int i = 0; i < frames; i++) {
+            const int64_t s = cnt - frames + i;
+            if (s < 0) continue;
+            const float t = frames > 1 ? (float)i / (float)(frames - 1) : 1.0f;
+            const float g = gainStart + (gainEnd - gainStart) * t;
+            const int idx = (int)(((s % rsize) + rsize) % rsize);
+            buf[idx] = (signed char)((float)buf[idx] * g);
+        }
+    }
+}
 
 /* Backends with no per-voice data (vgmstream, miniaudio fallback) leave
  * g_channel_count == 0; we then expose 2 virtual voices (L/R) fed from the
@@ -549,6 +576,8 @@ void rewamp_voices_meta_reset(void) {
     memset(modizChipsetVoicesCount, 0, sizeof(modizChipsetVoicesCount));
     memset(modizChipsetName, 0, sizeof(modizChipsetName));
     memset(modizVoicesName, 0, sizeof(modizVoicesName));
+    memset(modizInstrName, 0, sizeof(modizInstrName));
+    g_instr_name_gen++;
 }
 
 int rewamp_voices_add_chip(const char* name, int startVoice, int count) {
@@ -574,6 +603,16 @@ void rewamp_voice_set_name(int v, const char* name) {
     if (v < 0 || v >= SOUND_MAXVOICES_BUFFER_FX || !name) return;
     strncpy(modizVoicesName[v], name, MODIZ_VOICE_NAME_MAX_CHAR - 1);
     modizVoicesName[v][MODIZ_VOICE_NAME_MAX_CHAR - 1] = '\0';
+}
+
+void rewamp_instrument_set_name(int idx, const char* name) {
+    if (idx <= 0 || idx >= MODIZ_MAX_INSTR || !name) return;
+    /* Un nom identique ne fait pas avancer la génération: sinon un moteur qui
+     * repose le même nom ferait invalider le cache de l'UI à chaque pas. */
+    if (strncmp(modizInstrName[idx], name, MODIZ_VOICE_NAME_MAX_CHAR - 1) == 0) return;
+    strncpy(modizInstrName[idx], name, MODIZ_VOICE_NAME_MAX_CHAR - 1);
+    modizInstrName[idx][MODIZ_VOICE_NAME_MAX_CHAR - 1] = '\0';
+    g_instr_name_gen++;
 }
 
 /* ── Track info message (Modizer mod_message equivalent) ─────────────────── */
@@ -680,6 +719,42 @@ void rewamp_sjis_to_utf8(const char* in, char* out, size_t outCap) {
             if (out[0]) return;
         }
     }
+#elif !defined(_WIN32)
+    {
+        /* Même conversion, iconv cherché à l'exécution (comme
+         * StrUtils-CPConv_Stub.c): présent dans la glibc et dans bionic
+         * depuis l'API 28; absent, on retombe sur le '?' par glyphe. */
+        typedef void*  (*open_fn)(const char*, const char*);
+        typedef size_t (*conv_fn)(void*, char**, size_t*, char**, size_t*);
+        typedef int    (*close_fn)(void*);
+        static open_fn  s_open;
+        static conv_fn  s_conv;
+        static close_fn s_close;
+        static int      s_looked;
+        if (!s_looked) {
+            s_looked = 1;
+            void* self = dlopen(NULL, RTLD_LAZY);
+            if (self) {
+                s_open  = (open_fn) dlsym(self, "iconv_open");
+                s_conv  = (conv_fn) dlsym(self, "iconv");
+                s_close = (close_fn)dlsym(self, "iconv_close");
+            }
+        }
+        if (s_open && s_conv && s_close) {
+            void* cd = s_open("UTF-8", "CP932");
+            if (cd == (void*)-1) cd = s_open("UTF-8", "SHIFT_JIS");
+            if (cd != (void*)-1) {
+                char*  src     = (char*)in;
+                size_t srcLeft = inLen;
+                char*  dst     = out;
+                size_t dstLeft = outCap - 1;
+                s_conv(cd, &src, &srcLeft, &dst, &dstLeft);
+                *dst = '\0';
+                s_close(cd);
+                if (out[0]) return;
+            }
+        }
+    }
 #endif
     /* No converter: one '?' per glyph (skip the SJIS trail byte, or a
      * two-byte kanji would print as two '?'). */
@@ -692,6 +767,45 @@ void rewamp_sjis_to_utf8(const char* in, char* out, size_t outCap) {
         }
         out[w] = '\0';
     }
+}
+
+int rewamp_utf8_valid(const char* s) {
+    const unsigned char* p = (const unsigned char*)s;
+    if (!p) return 0;
+    while (*p) {
+        unsigned char c = *p;
+        int n = c < 0x80 ? 0 : (c >> 5) == 6 ? 1 : (c >> 4) == 14 ? 2 : (c >> 3) == 30 ? 3 : -1;
+        if (n < 0) return 0;
+        for (int i = 1; i <= n; i++) if ((p[i] & 0xC0) != 0x80) return 0;
+        p += n + 1;
+    }
+    return 1;
+}
+
+void rewamp_text_to_utf8(const char* in, char* out, size_t outCap) {
+    if (!out || outCap == 0) return;
+    if (!in) { out[0] = '\0'; return; }
+    if (rewamp_utf8_valid(in)) {
+        size_t n = strlen(in);
+        if (n > outCap - 1) n = outCap - 1;
+        memcpy(out, in, n);
+        out[n] = '\0';
+        return;
+    }
+    rewamp_sjis_to_utf8(in, out, outCap);
+}
+
+void rewamp_psf_tag_copy(char* dst, size_t dstCap, const char* value) {
+    if (!dst || dstCap == 0) return;
+    if (!value) { dst[0] = '\0'; return; }
+    char line[1024];
+    size_t n = 0;
+    while (value[n] && value[n] != '\n' && value[n] != '\r' && n < sizeof(line) - 1) {
+        line[n] = value[n];
+        n++;
+    }
+    line[n] = '\0';
+    rewamp_text_to_utf8(line, dst, dstCap);
 }
 
 const char* rewamp_track_message(void) {

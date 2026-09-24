@@ -11,11 +11,13 @@ import 'local_db.dart';
 import 'production_screen.dart';
 import 'podium_badge.dart';
 import 'competition_screen.dart' show podiumColor;
+import 'min_subsong.dart';
 import 'rewamp_db.dart';
 import 'sync_service.dart';
 import 'user_settings.dart';
 import 'scrolling_text.dart';
 import 'artwork_image.dart';
+import 'artwork_viewer.dart';
 import 'download_manager.dart';
 import 'library_button.dart';
 import 'track_options_sheet.dart';
@@ -77,6 +79,10 @@ class AlbumDetailScreen extends StatefulWidget {
 }
 
 class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
+  /// La pochette RÉELLE résolue par l'en-tête, ou null tant qu'il n'y a qu'un
+  /// placeholder — c'est elle qu'un tap agrandit.
+  final ValueNotifier<ImageProvider?> _fullArt = ValueNotifier(null);
+
   // Metadata
   AlbumDetails? _details;
   bool _detailsLoading = true;
@@ -116,6 +122,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   bool  _loadingMore   = false;
   bool  _playingAll    = false;
   String? _error;
+  /// La liste vient du DISQUE parce que le catalogue est injoignable: elle ne
+  /// contient que ce qu'on a déjà vu, pas forcément tout l'album.
+  bool _offlinePartial = false;
 
   // Incremented after every ZIP extraction so visible track tiles re-check disk.
   int _downloadRevision = 0;
@@ -155,6 +164,33 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     return _tracks.where((t) => t.totalFileSize > 0).length <= 1;
   }
 
+  /// Les lignes qu'un « tout lire » écartera (seuil de durée minimale,
+  /// Réglages → Lecture). ⚠️ Par la MÊME fonction que la file: `fileKey`
+  /// reprend le critère de `_startAlbumQueue`, donc un album de fichiers
+  /// distincts n'est jamais concerné et le grisé ne peut pas mentir.
+  ///
+  /// ⚠️ Calculé UNE fois par construction de liste, jamais par ligne: c'est un
+  /// balayage de toute la liste, donc un getter appelé depuis chaque tuile
+  /// serait quadratique (un album de 120 pistes: 14 400 comparaisons par
+  /// image).
+  Set<SearchResult> _skippedShortFor(List<SearchResult> rows) =>
+      skippedQueueSubsongs<SearchResult>(
+        rows,
+        minMs: _minSubsongMs,
+        fileKey: (r) => '${r.songId.split('#').first}|${r.localPath ?? ''}',
+        durationMs: (r) => r.durationMs,
+      );
+
+  /// Seuil « sous-chansons trop courtes » tel que cet écran l'affiche — dans
+  /// l'état et non lu au vol, pour que le changer se voie sans rouvrir l'écran.
+  int _minSubsongMs = 0;
+
+  void _onSettingsChanged() {
+    final v = minSubsongMs;
+    // Seulement quand CE réglage bouge: le notifier est global.
+    if (v != _minSubsongMs && mounted) setState(() => _minSubsongMs = v);
+  }
+
   final _scroll = ScrollController();
 
   @override
@@ -165,6 +201,12 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     // LocalDb — re-check the per-track download badges + album state so a deleted
     // row stops showing as downloaded without leaving/re-entering the screen.
     LocalDb.instance.addListener(_onLocalDbChanged);
+    // ⚠️ Le seuil « sous-chansons trop courtes » décide du GRISÉ des lignes, et
+    // cet écran reste MONTÉ quand on va dans Réglages (qui est poussé
+    // par-dessus): sans cette écoute, le grisé restait celui d'avant jusqu'à ce
+    // qu'on ferme et rouvre l'album. Même règle que la coquille et l'accueil.
+    _minSubsongMs = minSubsongMs;
+    UserSettings.instance.addListener(_onSettingsChanged);
     // Bulk downloads run in the DownloadManager queue now: each completed job
     // fires this, refreshing the per-track badges and the album state (the
     // old inline loop did it after each await).
@@ -272,6 +314,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
   @override
   void dispose() {
+    _fullArt.dispose();
+    UserSettings.instance.removeListener(_onSettingsChanged);
     LocalDb.instance.removeListener(_onLocalDbChanged);
     DownloadManager.instance.removeListener(_onLocalDbChanged);
     _scroll.dispose();
@@ -286,6 +330,21 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   }
 
   Future<void> _loadDetails() async {
+    // ⚠️ Un album SANS identité de catalogue ne demande RIEN au serveur.
+    // `fetchAlbumDetails` retombe sinon sur le NOM et rapporte les métadonnées
+    // d'un homonyme — pochette, année, description d'un autre album collées
+    // sur un import local. Même règle que pour la tracklist juste en dessous:
+    // un nom n'est pas une identité.
+    //
+    // Le disque, lui, n'a pas de « détails d'album » à offrir: l'en-tête se
+    // contente de ce que l'appelant a passé (nom, pochette), ce qui est
+    // exactement ce que l'utilisateur a importé.
+    if ((widget.albumId == null || widget.albumId!.isEmpty) &&
+        (await LocalDb.instance.tracksForAlbum(albumName: widget.albumName))
+            .isNotEmpty) {
+      if (mounted) setState(() => _detailsLoading = false);
+      return;
+    }
     try {
       final list = await RewampDb.fetchAlbumDetails(
         widget.albumName,
@@ -327,6 +386,35 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   }
 
   Future<void> _loadTracks(int offset) async {
+    // ⚠️ **Un album SANS identité de catalogue se résout sur le DISQUE.**
+    // Sans `albumId`, `_fetchAlbumTracks` interroge le serveur par NOM — et
+    // pour un album IMPORTÉ ce nom trouve un homonyme du catalogue, qui n'a
+    // aucun rapport: l'écran affichait les pistes d'un autre album, et la
+    // lecture partait dessus. Un nom n'est pas une identité.
+    //
+    // Le repli local existait déjà plus bas, mais il ne se déclenchait qu'à
+    // l'ERREUR réseau — or ici l'appel RÉUSSIT, et c'est bien le problème.
+    //
+    // Le disque ne pagine pas: on ne prend ce chemin qu'à la première page et
+    // on annonce la liste comme complète.
+    if (offset == 0 &&
+        (widget.albumId == null || widget.albumId!.isEmpty)) {
+      final local = await LocalDb.instance
+          .tracksForAlbum(albumName: widget.albumName);
+      if (!mounted) return;
+      if (local.isNotEmpty) {
+        setState(() {
+          _tracks
+            ..clear()
+            ..addAll(local.map(RewampDb.searchResultFromTrack));
+          _total         = _tracks.length;
+          _offset        = _tracks.length;
+          _hasMore       = false;
+          _tracksLoading = false;
+        });
+        return;
+      }
+    }
     try {
       final res = await _fetchAlbumTracks(
         sortBy: 'position',
@@ -452,9 +540,39 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
       if (offset == 0) _refreshDownloadedState();
     } catch (e) {
       if (!mounted) return;
+      // HORS LIGNE: le catalogue est injoignable, mais l'album qu'on vient
+      // d'écouter est sur le disque et ses lignes sont en base. Mieux vaut la
+      // liste qu'on a qu'une exception rouge — c'est même le SEUL état où
+      // l'écran reste utile sans réseau.
+      if (offset == 0 && RewampDb.isOffline(e)) {
+        final local = await LocalDb.instance.tracksForAlbum(
+            albumId: widget.albumId, albumName: widget.albumName);
+        if (!mounted) return;
+        if (local.isNotEmpty) {
+          setState(() {
+            _tracks
+              ..clear()
+              ..addAll(local.map(RewampDb.searchResultFromTrack));
+            _total         = _tracks.length;
+            _offset        = _tracks.length;
+            _hasMore       = false;   // le disque ne pagine pas
+            _tracksLoading = false;
+            _offlinePartial = true;
+            _error         = null;
+          });
+          _refreshDownloadedState();
+          return;
+        }
+      }
       setState(() {
         _tracksLoading = false;
-        if (offset == 0) _error = e.toString();
+        // Un échec RÉSEAU se dit en une phrase; le texte brut d'une exception
+        // n'apprend rien à qui lit l'écran.
+        if (offset == 0) {
+          _error = RewampDb.isOffline(e)
+              ? context.l10n.accountErrorNetwork
+              : e.toString();
+        }
       });
     }
   }
@@ -552,7 +670,11 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
       try {
         final dir = p.dirname(
             await RewampDb.localPath(_containerRow ?? songs.first));
-        await RewampDb.deleteLocalAlbumDir(dir);
+        // Pas `deleteLocalAlbumDir`: celui-là est le geste « supprimer le
+        // téléchargement », qui emporte AUSSI le ♥, l'appartenance à la
+        // bibliothèque et l'historique d'écoute (play_events est en cascade sur
+        // tracks). Re-télécharger ne remplace que les octets.
+        await RewampDb.purgeAlbumDirBeforeRedownload(dir);
       } catch (_) {}
       // Container albums: the expanded rows point at deleted files — refetch
       // the server row so the container branch re-downloads and re-expands.
@@ -630,7 +752,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           if (!mounted) return null;
           try {
             final reordered = await RewampDb.downloadAndExtractZip(zipUrl, songs,
-                mirrorZipUrl: _details?.mirrorZipUrl, albumId: widget.albumId);
+                mirrorZipUrl: _details?.mirrorZipUrl,
+                albumId: widget.albumId,
+                force: force);
             if (reordered != null) songs = reordered;
             if (mounted) setState(() => _downloadRevision++);
           } catch (_) {
@@ -683,7 +807,10 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
       if (!force && await _trackFileCached(s)) continue;
       DownloadManager.instance.enqueue(
         s.displayTitle,
-        () => RewampDb.downloadToLibrary(s).then((_) {}),
+        // force: sans lui le geste « Re-télécharger » d'un album multi-fichiers
+        // (modland/hvsc) ne faisait rien — chaque fichier retombait sur la
+        // copie en place.
+        () => RewampDb.downloadToLibrary(s, force: force).then((_) {}),
         artworkUrl: s.artworkUrl,
         key: '${s.songId}|${s.filename}',
       );
@@ -752,7 +879,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           } else {
             await RewampDb.downloadAndExtractZip(zipUrl!, songs,
                 mirrorZipUrl: _details?.mirrorZipUrl,
-                albumId: widget.albumId);
+                albumId: widget.albumId,
+                force: force);
           }
         },
         artworkUrl: _effectiveArtworkUrl,
@@ -975,6 +1103,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final cs   = Theme.of(context).colorScheme;
+    // UNE fois par construction: le delegate d'un SliverList rappelle son
+    // builder PAR LIGNE, et ce calcul balaie toute la liste.
+    final skippedShort = _skippedShortFor(_tracks);
 
     // Fade the app-bar title in only once the artwork has scrolled away.
     const expandedHeight = 280.0;
@@ -1026,15 +1157,34 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                       ),
                     ),
                     Container(color: Colors.black.withValues(alpha: 0.20)),
-                    ArtworkImage(
-                      url:    _effectiveArtworkUrl,
-                      album:  widget.albumName,
-                      artist: _effectiveComposerNames.firstOrNull,
-                      fit:    BoxFit.contain,
-                      placeholder: Container(
-                        color: cs.primaryContainer,
-                        child: Icon(Icons.album, size: 80,
-                            color: cs.onPrimaryContainer),
+                    // Tap = plein écran. Seule CETTE image compte: le calque du
+                    // dessous n'est qu'un remplissage flouté, l'agrandir
+                    // donnerait une bouillie.
+                    ValueListenableBuilder<ImageProvider?>(
+                      valueListenable: _fullArt,
+                      builder: (_, full, child) => GestureDetector(
+                        onTap: full == null
+                            ? null
+                            : () => showFullscreenArtwork(context, full,
+                                title: widget.albumName),
+                        child: child,
+                      ),
+                      child: ArtworkImage(
+                        // ⚠️ PAS de `setState`: `onImageResolved` est notifié
+                        // depuis le `build()` d'ArtworkImage, et il l'est
+                        // SYNCHRONEMENT quand l'image est déjà décodée. Un
+                        // notifieur ne reconstruit que le détecteur.
+                        onImageResolved: (provider, key) => _fullArt.value =
+                            artworkKeyIsRealCover(key) ? provider : null,
+                        url:    _effectiveArtworkUrl,
+                        album:  widget.albumName,
+                        artist: _effectiveComposerNames.firstOrNull,
+                        fit:    BoxFit.contain,
+                        placeholder: Container(
+                          color: cs.primaryContainer,
+                          child: Icon(Icons.album, size: 80,
+                              color: cs.onPrimaryContainer),
+                        ),
                       ),
                     ),
                   ] else
@@ -1066,6 +1216,26 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
               ),
             )
           else ...[
+            // Liste venue du DISQUE: on le DIT. Une liste incomplète qui ne
+            // s'annonce pas se lit comme un album amputé.
+            if (_offlinePartial)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.cloud_off_outlined,
+                          size: 16, color: cs.onSurfaceVariant),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(l10n.albumOfflinePartial,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: cs.onSurfaceVariant)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             // PSF / container archive — not yet downloaded placeholder
             if (((_isPsfArchiveAlbum && !_psfAlbumDownloaded) ||
                     (_isContainerAlbum && !_containerDownloaded)) &&
@@ -1133,10 +1303,18 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     final bytes = _localAlbum
                         ? _localBytes
                         : _tracks.fold<int>(0, (s, t) => s + t.totalFileSize);
-                    final label = bytes > 0
-                        ? '${l10n.albumTrackCount(_total)}  ·  '
-                            '${_fmtBytes(l10n, bytes)}'
-                        : l10n.albumTrackCount(_total);
+                    // Durée de l'album: somme des lignes CHARGÉES, suffixée
+                    // « + » quand elle est partielle — pistes sans durée, ou
+                    // pagination pas finie (voir albumDurationLabel).
+                    final dur = RewampDb.albumDurationLabel(_tracks);
+                    final label = [
+                      l10n.albumTrackCount(_total),
+                      if (dur != null)
+                        (_tracks.length < _total && !dur.endsWith('+'))
+                            ? '$dur+'
+                            : dur,
+                      if (bytes > 0) _fmtBytes(l10n, bytes),
+                    ].join('  ·  ');
                     return Text(label,
                         style: Theme.of(context).textTheme.bodySmall);
                   }),
@@ -1181,6 +1359,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                         : null,
                     onQueueAdd:       widget.onQueueAdd,
                     sharedFileAlbum:  _sharedFileAlbum,
+                    skippedShortSeconds: skippedShort.contains(_tracks[i])
+                        ? (_minSubsongMs / 1000).round()
+                        : null,
                   );
                 },
                 childCount: _tracks.length + (_hasMore ? 1 : 0),
@@ -1507,6 +1688,15 @@ class _AlbumTrackTile extends StatefulWidget {
   /// Subsong-grain score of a container album's row (mv_subsong_scores) —
   /// the synthetic preview rows carry no rating/popularity of their own.
   final SubsongScore? subsongScore;
+  /// Le SEUIL, en secondes, quand cette ligne sera ÉCARTÉE d'un « tout lire »
+  /// (Réglages → Lecture); null sinon. Grisée, et son sous-titre le dit — elle
+  /// reste jouable au tap. Calculé une fois pour la liste entière par
+  /// skippedQueueSubsongs, jamais par une règle recopiée ici.
+  ///
+  /// ⚠️ Le fait ET le seuil voyagent dans LE MÊME champ: en le relisant ici
+  /// dans le réglage global, un écran qui n'aurait pas encore reconstruit
+  /// afficherait un nombre qui ne correspond pas à son propre grisé.
+  final int? skippedShortSeconds;
 
   const _AlbumTrackTile({
     required this.index,
@@ -1518,6 +1708,7 @@ class _AlbumTrackTile extends StatefulWidget {
     this.forceLocal = false,
     this.sharedFileAlbum = false,
     this.subsongScore,
+    this.skippedShortSeconds,
   });
 
   @override
@@ -1593,6 +1784,11 @@ class _AlbumTrackTileState extends State<_AlbumTrackTile> {
       color: _isLocal ? cs.primary : cs.onSurfaceVariant,
     );
 
+    // Grisée = le seuil de durée minimale l'écartera d'un « tout lire ». On
+    // ÉTEINT le titre plutôt que de baisser l'opacité de la ligne: le
+    // sous-titre qui explique pourquoi doit rester lisible.
+    final skippedSecs = widget.skippedShortSeconds;
+    final skipped = skippedSecs != null;
     return ListTile(
       leading: SizedBox(
         width: 32,
@@ -1602,7 +1798,13 @@ class _AlbumTrackTileState extends State<_AlbumTrackTile> {
           textAlign: TextAlign.end,
         ),
       ),
-      title: ScrollingText(text: r.displayTitle),
+      // ⚠️ Par DefaultTextStyle, pas par `ScrollingText(style:)`: celui-ci
+      // REMPLACE le style hérité et un `TextStyle(color:)` nu perdrait la
+      // taille du titre de ListTile.
+      title: DefaultTextStyle.merge(
+        style: skipped ? TextStyle(color: cs.onSurfaceVariant) : null,
+        child: ScrollingText(text: r.displayTitle),
+      ),
       subtitle: Builder(builder: (_) {
         // Scores: the row's own file-grain pair (mig 207/208, one file per
         // track) when ANY of it exists, else the container's subsong-grain
@@ -1618,12 +1820,24 @@ class _AlbumTrackTileState extends State<_AlbumTrackTile> {
           // Shared-file albums: size belongs to the file, shown in the header —
           // not on each subsong row (it would sit on row 0 only = confusing).
           if (r.fileSize > 0 && !widget.sharedFileAlbum) r.fileSizeLabel,
+          if (RewampDb.listDurationMs(r) != null)
+            RewampDb.formatDurationMs(RewampDb.listDurationMs(r)!),
           if (rating != null) '★ ${rating.toStringAsFixed(1)}',
           // Percentile = a RANK: only the top of the basket says anything in
           // a listing (same 95 threshold as SongTile), clamp as ever.
           if ((pop ?? 0) >= 95)
             context.l10n.statsTopPercent((100 - pop!).clamp(1, 100)),
         ];
+        // La raison du grisé passe AVANT le reste: c'est la seule information
+        // de cette ligne qui explique pourquoi elle ne ressemble pas aux
+        // autres.
+        // Le test porte sur le champ lui-même: s'appuyer sur la promotion à
+        // travers le booléen `skipped` marche, mais elle est récente et
+        // discrète — autant que le code dise ce dont il dépend.
+        if (skippedSecs != null) {
+          parts.insert(
+              0, context.l10n.subsongSkippedShort(skippedSecs));
+        }
         return parts.isEmpty ? const SizedBox.shrink()
             : ScrollingText(text: parts.join('  ·  '));
       }),

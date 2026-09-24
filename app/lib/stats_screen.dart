@@ -8,6 +8,7 @@ import 'shell_insets.dart';
 import 'sync_service.dart';
 import 'competition_screen.dart' show globalOnPlayOnlineSong;
 import 'album_detail_screen.dart';
+import 'scrolling_text.dart';
 import 'rewamp_db.dart' show OnPlayLocalAlbum, RewampDb, SearchResult;
 import 'track_options_sheet.dart'
     show showPlayChoiceSheet, PlayChoice, globalOnQueueAdd,
@@ -40,8 +41,8 @@ class _Period {
   /// Human label, derived from [id] — the period objects are built in places
   /// with no BuildContext (state field initializers), so the label can only be
   /// localized at render time.
-  ///   'd<N>' = last N days · 'year' = this year · 'all' = everything
-  ///   'D<YYYY-MM-DD>' = one day · 'm<YYYY-MM>' = one month · 'y<YYYY>' = one year
+  ///   `d<N>` = last N days · 'year' = this year · 'all' = everything
+  ///   `D<YYYY-MM-DD>` = one day · `m<YYYY-MM>` = one month · `y<YYYY>` = one year
   String label(AppLocalizations l10n) {
     if (id == 'all')  return l10n.statsPeriodAll;
     if (id == 'year') return l10n.statsPeriodThisYear;
@@ -581,6 +582,58 @@ class _StatsScreenState extends State<StatsScreen> {
 
 // ── Full-list screens ─────────────────────────────────────────────────────────
 
+/// La liste complète d'un rail LOCAL de l'accueil (« Vos tendances »,
+/// « Votre top de tous les temps ») — la carte « … » du rail pousse cet
+/// écran: MÊME source (statsTopTracks, période du rail comprise), plafond
+/// 1000 au lieu de 15. Publique exprès; les écrans internes des Stats
+/// gardent leur _TopTracksScreen à périodes nommées.
+class LocalTopTracksScreen extends StatelessWidget {
+  final String title;
+  /// Epoch ms; null = tout l'historique.
+  final int? from;
+  final OnPlayLocalAlbum? onPlay;
+
+  const LocalTopTracksScreen({
+    super.key,
+    required this.title,
+    this.from,
+    this.onPlay,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+          title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+      body: FutureBuilder<List<TrackStat>>(
+        future: LocalDb.instance.statsTopTracks(from: from, limit: 1000),
+        builder: (context, snap) {
+          final stats = snap.data;
+          if (stats == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (stats.isEmpty) {
+            return Center(
+                child: Text(context.l10n.statsNoPlays,
+                    style: TextStyle(color: cs.outline)));
+          }
+          return ListView.builder(
+            padding: shellInset(context, EdgeInsets.zero),
+            itemCount: stats.length,
+            itemBuilder: (_, i) => _TrackRow(
+              rank: i + 1,
+              stat: stats[i],
+              cs:   cs,
+              onTap: () => playStatTrack(context, stats, i, onPlay),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _TopTracksScreen extends StatelessWidget {
   final String   title;
   final _Period  period;
@@ -752,7 +805,10 @@ Future<void> playStatTrack(BuildContext ctx, List<TrackStat> stats, int index,
   // courant ne bouge pas. Les DEUX branches passent par là: la locale écrase
   // la file avec toute la liste de stats, l'autre avec un morceau.
   final choice = await showPlayChoiceSheet(ctx,
-      title: t.title, subtitle: t.artist);
+      title: t.title, subtitle: t.artist,
+      // La ligne locale: la feuille y lit de quoi proposer « Voir l'album » et
+      // « Voir les subsongs ».
+      track: t);
   if (choice == null || !ctx.mounted) return;
 
   if (t.filePath.isNotEmpty) {
@@ -910,8 +966,7 @@ class _KeyRow extends StatelessWidget {
             style: theme.titleSmall?.copyWith(
                 color: cs.outline, fontWeight: FontWeight.bold)),
       ),
-      title: Text(upper ? stat.key.toUpperCase() : stat.key,
-          maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: ScrollingText(text: upper ? stat.key.toUpperCase() : stat.key),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -1015,7 +1070,7 @@ class _TrackRow extends StatelessWidget {
           ),
         ),
       ]),
-      title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: ScrollingText(text: title),
       subtitle: t.artist != null
           ? Text(t.artist!, maxLines: 1, overflow: TextOverflow.ellipsis)
           : null,

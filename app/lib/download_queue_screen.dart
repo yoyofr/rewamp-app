@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'artwork_image.dart';
 import 'download_manager.dart';
 import 'l10n.dart';
+import 'scrolling_text.dart';
 import 'rewamp_db.dart' show DownloadInfo, RewampDb;
 
 /// The download queue: the active fetch (live progress from
@@ -85,8 +86,7 @@ class DownloadQueueScreen extends StatelessWidget {
                               ],
                             ),
                           ),
-                          title: Text(active.label,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          title: ScrollingText(text: active.label),
                           subtitle: info?.progress != null
                               ? Text('${(info!.progress! * 100).round()} %')
                               : null,
@@ -119,8 +119,7 @@ class DownloadQueueScreen extends StatelessWidget {
                             ],
                           ),
                         ),
-                        title: Text(direct.label,
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        title: ScrollingText(text: direct.label),
                         subtitle: direct.progress != null
                             ? Text('${(direct.progress! * 100).round()} %')
                             : null,

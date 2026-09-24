@@ -186,8 +186,13 @@ public:
 	}
     
     void setLoopMode(int loop) {
+        // YOYOFR (rewamp): honorer l'ARGUMENT — l'original posait 1 quel que
+        // soit `loop`, donc « couper la boucle » était impossible. Sous
+        // LOOPED, le renderer zxtune reboucle au POINT DE BOUCLE du module
+        // (pas au début): c'est ce qui rend le repeat-morceau d'un .ay
+        // inaudible là où une relance à zéro s'entendait.
         Parameters::Container::Ptr params= _player->GetParameters();
-        params->SetValue(Parameters::ZXTune::Sound::LOOPED, 1);
+        params->SetValue(Parameters::ZXTune::Sound::LOOPED, loop ? 1 : 0);
     }
 		
 	void decodeInitialize(unsigned int p_subsong, SongInfo & p_info) {

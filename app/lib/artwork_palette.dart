@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 import 'user_settings.dart';
+import 'app_theme.dart';
 
 /// The artwork tint of the player that is currently open, shared with the
 /// panels it opens (voices, track info, options) so they read as part of the
@@ -86,8 +87,9 @@ class PlayerTint {
   /// Theme override for anything sitting ON the tinted sheet. The sheet is now
   /// always deep (see [_tinted]) whatever the app theme, so its foregrounds
   /// must come from a DARK scheme — in a light app theme the inherited black
-  /// text would be illegible. Built exactly like the app's themes
-  /// (`ThemeData(useMaterial3, ColorScheme.fromSeed)`, no custom typography)
+  /// text would be illegible. Built by the app's ONE theme factory
+  /// (`rewampThemeData`, app_theme.dart — it was a copy, and the copy lost the
+  /// CJK font fallback: kanji in rectangles on the player and the ⓘ panel)
   /// but seeded from the artwork's dominant colour, so accents (slider,
   /// buttons, switches) stay in the cover's family. Null when the tint is
   /// off/unavailable — callers keep the inherited theme.
@@ -98,14 +100,10 @@ class PlayerTint {
     if (_themeMemo?.$1 != (seed, surface)) {
       _themeMemo = (
         (seed, surface),
-        ThemeData(
-          useMaterial3: true,
+        rewampThemeData(ColorScheme.fromSeed(
+          seedColor: seed,
           brightness: Brightness.dark,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: seed,
-            brightness: Brightness.dark,
-          ).copyWith(surface: surface),
-        ),
+        ).copyWith(surface: surface)),
       );
     }
     return _themeMemo!.$2;

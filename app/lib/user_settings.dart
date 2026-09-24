@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'home_sections.dart';
+import 'shell_tabs.dart';
+
 /// Singleton that persists all user preferences via SharedPreferences.
 /// Extends ChangeNotifier so widgets can rebuild on change.
 ///
@@ -22,7 +25,7 @@ class UserSettings extends ChangeNotifier {
   }
 
   /// Dump every stored preference with a type tag (backup export). JSON can't
-  /// tell an int from a double or a String from a List<String>, so each value
+  /// tell an int from a double or a String from a `List<String>`, so each value
   /// is wrapped as {'t': type, 'v': value}.
   Map<String, dynamic> dumpAll() {
     final out = <String, dynamic>{};
@@ -135,6 +138,62 @@ class UserSettings extends ChangeNotifier {
 
   set notifyTrackChange(bool v) {
     _p.setBool(_kNotifyTrackChange, v);
+    notifyListeners();
+  }
+
+  static const _kWindowAlwaysOnTop = 'ui.window_always_on_top';
+
+  /// Fenêtre « toujours au premier plan » (bureau). Vaut pour la fenêtre
+  /// principale ET le mini lecteur — c'est la même fenêtre. L'écrire ne suffit
+  /// PAS: passer par `MiniWindow.setAlwaysOnTop`, qui pose aussi l'état natif.
+  bool get windowAlwaysOnTop => _p.getBool(_kWindowAlwaysOnTop) ?? false;
+
+  set windowAlwaysOnTop(bool v) {
+    _p.setBool(_kWindowAlwaysOnTop, v);
+    notifyListeners();
+  }
+
+  /// Dernière TAILLE du mini lecteur, une par mode (`viz` ou compact). État de
+  /// vue, pas un réglage. La POSITION, elle, n'est pas persistée: un écran
+  /// débranché entre deux lancements mettrait la fenêtre hors champ, alors
+  /// qu'une taille reste valable partout.
+  (double, double)? miniWindowSize({required bool viz}) {
+    final k = viz ? 'viz' : 'compact';
+    final w = _p.getDouble('ui.mini_window_${k}_w');
+    final h = _p.getDouble('ui.mini_window_${k}_h');
+    return (w == null || h == null) ? null : (w, h);
+  }
+
+  void setMiniWindowSize(double w, double h, {required bool viz}) {
+    final k = viz ? 'viz' : 'compact';
+    _p.setDouble('ui.mini_window_${k}_w', w);
+    _p.setDouble('ui.mini_window_${k}_h', h);
+    // Pas de notifyListeners: rien n'affiche cette valeur, et UserSettings
+    // réveille une vingtaine d'écouteurs.
+  }
+
+  static const _kMiniWindowVizMode = 'ui.mini_window_viz_mode';
+
+  /// Mini lecteur: `false` = compact (défaut), `true` = visualiseur. État de
+  /// vue retenu d'une fois sur l'autre, pas un réglage. Passer par
+  /// `MiniWindow.setVizMode`, qui redimensionne aussi la fenêtre.
+  bool get miniWindowVizMode => _p.getBool(_kMiniWindowVizMode) ?? false;
+
+  set miniWindowVizMode(bool v) {
+    _p.setBool(_kMiniWindowVizMode, v);
+    notifyListeners();
+  }
+
+  static const _kMiniWindowCoverFill = 'ui.mini_window_cover_fill';
+
+  /// Pochette du mini lecteur: `false` = entière (« aspect fit », défaut),
+  /// `true` = zoomée pour remplir sa case. Un ÉTAT de vue qu'un clic sur la
+  /// pochette alterne — pas un réglage, donc absent de kEnginePrefKeys /
+  /// kSectionKeys (comme `_kVizEffect`).
+  bool get miniWindowCoverFill => _p.getBool(_kMiniWindowCoverFill) ?? false;
+
+  set miniWindowCoverFill(bool v) {
+    _p.setBool(_kMiniWindowCoverFill, v);
     notifyListeners();
   }
 
@@ -298,6 +357,17 @@ class UserSettings extends ChangeNotifier {
   static const _kVizVoiceNames = 'vis.voice_names';
 
   /// Overlay each voice cell of the per-voice oscilloscope with its name.
+  /// Ce que le libellé d'une voie DIT dans l'oscilloscope par voies:
+  /// 0 = le nom de la VOIE (canal, puce), 1 = l'INSTRUMENT qu'elle joue en ce
+  /// moment (nom du preset / de l'échantillon quand le moteur en donne un,
+  /// sinon « Inst n »). Sans instrument connu, le nom de la voie reste.
+  static const _kVizVoiceNameSource = 'viz.voice_name_source';
+  int get vizVoiceNameSource => (_p.getInt(_kVizVoiceNameSource) ?? 0).clamp(0, 1);
+  set vizVoiceNameSource(int v) {
+    _p.setInt(_kVizVoiceNameSource, v.clamp(0, 1));
+    notifyListeners();
+  }
+
   bool get vizVoiceNames => _p.getBool(_kVizVoiceNames) ?? true;
 
   set vizVoiceNames(bool v) {
@@ -312,6 +382,22 @@ class UserSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Plafond de cadence des visualiseurs, en images par seconde — 0 = celle de
+  /// l'écran. Défaut **60**: un téléphone récent rafraîchit à 120 Hz, donc un
+  /// visualiseur y dépense deux fois le GPU et la batterie pour une différence
+  /// que l'œil ne réclame pas sur une forme d'onde. Le plafond vit dans le
+  /// natif (`rewamp_viz_set_max_fps`), UNE règle pour les deux chemins de
+  /// rendu — le ticker Dart d'Apple/Linux et la boucle SurfaceView d'Android.
+  static const _kVizMaxFps = 'vis.max_fps';
+  int get vizMaxFps {
+    final v = _p.getInt(_kVizMaxFps) ?? 60;
+    return (v == 0 || v == 30 || v == 60) ? v : 60;
+  }
+  set vizMaxFps(int v) {
+    _p.setInt(_kVizMaxFps, v);
+    notifyListeners();
+  }
+
   static const _kVizLineThickness = 'vis.line_thickness';
 
   /// Oscilloscope line thickness multiplier (0.5–3). Default 2.0: at 1.0 the
@@ -323,17 +409,21 @@ class UserSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  // CRT oscilloscope effects — levels 0=off, 1=low, 2=high.
-  static const _kCrtGlow  = 'vis.crt_glow_level';
+  // Effet CRT des oscilloscopes — niveaux 0=éteint, 1=bas, 2=haut.
+  //
+  // ⚠️ Le HALO (« glow ») a été RETIRÉ le 2026-09-15 (demande utilisateur):
+  // deux passes larges et additives sous chaque trace, sur l'oscilloscope
+  // stéréo comme sur celui par voies. Les bits 0-1 du masque restent donc
+  // toujours à zéro — l'encodage ne bouge pas, pour que `rewamp_set_crt_flags`
+  // garde la même signification des deux côtés.
   static const _kCrtSpeed = 'vis.crt_speed_level';
 
-  int get crtGlowLevel => (_p.getInt(_kCrtGlow) ?? 0).clamp(0, 2);
-  set crtGlowLevel(int v) { _p.setInt(_kCrtGlow, v.clamp(0, 2)); notifyListeners(); }
   int get crtSpeedLevel => (_p.getInt(_kCrtSpeed) ?? 0).clamp(0, 2);
   set crtSpeedLevel(int v) { _p.setInt(_kCrtSpeed, v.clamp(0, 2)); notifyListeners(); }
 
-  /// Packed for rewamp_set_crt_flags: bits0-1 = glow level, bits2-3 = speed level.
-  int get crtFlags => crtGlowLevel | (crtSpeedLevel << 2);
+  /// Packed for rewamp_set_crt_flags: bits0-1 = halo (retiré, toujours 0),
+  /// bits2-3 = niveau d'intensité le long de la trace.
+  int get crtFlags => crtSpeedLevel << 2;
 
   // Notation-visualizer color palette (index into the C palette table).
   static const _kNotePalette = 'vis.note_palette';
@@ -389,6 +479,13 @@ class UserSettings extends ChangeNotifier {
   bool get noteBoxStyle => _p.getBool(_kNoteBoxStyle) ?? true;
   set noteBoxStyle(bool v) { _p.setBool(_kNoteBoxStyle, v); notifyListeners(); }
 
+  /// Ce que la couleur d'une boîte DÉSIGNE: 0 = la voix, 1 = l'instrument —
+  /// le même choix que le piano (`pianoColorMode`), et la même règle: sans
+  /// instrument connu (SID, UADE, puces) la couleur retombe sur la voix.
+  static const _kNoteColorMode = 'viz.note_color_mode';
+  int get noteColorMode => (_p.getInt(_kNoteColorMode) ?? 0).clamp(0, 1);
+  set noteColorMode(int v) { _p.setInt(_kNoteColorMode, v.clamp(0, 1)); notifyListeners(); }
+
   // ── Pattern visualizer ────────────────────────────────────────────────────
   // Scroll mode: 0 = fixed bar (current row centered, timeline scrolls under
   // it), 1 = moving bar (page anchored to the current pattern, the bar moves
@@ -416,14 +513,70 @@ class UserSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Glyph zoom: index into patternSizeValues (x1 / x1.5 / x2).
-  static const _kPatternSize = 'vis.pattern_size';
-  static const List<double> patternSizeValues = [1.0, 1.5, 2.0];
-  int get patternSizeIndex =>
-      (_p.getInt(_kPatternSize) ?? 0).clamp(0, patternSizeValues.length - 1);
-  double get patternSize => patternSizeValues[patternSizeIndex];
-  set patternSizeIndex(int v) {
-    _p.setInt(_kPatternSize, v.clamp(0, patternSizeValues.length - 1));
+  // Ligne active ÉPINGLÉE sur la barre de surbrillance: le motif défile
+  // toujours en continu, mais la barre affiche la ligne ENTENDUE alignée au
+  // pixel (notes, instruments, volumes, effets) au lieu des deux demi-lignes
+  // qui la traversent. N'a de sens qu'avec le défilement fluide et la barre
+  // fixe. Défaut ON: c'est ce qui rend la bande centrale lisible, et sans lui
+  // le défilement fluide y montre en permanence deux moitiés de lignes —
+  // précisément là où l'œil se pose.
+  static const _kPatternPinRow = 'vis.pattern_pinrow';
+  bool get patternPinnedRow => _p.getBool(_kPatternPinRow) ?? true;
+  set patternPinnedRow(bool v) {
+    _p.setBool(_kPatternPinRow, v);
+    notifyListeners();
+  }
+
+  // Zoom des glyphes: une VALEUR CONTINUE, de kPatternSizeMin à
+  // kPatternSizeMax par pas de kPatternSizeStep — pas un index dans une liste.
+  // Le pincement à deux doigts la pilote, et des paliers ×1 / ×1.5 / ×2 y
+  // faisaient un geste en escalier là où le doigt attend une réponse continue.
+  //
+  // DEUX clés héritées à migrer, chacune une génération précédente:
+  //  - `vis.pattern_size`  : index dans [1, 1.5, 2] (l'origine);
+  //  - `vis.pattern_size2` : index dans [0.25, 0.5, 0.75, 1, 1.5, 2] (l'étape
+  //    où les tailles réduites sont arrivées, décalées de +3).
+  // La migration se fait À LA LECTURE, une fois, et les deux clés partent avec
+  // la nouvelle aux remises à zéro — sinon un reset retomberait sur un ancien
+  // choix au lieu du défaut.
+  static const _kPatternSizeLegacy = 'vis.pattern_size';
+  static const _kPatternSizeIdx    = 'vis.pattern_size2';
+  static const _kPatternSize       = 'vis.pattern_size_f';
+  static const double kPatternSizeMin  = 0.15;
+  static const double kPatternSizeMax  = 2.0;
+  static const double kPatternSizeStep = 0.01;
+  /// Les valeurs des deux générations d'INDEX, pour la migration seulement.
+  static const List<double> _patternSizeIdxValues =
+      [0.25, 0.5, 0.75, 1.0, 1.5, 2.0];
+
+  /// Quantifie au pas et borne — un seul endroit, pour que le pincement, le
+  /// curseur des réglages et le menu du visualiseur posent tous des valeurs
+  /// de la même grille (sinon « ×0.8500000000000001 » finit à l'écran).
+  static double quantizePatternSize(double v) {
+    final n = (v / kPatternSizeStep).round() * kPatternSizeStep;
+    return double.parse(
+        n.clamp(kPatternSizeMin, kPatternSizeMax).toStringAsFixed(2));
+  }
+
+  double get patternSize {
+    final f = _p.getDouble(_kPatternSize);
+    if (f != null) return quantizePatternSize(f);
+    final i2 = _p.getInt(_kPatternSizeIdx);
+    if (i2 != null) {
+      return _patternSizeIdxValues[
+          i2.clamp(0, _patternSizeIdxValues.length - 1)];
+    }
+    final i1 = _p.getInt(_kPatternSizeLegacy);
+    // L'index d'origine 0 valait ×1 — soit l'index 3 de la génération suivante.
+    if (i1 != null) {
+      return _patternSizeIdxValues[
+          (i1 + 3).clamp(0, _patternSizeIdxValues.length - 1)];
+    }
+    return 1.0;
+  }
+
+  set patternSize(double v) {
+    _p.setDouble(_kPatternSize, quantizePatternSize(v));
     notifyListeners();
   }
 
@@ -447,7 +600,13 @@ class UserSettings extends ChangeNotifier {
   }
 
   static const _kPatternPalette = 'vis.pattern_palette';
-  static const int patternPaletteCount = 6;
+  /// ⚠️ DOIT valoir `PatternPalette.presets.length` — cette classe ne peut pas
+  /// le lire (pattern_scope_widget importe UserSettings, pas l'inverse), donc
+  /// le nombre est RECOPIÉ ici et il borne l'index choisi. Le laisser derrière
+  /// a un symptôme trompeur: le sélecteur PROPOSE la nouvelle palette et le
+  /// réglage retombe en silence sur l'avant-dernière. Épinglé par
+  /// `pattern_palette_visualiser_test`.
+  static const int patternPaletteCount = 7;
   int get patternPalette =>
       (_p.getInt(_kPatternPalette) ?? 0).clamp(0, patternPaletteCount - 1);
   set patternPalette(int v) {
@@ -462,6 +621,11 @@ class UserSettings extends ChangeNotifier {
   static const _kStereoRight  = 'vis.stereo_right_color';
   static const _kStereoBicolor = 'vis.stereo_bicolor';
   static const _kSpectrumPalette = 'vis.spectrum_palette';
+  static const _kPianoMode  = 'vis.piano_mode';
+  static const _kPianoColor = 'vis.piano_color';
+  static const _kPianoGlow  = 'vis.piano_glow';
+  static const _kPianoLight = 'vis.piano_light';
+  static const _kPianoNames = 'vis.piano_voice_names';
 
   int  get scopeColor => _p.getInt(_kScopeColor) ?? 0x00FF44;        // green
   set scopeColor(int v) { _p.setInt(_kScopeColor, v); notifyListeners(); }
@@ -478,6 +642,53 @@ class UserSettings extends ChangeNotifier {
   /// frequency with brightness following amplitude (the Modizer palette).
   int get spectrumPalette => _p.getInt(_kSpectrumPalette) ?? 0;
   set spectrumPalette(int v) { _p.setInt(_kSpectrumPalette, v); notifyListeners(); }
+
+  /// Piano (viz mode 6): 0 = keyboards (one per voice, shared when zoomed —
+  /// the default), 1 = falling notes onto one keyboard (the Synthesia look).
+  int get pianoMode => _p.getInt(_kPianoMode) ?? 0;
+  set pianoMode(int v) { _p.setInt(_kPianoMode, v); notifyListeners(); }
+  /// 0 = keys/bars coloured by VOICE (the notation palette), 1 = by
+  /// INSTRUMENT (a sample keeps its colour whichever voice plays it).
+  int get pianoColorMode => _p.getInt(_kPianoColor) ?? 0;
+  set pianoColorMode(int v) { _p.setInt(_kPianoColor, v); notifyListeners(); }
+  bool get pianoGlow => _p.getBool(_kPianoGlow) ?? true;
+  set pianoGlow(bool v) { _p.setBool(_kPianoGlow, v); notifyListeners(); }
+  /// A light in front of each struck key, shadows cast by the black keys.
+  bool get pianoLighting => _p.getBool(_kPianoLight) ?? true;
+  set pianoLighting(bool v) { _p.setBool(_kPianoLight, v); notifyListeners(); }
+  /// Legend strip at the bottom: a colour square + name per voice.
+  bool get pianoVoiceNames => _p.getBool(_kPianoNames) ?? false;
+  set pianoVoiceNames(bool v) { _p.setBool(_kPianoNames, v); notifyListeners(); }
+
+  /// The colour the C renderers give voice [v] under the notation palette —
+  /// nv_voice_color mirrored: 16 base colours, then a lighter (40 % toward
+  /// white) and a darker (×0.55) cycle. Used by the piano's voice legend.
+  int noteVoiceColor(int v) {
+    final pal = notePaletteColors[notePalette];
+    final hex = pal[v % pal.length];
+    double r = ((hex >> 16) & 0xFF) / 255.0,
+           g = ((hex >> 8) & 0xFF) / 255.0,
+           b = (hex & 0xFF) / 255.0;
+    switch ((v ~/ pal.length) % 3) {
+      case 1:
+        r += (1 - r) * 0.40; g += (1 - g) * 0.40; b += (1 - b) * 0.40;
+      case 2:
+        r *= 0.55; g *= 0.55; b *= 0.55;
+    }
+    return 0xFF000000 |
+        ((r * 255).round() << 16) | ((g * 255).round() << 8) | (b * 255).round();
+  }
+
+  /// La couleur que les rendus C donnent à l'INSTRUMENT [instr] — miroir de
+  /// pk_note_color: au-delà des 16 teintes, la teinte est DÉCALÉE de 5 entrées
+  /// par palier de luminosité, sinon n et n+16 ne différeraient que par leur
+  /// clarté. 0 (aucun instrument) retombe sur la couleur de la voix 0.
+  int noteInstrumentColor(int instr) {
+    if (instr <= 0) return noteVoiceColor(0);
+    final size = notePaletteColors[notePalette].length;
+    final tier = (instr ~/ size) % 3;
+    return noteVoiceColor((instr + 5 * tier) % size + tier * size);
+  }
 
   // ── Lecture — libopenmpt ───────────────────────────────────────────────────
   //
@@ -502,6 +713,32 @@ class UserSettings extends ChangeNotifier {
   /// 0 = off, 1 = A500, 2 = A1200.
   int get omptAmigaFilter => (_p.getInt(_kOmptAmigaFilter) ?? 0).clamp(0, 2);
   set omptAmigaFilter(int v) { _p.setInt(_kOmptAmigaFilter, v); notifyListeners(); }
+
+  // libxmp engine params (Settings → Moteurs → libxmp). Les valeurs par défaut
+  // sont celles que le greffon lit quand rien n'est stocké (voir
+  // xmp_apply_engine_params): spline, 70 % de séparation, amplification 1.
+  static const _kXmpInterpolation = 'xmp_interpolation';
+  static const _kXmpStereoSep     = 'xmp_stereo_sep';
+  static const _kXmpAmplify       = 'xmp_amplify';
+  static const _kXmpMasterVol     = 'xmp_master_volume';
+  static const _kXmpDspLowpass    = 'xmp_dsp_lowpass';
+  static const _kXmpAmigaMixer    = 'xmp_amiga_mixer';
+  /// 0 = nearest, 1 = linéaire, 2 = spline cubique.
+  int get xmpInterpolation => (_p.getInt(_kXmpInterpolation) ?? 2).clamp(0, 2);
+  set xmpInterpolation(int v) { _p.setInt(_kXmpInterpolation, v); notifyListeners(); }
+  int get xmpStereoSep => (_p.getInt(_kXmpStereoSep) ?? 70).clamp(0, 100);
+  set xmpStereoSep(int v) { _p.setInt(_kXmpStereoSep, v); notifyListeners(); }
+  /// Amplification interne du mixeur libxmp (0-3, 1 = défaut amont).
+  int get xmpAmplify => (_p.getInt(_kXmpAmplify) ?? 1).clamp(0, 3);
+  set xmpAmplify(int v) { _p.setInt(_kXmpAmplify, v); notifyListeners(); }
+  /// Volume du module, en pourcent (libxmp attend 0-200).
+  int get xmpMasterVolume => (_p.getInt(_kXmpMasterVol) ?? 100).clamp(0, 200);
+  set xmpMasterVolume(int v) { _p.setInt(_kXmpMasterVol, v); notifyListeners(); }
+  bool get xmpDspLowpass => _p.getBool(_kXmpDspLowpass) ?? true;
+  set xmpDspLowpass(bool v) { _p.setBool(_kXmpDspLowpass, v); notifyListeners(); }
+  /// Mixeur Paula (Amiga) sur les modules d'origine Amiga — sans effet ailleurs.
+  bool get xmpAmigaMixer => _p.getBool(_kXmpAmigaMixer) ?? false;
+  set xmpAmigaMixer(bool v) { _p.setBool(_kXmpAmigaMixer, v); notifyListeners(); }
 
   // GME engine params (Settings → Moteurs → GME).
   static const _kGmeSilence     = 'gme_silence_detection';
@@ -581,18 +818,21 @@ class UserSettings extends ChangeNotifier {
   /// the stored values so the getters fall back to them.
   static const Map<String, List<String>> kEngineKeysByEngine = {
     'openmpt': [_kOmptMasterVol, _kOmptAmigaFilter, _kOmptInterpolation, _kOmptStereoSep],
+    'xmp':     [_kXmpInterpolation, _kXmpStereoSep, _kXmpAmplify,
+                _kXmpMasterVol, _kXmpDspLowpass, _kXmpAmigaMixer],
     'gme':     [_kGmeSilence, _kGmeStereoDepth, _kGmeEqEnabled, _kGmeEqBass, _kGmeEqTreble],
     'gbs':     [_kGbsHpFilter],
     'gsf':     [_kGsfInterpolation, _kGsfLowpass, _kGsfEcho],
     'midi':    [_kMidiGain, _kMidiPolyphony, _kMidiReverb, _kMidiChorus,
-                _kMidiInterp],
+                _kMidiInterp, _kMidiMt32ToGm],
+    'mt32':    [_kMt32Model, _kMt32Reverb, _kMt32Gain],
     'uade':    [_kUadePostfx, _kUadePanOn, _kUadePanValue, _kUadeHeadphones,
                 _kUadeGainOn, _kUadeGainValue, _kUadeLed, _kUadeFilterType],
     // Which engine wins a shared format (Settings → Moteurs → Décodeurs par
     // défaut). Its own group: these are routing choices, not knobs of the
     // engine whose page used to host them — resetting UADE must not silently
     // hand the Amiga trackers back to libopenmpt.
-    'decoders': [_kAmigaTrackerPlugin, _kNsfPlugin, _kGbsPlugin, _kSndhPlugin],
+    'decoders': [_kAmigaTrackerPlugin, _kNsfPlugin, _kGbsPlugin, _kSndhPlugin, _kMidiSynth],
     'sid':     [_kSidEngine, _kSidAutoFilter, _kSidFilter,
                 _kSid2ndOn, _kSid2ndAddr, _kSid3rdOn, _kSid3rdAddr,
                 _kSidSampling, _kSidClock, _kSidModel,
@@ -609,7 +849,8 @@ class UserSettings extends ChangeNotifier {
                 _kNsfVrc7Patch, _kNsfVrc7Opll],
     'he':      [_kHeSpuMain, _kHeSpuReverb],
     'adplug':  [_kAdplugSurround],
-    'vgm':     [_kVgmYm2612, _kVgmYmf262, _kVgmYm3812, _kVgmQsound, _kVgmRf5c68,
+    'vgm':     [_kVgmJpnTags,
+                _kVgmYm2612, _kVgmYmf262, _kVgmYm3812, _kVgmQsound, _kVgmRf5c68,
                 _kVgmGb, _kVgmYm2413, _kVgmYm2151, _kVgmAy8910, _kVgmNes, _kVgmSn76496, _kVgmSaa1099, _kVgmC6280],
   };
 
@@ -620,20 +861,34 @@ class UserSettings extends ChangeNotifier {
   static const Map<String, String> kEnginePrefKeys = {
     // Général
     'themeMode': _kThemeMode, 'artworkTintedPlayer': _kArtworkTintedPlayer,
-    'notifyTrackChange': _kNotifyTrackChange, 'glassEffect': _kGlassEffect,
+    'notifyTrackChange': _kNotifyTrackChange,
+    'windowAlwaysOnTop': _kWindowAlwaysOnTop, 'glassEffect': _kGlassEffect,
     // Visualisation
     'showVisualizer': _kShowVisualizer, 'vizArtworkOpacity': _kVizArtworkOpacity,
     'vizKeepAwake': _kVizKeepAwake,
     'vizVoiceGrid': _kVizVoiceGrid, 'vizVoiceNames': _kVizVoiceNames,
+    'vizMaxFps': _kVizMaxFps,
+    'vizVoiceNameSource': _kVizVoiceNameSource,
     'vizLineThickness': _kVizLineThickness,
-    'crtGlowLevel': _kCrtGlow, 'crtSpeedLevel': _kCrtSpeed,
+    'crtSpeedLevel': _kCrtSpeed,
     'notePalette': _kNotePalette, 'noteBoxStyle': _kNoteBoxStyle,
+    'noteColorMode': _kNoteColorMode,
     'patternScrollMode': _kPatternScroll, 'patternShowVolume': _kPatternVolume,
     'patternPalette': _kPatternPalette,
-    'patternSizeIndex': _kPatternSize, 'patternColumns': _kPatternColumns,
+    'patternSize': _kPatternSize, 'patternColumns': _kPatternColumns,
+    // ⚠️ Un nom ABSENT d'ici rend `_ResetDot` invisible — en silence: il sort
+    // sur `prefKey == null` sans rien dessiner. Le réglage garde son défaut et
+    // sa remise à zéro de section, mais l'utilisateur n'a aucun moyen de
+    // revenir au défaut depuis la ligne elle-même. Ces trois-là manquaient.
+    'patternSmoothScroll': _kPatternSmooth,
+    'patternPinnedRow': _kPatternPinRow,
+    'patternOpaqueBg': _kPatternOpaqueBg,
     'scopeColor': _kScopeColor, 'stereoMonoColor': _kStereoMono,
     'stereoLeftColor': _kStereoLeft, 'stereoRightColor': _kStereoRight,
     'stereoBicolor': _kStereoBicolor, 'spectrumPalette': _kSpectrumPalette,
+    'pianoMode': _kPianoMode, 'pianoColorMode': _kPianoColor,
+    'pianoGlow': _kPianoGlow, 'pianoLighting': _kPianoLight,
+    'pianoVoiceNames': _kPianoNames,
     'pmRandom': _kPmRandom, 'pmBlend': _kPmBlend, 'pmLockPreset': _kPmLock,
     'pmBlendTime': _kPmBlendTime, 'pmPresetDuration': _kPmDuration,
     'pmQuality': _kPmQuality, 'pmMeshX': _kPmMeshX, 'pmMeshY': _kPmMeshY,
@@ -642,13 +897,20 @@ class UserSettings extends ChangeNotifier {
     'pmAspectCorrection': _kPmAspect, 'pmPermissive': _kPmPermissive,
     'pmTransition': _kPmTransition,
     // Lecture
+    'queuePrefetchAll': _kQueuePrefetchAll,
+    'cdRipDeclick': _kCdRipDeclick,
     'silenceSkip': _kSilenceSkip, 'silenceSkipSecs': _kSilenceSkipSecs,
+    'minSubsongSecs': _kMinSubsongSecs,
+    'crossfadeSecs': _kCrossfadeSecs,
     'defaultTrackLength': _kDefaultTrackLength,
     'forceLoopMode': _kForceLoopMode, 'loopCount': _kLoopCount,
     'forceFadeout': _kForceFadeout, 'fadeoutSecs': _kFadeoutSecs,
     // Moteurs
     'omptMasterVolume': _kOmptMasterVol, 'omptAmigaFilter': _kOmptAmigaFilter,
     'omptInterpolation': _kOmptInterpolation, 'omptStereoSep': _kOmptStereoSep,
+    'xmpInterpolation': _kXmpInterpolation, 'xmpStereoSep': _kXmpStereoSep,
+    'xmpAmplify': _kXmpAmplify, 'xmpMasterVolume': _kXmpMasterVol,
+    'xmpDspLowpass': _kXmpDspLowpass, 'xmpAmigaMixer': _kXmpAmigaMixer,
     'gmeSilenceDetection': _kGmeSilence, 'gmeStereoDepth': _kGmeStereoDepth,
     'gmeEqEnabled': _kGmeEqEnabled, 'gmeEqBass': _kGmeEqBass,
     'gmeEqTreble': _kGmeEqTreble,
@@ -657,7 +919,9 @@ class UserSettings extends ChangeNotifier {
     'gsfEcho': _kGsfEcho,
     'midiGain': _kMidiGain, 'midiPolyphony': _kMidiPolyphony,
     'midiReverb': _kMidiReverb, 'midiChorus': _kMidiChorus,
-    'midiInterp': _kMidiInterp,
+    'midiInterp': _kMidiInterp, 'midiMt32ToGm': _kMidiMt32ToGm,
+    'midiSynth': _kMidiSynth, 'mt32Model': _kMt32Model, 'mt32Reverb': _kMt32Reverb,
+    'mt32Gain': _kMt32Gain,
     'uadePostfx': _kUadePostfx, 'uadePanEnabled': _kUadePanOn,
     'uadePanValue': _kUadePanValue, 'uadeHeadphones': _kUadeHeadphones,
     'uadeGainEnabled': _kUadeGainOn, 'uadeGainValue': _kUadeGainValue,
@@ -697,6 +961,7 @@ class UserSettings extends ChangeNotifier {
     'nsfVrc7Patch': _kNsfVrc7Patch, 'nsfVrc7Opll': _kNsfVrc7Opll,
     'heSpuMain': _kHeSpuMain, 'heSpuReverb': _kHeSpuReverb,
     'adplugSurround': _kAdplugSurround,
+    'vgmJapaneseTags': _kVgmJpnTags,
     'vgmYm2612Core': _kVgmYm2612, 'vgmYmf262Core': _kVgmYmf262,
     'vgmYm3812Core': _kVgmYm3812, 'vgmQsoundCore': _kVgmQsound,
     'vgmRf5c68Core': _kVgmRf5c68,
@@ -716,6 +981,12 @@ class UserSettings extends ChangeNotifier {
   /// Resets ONE setting to its default (removes the stored value).
   Future<void> resetSetting(String prefKey) async {
     await _p.remove(prefKey);
+    // La taille des motifs a une clé HÉRITÉE que la migration relit: la
+    // laisser en place ferait d'une remise à zéro un retour à l'ANCIEN choix.
+    if (prefKey == _kPatternSize) {
+      await _p.remove(_kPatternSizeIdx);
+      await _p.remove(_kPatternSizeLegacy);
+    }
     notifyListeners();
   }
 
@@ -737,23 +1008,33 @@ class UserSettings extends ChangeNotifier {
   /// Deliberately excluded: _kVizEffect (last-used visualizer, a state, not a
   /// setting), _kUserId, search/browse history.
   static const Map<String, List<String>> kSectionKeys = {
-    'general': [_kThemeMode, _kArtworkTintedPlayer],
+    'general': [_kThemeMode, _kArtworkTintedPlayer, _kWindowAlwaysOnTop],
     'visualisation': [
-      _kShowVisualizer, _kVizArtworkOpacity,
-      _kVizVoiceGrid, _kVizVoiceNames, _kVizLineThickness,
-      _kCrtGlow, _kCrtSpeed,
-      _kNotePalette, _kNoteBoxStyle,
+      _kShowVisualizer, _kVizArtworkOpacity, _kVizMaxFps,
+      _kVizVoiceGrid, _kVizVoiceNames, _kVizVoiceNameSource, _kVizLineThickness,
+      _kCrtSpeed,
+      _kNotePalette, _kNoteBoxStyle, _kNoteColorMode,
       _kPatternScroll, _kPatternVolume, _kPatternSmooth, _kPatternSize,
+      // Les DEUX clés héritées partent avec: sinon une remise à zéro
+      // retomberait sur elles par la migration au lieu du défaut.
+      _kPatternSizeIdx, _kPatternSizeLegacy,
       _kPatternColumns, _kPatternPalette, _kPatternOpaqueBg,
+      _kPatternPinRow,
       _kScopeColor, _kStereoMono, _kStereoLeft, _kStereoRight, _kStereoBicolor,
       _kSpectrumPalette,
+      _kPianoMode, _kPianoColor, _kPianoGlow, _kPianoLight, _kPianoNames,
       _kPmRandom, _kPmBlend, _kPmLock, _kPmBlendTime, _kPmDuration,
       _kPmQuality, _kPmMeshX, _kPmMeshY, _kPmBeatSens,
       _kPmHardcut, _kPmHardcutTime, _kPmHardcutSens, _kPmAspect, _kPmPermissive,
       _kPmTransition,
     ],
     'playback': [
-      _kSilenceSkip, _kSilenceSkipSecs, _kDefaultTrackLength,
+      _kQueuePrefetchAll, _kCdRipDeclick,
+      _kSilenceSkip, _kSilenceSkipSecs, _kMinSubsongSecs, _kDefaultTrackLength,
+      // `_kCrossfadeSecs` manquait: une remise à zéro de la section laissait
+      // le fondu croisé en place, en silence — la classe de bug que
+      // kEnginePrefKeys/kSectionKeys est là pour rendre visible.
+      _kCrossfadeSecs,
       _kForceLoopMode, _kLoopCount, _kForceFadeout, _kFadeoutSecs,
     ],
     // projectM's own 3rd-level page (a subset of 'visualisation') so its reset
@@ -762,7 +1043,11 @@ class UserSettings extends ChangeNotifier {
     // its reset restores only the grid's knobs.
     'pattern': [
       _kPatternScroll, _kPatternVolume, _kPatternSmooth, _kPatternSize,
+      // Les DEUX clés héritées partent avec: sinon une remise à zéro
+      // retomberait sur elles par la migration au lieu du défaut.
+      _kPatternSizeIdx, _kPatternSizeLegacy,
       _kPatternColumns, _kPatternPalette, _kPatternOpaqueBg,
+      _kPatternPinRow,
     ],
     'projectm': [
       _kPmRandom, _kPmBlend, _kPmLock, _kPmBlendTime, _kPmDuration,
@@ -964,6 +1249,9 @@ class UserSettings extends ChangeNotifier {
   set adplugSurround(bool v) { _p.setBool(_kAdplugSurround, v); notifyListeners(); }
 
   // libvgm chip emulator cores (0 = défaut compilation; 1..n = core explicite).
+  static const _kVgmJpnTags = 'vgm_japanese_tags';
+  bool get vgmJapaneseTags => _p.getBool(_kVgmJpnTags) ?? false;
+  set vgmJapaneseTags(bool v) { _p.setBool(_kVgmJpnTags, v); notifyListeners(); }
   static const _kVgmYm2612 = 'vgm_ym2612_core';
   static const _kVgmYmf262 = 'vgm_ymf262_core';
   static const _kVgmYm3812 = 'vgm_ym3812_core';
@@ -1049,8 +1337,14 @@ class UserSettings extends ChangeNotifier {
   /// in a preference, a URL, a log or a crash report.
   static const _kSecureAuthToken = 'rewamp.auth_token';
 
+  // Android: plus d'`encryptedSharedPreferences` — Jetpack Security est
+  // abandonné par Google, et flutter_secure_storage 10 migre TOUT SEUL les
+  // données existantes vers ses propres ciphers au premier accès. ⚠️ C'est
+  // cette migration qui interdit de sauter directement en v11, laquelle
+  // SUPPRIME l'ancien backend: un appareil qui n'a jamais tourné en v10 y
+  // perdrait son jeton, donc son compte.
   static const FlutterSecureStorage _secure = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    aOptions: AndroidOptions(),
     // first_unlock (not unlocked): a background media session may need to log a
     // play while the device is locked.
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
@@ -1389,6 +1683,38 @@ class UserSettings extends ChangeNotifier {
     }
   }
 
+  // ── Lecture — pré-téléchargement de la file ────────────────────────────────
+
+  static const _kQueuePrefetchAll = 'playback.queue_prefetch_all';
+
+  // Déclic de DÉBUT de piste sur les rips de CD audio (mp3/ape/ogg/flac…),
+  // quel que soit le moteur qui les joue (un `.ape` va à MAC, un `.ogg` à
+  // vgmstream): certains rips (jw_hes, jw_ssf…) ouvrent sur une douzaine
+  // d'échantillons corrompus à pleine échelle; le filtre les interpole puis
+  // se désarme seul après 200 ms de vraie musique. Actif par défaut — le coût
+  // en croisière est nul. Natif: src/rewamp_declick.c (posé par le
+  // datasource), oracle scripts/verify_declick.sh.
+  static const _kCdRipDeclick = 'playback.cd_rip_declick';
+  bool get cdRipDeclick => _p.getBool(_kCdRipDeclick) ?? true;
+  set cdRipDeclick(bool v) { _p.setBool(_kCdRipDeclick, v); notifyListeners(); }
+
+  /// Pré-télécharger TOUTE la file (défaut) ou seulement le morceau suivant.
+  ///
+  /// Dans les deux cas un SEUL téléchargement court à la fois — c'est la charge
+  /// qu'on borne, pas le nombre de morceaux. La différence est le CHAÎNAGE:
+  /// « tout » enchaîne sur le manquant suivant dès qu'un fichier a atterri,
+  /// « suivant » attend le prochain changement de piste.
+  ///
+  /// Défaut à FAUX (demandé le 2026-09-01): télécharger toute une file de
+  /// plusieurs centaines de morceaux sans qu'on l'ait demandé consomme disque
+  /// et réseau en silence. Qui veut la lecture sans trou l'active; le mode
+  /// « suivant seulement » couvre déjà le trou entre deux pistes.
+  bool get queuePrefetchAll => _p.getBool(_kQueuePrefetchAll) ?? false;
+  set queuePrefetchAll(bool v) {
+    _p.setBool(_kQueuePrefetchAll, v);
+    notifyListeners();
+  }
+
   // ── Lecture — détection de silence ─────────────────────────────────────────
 
   static const _kSilenceSkip     = 'playback.silence_skip';
@@ -1402,6 +1728,39 @@ class UserSettings extends ChangeNotifier {
   double get silenceSkipSeconds => _p.getDouble(_kSilenceSkipSecs) ?? 10.0;
   set silenceSkipSeconds(double v) {
     _p.setDouble(_kSilenceSkipSecs, v.clamp(1.0, 30.0));
+    notifyListeners();
+  }
+
+  // ── Lecture — sous-chansons trop courtes ───────────────────────────────────
+
+  static const _kMinSubsongSecs = 'playback.min_subsong_secs';
+
+  /// Durée minimale d'une sous-chanson pour qu'elle entre dans la liste et dans
+  /// la file. 0 = ne rien écarter.
+  ///
+  /// Un fichier à sous-chansons de JEU en tient couramment plus de bruitages
+  /// que de musique: un `.adl` Westwood mêle ses thèmes aux effets sonores du
+  /// jeu, dans la même table et sans rien qui les distingue. Mesuré, seuil à
+  /// 5 s: DUNE19.ADL garde 3 morceaux sur 43 (28 s, 36 s, 41 s — exactement sa
+  /// musique), LOREINTR.ADL 6 sur 28.
+  ///
+  /// ⚠️ Une durée INCONNUE n'est pas une durée courte: elle passe le filtre.
+  /// Et un filtre qui viderait la liste ne s'applique pas — un fichier qui n'a
+  /// que des morceaux courts doit rester jouable. Voir filterShortSubsongs.
+  double get minSubsongSeconds => _p.getDouble(_kMinSubsongSecs) ?? 5.0;
+  set minSubsongSeconds(double v) {
+    _p.setDouble(_kMinSubsongSecs, v.clamp(0.0, 10.0));
+    notifyListeners();
+  }
+
+  // ── Lecture — fondu croisé (crossfade) ─────────────────────────────────────
+  // 0 = désactivé (gapless pur), le DÉFAUT. > 0 = durée du recouvrement.
+  // Le natif coupe de lui-même les fondus par défaut des moteurs quand c'est
+  // actif — transparent, aucun réglage séparé (décision utilisateur).
+  static const _kCrossfadeSecs = 'playback.crossfade_secs';
+  double get crossfadeSeconds => _p.getDouble(_kCrossfadeSecs) ?? 0.0;
+  set crossfadeSeconds(double v) {
+    _p.setDouble(_kCrossfadeSecs, v.clamp(0.0, 8.0));
     notifyListeners();
   }
 
@@ -1510,8 +1869,8 @@ class UserSettings extends ChangeNotifier {
   static const _kPmSource = 'vis.pm_source';
 
   /// Active projectM preset source, encoded by PresetManager
-  /// ('bundled' | 'all' | 'user' | 'pack:<slug>' | 'packdir:<slug>/<dir>' |
-  /// 'plist:<localId>' | 'srvlist:<serverId>'). Default: bundled presets.
+  /// ('bundled' | 'all' | 'user' | `pack:<slug>` | `packdir:<slug>/<dir>` |
+  /// `plist:<localId>` | `srvlist:<serverId>`). Default: bundled presets.
   String get pmSource => _p.getString(_kPmSource) ?? 'bundled';
   set pmSource(String v) { _p.setString(_kPmSource, v); notifyListeners(); }
 
@@ -1593,11 +1952,39 @@ class UserSettings extends ChangeNotifier {
   static const _kMidiReverb    = 'playback.midi_reverb';
   static const _kMidiChorus    = 'playback.midi_chorus';
   static const _kMidiInterp    = 'playback.midi_interp';
+  static const _kMidiMt32ToGm  = 'playback.midi_mt32_to_gm';
+  static const _kMidiGainForced = 'playback.midi_gain_forced_v061';
 
-  /// Output gain (0.1–2.0; FluidLite's 0.2 default is far too quiet next to
-  /// the other engines, hence 0.8).
-  double get midiGain => _p.getDouble(_kMidiGain) ?? 0.8;
+  /// Gain de sortie (0,1–1,0, défaut 0,5). Le 0,8 posé par-dessus le défaut
+  /// de FluidLite (0,2, calibré pour 100 voix simultanées) saturait les MIDI
+  /// denses: 0,5 et un maximum ramené à 1,0.
+  ///
+  /// ⚠️ REPOSÉ UNE FOIS en beta 0.6.1, y compris sur une valeur choisie à la
+  /// main: un 2,0 hérité de l'ancienne échelle sort du curseur, et un 0,8
+  /// enregistré par une simple visite de l'écran des réglages n'est pas un
+  /// choix. La valeur lue est bornée au maximum, pour qu'une préférence
+  /// ancienne ne dépasse jamais ce que le curseur peut montrer.
+  double get midiGain {
+    if (!(_p.getBool(_kMidiGainForced) ?? false)) {
+      _p.remove(_kMidiGain);
+      _p.setBool(_kMidiGainForced, true);
+    }
+    final v = _p.getDouble(_kMidiGain) ?? 0.5;
+    return v > 1.0 ? 1.0 : v;
+  }
   set midiGain(double v) { _p.setDouble(_kMidiGain, v); notifyListeners(); }
+
+  /// Adapter au General MIDI les fichiers écrits pour un Roland MT-32
+  /// (défaut ACTIVÉ). Un tel fichier numérote ses programmes dans la liste
+  /// d'usine du MT-32, qui n'a rien à voir avec le GM: sans conversion, joué
+  /// sur la SoundFont, chaque instrument tombe au hasard. Coupé, le fichier
+  /// part avec ses numéros bruts — ce que faisait rewamp avant.
+  ///
+  /// Le greffon détecte le cas tout seul (sysex Roland, banque voisine,
+  /// dossier qui nomme la famille) et lève un bandeau quand les ROMs
+  /// manquent: le réglage ne fait que permettre de refuser l'adaptation.
+  bool get midiMt32ToGm => _p.getBool(_kMidiMt32ToGm) ?? true;
+  set midiMt32ToGm(bool v) { _p.setBool(_kMidiMt32ToGm, v); notifyListeners(); }
 
   /// Maximum simultaneous voices (32–256).
   int get midiPolyphony => _p.getInt(_kMidiPolyphony) ?? 128;
@@ -1613,6 +2000,27 @@ class UserSettings extends ChangeNotifier {
   /// (default), 7=7th order.
   int get midiInterp => _p.getInt(_kMidiInterp) ?? 4;
   set midiInterp(int v) { _p.setInt(_kMidiInterp, v); notifyListeners(); }
+
+  /// Which engine plays a .mid: 'auto' (FluidLite, or the MT-32 when the
+  /// file carries Roland MT-32 sysex — the plugin scores 104 vs 100 then),
+  /// 'soundfont' (pin FluidLite), 'mt32' (pin mt32emu; silently absent when no
+  /// ROM set is imported, since its probe then returns 0).
+  static const _kMidiSynth = 'playback.midi_synth';
+  String get midiSynth => _p.getString(_kMidiSynth) ?? 'auto';
+  set midiSynth(String v) { _p.setString(_kMidiSynth, v); notifyListeners(); }
+
+  // MT-32 engine params (Settings → Moteurs → MT-32). Defaults mirror
+  // rewamp_plugin_mt32.cpp: model 0 = auto (CM-32L if present), 1 = MT-32,
+  // 2 = CM-32L; reverb on; gain 1.0 (the unit's own output level).
+  static const _kMt32Model  = 'playback.mt32_model';
+  static const _kMt32Reverb = 'playback.mt32_reverb';
+  static const _kMt32Gain   = 'playback.mt32_gain';
+  int get mt32Model => _p.getInt(_kMt32Model) ?? 0;
+  set mt32Model(int v) { _p.setInt(_kMt32Model, v); notifyListeners(); }
+  bool get mt32Reverb => _p.getBool(_kMt32Reverb) ?? true;
+  set mt32Reverb(bool v) { _p.setBool(_kMt32Reverb, v); notifyListeners(); }
+  double get mt32Gain => _p.getDouble(_kMt32Gain) ?? 1.0;
+  set mt32Gain(double v) { _p.setDouble(_kMt32Gain, v); notifyListeners(); }
 
   // ── Browse preferences ─────────────────────────────────────────────────────
 
@@ -1654,6 +2062,64 @@ class UserSettings extends ChangeNotifier {
   /// Exact (non-fuzzy) search mode. Default true → exact search.
   bool get searchExact => _p.getBool(_kSearchExact) ?? true;
   set searchExact(bool v) { _p.setBool(_kSearchExact, v); notifyListeners(); }
+
+  static const _kPhoneTabOrder = 'shell.phoneTabOrder';
+  static const _kLaunchTab     = 'shell.launchTab';
+
+  /// L'ordre des onglets sur TÉLÉPHONE — les quatre premiers dans la barre, le
+  /// reste dans le « … ». Même contrat que [homeSectionOrder]: on ne stocke que
+  /// le choix, la réconciliation se fait à la lecture.
+  List<ShellTab> get phoneTabOrder =>
+      normalizeShellTabs(_p.getStringList(_kPhoneTabOrder) ?? const []);
+
+  set phoneTabOrder(List<ShellTab> order) {
+    _p.setStringList(_kPhoneTabOrder, [for (final t in order) t.id]);
+    notifyListeners();
+  }
+
+  void resetPhoneTabOrder() {
+    _p.remove(_kPhoneTabOrder);
+    notifyListeners();
+  }
+
+  /// L'onglet ouvert AU LANCEMENT. Défaut: l'accueil.
+  ShellTab get launchTab =>
+      ShellTab.byId(_p.getString(_kLaunchTab) ?? '') ?? ShellTab.home;
+
+  set launchTab(ShellTab t) {
+    _p.setString(_kLaunchTab, t.id);
+    notifyListeners();
+  }
+
+  void resetLaunchTab() {
+    _p.remove(_kLaunchTab);
+    notifyListeners();
+  }
+
+  static const _kHomeSectionOrder = 'home.sectionOrder';
+
+  /// L'ordre des sections de l'accueil, choisi par l'utilisateur.
+  ///
+  /// Ce qui est STOCKÉ n'est que son choix; ce qui est RENDU est réconcilié
+  /// avec les sections que ce binaire connaît (ids inconnus jetés, sections
+  /// neuves réinsérées à leur place par défaut) — voir normalizeHomeSections.
+  /// Jamais persisté au premier lancement: rien en base = ordre livré, et une
+  /// section ajoutée plus tard se place correctement d'elle-même.
+  List<HomeSection> get homeSectionOrder =>
+      normalizeHomeSections(_p.getStringList(_kHomeSectionOrder) ?? const []);
+
+  set homeSectionOrder(List<HomeSection> order) {
+    _p.setStringList(_kHomeSectionOrder, [for (final s in order) s.id]);
+    notifyListeners();
+  }
+
+  /// Retour à l'ordre livré: on EFFACE la clé plutôt que d'y écrire l'ordre
+  /// par défaut — ainsi une version ultérieure qui change cet ordre s'applique
+  /// à qui n'a rien personnalisé.
+  void resetHomeSectionOrder() {
+    _p.remove(_kHomeSectionOrder);
+    notifyListeners();
+  }
 
   static const _kRecentSearches    = 'search.recent';
   static const _kRecentSearchesMax = 32;

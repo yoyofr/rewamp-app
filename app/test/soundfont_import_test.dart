@@ -6,7 +6,7 @@ import 'package:rewamp/soundfont_manager.dart';
 import 'package:rewamp/user_settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Un en-tête SF2 minimal: 'RIFF' <taille> 'sfbk'. C'est exactement ce que
+/// Un en-tête SF2 minimal: `RIFF` `<taille>` `sfbk`. C'est exactement ce que
 /// l'import contrôle — le reste du fichier ne le regarde pas.
 Uint8List _sf2(String tail) => Uint8List.fromList([
       ...'RIFF'.codeUnits,

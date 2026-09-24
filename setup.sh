@@ -15,6 +15,50 @@ flutter create \
   . 2>&1 | grep -v "^  "
 
 echo ""
+echo "==> Removing scaffold leftovers..."
+# `flutter create` ne touche pas aux fichiers EXISTANTS (pas de `--overwrite`),
+# mais il RECRÉE ceux que ce dépôt a retirés exprès. Deux, et chacun coûte
+# quelque chose:
+#
+#   * test/widget_test.dart — le smoke test du gabarit. Il ne peut PAS passer
+#     ici: `RewampApp` construit `SplashGate`, qui appelle le natif au build
+#     (`Failed to lookup symbol 'rewamp_init'`). Laissé là, il rend
+#     `flutter test` rouge en permanence, ce qui est exactement la façon de
+#     rendre une suite inutile.
+#
+#   * android/.../kotlin/com/modizer/ — le paquet dérivé de `--org` ci-dessus.
+#     Le vrai MainActivity est `com.rewamp.app.MainActivity` (le namespace a
+#     été aligné sur l'applicationId, commit e1d5cf3b); il étend
+#     `AudioServiceActivity` et porte tout le routage (ouverture externe, SAF,
+#     sélecteur de sortie, splash). Le résidu est un `FlutterActivity` nu: le
+#     manifeste déclare `.MainActivity`, résolu contre le namespace, donc il
+#     n'est jamais instancié — il est seulement COMPILÉ et livré (R8 est off),
+#     et un second MainActivity mort dans l'arbre est un piège pour la
+#     prochaine lecture.
+#
+# Aucun `--org` ne produit `com.rewamp.app` à partir du nom de projet `rewamp`,
+# donc on ne peut pas empêcher la création: on la défait, et on ne défait que
+# ce qu'on RECONNAÎT — si le gabarit change, le fichier reste et le dit.
+scaffold_drop() {  # $1 = chemin, $2 = empreinte attendue
+  [ -f "$1" ] || return 0
+  if grep -q "$2" "$1"; then
+    rm -f "$1"
+    echo "    removed: ${1#$SCRIPT_DIR/}"
+  else
+    echo "    KEPT (unrecognized, check it): ${1#$SCRIPT_DIR/}"
+  fi
+}
+scaffold_drop "$SCRIPT_DIR/app/test/widget_test.dart" \
+  "Counter increments smoke test"
+scaffold_drop \
+  "$SCRIPT_DIR/app/android/app/src/main/kotlin/com/modizer/rewamp/rewamp/MainActivity.kt" \
+  "class MainActivity : FlutterActivity()"
+# Les dossiers du paquet mort ne survivent pas à leur seul fichier (`-delete`
+# est en profondeur d'abord, donc les trois niveaux partent d'un coup).
+find "$SCRIPT_DIR/app/android/app/src/main/kotlin/com/modizer" \
+  -type d -empty -delete 2>/dev/null || true
+
+echo ""
 echo "==> Creating Flutter FFI plugin scaffold..."
 cd "$SCRIPT_DIR/packages"
 flutter create \

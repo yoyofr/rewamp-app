@@ -34,6 +34,34 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!-- « Ouvrir avec » depuis un gestionnaire de fichiers, un
+                 téléchargement ou un partage.
+
+                 ⚠️ Un `content://` N'A PAS D'EXTENSION: un `pathPattern` sur le
+                 suffixe ne filtre rien dans le cas le PLUS courant, il faut
+                 filtrer par MIME. Et beaucoup de gestionnaires rendent
+                 `application/octet-stream` pour un `.sid`, un `.nsf` ou un
+                 module — les formats qui nous intéressent sont précisément ceux
+                 qu'Android ne sait pas typer. Sans ce second type, « Ouvrir
+                 avec » ne nous proposerait PAS là où l'on sert.
+                 Le prix est d'être proposé un peu largement; c'est un choix,
+                 pas un accident. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="content"/>
+                <data android:scheme="file"/>
+                <data android:mimeType="audio/*"/>
+                <data android:mimeType="application/octet-stream"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="audio/*"/>
+                <data android:mimeType="application/octet-stream"/>
+            </intent-filter>
         </activity>
         <!-- audio_service: media-browser foreground service + media-button receiver -->
         <service

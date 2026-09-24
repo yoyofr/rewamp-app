@@ -7,7 +7,14 @@ project(runner LANGUAGES CXX)
 set(BINARY_NAME "rewamp")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.rewamp.app")
+# ⚠️ Cet id est l'app_id Wayland (le runner fait `g_set_prgname(APPLICATION_ID)`)
+# ET le nom D-Bus de la GtkApplication. Sur GNOME/Wayland, une fenêtre n'est
+# reliée à son .desktop — donc à son icône et à son nom dans le dock — que si
+# les DEUX coïncident. Le .desktop de la version Flathub s'appelle
+# `app.rewamp.Rewamp.desktop` (Flathub exige un id dérivé d'un domaine que l'on
+# possède, et le domaine est rewamp.app), d'où cet id ici. Ne touche NI iOS NI
+# Android, qui gardent `com.rewamp.app` comme bundle id.
+set(APPLICATION_ID "app.rewamp.Rewamp")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -79,9 +86,22 @@ include(flutter/generated_plugins.cmake)
 # By default, "installing" just makes a relocatable bundle in the build
 # directory.
 set(BUILD_BUNDLE_DIR "${PROJECT_BINARY_DIR}/bundle")
-if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-  set(CMAKE_INSTALL_PREFIX "${BUILD_BUNDLE_DIR}" CACHE PATH "..." FORCE)
-endif()
+# Le gabarit Flutter garde cette redirection sous
+# `if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)`, et ce drapeau n'est vrai
+# qu'a la PREMIERE configuration du dossier de build. Si celle-la s'arrete
+# avant cette ligne -- une erreur dans n'importe quel greffon de
+# generated_plugins.cmake, inclus juste au-dessus, suffit -- CMake ecrit quand
+# meme son cache, avec /usr/local. Les configurations suivantes voient donc le
+# drapeau FAUX et le prefixe FIGE: la build passe au vert et c'est `ninja
+# install` qui meurt sur "Permission denied" en essayant d'ecrire le binaire
+# dans /usr/local. Le cache est empoisonne pour de bon, seul un effacement du
+# dossier de build (ou un -DCMAKE_INSTALL_PREFIX explicite) en sort -- et rien
+# dans le message ne dit que le coupable est une configuration precedente.
+#
+# Ici le seul prefixe correct est le bundle: c'est le seul emplacement ou les
+# ressources sont aux bonnes positions relatives, et `flutter run` ne lance
+# rien d'autre. On le pose donc SANS condition.
+set(CMAKE_INSTALL_PREFIX "${BUILD_BUNDLE_DIR}" CACHE PATH "..." FORCE)
 
 # Start with a clean build bundle directory every time.
 install(CODE "

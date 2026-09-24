@@ -106,32 +106,46 @@ void _loopCutTests() {
   });
 }
 
-/// Boucle infinie: le total AFFICHÉ doit suivre, sinon l'UI clampe la position
-/// dessus et le compteur gèle à « nominal / nominal » alors que ça joue encore.
+/// Boucle infinie: la règle graduée ne couvre qu'UNE passe et la position y est
+/// PLAFONNÉE. C'est ce qui rend le seek exact (toute cible reste dans le
+/// domaine du décodeur) sans prétendre savoir où un point de boucle inconnu
+/// fait repartir la musique.
 void _infiniteTotalTests() {
-  test('1re passe: le total ne bouge pas (pas de saut au démarrage)', () {
-    expect(infiniteDisplayTotal(0, 150), 150);
-    expect(infiniteDisplayTotal(30, 150), 150);
-    expect(infiniteDisplayTotal(150, 150), 150);
+  test('1re passe: la position est le temps écoulé (pas de saut)', () {
+    expect(infiniteDisplayPosition(0, 150), 0);
+    expect(infiniteDisplayPosition(30, 150), 30);
+    expect(infiniteDisplayPosition(149.5, 150), 149.5);
   });
 
-  test('passes suivantes: le total monte d\'une passe entière', () {
-    expect(infiniteDisplayTotal(151, 150), 300);
-    expect(infiniteDisplayTotal(300, 150), 300);
-    expect(infiniteDisplayTotal(301, 150), 450);
+  test('passes suivantes: la barre SATURE au lieu de reboucler', () {
+    // Reboucler à zéro prétendrait savoir où la musique repart — faux dès
+    // qu'il y a un point de boucle, et on ne le connaît pas.
+    expect(infiniteDisplayPosition(150, 150), 150);
+    expect(infiniteDisplayPosition(151, 150), 150);
+    expect(infiniteDisplayPosition(4321, 150), 150);
   });
 
-  test('le total reste STRICTEMENT au-dessus de la position', () {
-    // La propriété qui compte: c'est elle que le clamp de l'UI exige.
+  test('la position reste TOUJOURS dans [0, nominal]', () {
+    // La propriété qui compte: elle garantit qu'un seek vise un point que le
+    // décodeur sait atteindre, quel que soit son point de boucle.
     for (var t = 0.0; t < 900; t += 7.3) {
-      final total = infiniteDisplayTotal(t, 150)!;
-      expect(total >= t, isTrue, reason: 'écoulé $t > total $total');
+      final pos = infiniteDisplayPosition(t, 150);
+      expect(pos >= 0 && pos <= 150, isTrue, reason: 'écoulé $t -> $pos');
     }
   });
 
-  test('durée nominale inconnue: null, on garde ce qu\'on avait', () {
+  test('la position ne RECULE jamais', () {
+    var prev = 0.0;
+    for (var t = 0.0; t < 900; t += 3.1) {
+      final pos = infiniteDisplayPosition(t, 150);
+      expect(pos >= prev, isTrue, reason: 'écoulé $t: $pos < $prev');
+      prev = pos;
+    }
+  });
+
+  test('durée nominale inconnue: on rend le temps écoulé tel quel', () {
     for (final n in [null, 0.0, -1.0]) {
-      expect(infiniteDisplayTotal(999, n), isNull, reason: 'nominal = $n');
+      expect(infiniteDisplayPosition(999, n), 999, reason: 'nominal = $n');
     }
   });
 }

@@ -3,7 +3,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data' show BytesBuilder;
 import 'dart:isolate';
 
 import 'package:archive/archive.dart';
@@ -13,15 +12,22 @@ import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
 import 'background_task.dart';
+import 'm3u_info.dart';
 import 'download_cancel.dart';
+import 'isolate_fetch.dart';
 import 'client_info.dart';
 import 'formats.dart'
-    show kAllDecoderExts, kPatternExts, kStreamAudioExts;
+    show kAllDecoderExts, kPatternExts, kStreamAudioExts, isInCompanionDir;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:rewamp_audio/rewamp_audio.dart' show RewampAudio, SubsongInfo;
+import 'artwork_image.dart';
 import 'local_db.dart';
+import 'local_delete.dart' show cleanCompanionsAfterDelete;
+import 'opened_files.dart' show OpenedFiles;
 import 'user_settings.dart';
+import 'legacy_text.dart';
+import 'storage_roots.dart';
 
 /// An auxiliary file that must sit next to the main file for playback to work
 /// (e.g. UADE multifile: the "smpl.*" sample file beside a "mdat.*" module).
@@ -30,13 +36,26 @@ import 'user_settings.dart';
 class AuxFile {
   final String filename;
   final String? downloadUrl;
+  /// Même contrat que pour le morceau: le miroir (R2) d'abord, l'origine
+  /// (`download_url`) si NULL ou en échec. Rempli par le serveur depuis le
+  /// 2026-09-05 (miroir modland): sans lui, un module TFMX arrivait du miroir
+  /// pendant que sa banque d'échantillons venait encore de modland — muet dès
+  /// que le site tombe, exactement ce que le miroir devait supprimer.
+  /// L'encodage est celui de `download_url` (espaces bruts, `#`/`?`/`%` déjà
+  /// encodés): le même chemin d'encodage s'applique.
+  final String? mirrorUrl;
   final int fileSize;
 
-  const AuxFile({required this.filename, this.downloadUrl, this.fileSize = 0});
+  const AuxFile(
+      {required this.filename,
+      this.downloadUrl,
+      this.mirrorUrl,
+      this.fileSize = 0});
 
   factory AuxFile.fromJson(Map<String, dynamic> j) => AuxFile(
         filename: j['filename'] as String,
         downloadUrl: j['download_url'] as String?,
+        mirrorUrl: j['mirror_url'] as String?,
         fileSize: (j['file_size'] as num?)?.toInt() ?? 0,
       );
 }
@@ -119,6 +138,19 @@ class PlaylistExtRef {
   final String? relPath;
   final String entryPath;
   final int subsongIdx;
+  /// L'entrée vise le FICHIER ENTIER, pas une sous-chanson.
+  ///
+  /// ⚠️ **Le compte n'a que [subsongIdx], un ENTIER: sans ce drapeau il ne
+  /// peut pas distinguer « tout le fichier » de « la sous-chanson 0 ».** Les
+  /// deux existent pour de bon — une entrée de conteneur s'écrit sans suffixe
+  /// (`localImportRefId`, `ContainerSubsongScreen._songRefId`), un favori posé
+  /// sur la 1re sous-chanson s'écrit `?subsong=0` — et les confondre faisait
+  /// soit une entrée EN DOUBLE, soit un favori qui atterrit sur le conteneur.
+  ///
+  /// Il entre aussi dans [SyncService.localLibraryKey], sinon les deux
+  /// partageraient la même ligne de compte. Un client ANTÉRIEUR l'ignore et
+  /// retombe sur `?subsong=0`: dégradé, jamais faux.
+  final bool whole;
   final String? title;
   final String? artist;
   final String? album;
@@ -135,6 +167,7 @@ class PlaylistExtRef {
     this.relPath,
     this.entryPath = '',
     this.subsongIdx = 0,
+    this.whole = false,
     this.title,
     this.artist,
     this.album,
@@ -158,6 +191,9 @@ class PlaylistExtRef {
             'rel_path': _clip(relPath, 512),
           if (entryPath.isNotEmpty) 'entry_path': _clip(entryPath, 512),
           'subsong_idx': subsongIdx,
+          // Émis SEULEMENT quand il est vrai: une entrée ordinaire garde
+          // exactement la forme qu'elle avait avant ce champ.
+          if (whole) 'whole': true,
           // Before the free-text fields on purpose: build(textMax) trims those
           // when the entry is too big, and this one must survive that.
           if (albumId != null && albumId!.isNotEmpty) 'album_id': albumId,
@@ -182,6 +218,7 @@ class PlaylistExtRef {
         relPath:    j['rel_path']   as String?,
         entryPath:  (j['entry_path'] as String?) ?? '',
         subsongIdx: (j['subsong_idx'] as num?)?.toInt() ?? 0,
+        whole:      j['whole'] == true,
         title:      j['title']      as String?,
         artist:     j['artist']     as String?,
         album:      j['album']      as String?,
@@ -329,6 +366,16 @@ class SearchResult {
   // UI group/target the right album when several share a name (e.g. "Commando").
   final String? albumId;
   final String formatExt;
+  /// Vrai quand [formatExt] vient du NOM DE FICHIER et non de la colonne
+  /// serveur `format_ext` (null pour les formats que le catalogue ne classe
+  /// pas — une ligne sceneorg est un `.zip` dont le module est DEDANS).
+  ///
+  /// ⚠️ Une valeur dérivée ici ne peut pas servir de CLÉ DE FILTRE au serveur:
+  /// il filtre sur sa colonne, qui est justement NULL pour ces lignes. Proposer
+  /// « ZIP » dans un sélecteur de format donnait donc une option qui ne
+  /// ramenait jamais rien. Le repli reste bon pour AFFICHER — il ne l'est pas
+  /// pour INTERROGER.
+  final bool formatExtFromFileName;
   final String? downloadUrl;
   /// R2/CDN mirror of [downloadUrl] (null = collection not mirrored). Prefer
   /// it for downloads; on 404 (not yet synced) fall back to the origin.
@@ -370,6 +417,26 @@ class SearchResult {
   /// LA LIGNE. Une ligne de sous-chanson d'un `.sid` sortait donc à 1 et se
   /// faisait lire comme « fichier à une seule sous-chanson ».
   final bool resolvedSubsong;
+  /// Palmarès (`most_popular_songs` depuis le 2026-09-05, docs/
+  /// popularity_grain_proposal.md): la ligne est une ŒUVRE — album ou fichier —
+  /// et désigne son ENTRÉE la plus écoutée sur la période, `(top_song_id,
+  /// top_subsong_index)`, toujours rendue. C'est la cible du tap et du ♥; la
+  /// ligne reste un CONTENEUR (jamais `resolvedSubsong`), et la lecture TOURNE
+  /// la liste à partir de cette entrée (rotateToDefaultSubsong). null hors
+  /// palmarès.
+  final String? topSongId;
+  final int? topSubsongIndex;
+  /// Couples (auditeur, jour) distincts sur l'œuvre — la mesure de tri des
+  /// « Tendances ». null hors palmarès.
+  final int? listenerDays;
+  /// Durée du FICHIER ENTIER (`total_length_ms`, listings serveur). À ne pas
+  /// confondre avec [durationMs] (`subsong_length_ms`), qui est celle du
+  /// PREMIER sous-chant: les deux ne coïncident que sur un fichier mono.
+  /// Les sous-chants morts (songend `n`/`e`) sont hors de la somme, donc elle
+  /// décrit ce qui est réellement jouable. **NULL = INCONNU, jamais zéro** —
+  /// des collections entières n'ont aucune durée en base (vgmrips, snesmusic,
+  /// sceneorg, les jw_*), et un « 0:00 » y serait un mensonge.
+  final int? totalLengthMs;
   // Duration in milliseconds (HVSC only, null for other collections).
   final int? durationMs;
   // Auxiliary sibling files that must be downloaded next to this file before it
@@ -395,6 +462,11 @@ class SearchResult {
   // browse_music. See search_music (server) match_subsong_*.
   final String? matchSubsongTitle;
   final int? matchSubsongIndex;
+  /// Durée de la piste que le serveur a nommée (`match_track_length_ms`), en
+  /// ms — la SIENNE, pas celle du fichier. Sans elle, une ligne qui affiche
+  /// « Iron Arms » ne pouvait montrer aucune durée: `total_length_ms` décrit
+  /// les 73 sous-chants du `.gbs`, et `subsong_length_ms` le premier.
+  final int? matchSubsongLengthMs;
   // True when this row is an ALBUM-aggregate stats row (most_popular_songs
   // item_type="album", migration 107): songId/albumId both hold the album's
   // UUID, there is no underlying playable file — tap must resolve via
@@ -428,6 +500,7 @@ class SearchResult {
     required this.album,
     this.albumId,
     required this.formatExt,
+    this.formatExtFromFileName = false,
     required this.downloadUrl,
     this.mirrorUrl,
     required this.fileSize,
@@ -443,12 +516,17 @@ class SearchResult {
     this.subsongIdx = 0,
     this.subsongCount,
     this.resolvedSubsong = false,
+    this.topSongId,
+    this.topSubsongIndex,
+    this.listenerDays,
+    this.totalLengthMs,
     this.durationMs,
     this.auxFiles = const [],
     this.localPath,
     this.playlistMeta,
     this.subsongs = const [],
     this.matchSubsongTitle,
+    this.matchSubsongLengthMs,
     this.matchSubsongIndex,
     this.isAlbumRow = false,
     this.path,
@@ -523,7 +601,8 @@ class SearchResult {
     final filename = _reqStr(j, 'filename');
     // format_ext can be null for formats the server doesn't classify (e.g. .fxm);
     // fall back to the filename's extension so the row stays usable.
-    final formatExt = (j['format_ext'] as String?) ?? _extOf(filename);
+    final serverFormat = j['format_ext'] as String?;
+    final formatExt = serverFormat ?? _extOf(filename);
     final trackPos  = (j['track_position'] as num?)?.toInt();
 
     // subsong_index from stats RPCs (most_popular_songs, recently_played_songs)
@@ -532,8 +611,25 @@ class SearchResult {
     final extSubsong = (j['ext_ref'] is Map)
         ? ((j['ext_ref'] as Map)['subsong_idx'] as num?)?.toInt()
         : null;
+    // ⚠️ `subsong_index` n'est rendu QUE par les palmarès (`most_popular_songs`;
+    // vérifié: absent de search_music, browse_music, get_album_tracks,
+    // list_featured). Sa présence signifie donc que le serveur a nommé UNE
+    // sous-chanson précise — la ligne est DÉJÀ RÉSOLUE, ce n'est pas le
+    // conteneur. Sans ce drapeau, `_subsongEntries` la déplie en 0..count-1 et
+    // la lecture repart de la sous-chanson 0: deux entrées « Monkey Island »
+    // dans un palmarès jouaient toutes deux la première.
+    //
+    // Le défaut était masqué tant que `subsongCount` restait nul (le compte
+    // venait de `track_count`, que ces RPC n'envoient pas): l'expansion ne
+    // trouvait rien à déplier. Réparer le compte a donc RÉVÉLÉ ce manque, il ne
+    // l'a pas créé — les deux vont ensemble.
+    final namedSubsong = j['subsong_index'] != null;
     final serverSubsong = extSubsong ?? (j['subsong_index'] as num?)?.toInt();
-    final subsong = serverSubsong ??
+    // Palmarès: l'entrée la plus écoutée devient l'index de la ligne (cible du
+    // ♥ et point de départ de la rotation) SANS la résoudre — `subsong_index`
+    // n'y existe plus, donc `namedSubsong` reste faux.
+    final topSubsong = (j['top_subsong_index'] as num?)?.toInt();
+    final subsong = serverSubsong ?? topSubsong ??
         ((_subsongFormats.contains(formatExt.toLowerCase()) &&
                 trackPos != null &&
                 trackPos > 0)
@@ -548,6 +644,7 @@ class SearchResult {
       album: j['album'] as String?,
       albumId: j['album_id'] as String?,
       formatExt: formatExt,
+      formatExtFromFileName: serverFormat == null,
       downloadUrl: j['download_url'] as String?,
       mirrorUrl: j['mirror_url'] as String?,
       fileSize: (j['file_size'] as num?)?.toInt() ?? 0,
@@ -569,13 +666,31 @@ class SearchResult {
       // subsongs→tracks, match_subsong_*→match_track_* on search_music/
       // browse_music/get_album_tracks/get_playlist_tracks/get_song_context.
       // (get_sid_info/get_uade_info keep the old subsong_* vocabulary.)
-      subsongCount: (j['track_count'] as num?)?.toInt(),
+      //
+      // ⚠️ Les PALMARÈS n'ont pas été renommés: `most_popular_songs` rend
+      // toujours `subsong_count` (vérifié dans sa signature, mig serveur 244).
+      // Ne lire que `track_count` laissait donc `subsongCount` NUL sur tout
+      // rail servi par ces RPC — « Tendances », « Top de tous les temps » — et
+      // la tuile « Voir les sous-chansons » ne pouvait pas s'afficher pour un
+      // fichier qui en a vingt. Le compte pilote aussi le routage vers l'écran
+      // conteneur, donc l'absence ne se voyait pas qu'à cet endroit.
+      //
+      // On accepte les DEUX noms: un même document ne peut pas porter les deux
+      // sens, et cette tolérance survit au prochain renommage partiel.
+      subsongCount:
+          ((j['track_count'] ?? j['subsong_count']) as num?)?.toInt(),
+      resolvedSubsong: namedSubsong,
+      topSongId: j['top_song_id'] as String?,
+      topSubsongIndex: topSubsong,
+      listenerDays: (j['listener_days'] as num?)?.toInt(),
+      totalLengthMs: (j['total_length_ms'] as num?)?.toInt(),
       durationMs: (j['subsong_length_ms'] as num?)?.toInt(),
       auxFiles: _parseAuxFiles(j['aux_files']),
       playlistMeta: PlaylistTrackMeta.fromJson(j['meta']),
       subsongs: AlbumSubsong.listFrom(j['tracks']),
       matchSubsongTitle: j['match_track_title'] as String?,
       matchSubsongIndex: (j['match_track_index'] as num?)?.toInt(),
+      matchSubsongLengthMs: (j['match_track_length_ms'] as num?)?.toInt(),
       isAlbumRow: j['item_type'] == 'album',
       path: j['path'] as String?,
       hasVideo: (j['videos'] is List && (j['videos'] as List).isNotEmpty) ||
@@ -606,6 +721,10 @@ class SearchResult {
         'filename': filename,
         if (album != null) 'album': album,
         if (albumId != null) 'album_id': albumId,
+        if (topSongId != null) 'top_song_id': topSongId,
+        if (topSubsongIndex != null) 'top_subsong_index': topSubsongIndex,
+        if (listenerDays != null) 'listener_days': listenerDays,
+        if (totalLengthMs != null) 'total_length_ms': totalLengthMs,
         'format_ext': formatExt,
         if (downloadUrl != null) 'download_url': downloadUrl,
         if (mirrorUrl != null) 'mirror_url': mirrorUrl,
@@ -627,6 +746,7 @@ class SearchResult {
               {
                 'filename': a.filename,
                 if (a.downloadUrl != null) 'download_url': a.downloadUrl,
+                if (a.mirrorUrl != null) 'mirror_url': a.mirrorUrl,
                 'file_size': a.fileSize,
               }
           ],
@@ -663,6 +783,7 @@ class SearchResult {
         album: album,
         albumId: id,
         formatExt: formatExt,
+        formatExtFromFileName: formatExtFromFileName,
         downloadUrl: downloadUrl,
         mirrorUrl: mirrorUrl,
         fileSize: fileSize,
@@ -676,6 +797,10 @@ class SearchResult {
         trackPosition: trackPosition,
         subsongIdx: subsongIdx,
         subsongCount: subsongCount,
+        topSongId: topSongId,
+        topSubsongIndex: topSubsongIndex,
+        listenerDays: listenerDays,
+        totalLengthMs: totalLengthMs,
         durationMs: durationMs,
         auxFiles: auxFiles,
         localPath: localPath,
@@ -706,6 +831,7 @@ class SearchResult {
         album: this.album ?? album,
         albumId: this.albumId ?? albumId,
         formatExt: formatExt,
+        formatExtFromFileName: formatExtFromFileName,
         downloadUrl: downloadUrl,
         mirrorUrl: mirrorUrl,
         fileSize: fileSize,
@@ -719,6 +845,10 @@ class SearchResult {
         trackPosition: trackPosition,
         subsongIdx: subsongIdx,
         subsongCount: subsongCount,
+        topSongId: topSongId,
+        topSubsongIndex: topSubsongIndex,
+        listenerDays: listenerDays,
+        totalLengthMs: totalLengthMs,
         durationMs: durationMs,
         auxFiles: auxFiles,
         localPath: localPath,
@@ -763,6 +893,13 @@ class SearchResult {
     int? subsongIdx,
     int? subsongCount,
     bool? resolvedSubsong,
+    /// `durationMs` est le seul champ qu'on doive parfois EFFACER: il décrit
+    /// UN sous-chant (le serveur rend `subsong_length_ms`, celui du PREMIER),
+    /// donc il ne suit pas la ligne quand elle en désigne un autre. Un `null`
+    /// ordinaire veut dire « ne change rien », d'où ce drapeau explicite.
+    bool dropDurationMs = false,
+    String? topSongId,
+    int? topSubsongIndex,
     int? durationMs,
     List<AuxFile>? auxFiles,
     String? localPath,
@@ -784,6 +921,9 @@ class SearchResult {
         album: album ?? this.album,
         albumId: albumId ?? this.albumId,
         formatExt: formatExt ?? this.formatExt,
+        // Le drapeau suit son format: sans ça un dérivé (withSubsong…)
+        // ferait passer un format DÉDUIT pour un format serveur.
+        formatExtFromFileName: formatExt == null && formatExtFromFileName,
         downloadUrl: downloadUrl ?? this.downloadUrl,
         mirrorUrl: mirrorUrl ?? this.mirrorUrl,
         fileSize: fileSize ?? this.fileSize,
@@ -799,13 +939,18 @@ class SearchResult {
         subsongIdx: subsongIdx ?? this.subsongIdx,
         subsongCount: subsongCount ?? this.subsongCount,
         resolvedSubsong: resolvedSubsong ?? this.resolvedSubsong,
-        durationMs: durationMs ?? this.durationMs,
+        topSongId: topSongId ?? this.topSongId,
+        topSubsongIndex: topSubsongIndex ?? this.topSubsongIndex,
+        listenerDays: listenerDays,
+        totalLengthMs: totalLengthMs,
+        durationMs: dropDurationMs ? null : (durationMs ?? this.durationMs),
         auxFiles: auxFiles ?? this.auxFiles,
         localPath: localPath ?? this.localPath,
         playlistMeta: playlistMeta ?? this.playlistMeta,
         subsongs: subsongs ?? this.subsongs,
         matchSubsongTitle: matchSubsongTitle ?? this.matchSubsongTitle,
         matchSubsongIndex: matchSubsongIndex ?? this.matchSubsongIndex,
+        matchSubsongLengthMs: matchSubsongLengthMs,
         isAlbumRow: isAlbumRow ?? this.isAlbumRow,
         path: path ?? this.path,
         hasVideo: hasVideo ?? this.hasVideo,
@@ -814,8 +959,23 @@ class SearchResult {
       );
 
   /// La même ligne, sur une autre sous-chanson — le dépliage brut.
+  /// ⚠️ La durée ne SUIT PAS le changement de sous-chant. `subsong_length_ms`
+  /// (search_music / browse_music / get_song_context) est la durée du PREMIER
+  /// sous-chant — mesuré: « Commando » rend 235594 ms, celle du sous-chant 1,
+  /// quand le 2e en fait 61288 et le 4e 1124. La recopier sur les 19 lignes
+  /// dépliées donnait 3:55 partout, affiché ET appliqué: le filet « fin
+  /// connue » (SID/NSF ne finissent jamais seuls) jouait 3:55 de silence sur
+  /// un sous-chant d'une seconde. Sans durée, la vraie arrive juste après —
+  /// `_applyLocalSidMeta` pour un SID, `_applyUadeDuration` pour UADE, la
+  /// sonde/M3U pour un NSFe — alors qu'un mauvais nombre ne se corrige pas
+  /// tout seul.
   SearchResult withSubsong(int idx, {String? title, int? durationMs}) =>
-      copyWith(subsongIdx: idx, title: title, durationMs: durationMs);
+      copyWith(
+        subsongIdx: idx,
+        title: title,
+        durationMs: durationMs,
+        dropDurationMs: durationMs == null && idx != subsongIdx,
+      );
 
   /// A copy pinned to ONE subsong of the file, with the synthetic
   /// `<uuid>#<subsong>` identity the rest of the app reads as "already
@@ -832,6 +992,7 @@ class SearchResult {
         songId: '${songId.split('#').first}#$idx',
         subsongIdx: idx,
         resolvedSubsong: true,
+        dropDurationMs: idx != subsongIdx,   // voir withSubsong
       );
 
   /// A copy of a CONTAINER-album row narrowed to ONE of its files. What a
@@ -853,6 +1014,9 @@ class SearchResult {
             ? [s.artist!]
             : null,
         subsongIdx: s.subsong ?? 0,
+        // Une entrée sans durée connue reste SANS durée: celle du conteneur
+        // décrit son premier sous-chant (voir withSubsong).
+        dropDurationMs: s.lengthMs == null,
         subsongCount: (s.file == null || s.file!.isEmpty) ? null : 1,
         resolvedSubsong: true,
         durationMs: s.lengthMs,
@@ -861,6 +1025,57 @@ class SearchResult {
 
   String get displayTitle =>
       (title != null && title!.isNotEmpty) ? title! : filename;
+
+  /// Le nom du FICHIER, quand cette ligne est regardée comme un CONTENEUR.
+  ///
+  /// ⚠️ `displayTitle` ne convient pas: la ligne d'un conteneur est celle de sa
+  /// sous-chanson 0, et une sous-chanson porte SON titre — STIL nomme la piste 1
+  /// de « One Man and his Droid » « Space Game », si bien que l'écran de détail
+  /// du conteneur et la ligne d'album du lecteur s'appelaient tous deux
+  /// « Space Game ». Le titre du catalogue et celui du sous-chant vivent dans le
+  /// MÊME champ; seul le nom de fichier est à coup sûr du niveau FICHIER.
+  ///
+  /// `filename` est donc préféré dès qu'il existe. Le convention Amiga met le
+  /// FORMAT avant le point (`mdat.monkey island`), d'où le découpage par la
+  /// DERNIÈRE extension seulement quand elle ressemble à une extension.
+  String get containerName {
+    final f = filename;
+    if (f.isEmpty) return displayTitle;
+    final dot = f.lastIndexOf('.');
+    if (dot <= 0) return f;
+    final ext = f.substring(dot + 1);
+    // Un suffixe d'extension plausible: court et sans espace. « mdat.monkey
+    // island » n'en est pas un, et son nom doit rester entier.
+    if (ext.isEmpty || ext.length > 5 || ext.contains(' ')) return f;
+    return f.substring(0, dot);
+  }
+
+  /// La base d'un titre de sous-chanson « NOM (n) ».
+  ///
+  /// ⚠️ **Jamais [displayTitle] tel quel.** La ligne d'un CONTENEUR est
+  /// souvent celle de sa sous-chanson 0, qui porte SON titre — déjà numéroté.
+  /// Le renuméroter donne « Commando (1) (1) », que la lecture PERSISTE dans
+  /// `tracks`, d'où la ligne se relit au tour suivant: le suffixe s'EMPILE.
+  /// Mesuré sur la base réelle: « Commando (1) (1) (1) » après trois
+  /// aller-retours, entrée de bibliothèque comprise.
+  ///
+  /// On garde le titre — meilleur qu'un nom de fichier quand le catalogue en
+  /// donne un — et on retire seulement le suffixe que NOUS avons posé: celui
+  /// qui suit le nom du FICHIER. Un vrai titre finissant par une parenthèse
+  /// numérique (« Sonic (2) » pour `sonic2.nsf`) ne commence pas par ce
+  /// nom-là et reste intact.
+  String get subsongTitleBase {
+    var t = displayTitle;
+    final file = containerName;
+    while (t.length > file.length) {
+      final m = RegExp(r'^(.*) \(\d+\)$').firstMatch(t);
+      if (m == null) break;
+      final head = m.group(1)!;
+      if (!head.startsWith(file)) break;
+      t = head;
+    }
+    return t;
+  }
 
   String get artistLabel => artistNames.isEmpty ? '' : artistNames.join(' & ');
 
@@ -915,6 +1130,100 @@ bool collectionIsArtistGrain(String slug) =>
 /// whose count is non-zero, so the hub is data-driven, never per-slug.
 /// Counts come from materialized views refreshed after imports: they can lag
 /// a running import by hours, which is fine for navigation.
+/// Une playlist de CLASSEMENT (« chart »): reconstruite intégralement côté
+/// serveur chaque dimanche depuis une source EXTERNE (HVSC Top 100,
+/// snesmusic Top 100…).
+///
+/// ⚠️ Le discriminant est `kind='chart'` CÔTÉ SERVEUR — jamais le slug ni le
+/// nom. Deux chemins la servent: `get_collection_overview.charts` (l'écran de
+/// collection) et `list_charts()` (vue transverse, avec `collection`). Elle se
+/// LIT comme n'importe quelle playlist (`get_playlist_tracks`, `position` = le
+/// rang, `meta.rank` le répète — la convention des compos demozoo), et ne se
+/// PROPOSE JAMAIS à l'édition: toute modification serait écrasée au dimanche
+/// suivant. `chartUrl` est le crédit vers la source — à montrer, c'est leur
+/// travail; `updatedAt` dit la fraîcheur.
+class ChartPlaylist {
+  final String id;
+  final String slug;
+  final String name;
+  final String? description;
+  /// Slug de collection — porté par `list_charts`, absent du chemin overview
+  /// (où la collection est déjà connue de l'appelant).
+  final String? collection;
+  final String? chartUrl;
+  final String? coverUrl;
+  final int trackCount;
+  final DateTime? updatedAt;
+  /// Le GRAIN du classement, DÉCLARÉ par le serveur: 'album' (vgmrips,
+  /// snesmusic — des packs) ou 'song' (hvsc — des morceaux). C'est lui qui
+  /// décide la présentation AVANT tout chargement; null = serveur antérieur,
+  /// traité comme 'song' (l'écran de playlist marche partout).
+  final String? grain;
+  /// Nombre d'ALBUMS du classement quand grain='album' (un album présent
+  /// plusieurs fois garde son meilleur rang, dédoublonnage serveur).
+  final int albumCount;
+
+  const ChartPlaylist({
+    required this.id,
+    required this.slug,
+    required this.name,
+    this.description,
+    this.collection,
+    this.chartUrl,
+    this.coverUrl,
+    this.trackCount = 0,
+    this.updatedAt,
+    this.grain,
+    this.albumCount = 0,
+  });
+
+  bool get albumGrain => grain == 'album';
+
+  factory ChartPlaylist.fromJson(Map<String, dynamic> j) => ChartPlaylist(
+        id:          j['id'] as String,
+        slug:        (j['slug'] as String?) ?? '',
+        name:        (j['name'] as String?) ?? '',
+        description: j['description'] as String?,
+        collection:  j['collection'] as String?,
+        chartUrl:    j['chart_url'] as String?,
+        coverUrl:    j['cover_url'] as String?,
+        trackCount:  (j['track_count'] as num?)?.toInt() ?? 0,
+        updatedAt:   DateTime.tryParse((j['updated_at'] as String?) ?? ''),
+        grain:       j['grain'] as String?,
+        albumCount:  (j['album_count'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// Une ligne de `most_popular_albums` — volontairement maigre: le RPC ne rend
+/// que de quoi afficher et naviguer (l'écran d'album recharge le reste par
+/// l'uuid).
+class PopularAlbum {
+  final String albumId;
+  final String name;
+  final String? platform;
+  final String collection;
+  final String? artworkUrl;
+  final int playCount;
+
+  const PopularAlbum({
+    required this.albumId,
+    required this.name,
+    this.platform,
+    required this.collection,
+    this.artworkUrl,
+    this.playCount = 0,
+  });
+
+  factory PopularAlbum.fromJson(Map<String, dynamic> j) => PopularAlbum(
+        albumId:    j['album_id'] as String,
+        name:       (j['name'] as String?) ?? '',
+        platform:   j['platform'] as String?,
+        collection: (j['collection'] as String?) ?? '',
+        artworkUrl: j['artwork_url'] as String?,
+        playCount:  (j['play_count'] as num?)?.toInt() ?? 0,
+      );
+}
+
 class CollectionOverview {
   final int songCount;
   final int artistCount;
@@ -930,6 +1239,8 @@ class CollectionOverview {
   final int? yearMax;
   /// Complete format census, count-desc.
   final List<({String ext, int count})> formats;
+  /// Les playlists de CLASSEMENT de la collection — `[]` si elle n'en a pas.
+  final List<ChartPlaylist> charts;
 
   const CollectionOverview({
     this.songCount = 0,
@@ -941,6 +1252,7 @@ class CollectionOverview {
     this.yearMin,
     this.yearMax,
     this.formats = const [],
+    this.charts = const [],
   });
 
   factory CollectionOverview.fromJson(Map<String, dynamic> j) {
@@ -976,6 +1288,12 @@ class CollectionOverview {
       yearMin:      (j['year_min'] as num?)?.toInt(),
       yearMax:      (j['year_max'] as num?)?.toInt(),
       formats:      formats,
+      charts: [
+        if (j['charts'] is List)
+          for (final e in j['charts'] as List)
+            if (e is Map && e['id'] is String)
+              ChartPlaylist.fromJson(Map<String, dynamic>.from(e)),
+      ],
     );
   }
 }
@@ -1405,6 +1723,20 @@ class Playlist {
 /// file is fire-and-forget). [code] is the SQLSTATE the server raised, e.g.
 /// 23514 (invalid email / invalid code / quota), 53300 (rate limit),
 /// 42501 (not your playlist), 23503 (unknown playlist or user).
+/// Réponse de `set_library_batch` (voir [RewampDb.setLibraryBatch]).
+class LibraryBatchRejection {
+  final int index;
+  final String code;
+  final String message;
+  const LibraryBatchRejection(this.index, this.code, this.message);
+}
+
+class LibraryBatchResult {
+  final int applied;
+  final List<LibraryBatchRejection> rejected;
+  const LibraryBatchResult(this.applied, this.rejected);
+}
+
 class RewampRpcException implements Exception {
   final String code;
   final String message;
@@ -2083,6 +2415,12 @@ class ArtistResult {
   final String? matchReason;  // direct | via_song | via_album | null (browse)
   final double matchRank;     // quality score (migration 100); 1.0 = exact substring
 
+  /// `total_count` n'est qu'un PLANCHER (migration serveur 247, dernière
+  /// colonne). Le serveur borne son décompte sur les recherches très larges;
+  /// quand il l'a fait, il le DIT au lieu de rendre un nombre qui a l'air
+  /// exact. Une seule conséquence côté client: écrire « 4403+ ».
+  final bool totalTruncated;
+
   const ArtistResult({
     required this.artistId,
     required this.name,
@@ -2097,6 +2435,7 @@ class ArtistResult {
     this.totalCount = -1,
     this.matchReason,
     this.matchRank = 0,
+    this.totalTruncated = false,
   });
 
   factory ArtistResult.fromJson(Map<String, dynamic> j) => ArtistResult(
@@ -2113,6 +2452,8 @@ class ArtistResult {
         totalCount:  (j['total_count'] as num?)?.toInt() ?? -1,
         matchReason: j['match_reason'] as String?,
         matchRank:   (j['match_rank'] as num?)?.toDouble() ?? 0,
+        // Absente d'un serveur antérieur à la 247 ⇒ false: un total non borné.
+        totalTruncated: j['truncated'] == true,
       );
 }
 
@@ -2122,7 +2463,7 @@ class ArtistResult {
 /// The counted dimension is NOT filtered by its own value, so a dropdown keeps
 /// all its options even while that dimension is selected.
 class FacetCount {
-  final String kind;   // 'format' | 'platform' | 'collection'
+  final String kind;   // 'format' | 'platform' | 'collection' | 'podium' (value '1'-'3', un rang par ligne)
   final String value;  // extension / platform name / collection slug
   final int count;     // candidate songs bearing this value
 
@@ -3128,6 +3469,10 @@ class SidSubsongInfo {
   /// STIL ARTIST — l'auteur de l'œuvre reprise.
   final String? artist;
   final String? comment;
+  /// TOUTES les reprises citées, dans l'ordre du fichier — donc chronologique.
+  /// `title`/`artist` restent le PREMIER groupe (migration serveur 238), pas
+  /// une autre donnée: ils sont là pour les clients qui ne lisent pas ce champ.
+  final List<SidCover> covers;
 
   const SidSubsongInfo({
     required this.idx,
@@ -3137,6 +3482,7 @@ class SidSubsongInfo {
     this.title,
     this.artist,
     this.comment,
+    this.covers = const [],
   });
 
   factory SidSubsongInfo.fromJson(Map<String, dynamic> j) => SidSubsongInfo(
@@ -3147,6 +3493,7 @@ class SidSubsongInfo {
         title: j['title'] as String?,
         artist: j['artist'] as String?,
         comment: j['comment'] as String?,
+        covers: sidCoversFromJson(j['covers']),
       );
 
   /// « reprend X de Y », ou null quand le sous-chant ne cite rien.
@@ -3161,9 +3508,11 @@ class SidGlobalStil {
   final String? title;
   final String? artist;
   final String? comment;
+  final List<SidCover> covers;
 
   const SidGlobalStil(
-      {this.name, this.author, this.title, this.artist, this.comment});
+      {this.name, this.author, this.title, this.artist, this.comment,
+       this.covers = const []});
 
   factory SidGlobalStil.fromJson(Map<String, dynamic> j) => SidGlobalStil(
         name: j['name'] as String?,
@@ -3171,18 +3520,26 @@ class SidGlobalStil {
         title: j['title'] as String?,
         artist: j['artist'] as String?,
         comment: j['comment'] as String?,
+        covers: sidCoversFromJson(j['covers']),
       );
 }
 
 class SidInfo {
   final String md5;
   final int? subsongCount;
+  /// Sous-chant sur lequel DÉMARRER, 0-based DENSE — la valeur à passer telle
+  /// quelle au moteur. Beaucoup de SID ouvrent sur un bruitage ou un jingle et
+  /// désignent dans leur en-tête le vrai morceau (`startSong`); le serveur a
+  /// déjà fait la conversion depuis son 1-based, NE PAS la refaire.
+  /// null = démarrer à 0 (l'immense majorité, et les en-têtes non lus).
+  final int? defaultSubsong;
   final SidGlobalStil? stilGlobal;
   final List<SidSubsongInfo> subsongs;
 
   const SidInfo({
     required this.md5,
     this.subsongCount,
+    this.defaultSubsong,
     this.stilGlobal,
     this.subsongs = const [],
   });
@@ -3190,6 +3547,7 @@ class SidInfo {
   factory SidInfo.fromJson(Map<String, dynamic> j) => SidInfo(
         md5: j['md5'] as String,
         subsongCount: (j['subsong_count'] as num?)?.toInt(),
+        defaultSubsong: (j['default_subsong'] as num?)?.toInt(),
         stilGlobal: j['stil_global'] != null
             ? SidGlobalStil.fromJson(j['stil_global'] as Map<String, dynamic>)
             : null,
@@ -3225,6 +3583,14 @@ class SidInfo {
   String? coverArtistFor(int subsongIdx) =>
       subsongAt(subsongIdx)?.artist ?? stilGlobal?.artist;
 
+  /// Toutes les reprises du sous-chant, sinon celles du bloc global — même
+  /// repli que [coverTitleFor], dont ce champ est la version complète.
+  List<SidCover> coversFor(int subsongIdx) {
+    final own = subsongAt(subsongIdx)?.covers ?? const <SidCover>[];
+    if (own.isNotEmpty) return own;
+    return stilGlobal?.covers ?? const [];
+  }
+
   /// Subsong length in ms for [subsongIdx] (0-based), or null.
   int? lengthFor(int subsongIdx) =>
       subsongs.where((s) => s.idx - 1 == subsongIdx).firstOrNull?.lengthMs;
@@ -3237,26 +3603,57 @@ class SidInfo {
 
 class SapInfo {
   final String md5;
+  /// STIL NAME/AUTHOR — voir [SidSubsongInfo]: ils nomment le MORCEAU, pas
+  /// l'œuvre citée. Panneau ⓘ seulement ici: ASMA n'a pas de découpage par
+  /// sous-chant, donc un NAME nommerait le FICHIER, et on ne renomme pas une
+  /// piste sur cette base.
+  final String? stilName;
+  final String? stilAuthor;
   final String? stilTitle;   // original work title (if this .sap is a cover)
   final String? stilArtist;  // original composer (≠ the SAP file's own author)
   final String? stilComment;
+  /// TOUTES les reprises citées — le serveur rend `stil.covers`, que le client
+  /// IGNORAIT: `stilTitle`/`stilArtist` n'en sont que la première. Même trou
+  /// que la migration locale 61 côté SID, où une entrée en citait sept.
+  final List<SidCover> stilCovers;
+  final int? subsongCount;
+  /// Voir [SidInfo.defaultSubsong] — même contrat: 0-based dense, null = 0.
+  final int? defaultSubsong;
 
   const SapInfo({
     required this.md5,
+    this.stilName,
+    this.stilAuthor,
     this.stilTitle,
     this.stilArtist,
     this.stilComment,
+    this.stilCovers = const [],
+    this.subsongCount,
+    this.defaultSubsong,
   });
 
   factory SapInfo.fromJson(Map<String, dynamic> j) {
     final stil = j['stil'] as Map<String, dynamic>?;
     return SapInfo(
       md5: j['md5'] as String,
+      subsongCount: (j['subsong_count'] as num?)?.toInt(),
+      defaultSubsong: (j['default_subsong'] as num?)?.toInt(),
+      stilName: stil?['name'] as String?,
+      stilAuthor: stil?['author'] as String?,
       stilTitle: stil?['title'] as String?,
       stilArtist: stil?['artist'] as String?,
       stilComment: stil?['comment'] as String?,
+      stilCovers: sidCoversFromJson(stil?['covers']),
     );
   }
+
+  bool get hasStil =>
+      (stilName?.isNotEmpty ?? false) ||
+      (stilAuthor?.isNotEmpty ?? false) ||
+      (stilTitle?.isNotEmpty ?? false) ||
+      (stilArtist?.isNotEmpty ?? false) ||
+      (stilComment?.isNotEmpty ?? false) ||
+      stilCovers.isNotEmpty;
 }
 
 // ---------------------------------------------------------------------------
@@ -3269,7 +3666,7 @@ class SapInfo {
 ///
 /// The shape varies by playlist kind, which is why every field is optional:
 /// a party compo playlist carries {rank, production, group}, while the
-/// calendar-driven "Hall of Fame — <series>" ones carry {rank, party, year}
+/// calendar-driven "Hall of Fame — `<series>`" ones carry {rank, party, year}
 /// (the party naming the edition and compo, e.g. "Solskogen 2020 — Oldschool
 /// Music"). null rank ⇒ non-compo playlist, fall back to track_position.
 class PlaylistTrackMeta {
@@ -3319,6 +3716,33 @@ class DownloadInfo {
 /// Caught by the play path to show an explicit "unsupported format" message
 /// (naming file + ext) and report the song — NOT the misleading "download
 /// failed" banner. [songId] is the online song UUID (null = local, unreportable).
+/// L'archive de l'album ne contient PAS le fichier que la tracklist annonce.
+///
+/// Mesuré sur « Atelier Annie - Alchemists of Sera Island » (jw_2sf): le rip
+/// joshw liste 55 pistes, dont six `.mp3` (les vocales) — et son `.7z` n'en
+/// contient AUCUNE: 49 `.mini2sf`, un `.2sflib`, le `!playlist.m3u`. Le
+/// serveur reprend cette liste telle quelle, donc six lignes de l'écran album
+/// ne désignent rien. Sans cette exception elles retombaient sur le pick
+/// générique: les trois premières jouaient toutes le MÊME fichier (le
+/// `.2sflib` de 8,9 Mo, seul « gros fichier d'allure audio » du dossier), et
+/// la ligne cliquée se marquait « téléchargée » puisqu'un chemin venait d'y
+/// être écrit.
+class ArchiveEntryMissingException implements Exception {
+  final String filename;   // le nom que la tracklist annonce
+  final String url;        // l'archive où il devait se trouver
+  final String? songId;    // pour report_song
+  final int subsongIndex;
+  const ArchiveEntryMissingException({
+    required this.filename,
+    required this.url,
+    this.songId,
+    this.subsongIndex = 0,
+  });
+  @override
+  String toString() =>
+      'ArchiveEntryMissingException($filename absent de $url)';
+}
+
 class FormatUnsupportedException implements Exception {
   final String filename;     // basename shown to the user
   final String ext;          // extension without the dot
@@ -3354,6 +3778,23 @@ class DownloadHttpException implements Exception {
   String toString() => 'DownloadHttpException($statusCode $url)';
 }
 
+/// L'origine n'a pas répondu à temps.
+///
+/// ⚠️ Distincte d'un `TimeoutException` nu, qui remontait tel quel jusqu'au
+/// bandeau: le testeur lisait « TimeoutException after 0:00:20.000000: Future
+/// not completed » là où le fait utile est « ce serveur-là n'a pas répondu ».
+/// Elle nomme l'HÔTE, parce que c'est lui le fautif — et sur un module Amiga
+/// c'est toujours le même. (modland n'était pas miroité jusqu'au 2026-09-05 —
+/// `mirror_url` nul sur toutes ses lignes; depuis, morceaux ET compagnons ont
+/// un miroir, l'origine ne sert plus qu'en repli.)
+class DownloadTimeoutException implements Exception {
+  final String host;
+  final String url;
+  const DownloadTimeoutException(this.host, this.url);
+  @override
+  String toString() => 'DownloadTimeoutException($host — $url)';
+}
+
 class RewampDb {
   // Switch between local dev server and VPS by toggling this flag.
   // ENV=local  → localhost (macOS/iOS simulator: 127.0.0.1, Android emulator: 10.0.2.2)
@@ -3367,12 +3808,9 @@ class RewampDb {
 
   static const String _localUrl        = 'http://127.0.0.1:3000';
   static const String _androidLocalUrl = 'http://10.0.2.2:3000';
-  // Vide dans le dépôt public, exprès: une build sans configuration ne doit
-  // parler à AUCUN serveur — surtout pas à celui du projet. Pointez la vôtre
-  // avec --dart-define=REWAMP_API_URL=https://votre-instance.
   static const String _vpsUrl = String.fromEnvironment(
     'REWAMP_API_URL',
-    defaultValue: '',
+    defaultValue: 'https://api.rewamp.app',
   );
 
   static String get _baseUrl {
@@ -3398,6 +3836,52 @@ class RewampDb {
                 'tag_categories': tagCategories,
             };
 
+  /// POST JSON avec des clés OPTIONNELLES: PostgREST rejette un paramètre
+  /// inconnu (PGRST202, HTTP 404) au lieu de l'ignorer — un serveur antérieur
+  /// à la migration qui l'ajoute ferait donc échouer TOUT l'appel. Sur 404
+  /// avec une clé optionnelle posée, on rejoue sans elle: le filtre concerné
+  /// se dégrade, l'appel aboutit. Même contrat que _rpcOptional, pour les
+  /// liaisons qui décodent elles-mêmes leur réponse.
+  /// Paramètres OPTIONNELS qu'un serveur a refusés pendant ce processus (404
+  /// PostgREST ⇒ requête rejouée SANS eux). ⚠️ Un FILTRE retiré ainsi n'est
+  /// PAS appliqué: l'appelant doit pouvoir le savoir, sinon il affiche un
+  /// résultat non filtré comme s'il l'était (docs/podium_filter_proposal.md).
+  static final Set<String> _serverLacks = <String>{};
+  static bool serverLacks(String param) => _serverLacks.contains(param);
+
+  /// Bumped when [serverLacks] learns a new parameter — an open screen can
+  /// react (announce it, clear the filter that cannot apply).
+  static final ValueNotifier<int> serverLacksChanged = ValueNotifier<int>(0);
+
+  static Future<http.Response> _postJsonOptional(
+    Uri uri,
+    Map<String, dynamic> body, {
+    Set<String> optional = const {},
+    Duration timeout = const Duration(seconds: 20),
+    Map<String, String>? headers,
+  }) async {
+    final h = headers ?? const {'Content-Type': 'application/json'};
+    final r = await http
+        .post(uri, headers: h, body: jsonEncode(body))
+        .timeout(timeout);
+    if (r.statusCode == 404 &&
+        optional.isNotEmpty &&
+        optional.any(body.containsKey)) {
+      final trimmed = {...body}..removeWhere((k, _) => optional.contains(k));
+      final lacked = optional.where(body.containsKey).toSet();
+      if (!_serverLacks.containsAll(lacked)) {
+        _serverLacks.addAll(lacked);
+        serverLacksChanged.value++;
+      }
+      debugPrint('[RewampDb] ${uri.pathSegments.last}: server lacks '
+          '${optional.join('/')} — retrying without');
+      return http
+          .post(uri, headers: h, body: jsonEncode(trimmed))
+          .timeout(timeout);
+    }
+    return r;
+  }
+
   static Future<List<SearchResult>> search(
     String q, {
     bool fuzzy = false, // server reco: exact/prefix; use true as a fallback
@@ -3405,6 +3889,11 @@ class RewampDb {
     String? artistId, // p_artist_id (mig 146): homonym-proof artist scoping
     String? albumName,
     String? collection, // maps to collection_slug
+    /// PLUSIEURS collections en OU (mig serveur 240) — c'est ce qui porte la
+    /// famille « joshw » du sélecteur: le client déplie la famille en ses
+    /// membres, le serveur reste ignorant du regroupement. Ignoré si
+    /// [collection] est posé (le serveur donne priorité au slug unique).
+    List<String>? collections, // maps to p_collections
     String? platform, // maps to platform_name
     String? formatFilter, // maps to format_filter  (e.g. 'mod', 'vgz')
     String? chipName, // maps to chip_name
@@ -3413,6 +3902,7 @@ class RewampDb {
     int? yearMin, // inclusive; NB: filtering excludes undated (year=null) songs
     int? yearMax,
     num? ratingMin, // 0..5; rating derives from plays, unrated songs excluded
+    int? podium, // p_podium: null = aucun, 0 = tout podium, 1-3 = ce rang (podium_filter.dart)
     String? seed, // for sortBy 'random': fixed seed = stable paginated order
     String sortBy = 'relevance', // relevance|name|popularity|year|random (+title/rating aliases)
     String? sortDir, // asc|desc; server default per sort_by
@@ -3420,17 +3910,17 @@ class RewampDb {
     int offset = 0,
   }) async {
     final uri = Uri.parse('$_baseUrl/rpc/search_music');
-    final response = await http
-        .post(
+    final response = await _postJsonOptional(
           uri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
+          {
             'q': q,
             'fuzzy': fuzzy,
             if (artistName != null) 'artist_name': artistName,
             if (artistId != null) 'p_artist_id': artistId,
             if (albumName != null) 'album_name': albumName,
             if (collection != null) 'collection_slug': collection,
+            if (collections != null && collections.isNotEmpty)
+              'p_collections': collections,
             if (platform != null) 'platform_name': platform,
             if (formatFilter != null) 'format_filter': formatFilter,
             if (chipName != null) 'chip_name': chipName,
@@ -3438,22 +3928,27 @@ class RewampDb {
             if (yearMin != null) 'year_min': yearMin,
             if (yearMax != null) 'year_max': yearMax,
             if (ratingMin != null) 'rating_min': ratingMin,
+            if (podium != null && podium >= 0 && podium <= 3) 'p_podium': podium,
             if (seed != null) 'seed': seed,
             'sort_by': sortBy,
             if (sortDir != null) 'sort_dir': sortDir,
             'lim': limit,
             'from_offset': offset,
-          }),
-        )
-        .timeout(const Duration(seconds: 20));
+          },
+          optional: const {'p_collections', 'p_podium'},
+        );
 
     if (response.statusCode != 200) {
       throw Exception('search_music HTTP ${response.statusCode}');
     }
     final list = jsonDecode(response.body) as List;
-    return list
+    final rows = list
         .map((e) => SearchResult.fromJson(e as Map<String, dynamic>))
         .toList();
+    // Serveur sans p_podium: la page reçue n'est PAS filtrée — on filtre ici.
+    return podium != null && serverLacks('p_podium')
+        ? [for (final r in rows) if (r.podium != null && (podium == 0 || r.podium!.rank == podium)) r]
+        : rows;
   }
 
   // ---- Browse (no text query) -----------------------------------------------
@@ -3461,6 +3956,7 @@ class RewampDb {
   /// Returns songs from `browse_music` RPC — collection browsing without FTS.
   static Future<List<SearchResult>> browse({
     String? collection,
+    List<String>? collections, // p_collections (mig 240) — voir search()
     String? albumName,
     String? artistName,
     String? artistId, // p_artist_id (mig 146): homonym-proof artist scoping
@@ -3472,6 +3968,7 @@ class RewampDb {
     int? yearMin,
     int? yearMax,
     num? ratingMin,
+    int? podium, // p_podium — voir search()
     String? seed, // for sortBy 'random': fixed seed = stable paginated order
     // Folder-subtree filter (migration 113): songs.path LIKE prefix || '%',
     // scoped to [collection]. Must end with '/' to target a folder (not a
@@ -3483,12 +3980,12 @@ class RewampDb {
     int offset = 0,
   }) async {
     final uri = Uri.parse('$_baseUrl/rpc/browse_music');
-    final response = await http
-        .post(
+    final response = await _postJsonOptional(
           uri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
+          {
             if (collection != null) 'collection_slug': collection,
+            if (collections != null && collections.isNotEmpty)
+              'p_collections': collections,
             if (albumName != null) 'album_name': albumName,
             if (artistName != null) 'artist_name': artistName,
             if (artistId != null) 'p_artist_id': artistId,
@@ -3499,23 +3996,28 @@ class RewampDb {
             if (yearMin != null) 'year_min': yearMin,
             if (yearMax != null) 'year_max': yearMax,
             if (ratingMin != null) 'rating_min': ratingMin,
+            if (podium != null && podium >= 0 && podium <= 3) 'p_podium': podium,
             if (seed != null) 'seed': seed,
             if (pathPrefix != null) 'path_prefix': pathPrefix,
             'sort_by': sortBy,
             if (sortDir != null) 'sort_dir': sortDir,
             'lim': limit,
             'from_offset': offset,
-          }),
-        )
-        .timeout(const Duration(seconds: 15));
+          },
+          optional: const {'p_collections', 'p_podium'},
+          timeout: const Duration(seconds: 15),
+        );
 
     if (response.statusCode != 200) {
       throw Exception('browse_music HTTP ${response.statusCode}');
     }
     final list = jsonDecode(response.body) as List;
-    return list
+    final rows = list
         .map((e) => SearchResult.fromJson(e as Map<String, dynamic>))
         .toList();
+    return podium != null && serverLacks('p_podium')
+        ? [for (final r in rows) if (r.podium != null && (podium == 0 || r.podium!.rank == podium)) r]
+        : rows;
   }
 
   /// One page of a collection's folder tree via `browse_folder` (migration
@@ -3631,18 +4133,23 @@ class RewampDb {
     String period = 'all',
     int n = 10,
     String? collectionSlug,
+    List<String>? collections, // p_collections (mig 243) — voir search()
   }) async {
     try {
       final uri = Uri.parse('$_baseUrl/rpc/most_popular_artists');
-      final resp = await http
-          .post(uri,
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'period': period,
-                'n': n,
-                if (collectionSlug != null) 'collection_slug': collectionSlug,
-              }))
-          .timeout(const Duration(seconds: 15));
+      final resp = await _postJsonOptional(
+          uri,
+          {
+            'period': period,
+            'n': n,
+            if (collectionSlug != null) 'collection_slug': collectionSlug,
+            if (collectionSlug == null &&
+                collections != null &&
+                collections.isNotEmpty)
+              'p_collections': collections,
+          },
+          optional: const {'p_collections'},
+          timeout: const Duration(seconds: 15));
       if (resp.statusCode != 200) return const [];
       final list = jsonDecode(resp.body) as List;
       return list
@@ -3937,6 +4444,8 @@ class RewampDb {
     String? query,
     bool fuzzy = false,
     String? collection,
+    /// p_collections (mig 247) — voir search().
+    List<String>? collections,
     String? platform,
     String? formatFilter,
     String? chipName,
@@ -3977,7 +4486,10 @@ class RewampDb {
     // _headers, not a bare content-type: the caller's own playlists (and
     // p_only_mine) exist only for an identified user, and identity now travels
     // in the Authorization header.
-    Future<http.Response> call({required bool withFuzzy}) => http
+    Future<http.Response> call({
+      required bool withFuzzy,
+      required bool withCollections,
+    }) => http
         .post(
           uri,
           headers: _headers,
@@ -3991,6 +4503,7 @@ class RewampDb {
             if (withFuzzy) 'fuzzy': true,
             if (source != null && source.isNotEmpty) 'p_source': source,
             if (collection != null) 'collection_slug': collection,
+            if (withCollections) 'p_collections': collections,
             if (platform != null) 'platform_name': platform,
             if (formatFilter != null) 'format_filter': formatFilter,
             if (chipName != null) 'chip_name': chipName,
@@ -4010,10 +4523,22 @@ class RewampDb {
           }),
         )
         .timeout(const Duration(seconds: 15));
-    var response = await call(withFuzzy: fuzzy);
+    // Cet appel a DEUX paramètres qu'un serveur antérieur peut ne pas
+    // connaître, et PostgREST répond 404 pour l'un comme pour l'autre — on ne
+    // peut donc pas savoir lequel a fâché. On les retire du plus récent au
+    // plus ancien: `p_collections` (mig 247) d'abord, `fuzzy` ensuite.
+    final wantCollections =
+        collection == null && collections != null && collections.isNotEmpty;
+    var response =
+        await call(withFuzzy: fuzzy, withCollections: wantCollections);
+    if (wantCollections && response.statusCode == 404) {
+      debugPrint('[RewampDb] list_playlists: server lacks p_collections '
+          '— retrying without');
+      response = await call(withFuzzy: fuzzy, withCollections: false);
+    }
     // Older server without the fuzzy parameter → retry without it.
     if (fuzzy && response.statusCode == 404) {
-      response = await call(withFuzzy: false);
+      response = await call(withFuzzy: false, withCollections: false);
     }
     if (response.statusCode != 200) {
       throw Exception('list_playlists HTTP ${response.statusCode}');
@@ -4203,7 +4728,13 @@ class RewampDb {
   /// A row whose `ext_ref` is set (migration 176) is an out-of-catalogue entry:
   /// EVERY catalogue column is null on it, so it must never reach the normal
   /// parser (`filename` is required there and would throw).
-  static Future<List<SearchResult>> playlistTracks(String playlistId) async {
+  ///
+  /// ⚠️ Le serveur PLAFONNE une page à 1000 lignes — silencieusement: la
+  /// playlist de classement vgmrips (2364 pistes) revenait tronquée sans
+  /// erreur. [offset]/[limit] passent `from_offset`/`lim` (noms vérifiés dans
+  /// le hint PostgREST); [playlistTracksAll] enchaîne les pages.
+  static Future<List<SearchResult>> playlistTracks(String playlistId,
+      {int? limit, int? offset}) async {
     final uri = Uri.parse('$_baseUrl/rpc/get_playlist_tracks');
     final response = await http
         .post(
@@ -4211,6 +4742,8 @@ class RewampDb {
           headers: _headers,
           body: jsonEncode({
             'p_playlist_id': playlistId,
+            if (limit != null) 'lim': limit,
+            if (offset != null) 'from_offset': offset,
           }),
         )
         .timeout(const Duration(seconds: 20));
@@ -4367,6 +4900,21 @@ class RewampDb {
 
   // ---- Reference data -------------------------------------------------------
 
+  /// slug → nom lisible, mémorisé au premier [fetchCollections].
+  ///
+  /// Une ligne de recherche ne porte que le SLUG (`jw_dsf`, `asma`), et c'est
+  /// lui qu'on affichait. Le nom vit dans une table de référence que les écrans
+  /// de recherche et de navigation chargent déjà pour leurs menus de facettes —
+  /// le mémoriser ici évite de le redemander et rend le nom disponible SANS
+  /// attente à l'endroit où il s'affiche.
+  static Map<String, String> _collectionNames = const {};
+
+  /// Le nom lisible d'une collection, ou le slug tant qu'on ne le connaît pas
+  /// (premier affichage avant que la table de référence soit chargée) — jamais
+  /// une chaîne vide: mieux vaut un slug qu'un trou.
+  static String collectionLabel(String slug) =>
+      _collectionNames[slug] ?? slug;
+
   static Future<List<Collection>> fetchCollections() async {
     final uri = Uri.parse('$_baseUrl/collections').replace(queryParameters: {
       'select': 'slug,name,files_count',
@@ -4379,24 +4927,29 @@ class RewampDb {
       throw Exception('fetchCollections HTTP ${response.statusCode}');
     }
     final list = jsonDecode(response.body) as List;
-    return list
+    final cols = list
         .map((e) => Collection.fromJson(e as Map<String, dynamic>))
         .toList();
+    _collectionNames = {for (final c in cols) c.slug: c.name};
+    return cols;
   }
 
   /// Formats actually present (with usage counts) via `list_formats` RPC,
   /// optionally scoped to one collection. Sorted by popularity server-side.
-  static Future<List<MusicFormat>> fetchFormats({String? collection}) async {
+  static Future<List<MusicFormat>> fetchFormats({
+    String? collection,
+    List<String>? collections, // p_collections (mig 243) — voir search()
+  }) async {
     final uri = Uri.parse('$_baseUrl/rpc/list_formats');
-    final response = await http
-        .post(
+    final response = await _postJsonOptional(
           uri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
+          {
             if (collection != null) 'collection_slug': collection,
-          }),
-        )
-        .timeout(const Duration(seconds: 20));
+            if (collection == null && collections != null && collections.isNotEmpty)
+              'p_collections': collections,
+          },
+          optional: const {'p_collections'},
+        );
     if (response.statusCode != 200) {
       throw Exception('fetchFormats HTTP ${response.statusCode}');
     }
@@ -4414,6 +4967,7 @@ class RewampDb {
     String q, {
     bool fuzzy = false,
     String? collection,
+    List<String>? collections, // p_collections (mig 240) — voir search()
     String? platform,
     String? formatFilter,
     String? chipName,
@@ -4422,6 +4976,7 @@ class RewampDb {
     int? yearMin,
     int? yearMax,
     num? ratingMin,
+    int? podium, // p_podium — voir search()
     String? seed,
     String sortBy = 'relevance', // relevance|name|popularity|year|recent|random
     String? sortDir,             // asc|desc; server default per sort_by
@@ -4429,14 +4984,14 @@ class RewampDb {
     int offset = 0,
   }) async {
     final uri = Uri.parse('$_baseUrl/rpc/search_albums');
-    final response = await http
-        .post(
+    final response = await _postJsonOptional(
           uri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
+          {
             'q': q,
             'fuzzy': fuzzy,
             if (collection != null) 'collection_slug': collection,
+            if (collections != null && collections.isNotEmpty)
+              'p_collections': collections,
             if (platform != null) 'platform_name': platform,
             if (formatFilter != null) 'format_filter': formatFilter,
             if (chipName != null) 'chip_name': chipName,
@@ -4444,21 +4999,25 @@ class RewampDb {
             if (yearMin != null) 'year_min': yearMin,
             if (yearMax != null) 'year_max': yearMax,
             if (ratingMin != null) 'rating_min': ratingMin,
+            if (podium != null && podium >= 0 && podium <= 3) 'p_podium': podium,
             if (seed != null) 'seed': seed,
             'sort_by': sortBy,
             if (sortDir != null) 'sort_dir': sortDir,
             'lim': limit,
             'from_offset': offset,
-          }),
-        )
-        .timeout(const Duration(seconds: 20));
+          },
+          optional: const {'p_collections', 'p_podium'},
+        );
     if (response.statusCode != 200) {
       throw Exception('search_albums HTTP ${response.statusCode}');
     }
     final list = jsonDecode(response.body) as List;
-    return list
+    final rows = list
         .map((e) => ArtistAlbum.fromJson(e as Map<String, dynamic>))
         .toList();
+    return podium != null && serverLacks('p_podium')
+        ? [for (final a in rows) if (a.podium != null && (podium == 0 || a.podium!.rank == podium)) a]
+        : rows;
   }
 
   /// Artistes tab of the cross-entity search via `search_artists` RPC (migration
@@ -4469,6 +5028,11 @@ class RewampDb {
     String q, {
     bool fuzzy = false,
     String? collection,
+    /// p_collections (mig 247) — voir search(). ⚠️ Le serveur filtre sur les
+    /// MORCEAUX connectés et rend une UNION: sc68 157 + zxart 16 = 173
+    /// artistes, pas 173 par addition — un même artiste présent dans les deux
+    /// collections ne compte qu'une fois.
+    List<String>? collections,
     String? platform,
     String? formatFilter,
     String? chipName,
@@ -4488,14 +5052,14 @@ class RewampDb {
     int offset = 0,
   }) async {
     final uri = Uri.parse('$_baseUrl/rpc/search_artists');
-    final response = await http
-        .post(
+    final response = await _postJsonOptional(
           uri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
+          {
             'q': q,
             'fuzzy': fuzzy,
             if (collection != null) 'collection_slug': collection,
+            if (collection == null && collections != null && collections.isNotEmpty)
+              'p_collections': collections,
             if (platform != null) 'platform_name': platform,
             if (formatFilter != null) 'format_filter': formatFilter,
             if (chipName != null) 'chip_name': chipName,
@@ -4509,9 +5073,9 @@ class RewampDb {
             if (sortDir != null) 'sort_dir': sortDir,
             'lim': limit,
             'from_offset': offset,
-          }),
-        )
-        .timeout(const Duration(seconds: 20));
+          },
+          optional: const {'p_collections'},
+        );
     if (response.statusCode != 200) {
       throw Exception('search_artists HTTP ${response.statusCode}');
     }
@@ -4542,6 +5106,7 @@ class RewampDb {
     String? artistId,
     String? artistName,
     String? collection,
+    List<String>? collections, // p_collections (mig 243) — voir search()
     String? platform,
     String? formatFilter,
     String? chipName,
@@ -4550,19 +5115,20 @@ class RewampDb {
     int? yearMin,
     int? yearMax,
     num? ratingMin,
+    int? podium, // p_podium: null = aucun, 0 = tout podium, 1-3 = ce rang (podium_filter.dart)
   }) async {
     final uri = Uri.parse('$_baseUrl/rpc/search_facets');
-    final response = await http
-        .post(
+    final response = await _postJsonOptional(
           uri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
+          {
             'q': q,
             'fuzzy': fuzzy,
             if (grain != null) 'p_grain': grain,
             if (artistId != null) 'p_artist_id': artistId,
             if (artistName != null) 'artist_name': artistName,
             if (collection != null) 'collection_slug': collection,
+            if (collection == null && collections != null && collections.isNotEmpty)
+              'p_collections': collections,
             if (platform != null) 'platform_name': platform,
             if (formatFilter != null) 'format_filter': formatFilter,
             if (chipName != null) 'chip_name': chipName,
@@ -4570,9 +5136,10 @@ class RewampDb {
             if (yearMin != null) 'year_min': yearMin,
             if (yearMax != null) 'year_max': yearMax,
             if (ratingMin != null) 'rating_min': ratingMin,
-          }),
-        )
-        .timeout(const Duration(seconds: 20));
+            if (podium != null && podium >= 0 && podium <= 3) 'p_podium': podium,
+          },
+          optional: const {'p_collections', 'p_podium'},
+        );
     if (response.statusCode != 200) {
       throw Exception('search_facets HTTP ${response.statusCode}');
     }
@@ -4691,7 +5258,7 @@ class RewampDb {
   /// Downloads [result] into the persistent online library and returns the
   /// local file path.
   ///
-  /// Layout: <appSupport>/online/<artist>/<format>/<album>/<filename>
+  /// Layout: `<appSupport>/online/<artist>/<format>/<album>/<filename>`
   /// Album segment is omitted when null/empty.
   /// If the file already exists locally it is returned immediately (cache).
   /// Global download status, for the UI banner. Written by every download in
@@ -4745,6 +5312,11 @@ class RewampDb {
   static Future<void> _originGate = Future<void>.value();  // serialization chain
   static DateTime? _lastOriginFetchStart;
 
+  /// Combien de temps on attend les EN-TÊTES d'une origine. Voir le
+  /// commentaire au point d'appel: 20 s perdait des morceaux sur une route
+  /// lente par intermittence.
+  static const Duration _kHeaderTimeout = Duration(seconds: 45);
+
   static bool _isThrottledHost(String url) {
     final h = Uri.tryParse(url)?.host.toLowerCase() ?? '';
     return h.contains('scene.org');
@@ -4794,6 +5366,64 @@ class RewampDb {
     String url, {
     required String label,
     Duration cap = const Duration(minutes: 5),
+  }) async {
+    final sink = _MemorySink();
+    await _fetchInto(url, sink, label: label, cap: cap);
+    return sink.takeBytes();
+  }
+
+  /// Comme [_fetchBytesRaw], mais écrit AU FIL DE L'EAU dans [dest] au lieu
+  /// de tout accumuler en mémoire. Rend la taille et l'EN-TÊTE (512 octets).
+  ///
+  /// ⚠️ Pourquoi pas tout en mémoire: une archive d'album pèse couramment
+  /// plusieurs centaines de Mo, et elle existait jusqu'ici en ENTIER dans la
+  /// RAM — deux fois pour un album zip, `Isolate.run` COPIANT la valeur
+  /// capturée dans le nouvel isolate. Sur la machine de développement Linux
+  /// (3 Go) c'était un candidat sérieux aux lenteurs signalées le 2026-09-21.
+  ///
+  /// ⚠️ Écrit dans `<dest>.part`, renommé SEULEMENT au succès. Le tampon
+  /// d'archives ne vérifie que l'existence et l'âge d'un fichier: une descente
+  /// annulée à mi-course y laisserait sinon une archive TRONQUÉE que
+  /// l'appelant suivant réutiliserait comme bonne.
+  @visibleForTesting
+  static Future<Uint8List> fetchBytesForTest(String url,
+          {String label = 'test'}) =>
+      _fetchBytesRaw(url, label: label);
+
+  @visibleForTesting
+  static Future<(int, Uint8List)> fetchToFileForTest(String url, File dest,
+          {String label = 'test'}) =>
+      _fetchToFileRaw(url, dest, label: label);
+
+  static Future<(int, Uint8List)> _fetchToFileRaw(
+    String url,
+    File dest, {
+    required String label,
+    Duration cap = const Duration(minutes: 5),
+  }) async {
+    await dest.parent.create(recursive: true);
+    final part = File('${dest.path}.part');
+    final sink = await _FileSink.open(part);
+    try {
+      await _fetchInto(url, sink, label: label, cap: cap);
+      await sink.close();
+      // Une re-descente cache-bustée écrit sur la MÊME destination qu'une
+      // première descente réussie: sous Windows, un renommage vers un fichier
+      // existant échoue — on l'efface d'abord.
+      if (await dest.exists()) await dest.delete();
+      await part.rename(dest.path);
+      return (sink.length, sink.head);
+    } catch (_) {
+      await sink.discard();
+      rethrow;
+    }
+  }
+
+  static Future<void> _fetchInto(
+    String url,
+    _FetchSink sink, {
+    required String label,
+    Duration cap = const Duration(minutes: 5),
     bool retriedChallenge = false,
   }) async {
     // Cancellation: the token comes from the ZONE the chain runs in (a queue
@@ -4802,60 +5432,115 @@ class RewampDb {
     // force-closing the client alone loses the race against a fast download.
     final cancel = DownloadCancelToken.current ?? _ambientCancel;
     cancel.throwIfCancelled(label);
-    downloadStatus.value = DownloadInfo(label);
-    final client = http.Client();
-    void closeClient() => client.close();
+    // Ce qu'on a écrit EN DERNIER dans la bannière. Sert à ne la ranger que si
+    // elle nous décrit encore — un autre téléchargement a pu prendre la main
+    // entre-temps, et l'effacer serait lui voler son affichage.
+    DownloadInfo? mine;
+    void publish(DownloadInfo info) {
+      mine = info;
+      downloadStatus.value = info;
+    }
+    publish(DownloadInfo(label));
+    final watch = Stopwatch()..start();
+    // Le transfert lui-même tourne dans un ISOLATE (voir isolate_fetch.dart:
+    // sous Linux la boucle de l'isolate UI plafonnait le débit à ~1,9 Mo/s).
+    // Le jeton d'annulation reste ICI — une zone ne traverse pas l'isolate —
+    // et lui transmet l'ordre par la fonction enregistrée.
+    void Function()? stopTransfer;
+    void closeClient() => stopTransfer?.call();
     cancel.register(closeClient);
     try {
-      final req = http.Request('GET', Uri.parse(url));
-      final host = req.url.host;
+      final host = Uri.parse(url).host;
       final cachedCookie = _hostCookies[host];
-      if (cachedCookie != null) req.headers['cookie'] = cachedCookie;
-      final resp = await client.send(req).timeout(const Duration(seconds: 20));
-      if (resp.statusCode != 200) {
-        throw DownloadHttpException(resp.statusCode, url);
+      // ⚠️ Budget d'ARRIVÉE DES EN-TÊTES, pas du corps (celui-ci a son propre
+      // délai d'inactivité, 30 s par bloc, et le plafond total `cap`).
+      //
+      // 20 s était trop serré pour une origine NON MIROITÉE. Mesuré le
+      // 2026-09-02 sur `ftp.modland.com`: 0,19 s de TTFB depuis un poste fixe,
+      // 8 requêtes d'affilée sans throttling — et pourtant plus de 20 s depuis
+      // une tablette Android, deux fois, avant de repasser tout seul. Une
+      // route qui traîne par intermittence ne doit pas coûter le morceau: on
+      // laisse 45 s, puis on retente UNE fois sur une connexion NEUVE (un
+      // socket à moitié établi ne se répare pas tout seul) — dans l'isolate.
+      int? total;
+      final IsolateFetchResult got;
+      try {
+        got = await isolateFetch(
+          url,
+          cookie: cachedCookie,
+          filePath: sink.path,
+          headerTimeout: _kHeaderTimeout,
+          stallTimeout: const Duration(seconds: 30),
+          cap: cap,
+          registerCancel: (stop) => stopTransfer = stop,
+          onHead: (h) {
+            if (h.status != 200) {
+              throw DownloadHttpException(h.status, url);
+            }
+            total = h.contentLength;
+            // Some origins (exotica.org.uk) answer the first hit with a 200
+            // HTML interstitial that only sets a `verified` cookie +
+            // JS-reloads. Capture that cookie so the retry below (and future
+            // downloads) get the file.
+            final setCookie = h.setCookie;
+            if (setCookie != null) {
+              final m = RegExp(r'(verified=[^;]+)').firstMatch(setCookie);
+              if (m != null) _hostCookies[host] = m.group(1)!;
+            }
+          },
+          onProgress: (n) {
+            sink.progress(n);
+            final t = total;
+            publish(DownloadInfo(
+              label,
+              progress: (t != null && t > 0) ? n / t : null,
+            ));
+          },
+        );
+      } on FetchHeaderTimeout {
+        throw DownloadTimeoutException(host, url);
       }
-      // Some origins (exotica.org.uk) answer the first hit with a 200 HTML
-      // interstitial that only sets a `verified` cookie + JS-reloads. Capture
-      // that cookie so the retry below (and future downloads) get the file.
-      final setCookie = resp.headers['set-cookie'];
-      if (setCookie != null) {
-        final m = RegExp(r'(verified=[^;]+)').firstMatch(setCookie);
-        if (m != null) _hostCookies[host] = m.group(1)!;
-      }
-      final total    = resp.contentLength;
-      final builder  = BytesBuilder(copy: false);
-      final deadline = DateTime.now().add(cap);
-      var lastNotify = DateTime.now();
-      await for (final chunk
-          in resp.stream.timeout(const Duration(seconds: 30))) {
-        if (cancel.isCancelled) throw DownloadCancelledException(label);
-        builder.add(chunk);
-        if (DateTime.now().isAfter(deadline)) {
-          throw TimeoutException('download exceeded ${cap.inMinutes} min');
-        }
-        final now = DateTime.now();
-        if (now.difference(lastNotify).inMilliseconds > 150) {
-          lastNotify = now;
-          downloadStatus.value = DownloadInfo(
-            label,
-            progress: (total != null && total > 0)
-                ? builder.length / total
-                : null,
-          );
-        }
-      }
-      final bytes = builder.takeBytes();
+      sink.finish(got);
       // Got the interstitial, not the file — replay once with the cookie the
       // interstitial just handed us (the JS reload does exactly this).
       if (!retriedChallenge &&
-          _looksLikeHtml(bytes) &&
+          _looksLikeHtml(sink.head) &&
           _hostCookies.containsKey(host)) {
-        return _fetchBytesRaw(url,
+        // `await` OBLIGATOIRE: sans lui le rejeu sort du `try` avant de
+        // pouvoir échouer, donc un interstitiel qui rate emporte AVEC LUI le
+        // rangement de bannière et la requalification en annulation ci-dessous
+        // — le « en cours de téléchargement » POUR TOUJOURS que ce catch
+        // existe précisément pour éviter.
+        // Le puits repart de ZÉRO: sans ça la page d'interstitiel resterait
+        // collée devant le vrai fichier.
+        await sink.reset();
+        return await _fetchInto(url, sink,
             label: label, cap: cap, retriedChallenge: true);
       }
-      return bytes;
+      final secs = watch.elapsedMilliseconds / 1000;
+      debugPrint('[fetch] $label: ${sink.length} octets en '
+          '${secs.toStringAsFixed(1)} s '
+          '(${(sink.length / (secs > 0 ? secs : 1) / 1e6).toStringAsFixed(2)} Mo/s)');
     } catch (e) {
+      debugPrint('[fetch] $label: ÉCHEC après '
+          '${(watch.elapsedMilliseconds / 1000).toStringAsFixed(1)} s et '
+          '${sink.length} octets — $e');
+      // ⚠️ **Un fetch qui LÈVE doit ranger la bannière qu'il a allumée.**
+      // Elle est posée à l'entrée, et seul le succès la rangeait (via le
+      // `_statusClear()` de `downloadToLibrary`): tout appelant qui rattrape
+      // l'échec sans repasser par là — un miroir qui bascule sur l'origine,
+      // une annexe optionnelle, une archive partagée — laissait « en cours de
+      // téléchargement » à l'écran POUR TOUJOURS, sans rien pour l'enlever.
+      // Rapporté par un testeur beta Android derrière un domaine bloqué: la
+      // bannière est restée alors que le fichier s'était bien téléchargé
+      // ensuite. Le cas d'une erreur AFFICHÉE, lui, se range tout seul
+      // (`_statusFail` arme un délai de 6 s) — c'est le cas silencieux qui
+      // manquait.
+      //
+      // Rangée seulement si elle nous décrit ENCORE: entre-temps un autre
+      // téléchargement a pu prendre la bannière, et l'effacer lui volerait
+      // son affichage.
+      if (identical(downloadStatus.value, mine)) _statusClear();
       // A cancel force-closes the socket, so the failure surfaces as a
       // ClientException/StateError from the aborted stream. The token is the
       // ground truth about WHY it died.
@@ -4865,7 +5550,6 @@ class RewampDb {
       rethrow;
     } finally {
       cancel.unregister(closeClient);
-      client.close();
     }
   }
 
@@ -4938,9 +5622,10 @@ class RewampDb {
   /// a pu changer sous la même url.
   static final Map<String, int> _archiveRealSize = {};
 
-  static Future<Uint8List> _fetchArchiveVerified(
+  static Future<(int, Uint8List)> _fetchArchiveVerified(
     String? mirrorUrl,
-    String originUrl, {
+    String originUrl,
+    File dest, {
     required String label,
     required int expectedSize,
     Duration cap = const Duration(minutes: 5),
@@ -4954,32 +5639,32 @@ class RewampDb {
     // une copie périmée ⇒ on part directement en cache-busté au lieu de
     // télécharger 200 Mo pour les jeter.
     if (expect > 0) {
-      var head = -1;
+      var remote = -1;
       if (mirrorUrl != null && mirrorUrl.isNotEmpty) {
-        head = await _remoteSize(mirrorUrl);
+        remote = await _remoteSize(mirrorUrl);
       }
       // Miroir muet (404 « pas encore synchronisé », méthode refusée): sonder
       // l'ORIGINE, qui est ce qui servira alors. C'est ce chaînon qui manquait
       // — sans lui le désaccord n'apparaissait qu'APRÈS les 298 Mo, et la
       // détection coûtait un aller-retour complet au lieu d'un HEAD.
-      if (head <= 0) head = await _remoteSize(originUrl);
-      if (head > 0 && head != expect) {
-        debugPrint('[fetch] $label: HEAD says $head, expected $expect '
+      if (remote <= 0) remote = await _remoteSize(originUrl);
+      if (remote > 0 && remote != expect) {
+        debugPrint('[fetch] $label: HEAD says $remote, expected $expect '
             '— skipping the stale copy, fetching cache-busted');
-        final busted = await _fetchBytesMirror(null, cacheBusted(originUrl),
-            label: label, cap: cap);
-        _rememberArchiveSize(key, busted.length, expectedSize, label);
+        final busted = await _fetchToFileMirror(
+            null, cacheBusted(originUrl), dest, label: label, cap: cap);
+        _rememberArchiveSize(key, busted.$1, expectedSize, label);
         return busted;
       }
     }
-    final bytes = await _fetchBytesMirror(mirrorUrl, originUrl,
+    final got = await _fetchToFileMirror(mirrorUrl, originUrl, dest,
         label: label, cap: cap);
-    if (expect <= 0 || bytes.length == expect) return bytes;
-    debugPrint('[fetch] $label: ${bytes.length} bytes but expected $expect '
+    if (expect <= 0 || got.$1 == expect) return got;
+    debugPrint('[fetch] $label: ${got.$1} bytes but expected $expect '
         '— stale CDN copy, refetching cache-busted');
-    final fresh = await _fetchBytesMirror(null, cacheBusted(originUrl),
-        label: label, cap: cap);
-    _rememberArchiveSize(key, fresh.length, expectedSize, label);
+    final fresh = await _fetchToFileMirror(
+        null, cacheBusted(originUrl), dest, label: label, cap: cap);
+    _rememberArchiveSize(key, fresh.$1, expectedSize, label);
     return fresh;
   }
 
@@ -5055,31 +5740,35 @@ class RewampDb {
     } catch (_) {}
   }
 
-  static Future<Uint8List?> _archiveCacheRead(String key, String url) async {
+  /// Une entrée VALIDE du tampon: présente et plus jeune que le TTL. Rend sa
+  /// taille et son EN-TÊTE — jamais son contenu: c'était une relecture ENTIÈRE
+  /// de l'archive en mémoire à chaque réutilisation.
+  static Future<(int, Uint8List)?> _archiveCacheHead(String path) async {
     try {
-      final dir = await _archiveCacheDir();
-      final f = File(p.join(dir.path, _archiveCacheName(key, url)));
+      final f = File(path);
       if (!await f.exists()) return null;
-      if (DateTime.now().difference((await f.stat()).modified) >
-          _kArchiveCacheTtl) {
+      final st = await f.stat();
+      if (DateTime.now().difference(st.modified) > _kArchiveCacheTtl) {
         await f.delete().catchError((_) => f);
         return null;
       }
-      return await f.readAsBytes();
+      final head = await _readHead(path);
+      return head == null ? null : (st.size, head);
     } catch (_) {
       return null;
     }
   }
 
-  static Future<String?> _archiveCacheWrite(
-      String key, String url, Uint8List bytes) async {
+  /// Les 512 premiers octets d'un fichier — ce que regardent les reniflages.
+  static Future<Uint8List?> _readHead(String path) async {
+    RandomAccessFile? raf;
     try {
-      final dir = await _archiveCacheDir();
-      final f = File(p.join(dir.path, _archiveCacheName(key, url)));
-      await f.writeAsBytes(bytes, flush: true);
-      return f.path;
+      raf = await File(path).open();
+      return await raf.read(512);
     } catch (_) {
-      return null; // disque plein: on continue sans tampon
+      return null;
+    } finally {
+      await raf?.close();
     }
   }
 
@@ -5105,7 +5794,7 @@ class RewampDb {
   /// Rend les octets ET le chemin de la copie partagée (null si le tampon
   /// n'a pas pu être écrit): un appelant qui ne fait qu'EXTRAIRE se sert du
   /// chemin et évite de réécrire 300 Mo dans son propre `_tmp_archive`.
-  static Future<(Uint8List, String?)> _fetchArchiveShared(
+  static Future<(Uint8List, String)> _fetchArchiveShared(
     String? mirrorUrl,
     String originUrl, {
     required String label,
@@ -5115,24 +5804,29 @@ class RewampDb {
   }) async {
     final key = archiveKeyForUrl(originUrl);
     unawaited(_sweepArchiveCache());
+    // ⚠️ La descente écrit DIRECTEMENT à cet endroit (via un `.part`), au lieu
+    // de tout accumuler en mémoire puis de le recopier dans le tampon. Rend
+    // donc toujours un chemin: « tampon indisponible » n'est plus un cas —
+    // un disque qui refuse le tampon refuserait aussi les pistes extraites.
+    final cachePath = await _archiveCachePath(key, originUrl);
 
     if (bustCache) {
       _archiveRealSize.remove(key);
       await _archiveCacheDrop(key, originUrl);
     } else {
-      final hit = await _archiveCacheRead(key, originUrl);
+      final hit = await _archiveCacheHead(cachePath);
       if (hit != null) {
         debugPrint('[archive] $label: reusing the copy already fetched '
-            '(${hit.length} bytes) — $key');
-        return (hit, await _archiveCachePath(key, originUrl));
+            '(${hit.$1} bytes) — $key');
+        return (hit.$2, cachePath);
       }
       final inflight = _archiveInflight[key];
       if (inflight != null) {
         debugPrint('[archive] $label: joining the fetch already in flight');
         try {
           final path = await inflight;
-          final f = File(path);
-          if (await f.exists()) return (await f.readAsBytes(), path);
+          final head = await _readHead(path);
+          if (head != null) return (head, path);
         } catch (_) {
           // Celle d'en face a échoué (ou a été annulée par SON auteur): ce
           // n'est pas notre échec, on descend nous-mêmes.
@@ -5146,25 +5840,59 @@ class RewampDb {
     done.future.ignore();
     _archiveInflight[key] = done.future;
     try {
-      final bytes = bustCache
-          ? await _fetchBytesMirror(null, cacheBusted(originUrl),
+      final dest = File(cachePath);
+      final (len, head) = bustCache
+          ? await _fetchToFileMirror(null, cacheBusted(originUrl), dest,
               label: label, cap: cap)
-          : await _fetchArchiveVerified(mirrorUrl, originUrl,
+          : await _fetchArchiveVerified(mirrorUrl, originUrl, dest,
               label: label, expectedSize: expectedSize, cap: cap);
-      if (bustCache) _rememberArchiveSize(key, bytes.length, expectedSize, label);
-      final path = await _archiveCacheWrite(key, originUrl, bytes);
-      if (path != null) {
-        done.complete(path);
-      } else {
-        done.completeError(StateError('archive cache unavailable'));
-      }
-      return (bytes, path);
+      if (bustCache) _rememberArchiveSize(key, len, expectedSize, label);
+      done.complete(cachePath);
+      return (head, cachePath);
     } catch (e, st) {
       done.completeError(e, st);
       rethrow;
     } finally {
       _archiveInflight.remove(key);
     }
+  }
+
+  /// Pendant fichier de [_fetchBytes]: même routage vers la file de politesse
+  /// pour les hôtes qui bannissent (scene.org).
+  static Future<(int, Uint8List)> _fetchToFile(
+    String url,
+    File dest, {
+    required String label,
+    Duration cap = const Duration(minutes: 5),
+  }) {
+    debugPrint('[fetch] $label ← $url (→ fichier)');
+    if (_isThrottledHost(url)) {
+      return _throttleOrigin(
+          () => _fetchToFileRaw(url, dest, label: label, cap: cap));
+    }
+    return _fetchToFileRaw(url, dest, label: label, cap: cap);
+  }
+
+  /// Pendant fichier de [_fetchBytesMirror]: miroir d'abord, origine ensuite.
+  /// Un miroir qui échoue À MI-COURSE ne laisse rien: `_fetchToFileRaw` repart
+  /// d'un `.part` neuf et efface le précédent.
+  static Future<(int, Uint8List)> _fetchToFileMirror(
+    String? mirrorUrl,
+    String originUrl,
+    File dest, {
+    required String label,
+    Duration cap = const Duration(minutes: 5),
+  }) async {
+    if (mirrorUrl != null && mirrorUrl.isNotEmpty && mirrorUrl != originUrl) {
+      try {
+        return await _fetchToFile(mirrorUrl, dest, label: label, cap: cap);
+      } on DownloadCancelledException {
+        rethrow; // the user aborted — do NOT retry against the origin
+      } catch (e) {
+        debugPrint('[mirror] $mirrorUrl failed ($e) → origin');
+      }
+    }
+    return _fetchToFile(originUrl, dest, label: label, cap: cap);
   }
 
   static Future<Uint8List> _fetchBytesMirror(
@@ -5190,6 +5918,12 @@ class RewampDb {
   /// (PSF/psf2 7z). RewampAudio() in the new isolate just re-binds the FFI
   /// symbols against the same process library — extraction has no engine
   /// state. Returns (rc, lastError).
+  /// Extraction publique HORS du fil UI — l'import local (local_import.dart)
+  /// déplie une archive vers le stockage pérenne des imports par ce chemin.
+  static Future<(int, String)> extractArchiveTo(
+          String archivePath, String destDir) =>
+      _extractArchiveOffThread(archivePath, destDir);
+
   static Future<(int, String)> _extractArchiveOffThread(
       String archivePath, String destDir) {
     return Isolate.run(() {
@@ -5249,7 +5983,12 @@ class RewampDb {
       // server-side, re-fetching the album is the clean, uniform fix.
       final dir = await artworkDirForResult(oldRow);
       try {
-        await for (final e in Directory(dir).list()) {
+        // RÉCURSIF: un compagnon peut vivre dans un SOUS-DOSSIER
+        // (`Instruments/` d'un SMUS, voir [auxRelativePath]). Un balayage à
+        // plat les laissait derrière, et « purger » n'aurait purgé qu'à
+        // moitié — précisément le cas où le morceau a été remplacé côté
+        // serveur et où d'anciens échantillons resteraient collés au neuf.
+        await for (final e in Directory(dir).list(recursive: true)) {
           if (e is! File) continue;
           final base = p.basename(e.path);
           if (base.startsWith('artwork.')) continue;   // keep the cover
@@ -5267,6 +6006,69 @@ class RewampDb {
   /// download_url than the one we recorded last time), purge the stale local
   /// copy so the caller re-downloads the new file. No-op when the url is
   /// unchanged or was never recorded.
+  /// Une url d'OVERRIDE — le rendu que rewamp héberge lui-même pour un morceau
+  /// dont l'original n'est pas jouable tel quel.
+  static bool _isOverrideUrl(String? url) =>
+      url != null && url.contains('/overrides/');
+
+  /// L'OVERRIDE fait autorité: une ligne qui porte encore l'url de l'ORIGINE
+  /// est périmée, et il faut la corriger AVANT toute décision de
+  /// téléchargement.
+  ///
+  /// Le cas mesuré (« Inside The BORG Cube », sceneorg): le serveur ne rend
+  /// plus QUE l'override pour ce `song_id` — `search_music`, `browse_music` et
+  /// `get_song_context` renvoient tous les trois
+  /// `files.rewamp.app/overrides/…mp3`. Mais l'entrée de BIBLIOTHÈQUE, elle,
+  /// porte l'url que `user_songs` avait au moment où elle a été écrite: le zip
+  /// scene.org d'origine, qui ne contient qu'un `.xex` Atari et deux `.txt`.
+  /// Jouer depuis la bibliothèque partait donc sur ce zip.
+  ///
+  /// Deux dégâts, et le second est le pire: `_purgeIfSourceUrlChanged` voyait
+  /// deux urls différentes pour un même `song_id`, concluait « remplacé côté
+  /// serveur » et EFFAÇAIT le mp3 qui venait d'être téléchargé — d'où un
+  /// fichier absent de `online/<collection>/…` et 3,9 Mo re-téléchargés à
+  /// chaque lecture.
+  ///
+  /// ⚠️ La base n'est interrogée que sur une INCOHÉRENCE de la ligne — son
+  /// nom de fichier annonce un format, son url pointe une ARCHIVE. Le cas
+  /// normal ne coûte donc rien, ce qui compte: ce chemin est celui d'un saut
+  /// de piste (voir le CHEMIN RAPIDE de downloadToLibrary).
+  static Future<SearchResult> _preferRecordedOverride(SearchResult r) async {
+    if (r.songId.isEmpty) return r;
+    if (!rowLooksStaleAgainstOverride(r.downloadUrl, r.filename)) return r;
+    try {
+      final stored = await LocalDb.instance.getDownloadSourceUrl(r.songId);
+      if (!_isOverrideUrl(stored)) return r;
+      debugPrint('[RewampDb] ${r.songId}: ligne périmée (${r.downloadUrl}) — '
+          "l'override fait autorité ($stored)");
+      return r.copyWith(downloadUrl: stored, mirrorUrl: stored);
+    } catch (_) {
+      return r;
+    }
+  }
+
+  /// La ligne se CONTREDIT-elle — un nom de fichier qui annonce un format
+  /// jouable, une url qui pointe une ARCHIVE ? C'est la signature d'une ligne
+  /// écrite avant qu'un override existe. PURE et testable: c'est la décision,
+  /// la lecture en base ne fait que fournir l'url de remplacement.
+  ///
+  /// ⚠️ C'est aussi ce qui rend le cas normal GRATUIT: sans contradiction, on
+  /// ne demande rien à la base — et ce chemin est celui d'un saut de piste.
+  static bool rowLooksStaleAgainstOverride(String? url, String filename) {
+    if (url == null || url.isEmpty || _isOverrideUrl(url)) return false;
+    const archiveExts = {'zip', '7z', 'rar', 'lha', 'lzh', 'tar', 'gz', 'xz'};
+    final urlExt = url.split('?').first.split('.').last.toLowerCase();
+    if (!archiveExts.contains(urlExt)) return false;
+    final nameExt =
+        filename.contains('.') ? filename.split('.').last.toLowerCase() : '';
+    return nameExt.isNotEmpty && !archiveExts.contains(nameExt);
+  }
+
+  /// Point d'entrée de test pour la règle d'autorité de l'override.
+  @visibleForTesting
+  static Future<SearchResult> debugPreferRecordedOverride(SearchResult r) =>
+      _preferRecordedOverride(r);
+
   static Future<void> _purgeIfSourceUrlChanged(SearchResult r) async {
     try {
       // A row with NO url of its own says nothing about the source having
@@ -5277,6 +6079,15 @@ class RewampDb {
       if (r.downloadUrl == null || r.downloadUrl!.isEmpty) return;
       final stored = await LocalDb.instance.getDownloadSourceUrl(r.songId);
       if (stored == null || stored == r.downloadUrl) return;
+      // Un OVERRIDE ne se laisse pas évincer par une url d'ORIGINE: ce n'est
+      // pas un remplacement côté serveur, c'est une ligne périmée (voir
+      // _preferRecordedOverride). Sans cette garde, la ligne de bibliothèque
+      // effaçait le rendu qu'on venait de télécharger.
+      if (_isOverrideUrl(stored) && !_isOverrideUrl(r.downloadUrl)) {
+        debugPrint('[RewampDb] ${r.songId}: url d\'origine ignorée, '
+            "l'override reste la source");
+        return;
+      }
       debugPrint('[RewampDb] source url changed for ${r.songId} (was: $stored)');
       await _purgeSongDownload(r, r, r.songId);
     } catch (e) {
@@ -5362,8 +6173,53 @@ class RewampDb {
   /// et l'archive est demandée avec un cache-buster (l'edge CDN sert du
   /// `Cache-Control: immutable` — sans ça on re-télécharge fidèlement la copie
   /// périmée qu'on voulait remplacer).
-  static Future<String> downloadToLibrary(SearchResult r,
+  /// Vérifications qui n'ont RIEN à faire sur le chemin critique d'une lecture:
+  /// détecter un remplacement côté serveur et enregistrer l'url de provenance.
+  /// Le fichier demandé est déjà sur le disque — le jouer ne dépend d'aucune
+  /// des deux, et les attendre coûtait tout le délai d'un saut de piste.
+  ///
+  /// Le purge éventuel prend donc effet à la lecture SUIVANTE de ce morceau:
+  /// une lecture périmée de plus, contre une base interrogée à chaque saut.
+  static Future<void> _verifySourceInBackground(SearchResult r) async {
+    try {
+      if (r.songId.isEmpty ||
+          r.downloadUrl == null || r.downloadUrl!.isEmpty) {
+        return;
+      }
+      await _purgeIfSourceUrlChanged(r);
+      await LocalDb.instance.setDownloadSourceUrl(r.songId, r.downloadUrl!);
+    } catch (e) {
+      debugPrint('[RewampDb] _verifySourceInBackground error: $e');
+    }
+  }
+
+  static Future<String> downloadToLibrary(SearchResult rowIn,
       {bool force = false}) async {
+    // L'OVERRIDE fait autorité: une ligne de bibliothèque peut porter encore
+    // l'url de l'ORIGINE (voir _preferRecordedOverride). Corrigé AVANT toute
+    // décision — sinon on part sur une archive et on efface le rendu.
+    final r = await _preferRecordedOverride(rowIn);
+    // ── CHEMIN RAPIDE ────────────────────────────────────────────────────────
+    // La ligne nomme elle-même un fichier, et ce fichier est ici: il n'y a rien
+    // à résoudre ni à télécharger. Tout ce qui restait — la détection d'un
+    // remplacement serveur et l'enregistrement de l'url — est de la
+    // COMPTABILITÉ, pas une condition pour jouer, et part en arrière-plan.
+    //
+    // Mesuré sur macOS: un saut de piste passait 650-1800 ms ici, avec le
+    // fichier déjà sur disque et le décodeur qui, lui, s'ouvre en 3 ms. Le
+    // temps n'était pas dans la requête (clé primaire, 1-2 ms) mais dans
+    // l'ATTENTE de la file sqflite — un `SELECT 1` mettait 1782 ms au même
+    // instant, boucle d'événements libre. Une lecture qui n'a rien à demander
+    // à la base ne doit pas faire la queue derrière ce qui la sature.
+    if (!force && r.localPath != null && await File(r.localPath!).exists()) {
+      // Même sortie que le `run()` qu'on court-circuite: TOUT chemin range la
+      // bannière, y compris celui qui ne télécharge rien. Sans ça un « en
+      // cours de téléchargement » laissé par un fetch précédent survivrait à
+      // la lecture suivante.
+      _statusClear();
+      unawaited(_verifySourceInBackground(r));
+      return r.localPath!;
+    }
     // EVERY path runs the impl through this wrapper, so the "downloading…" status
     // is always cleared (success) or turned into an error (failure) — never left
     // stuck showing progress. Even the already-on-disk fast return goes through
@@ -5552,7 +6408,7 @@ class RewampDb {
     );
     final firstTrack = songs.isEmpty ? r : songs.first;
     await downloadAndExtractZip(zipUrl, songs.isEmpty ? [r] : songs,
-        mirrorZipUrl: mirrorZip);
+        mirrorZipUrl: mirrorZip, force: force);
 
     // RSN albums (snesmusic .rsn = RAR of SPC files) are NOT unpacked into
     // individual .spc files — the whole .rsn plays in place, each track a
@@ -5585,16 +6441,21 @@ class RewampDb {
     final dir = p.dirname(mainPath);
     await Directory(dir).create(recursive: true);
     for (final aux in r.auxFiles) {
-      // Same sanitize as the main file (_localPath) so the on-disk sibling name
-      // matches what UADE derives from the module's name (e.g. mdat.X → smpl.X).
-      final name = _sanitize(p.basename(aux.filename)); // flat, no traversal
+      // ⚠️ Le SOUS-DOSSIER d'un compagnon fait partie de son identité — on ne
+      // peut pas l'aplatir. Voir [auxRelativePath].
+      final name = auxRelativePath(aux.filename);
       if (name.isEmpty) continue;
       final f = File(p.join(dir, name));
       if (await f.exists() && await f.length() > 0) continue;
+      // Le dossier n'existe pas forcément (« Instruments/ »).
+      final auxDir = p.dirname(f.path);
+      if (auxDir != dir) await Directory(auxDir).create(recursive: true);
       if (aux.downloadUrl == null) {
         throw Exception('aux file "$name" has no download_url (for ${r.filename})');
       }
-      final bytes = await _fetchBytes(aux.downloadUrl!, label: '$name (annexe)');
+      // Miroir puis origine, comme le morceau lui-même (voir AuxFile.mirrorUrl).
+      final bytes = await _fetchBytesMirror(aux.mirrorUrl, aux.downloadUrl!,
+          label: '$name (annexe)');
       await f.writeAsBytes(bytes, flush: true);
     }
   }
@@ -5660,6 +6521,7 @@ class RewampDb {
         if (base.startsWith('artwork.') || base.startsWith('_tmp_archive')) {
           continue;
         }
+        if (isInCompanionDir(p.relative(e.path, from: dir))) continue;
         final ext = p.extension(base).replaceFirst('.', '').toLowerCase();
         if (ext.isNotEmpty && kExtractedAudioExts.contains(ext)) return true;
       }
@@ -5678,6 +6540,7 @@ class RewampDb {
         if (base.startsWith('artwork.') || base.startsWith('_tmp_archive')) {
           continue;
         }
+        if (isInCompanionDir(p.relative(e.path, from: dir))) continue;
         if (p.basenameWithoutExtension(base).toLowerCase() != want) continue;
         final ext = p.extension(base).replaceFirst('.', '').toLowerCase();
         // Même liste blanche que le scan générique: sans elle, un `.txt` ou
@@ -5803,9 +6666,6 @@ class RewampDb {
       // Un concurrent vient peut-être de tout extraire pendant l'attente.
       if (!force && await exact.exists()) return exact.path;
 
-      final archiveExt = p.extension(r.downloadUrl!);
-      final tmpPath = p.join(audioDir, '_tmp_archive$archiveExt');
-
       Future<void> fetchAndExtract({required bool bustCache}) async {
         // Cache-buster: le CDN peut servir une copie EDGE périmée d'une
         // archive remplacée sous la même url (vécu: l'ancien rip de
@@ -5814,7 +6674,7 @@ class RewampDb {
         // _fetchArchiveShared s'en charge (et purge son propre tampon).
         debugPrint('[extract] ${r.displayTitle}: fetching archive into '
             '$audioDir (want ${exact.path}${bustCache ? ", cache-busted" : ""})');
-        final (archBytes, sharedPath) = await _fetchArchiveShared(
+        final (archHead, sharedPath) = await _fetchArchiveShared(
             r.mirrorUrl, r.downloadUrl!,
             label: '${r.displayTitle} (archive)',
             expectedSize: r.fileSize,
@@ -5822,22 +6682,15 @@ class RewampDb {
         // Some origins answer a bot check with HTTP 200 + an HTML interstitial
         // ("Verifying your browser…") instead of the file — exotica.org.uk
         // does. Extraction then fails or yields nothing; name what happened.
-        if (_looksLikeHtml(archBytes)) {
+        if (_looksLikeHtml(archHead)) {
           throw Exception(
               'Server returned an HTML page, not an archive (bot check / '
               'error page): ${r.downloadUrl}');
         }
-        // La copie partagée EST déjà sur disque: la recopier en
-        // `_tmp_archive` réécrirait des centaines de mégaoctets pour rien.
-        final src = sharedPath ?? tmpPath;
-        if (sharedPath == null) {
-          await File(tmpPath).writeAsBytes(archBytes, flush: true);
-        }
+        // La copie partagée EST déjà sur disque, et l'extraction lit un
+        // chemin: aucune copie intermédiaire.
         // Extract via C libarchive (handles 7z, zip, lha, etc.) — off-thread.
-        final (rc, err) = await _extractArchiveOffThread(src, audioDir);
-        if (sharedPath == null) {
-          await File(tmpPath).delete().catchError((_) => File(tmpPath));
-        }
+        final (rc, err) = await _extractArchiveOffThread(sharedPath, audioDir);
         if (rc != 0) {
           throw Exception(
               'Archive extraction failed (rc=$rc): $err — ${r.downloadUrl}');
@@ -5907,6 +6760,25 @@ class RewampDb {
         throw Exception(
             'Extraction produced nothing at the advertised path '
             '(${r.filename}) — archive/tracklist mismatch: ${r.downloadUrl}');
+      }
+      // Même règle, TROISIÈME forme, et c'est la plus fréquente: une ligne
+      // NÉE d'une tracklist serveur (`subsongRowsFromServer`) nomme l'entrée
+      // exacte de l'archive — `resolvedSubsong` + une position, et un compte
+      // de sous-chansons NUL parce qu'elle a un fichier à elle. Si ce fichier
+      // n'est pas sorti de l'archive, il n'y est pas: certains rips listent
+      // des pistes qu'ils ne distribuent pas (« Atelier Annie », six `.mp3`
+      // annoncés, zéro dans le `.7z`). Le pick générique servait alors le
+      // `.2sflib` du driver aux trois premières lignes — même son pour les
+      // trois, et un chemin écrit qui les faisait passer pour téléchargées.
+      if (r.resolvedSubsong &&
+          r.trackPosition != null &&
+          r.subsongCount == null) {
+        throw ArchiveEntryMissingException(
+          filename: r.filename,
+          url: r.downloadUrl ?? '',
+          songId: r.songId.split('#').first,
+          subsongIndex: r.subsongIdx,
+        );
       }
       // Même règle, autre forme: une ligne CONTENEUR porte la liste EXACTE des
       // fichiers de l'archive (`subsongs`), donc son `filename` est le nom de
@@ -6097,6 +6969,37 @@ class RewampDb {
     }
   }
 
+  /// Un fichier SOURCE de tracker qu'AUCUN moteur ne joue — donc à écarter du
+  /// classement, sinon il gagne et le vrai morceau n'est jamais essayé.
+  ///
+  /// Le cas mesuré: la release scene.org « eightbm_tomarkus_chipcompo » (compo
+  /// Chip MSX de Xenium 2024) porte un `.prg` de 4 200 octets — un exécutable
+  /// C64 que libsidplayfp joue très bien — et un `.sng` de 21 288 octets, qui
+  /// est le SOURCE GoatTracker 2 du même morceau. Les deux sont au palier 1
+  /// (`.prg` par [kSidExts], `.sng` par [kUadeExts]: c'est aussi l'extension du
+  /// ZoundMonitor AMIGA), l'égalité se départage à la TAILLE DÉCROISSANTE, et
+  /// c'est donc le source qui sortait — que rien ne sait jouer.
+  ///
+  /// ⚠️ **La seconde chance `rewamp_can_play` ne rattrape PAS ce cas**, et c'est
+  /// la leçon générale: vgmstream réclame TOUTE extension qu'il ne connaît pas
+  /// (score 50, `kSkipExts` mis à part), donc le registre répond « oui » pour
+  /// presque n'importe quoi. Le veto par moteur trie les formats que quelqu'un
+  /// REFUSE, pas ceux que le fourre-tout accepte sans savoir les décoder.
+  ///
+  /// D'où une règle NÉGATIVE, sur le CONTENU comme [_isTextStub]: un `.sng` qui
+  /// commence par « GTS » est un morceau GoatTracker (C64, `GTS3`/`GTS4`/`GTS5`)
+  /// et non un module Amiga. Aucun moteur embarqué ne lit GoatTracker; le nier
+  /// coûte le morceau entier, l'écarter ne coûte rien.
+  static Future<bool> _isTrackerSourceOnly(File f, String ext) async {
+    if (ext != 'sng') return false;
+    try {
+      final h = await f.openRead(0, 3).expand((c) => c).toList();
+      return h.length >= 3 && h[0] == 0x47 && h[1] == 0x54 && h[2] == 0x53;
+    } catch (_) {
+      return false;   // illisible: on ne retire pas une piste sur un doute
+    }
+  }
+
   /// [uniqueOnly]: return a format match ONLY when it is the SOLE audio file of
   /// that format in [dir]. A caller re-resolving ONE specific track of a
   /// multi-file album (whose exact file was deleted) must NOT be handed an
@@ -6136,11 +7039,19 @@ class RewampDb {
           if (!uniqueOnly) return e;      // first format match wins
           fmtMatch = e; fmtCount++;       // …unless we must confirm it's unique
         }
+        // Un dossier de compagnons ne contient pas de pistes — et ses
+        // fichiers PORTENT des extensions jouables (`.ss` = SpeedySystem).
+        // Sans ce filtre, un échantillon de 31 Ko bat le module de 6 Ko à la
+        // TAILLE et le pick générique sert un instrument. Voir
+        // [isInCompanionDir].
+        if (isInCompanionDir(p.relative(e.path, from: dir))) continue;
         if (kExtractedAudioExts.contains(ext) ||
             (prefix.isNotEmpty && kExtractedAudioExts.contains(prefix))) {
           var size = 0;
           try { size = await e.length(); } catch (_) {}
           if (await _isTextStub(e, size)) continue;   // a readme, not a module
+          // Un SOURCE de tracker que rien ne joue (voir _isTrackerSourceOnly).
+          if (await _isTrackerSourceOnly(e, ext)) continue;
           candidates.add((
             file: e,
             size: size,
@@ -6263,6 +7174,56 @@ class RewampDb {
     return p.join(cacheRoot.path, 'local_archives', '${_sanitize(base)}_$len');
   }
 
+  /// Ré-extraction à la volée d'un fichier de cache d'archive PURGÉ.
+  ///
+  /// `Caches/local_archives/` est un cache que l'OS peut vider quand il veut —
+  /// mais l'ARCHIVE d'origine, elle, est encore là: sur mobile c'est la copie
+  /// stable du geste dans `opened/` (OpenedFiles.materialise). Le nom du
+  /// dossier de cache encode déjà la clé de l'archive
+  /// (`<radical assaini>_<taille>`, voir [localArchiveCacheDir]): on cherche
+  /// dans `opened/` une archive qui reproduit cette clé et on ré-extrait —
+  /// même clé ⇒ même dossier, le chemin demandé redevient valide TEL QUEL.
+  /// Rend true quand le fichier existe à nouveau. Desktop: `opened/` n'est pas
+  /// alimenté (le sélecteur y rend le vrai chemin), le repli échoue simplement.
+  static Future<bool> reExtractForMissingLocalPath(String path) async {
+    final parts = p.split(path);
+    final i = parts.indexOf('local_archives');
+    if (i < 0 || i + 1 >= parts.length) return false;
+    final archive = await openedArchiveForCacheKey(parts[i + 1]);
+    if (archive == null) return false;
+    try {
+      await extractLocalArchiveToTracks(archive); // ré-extrait (marqueur mort)
+      return await File(path).exists();
+    } catch (_) {}
+    return false;
+  }
+
+  /// L'ARCHIVE d'origine d'un dossier de cache d'extraction, cherchée dans
+  /// `opened/` (la copie stable du geste). [cacheKey] est le nom du dossier,
+  /// `<radical assaini>_<taille>` — voir [localArchiveCacheDir].
+  ///
+  /// Publique parce que deux appelants en ont besoin, pour des raisons
+  /// différentes: la ré-extraction à la volée d'un cache purgé, et la garde
+  /// d'identité de bibliothèque, qui importe l'ARCHIVE plutôt que le membre
+  /// isolé (ses compagnons sont ses voisins dedans). Null sur desktop, où
+  /// `opened/` n'est pas alimenté.
+  static Future<String?> openedArchiveForCacheKey(String cacheKey) async {
+    try {
+      final opened = await OpenedFiles.dir();
+      if (!await opened.exists()) return null;
+      await for (final e in opened.list(followLinks: false)) {
+        if (e is! File) continue;
+        final ext = p.extension(e.path).replaceFirst('.', '').toLowerCase();
+        if (!kLocalArchiveExts.contains(ext)) continue;
+        final stem = p.basenameWithoutExtension(e.path);
+        final len = await e.length();
+        if ('${_sanitize(stem)}_$len' != cacheKey) continue;
+        return e.path;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// Extracts a LOCALLY-opened archive (UnExotica `.lha`, or any container in
   /// [kLocalArchiveExts]) into a per-archive cache dir and returns one
   /// TrackRecord per playable module inside. Companions (TFMX `smpl.*`, etc.)
@@ -6375,16 +7336,22 @@ class RewampDb {
   ///
   /// Returns the [tracks] list reordered according to the embedded playlist,
   /// or `null` if no playlist was found (keep original order).
+  /// [force] = « Re-télécharger l'album »: le dossier est vidé (pochette
+  /// comprise), l'archive redemandée en contournant l'edge CDN et le tampon
+  /// local, et AUCUN repli sur ce qui est déjà là — sans quoi le geste est un
+  /// pur no-op sur un album zip: le `.rsn` en place court-circuite tout dès la
+  /// première ligne.
   static Future<List<SearchResult>?> downloadAndExtractZip(
     String zipUrl,
     List<SearchResult> tracks, {
     String? mirrorZipUrl,
     String? albumId,
+    bool force = false,
   }) =>
       BackgroundTask.guard(() async {
         try {
           final res = await _downloadAndExtractZipImpl(
-              zipUrl, tracks, mirrorZipUrl, albumId);
+              zipUrl, tracks, mirrorZipUrl, albumId, force);
           _statusClear();
           return res;
         } on DownloadCancelledException {
@@ -6402,6 +7369,7 @@ class RewampDb {
     List<SearchResult> tracks,
     String? mirrorZipUrl,
     String? albumId,
+    bool force,
   ) async {
     if (tracks.isEmpty) return null;
 
@@ -6411,7 +7379,7 @@ class RewampDb {
     // bytes were re-downloaded over the network on every play (the write was
     // skipped, but the fetch was not) — the "re-downloads systematically" bug.
     final rsnPath = await rsnLocalPath(tracks.first);
-    if (await File(rsnPath).exists()) {
+    if (!force && await File(rsnPath).exists()) {
       debugPrint('[album] rsn cached, no fetch: $rsnPath');
       return _rsnResults(zipUrl, rsnPath, tracks, albumId,
           await File(rsnPath).length());
@@ -6428,32 +7396,42 @@ class RewampDb {
     // se télécharge/extrait UNE fois, les appels concurrents attendent puis
     // retombent sur les fichiers en place.
     return _withDirLock(audioDir, () async {
-    if (await File(rsnPath).exists()) {
+    if (!force && await File(rsnPath).exists()) {
       // Un concurrent vient de poser le .rsn pendant l'attente du verrou.
       return _rsnResults(zipUrl, rsnPath, tracks, albumId,
           await File(rsnPath).length());
+    }
+    if (force) {
+      // Table rase: fichiers extraits, `.rsn` en place, pochette et lignes DB.
+      // Le dossier vidé est ce qui rend le geste effectif — l'extraction
+      // écrase les fichiers de MÊME nom, jamais ceux que la nouvelle archive
+      // ne porte plus.
+      await _wipeAlbumDirs({audioDir, p.dirname(rsnPath)},
+          keepArtwork: false, keepUserState: true);
     }
     await Directory(audioDir).create(recursive: true);
 
     // Artwork → same folder as audio (disambiguated by albumId in path).
     final artworkDir = audioDir;
 
-    // Download the archive into memory.
+    // Download the archive — to DISK, not memory (see _fetchToFileRaw).
     final albumLabel = tracks.first.album ?? p.basename(zipUrl);
-    final (bytes, _) = await _fetchArchiveShared(mirrorZipUrl, zipUrl,
+    final (head, archivePath) = await _fetchArchiveShared(
+        force ? null : mirrorZipUrl, zipUrl,
         label: '$albumLabel (album)',
         expectedSize: tracks.first.fileSize,
-        cap: const Duration(minutes: 10));
+        cap: const Duration(minutes: 10),
+        bustCache: force);
 
     // Detect RAR archive by magic 'Rar!' (0x52 0x61 0x72 0x21).
     // snesmusic distributes albums as .rsn (RAR of SPC files) — handle before
     // attempting ZIP decode.
-    if (bytes.length >= 4 &&
-        bytes[0] == 0x52 &&
-        bytes[1] == 0x61 &&
-        bytes[2] == 0x72 &&
-        bytes[3] == 0x21) {
-      return _handleRsnDownload(zipUrl, bytes, audioDir, tracks, albumId);
+    if (head.length >= 4 &&
+        head[0] == 0x52 &&
+        head[1] == 0x61 &&
+        head[2] == 0x72 &&
+        head[3] == 0x21) {
+      return _handleRsnDownload(zipUrl, archivePath, audioDir, tracks, albumId);
     }
 
     // Shared whitelist (chip/tracker + plain audio + midi) so zip albums
@@ -6465,86 +7443,100 @@ class RewampDb {
     // Decode + decompress + write in a background isolate: ArchiveFile
     // decompression is lazy (runs at entry.content in this loop) and froze
     // the UI on big albums. The closure only captures sendable values.
+    // ⚠️ La closure ne capture plus que le CHEMIN. Elle capturait les OCTETS,
+    // et `Isolate.run` COPIE ce qu'il capture dans le nouvel isolate: un album
+    // zip de 300 Mo existait donc DEUX fois en mémoire. Le décodeur lit
+    // maintenant le fichier lui-même, et décompresse chaque entrée À LA
+    // DEMANDE — d'où la fermeture du flux seulement APRÈS la dernière entrée.
     final m3uContent = await Isolate.run(() {
-      final archive = ZipDecoder().decodeBytes(bytes);
-      String? m3uRegular;
-      int m3uBestEntries = -1;   // regular playlist with the most entries wins
-      String? m3uTags; // vgmstream !tags.m3u — playlist of last resort
+      final input = InputFileStream(archivePath);
+      try {
+        final archive = ZipDecoder().decodeStream(input);
+        String? m3uRegular;
+        int m3uBestEntries = -1;   // regular playlist with the most entries wins
+        String? m3uTags; // vgmstream !tags.m3u — playlist of last resort
 
-      // Entry paths RELATIVE to the archive's content root, mirroring what the
-      // server stores in each row's `filename`.
-      //
-      // Sub-folders are PRESERVED (the native extractor used for PSF albums
-      // does the same, and _localPath()/_fileSegments() resolve them): taking
-      // p.basename() here used to flatten "XA/VIDEO/ASPI.ogg" to "ASPI.ogg",
-      // which silently loses one of two same-named files in different folders
-      // and disagrees with every lookup path. What DOES need stripping is the
-      // single wrapper directory ZIPs are usually built with — and only when
-      // every entry shares it, which is exactly what makes it a wrapper rather
-      // than real structure.
-      final fileEntries = archive.where((e) => e.isFile).toList();
-      String? wrapper;
-      for (final e in fileEntries) {
-        final segs = e.name.replaceAll('\\', '/').split('/')
-            .where((s) => s.isNotEmpty).toList();
-        if (segs.length < 2) { wrapper = null; break; }   // a root-level file ⇒ no wrapper
-        if (wrapper == null) {
-          wrapper = segs.first;
-        } else if (wrapper != segs.first) {
-          wrapper = null; break;                          // entries disagree ⇒ real structure
+        // Entry paths RELATIVE to the archive's content root, mirroring what the
+        // server stores in each row's `filename`.
+        //
+        // Sub-folders are PRESERVED (the native extractor used for PSF albums
+        // does the same, and _localPath()/_fileSegments() resolve them): taking
+        // p.basename() here used to flatten "XA/VIDEO/ASPI.ogg" to "ASPI.ogg",
+        // which silently loses one of two same-named files in different folders
+        // and disagrees with every lookup path. What DOES need stripping is the
+        // single wrapper directory ZIPs are usually built with — and only when
+        // every entry shares it, which is exactly what makes it a wrapper rather
+        // than real structure.
+        final fileEntries = archive.where((e) => e.isFile).toList();
+        String? wrapper;
+        for (final e in fileEntries) {
+          final segs = e.name.replaceAll('\\', '/').split('/')
+              .where((s) => s.isNotEmpty).toList();
+          if (segs.length < 2) { wrapper = null; break; }   // a root-level file ⇒ no wrapper
+          if (wrapper == null) {
+            wrapper = segs.first;
+          } else if (wrapper != segs.first) {
+            wrapper = null; break;                          // entries disagree ⇒ real structure
+          }
         }
-      }
 
-      String relPath(String rawName) {
-        var segs = rawName.replaceAll('\\', '/').split('/')
-            .where((s) => s.isNotEmpty && s != '.' && s != '..')  // no traversal
-            .toList();
-        if (wrapper != null && segs.length > 1 && segs.first == wrapper) {
-          segs = segs.sublist(1);
+        String relPath(String rawName) {
+          var segs = rawName.replaceAll('\\', '/').split('/')
+              .where((s) => s.isNotEmpty && s != '.' && s != '..')  // no traversal
+              .toList();
+          if (wrapper != null && segs.length > 1 && segs.first == wrapper) {
+            segs = segs.sublist(1);
+          }
+          return p.joinAll(segs.map(_sanitize));
         }
-        return p.joinAll(segs.map(_sanitize));
-      }
 
-      for (final entry in fileEntries) {
-        final name = p.basename(entry.name);
-        final ext = p.extension(name).replaceFirst('.', '').toLowerCase();
+        for (final entry in fileEntries) {
+          final name = p.basename(entry.name);
+          final ext = p.extension(name).replaceFirst('.', '').toLowerCase();
 
-        if (audioExts.contains(ext)) {
-          final dest = File(p.join(audioDir, relPath(entry.name)));
-          if (!dest.existsSync()) {
-            dest.parent.createSync(recursive: true);
-            dest.writeAsBytesSync(entry.content as List<int>);
-          }
-        } else if (artworkExts.contains(ext)) {
-          final dest = File(p.join(artworkDir, 'artwork.$ext'));
-          if (!dest.existsSync()) {
-            dest.writeAsBytesSync(entry.content as List<int>);
-          }
-        } else if (playlistExts.contains(ext)) {
-          // Save EVERY m3u to disk (so probe/complementary reads find them),
-          // and keep the regular playlist with the most entries; a !tags.m3u
-          // is the playlist only when it is the sole m3u.
-          final data = entry.content as List<int>;
-          final text = String.fromCharCodes(data);
-          // Same relative placement as the audio: an m3u's entries are relative
-          // to the folder holding it, so moving it changes what it points at.
-          final dest = File(p.join(audioDir, relPath(entry.name)));
-          if (!dest.existsSync()) {
-            dest.parent.createSync(recursive: true);
-            dest.writeAsBytesSync(data);
-          }
-          if (_isTagsM3uName(name)) {
-            m3uTags ??= text;
-          } else {
-            final n = _countM3uEntries(text);
-            if (n > m3uBestEntries) {
-              m3uBestEntries = n;
-              m3uRegular = text;
+          if (audioExts.contains(ext)) {
+            final dest = File(p.join(audioDir, relPath(entry.name)));
+            if (!dest.existsSync()) {
+              dest.parent.createSync(recursive: true);
+              dest.writeAsBytesSync(entry.content as List<int>);
+            }
+          } else if (artworkExts.contains(ext)) {
+            final dest = File(p.join(artworkDir, 'artwork.$ext'));
+            if (!dest.existsSync()) {
+              dest.writeAsBytesSync(entry.content as List<int>);
+            }
+          } else if (playlistExts.contains(ext)) {
+            // Save EVERY m3u to disk (so probe/complementary reads find them),
+            // and keep the regular playlist with the most entries; a !tags.m3u
+            // is the playlist only when it is the sole m3u.
+            final data = entry.content as List<int>;
+            // ⚠️ Pas `String.fromCharCodes`: il fait d'un octet un caractère,
+            // donc c'était faux même pour de l'UTF-8 (« Ã© » pour « é »), et
+            // du Shift-JIS en sortait en rectangles. Voir legacy_text.dart —
+            // l'isolate crée son propre moteur au besoin.
+            final text = decodeFileText(data);
+            // Same relative placement as the audio: an m3u's entries are relative
+            // to the folder holding it, so moving it changes what it points at.
+            final dest = File(p.join(audioDir, relPath(entry.name)));
+            if (!dest.existsSync()) {
+              dest.parent.createSync(recursive: true);
+              dest.writeAsBytesSync(data);
+            }
+            if (_isTagsM3uName(name)) {
+              m3uTags ??= text;
+            } else {
+              final n = _countM3uEntries(text);
+              if (n > m3uBestEntries) {
+                m3uBestEntries = n;
+                m3uRegular = text;
+              }
             }
           }
         }
+        return m3uRegular ?? m3uTags;
+      } finally {
+        input.closeSync();
       }
-      return m3uRegular ?? m3uTags;
     });
 
     if (m3uContent == null) return null;
@@ -6574,7 +7566,7 @@ class RewampDb {
   /// the GME plugin can call gme_start_track() with the right index.
   static Future<List<SearchResult>> _handleRsnDownload(
     String rsnUrl,
-    List<int> bytes,
+    String archivePath,
     String audioDir,
     List<SearchResult> tracks,
     String? albumId,
@@ -6585,10 +7577,11 @@ class RewampDb {
     final rsnPath = await rsnLocalPath(tracks.first);
     await Directory(p.dirname(rsnPath)).create(recursive: true);
     final rsnFile = File(rsnPath);
-    if (!await rsnFile.exists()) {
-      await rsnFile.writeAsBytes(bytes, flush: true);
-    }
-    return _rsnResults(rsnUrl, rsnPath, tracks, albumId, bytes.length);
+    // Une COPIE de fichier, faite par le système — pas une relecture en
+    // mémoire: un .rsn complet se joue en place et peut peser lourd.
+    if (!await rsnFile.exists()) await File(archivePath).copy(rsnPath);
+    return _rsnResults(
+        rsnUrl, rsnPath, tracks, albumId, await File(archivePath).length());
   }
 
   /// Builds the per-subsong track list for a saved `.rsn` at [rsnPath] and
@@ -6738,6 +7731,50 @@ class RewampDb {
 
   /// File extensions that are single-file multi-subsong containers
   /// (i.e. a single downloaded file can contain N tracks).
+  /// Formats dont SEUL le décodeur sait compter les sous-chansons — le serveur
+  /// n'a jamais de tracklist pour eux, et son `track_count` y vaut 1 par
+  /// DÉFAUT, pas par constat. C'est la seule exception à la règle
+  /// « `subsong_count == 1` = mono, affirmé » d'[isContainerRow].
+  ///
+  /// ⚠️ `.adl` Westwood: une TABLE de morceaux dont la sous-chanson 0 est
+  /// presque toujours la routine d'ARRÊT du pilote. Joué tel quel — ce que
+  /// faisait tout téléchargement depuis modland, `track_count: 1` — il ne
+  /// produisait RIEN, alors que le même fichier importé localement jouait ses
+  /// 43 morceaux (la porte locale est `kMultiTrackExts`, qui ne regarde que
+  /// l'extension). Mesuré sur `modland/Ad Lib/ADL/Paul Mudra/eob2 -
+  /// catacomb.adl`: le serveur annonce 1, le fichier en tient 111.
+  ///
+  /// ⚠️ `.gbr` Game Boy: un rip du DRIVER, sans table de morceaux — libgbsplay
+  /// annonce 255, la valeur maximale d'un `uint8_t`, qui veut dire « je ne
+  /// sais pas ». C'est la sonde native qui demande au pilote lesquels jouent
+  /// vraiment, et sa liste est CREUSE comme celle d'un `.adl`.
+  static const kNativeCountedContainerFormats = {'adl', 'gbr'};
+
+  /// Formats dont les sous-chansons se numérotent à partir de **1** dans
+  /// `?subsong=`: le moteur y lit le numéro NATIF du format (SNDH, sc68 —
+  /// `rewamp_*_probe_base()` rend 1), et **0 n'y désigne pas « la première »
+  /// mais « le défaut du fichier »**.
+  ///
+  /// La sonde native connaît cette base; un dépliage fait SANS le fichier
+  /// (AppShell._subsongEntries, depuis un rail ou un palmarès: on n'a que le
+  /// `subsong_count` du catalogue) ne la connaissait pas et comptait 0..n-1.
+  /// Tout était alors décalé d'un cran: « Amberstar (2) » jouait le morceau 1,
+  /// « (1) » jouait le défaut (le 1 aussi, le plus souvent), et le DERNIER
+  /// morceau du fichier n'était jamais atteint. Le palmarès, lui, désigne son
+  /// entrée la plus écoutée par son VRAI index (1-based ici): la rotation
+  /// tombait donc sur la bonne MUSIQUE sous le mauvais NOM.
+  ///
+  /// KSS a aussi une base non nulle, mais DYNAMIQUE (`trkmin`, lue dans le
+  /// fichier) — il passe par la tracklist serveur ou la sonde, pas par ici.
+  static const kOneBasedSubsongExts = {'sndh', 'sc68'};
+
+  /// Les index de sous-chanson d'un fichier dont on ne connaît que le COMPTE.
+  /// Pure, pour être testable.
+  static List<int> genericSubsongIndices(String formatExt, int count) {
+    final base = kOneBasedSubsongExts.contains(formatExt.toLowerCase()) ? 1 : 0;
+    return List.generate(count, (i) => base + i);
+  }
+
   static const kContainerFormats = {
     'nsf', 'nsfe', 'ay', 'gbs', 'kss', 'sap', 'hes',
     'vgm', 'vgz', 'sid', 'psid', 'rsid',
@@ -6759,8 +7796,15 @@ class RewampDb {
   static bool isContainerRow(SearchResult r) {
     if (r.trackPosition != null) return false;
     if ((r.subsongCount ?? 0) > 1) return true;
-    return r.subsongCount == null &&
-        kContainerFormats.contains(r.formatExt.toLowerCase());
+    final ext = r.formatExt.toLowerCase();
+    // L'exception à la règle du sidecar: pour ces formats le compte du serveur
+    // ne dit rien (voir kNativeCountedContainerFormats) — sauf sur une ligne
+    // DÉJÀ résolue, qui désigne une sous-chanson précise et n'est donc pas le
+    // conteneur.
+    if (!r.resolvedSubsong && kNativeCountedContainerFormats.contains(ext)) {
+      return true;
+    }
+    return r.subsongCount == null && kContainerFormats.contains(ext);
   }
 
   /// True when a search/browse row is an ALBUM-level match that should be HIDDEN
@@ -6792,6 +7836,124 @@ class RewampDb {
   static const _kAlbumRowArchiveExts = {
     '7z', 'zip', 'rar', 'gz', 'tar', 'lha', 'lzh', 'xz',
   };
+
+  /// Résout une ligne dont le serveur a nommé la PISTE (`match_track_title`)
+  /// vers cette piste précise — c'est elle qu'il faut jouer, pas le conteneur.
+  ///
+  /// Même chemin que le tap d'une ligne (`SongTile._handleTap`): la tracklist
+  /// de l'album donne les vraies sous-chansons, on prend celle dont l'INDEX
+  /// joueur correspond, à défaut celle dont le titre correspond. Sans album_id
+  /// (fichier unique multi-sous-chansons), l'index suffit. Toute impasse rend
+  /// la ligne d'origine — jamais null: perdre une ligne déplacerait le début
+  /// de la lecture.
+  static Future<SearchResult> resolveMatchedTrack(SearchResult r) async {
+    if (r.matchSubsongTitle == null) return r;
+    if (r.albumId != null) {
+      try {
+        final tracks = await albumTracks(albumId: r.albumId!);
+        if (tracks.isNotEmpty) {
+          final rows = subsongRowsFromServer(tracks.first);
+          SearchResult? pick;
+          if (r.matchSubsongIndex != null) {
+            for (final x in rows) {
+              if (x.subsongIdx == r.matchSubsongIndex) {
+                pick = x;
+                break;
+              }
+            }
+          }
+          if (pick == null) {
+            for (final x in rows) {
+              if (x.title == r.matchSubsongTitle) {
+                pick = x;
+                break;
+              }
+            }
+          }
+          if (pick != null) return pick;
+        }
+      } catch (_) {/* repli ci-dessous */}
+    }
+    // Repli: on épingle l'index nommé, avec la durée que le serveur donne pour
+    // CETTE piste (`match_track_length_ms`) — sans elle, `withSubsong` la
+    // laisserait vide, la durée du conteneur ne décrivant pas ce sous-chant.
+    return r.matchSubsongIndex != null
+        ? r.withSubsong(r.matchSubsongIndex!,
+            durationMs: r.matchSubsongLengthMs)
+        : r;
+  }
+
+  /// [resolveMatchedTrack] sur une LISTE, par lots de 5 et dans l'ordre.
+  static Future<List<SearchResult>> resolveMatchedTracks(
+      List<SearchResult> rows) async {
+    if (!rows.any((r) => r.matchSubsongTitle != null)) return rows;
+    final out = <SearchResult>[];
+    for (var i = 0; i < rows.length; i += 5) {
+      final end = i + 5 < rows.length ? i + 5 : rows.length;
+      out.addAll(await Future.wait(
+          [for (final r in rows.sublist(i, end)) resolveMatchedTrack(r)]));
+    }
+    return out;
+  }
+
+  /// Cette ligne n'a matché QUE par le nom de son ALBUM.
+  ///
+  /// Chercher « Kondo » ramenait les onze pistes d'un album snesmusic dont
+  /// AUCUN titre ne contient le mot (« A Challenging Opponent », « Game
+  /// Over »…): c'est le nom de l'album qui matche. Ces lignes polluent
+  /// l'onglet Morceaux, qui doit lister les pistes dont le NOM correspond —
+  /// dans un album ou non — et l'album lui-même a son onglet.
+  ///
+  /// ⚠️ Le test est CONSERVATEUR par construction: on n'écarte que si l'on peut
+  /// ATTRIBUER le match à l'album (son nom contient bien la recherche). Sous
+  /// recherche FLOUE, un titre peut matcher sans contenir la chaîne (faute de
+  /// frappe, radicaux); dans ce cas l'album ne la contient pas non plus, et la
+  /// ligne est GARDÉE. Le doute profite au résultat: une ligne cachée est une
+  /// piste que l'utilisateur ne trouve plus.
+  ///
+  /// Un match par ARTISTE reste un match: les morceaux de Koji Kondo sortent
+  /// sur « Kondo » même quand leur titre ne le porte pas.
+  static bool matchedAlbumNameOnly(SearchResult r, String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return false;
+    // Le serveur a nommé une PISTE dans le conteneur: le match vient d'elle,
+    // pas du nom d'album — même sous recherche floue, où son titre ne contient
+    // pas forcément la chaîne.
+    if (r.matchSubsongTitle != null) return false;
+    final album = (r.album ?? '').toLowerCase();
+    if (!album.contains(q)) return false;
+    bool has(String? v) => v != null && v.toLowerCase().contains(q);
+    if (has(r.title) || has(r.filename) || has(r.matchSubsongTitle)) {
+      return false;
+    }
+    for (final a in r.artistNames) {
+      if (has(a)) return false;
+    }
+    return true;
+  }
+
+  /// Une ligne qui REPRÉSENTE UN ALBUM ENTIER — l'archive joshw d'un jeu, dont
+  /// le serveur ne connaît aucun détail piste par piste — et non un morceau.
+  ///
+  /// ⚠️ Bien plus ÉTROIT que [isAlbumLevelMatch], qui sert à décider d'une
+  /// NAVIGATION et attrape aussi les MEMBRES d'archive sans url à eux (les
+  /// `.spc` d'un `.rsn` snesmusic: `download_url` ET `mirror_url` nuls). Ceux-là
+  /// sont des morceaux, et les confondre avec des albums est ce qui a vidé la
+  /// liste de « Tout lire » sur « Kondo » + plage d'années — 10 lignes sur 10
+  /// écartées, bouton muet. Trois conditions, toutes nécessaires: un album
+  /// identifié, AUCUNE position de piste, et PLUSIEURS pistes annoncées (un
+  /// fichier multi-sous-chansons sans album — un `.sid` HVSC — reste un
+  /// morceau, `albumId` étant nul).
+  /// ⚠️ Et `match_track_title` NON NUL est décisif: le serveur a nommé UNE
+  /// piste À L'INTÉRIEUR du conteneur, donc la ligne EST cette piste. Chercher
+  /// « into the wilderness » ne rend que des lignes de cette sorte (8 sur 8:
+  /// Wild Arms → « To the End of the Wilderness », Ys V → « Wilderness »…):
+  /// sans cette garde l'onglet Morceaux affichait « 0 / 8 ».
+  static bool isWholeAlbumRow(SearchResult r) =>
+      r.albumId != null &&
+      r.matchSubsongTitle == null &&
+      r.trackPosition == null &&
+      (r.subsongCount ?? 0) > 1;
 
   static bool isAlbumLevelMatch(SearchResult r) {
     if (r.albumId == null || r.matchSubsongTitle != null) return false;
@@ -6920,10 +8082,27 @@ class RewampDb {
     for (final r in expanded) {
       pos++;
       try {
-        final fp = r.localPath ?? await _localPath(r);
+        var fp = r.localPath;
+        var subsongIdx = r.subsongIdx;
+        if (fp == null && r.collection == 'snesmusic') {
+          // Membre d'un album RSN: l'archive n'est JAMAIS dépliée, le chemin
+          // par piste (…/ct-02.spc) n'existera jamais — le dériver écrivait
+          // des lignes FANTÔMES qui doublaient chaque piste à la relecture
+          // locale de l'album (le vrai jeu de lignes est clé sur le .rsn +
+          // rang d'archive, écrit par _rsnResults au téléchargement). Sans
+          // mapping en base on n'INVENTE pas: le rang dans l'archive n'est
+          // connaissable qu'à l'extraction, et une ligne devinée fausse est
+          // pire qu'une ligne absente (materialise n'est qu'un cache).
+          final existing = await LocalDb.instance.getTrackByOnlineId(r.songId);
+          final ep = existing?.filePath;
+          if (ep == null || !ep.toLowerCase().endsWith('.rsn')) continue;
+          fp = ep;
+          subsongIdx = existing!.subsongIdx;
+        }
+        fp ??= await _localPath(r);
         await LocalDb.instance.upsertTrack(
           filePath:   fp,
-          subsongIdx: r.subsongIdx,
+          subsongIdx: subsongIdx,
           title:      r.displayTitle,
           artist:     r.artistNames.isNotEmpty ? r.artistNames.first : null,
           metaAlbum:  albumName,
@@ -7020,7 +8199,8 @@ class RewampDb {
         final mirrorZip = details.isNotEmpty ? details.first.mirrorZipUrl : null;
         if (zipUrl != null) {
           final reordered =
-              await downloadAndExtractZip(zipUrl, songs, mirrorZipUrl: mirrorZip);
+              await downloadAndExtractZip(zipUrl, songs,
+                  mirrorZipUrl: mirrorZip, force: force);
           if (reordered != null) return reordered;
         }
       }
@@ -7068,18 +8248,19 @@ class RewampDb {
                 tracks.first.albumId!.isNotEmpty)
               tracks.first.albumId!.toLowerCase(),
           };
-          await _wipeAlbumDirs({
-            audioDir,
-            ...await _albumCopyDirs(containerId, anchors),
-          });
+          await _wipeAlbumDirs(
+            {audioDir, ...await _albumCopyDirs(containerId, anchors)},
+            // « Re-télécharger » = « ce que j'ai est périmé »: la pochette
+            // aussi. Le ♥ et l'appartenance à la bibliothèque, eux, restent.
+            keepArtwork: false,
+            keepUserState: true,
+          );
         }
         final origin     = tracks.first.downloadUrl!;
-        final archiveExt = p.extension(origin);
-        final tmpPath    = p.join(audioDir, '_tmp_archive$archiveExt');
         // force = « Re-télécharger »: la raison d'être du geste est que le
         // contenu a changé sous la même url — contourner l'edge CDN, sinon on
         // re-télécharge fidèlement la copie périmée qu'on voulait remplacer.
-        final (psfBytes, sharedPath) = await _fetchArchiveShared(null, origin,
+        final (_, sharedPath) = await _fetchArchiveShared(null, origin,
             label: '${tracks.first.album ?? p.basename(origin)} (album)',
             expectedSize: tracks.first.fileSize,
             cap: const Duration(minutes: 10),
@@ -7087,14 +8268,7 @@ class RewampDb {
             // contenu a changé sous la même url — contourner l'edge CDN ET le
             // tampon local, sinon on re-sert la copie périmée qu'on remplace.
             bustCache: force);
-        final src = sharedPath ?? tmpPath;
-        if (sharedPath == null) {
-          await File(tmpPath).writeAsBytes(psfBytes, flush: true);
-        }
-        final (rc, err) = await _extractArchiveOffThread(src, audioDir);
-        if (sharedPath == null) {
-          await File(tmpPath).delete().catchError((_) => File(tmpPath));
-        }
+        final (rc, err) = await _extractArchiveOffThread(sharedPath, audioDir);
         if (rc != 0) {
           throw Exception('PSF archive extraction failed (rc=$rc): $err');
         }
@@ -7256,8 +8430,12 @@ class RewampDb {
     return results;
   }
 
-  /// Reads the "artist" tag(s) from a PSF/PSF2 file's `[TAG]` section (plain
-  /// UTF-8 key=value lines at the end). A single tag may list several artists
+  /// Reads the "artist" tag(s) from a PSF/PSF2 file's `[TAG]` section
+  /// (key=value lines at the end). ⚠️ Ces lignes ne sont PAS de l'UTF-8: un tag
+  /// PSF est du Shift-JIS sauf `utf8=`. Décodées ici en `utf8.decode(allowMalformed)`
+  /// jusqu'au 2026-09-21, elles donnaient des U+FFFD (mesuré sur les octets
+  /// de `平田 祥一郎`). Voir legacy_text.dart.
+  /// A single tag may list several artists
   /// separated by comma / `;` / `&` — each becomes a distinct entry.
   /// Returns an empty list if absent.
   static Future<List<String>> _psfTagArtists(String path) async {
@@ -7273,7 +8451,7 @@ class RewampDb {
         }
       }
       if (idx < 0) return const [];
-      final tag = utf8.decode(bytes.sublist(idx), allowMalformed: true);
+      final tag = decodeFileText(bytes.sublist(idx));
       final out  = <String>[];
       final seen = <String>{};
       for (final line in tag.split('\n')) {
@@ -7346,7 +8524,14 @@ class RewampDb {
   /// Handles:
   ///   `# Music by <artist[, artist]>`        (NSF/NSFE)
   ///   `# @COMPOSER    <artist[, artist]>`    (GBS and others)
+  ///   `#EXTART:` / `# Composer(s):`          (M3U étendu, rips faits main)
+  ///
+  /// ⚠️ Les DEUX vocabulaires: `# @TAG valeur` (séparateur ESPACE, vgmstream)
+  /// et `#DIRECTIVE:valeur` (séparateur `:`, M3U étendu). Les rips soignés
+  /// écrivent le second, et rien ne le lisait — voir m3u_info.dart.
   static List<String> _parseM3uArtists(String m3u) {
+    final fromHeader = parseM3uInfo(m3u).artists;
+    if (fromHeader.isNotEmpty) return fromHeader;
     final re = RegExp(
       r'^#\s*(?:Music\s+by|@COMPOSER|@ARTIST)\s+(.+)',
       caseSensitive: false,
@@ -7388,6 +8573,32 @@ class RewampDb {
     result.add(buf.toString());
     return result;
   }
+
+  /// Formats dont le numéro de chanson d'un rip joshw est un numéro ABSOLU du
+  /// driver — jamais une position dans la playlist.
+  ///
+  /// Les deux arrivent sous la même forme (`fichier.ext::FORMAT,$hex,…`), donc
+  /// seul le FORMAT permet de trancher. Une POSITION se normalise (retirer 1
+  /// quand la liste commence à 1, comme NSF); un numéro ABSOLU se passe tel
+  /// quel au moteur, et lui retirer 1 joue une chanson trop bas.
+  ///
+  /// - famille KSS: le nombre part à `KSSPLAY_reset` (Vampire Killer liste
+  ///   128..142);
+  /// - NEZplug++ (`.hes`, `.sgc`): le greffon fait `NEZSetSongNo(subsong + 1)`,
+  ///   comme Modizer fait `NEZSetSongNo(index_m3u + 1)` — le M3U porte donc
+  ///   déjà le numéro que le moteur attend. Mesuré sur « 1941: Counter Attack »
+  ///   (jw_hes): index de `$3E` (62) à `$65` (101), sans `$00`, donc rien qui
+  ///   ressemble à une position; la 2e piste doit lancer la chanson 77 et
+  ///   lançait la 76.
+  ///
+  /// ⚠️ Deux endroits appliquent cette règle — le M3U local
+  /// ([parseM3uToSubsongs]) et la tracklist serveur ([subsongRowsFromServer]),
+  /// qui republie le même numéro. Les séparer, c'est un album importé qui joue
+  /// juste et le même album téléchargé qui joue décalé.
+  static const kAbsoluteSongNumberExts = {
+    'kss', 'mgs', 'bgm', 'mpk', 'mbm', 'opx', 'mus',   // libkss
+    'hes', 'sgc',                                      // NEZplug++
+  };
 
   static List<SubsongInfo> parseM3uToSubsongs(String m3u, String dir) {
     final lines  = m3u.split(RegExp(r'\r?\n'));
@@ -7480,12 +8691,12 @@ class RewampDb {
     final minRaw      = hasExplicit
         ? raw.where((e) => e.rawSub >= 0).map((e) => e.rawSub).reduce((a, b) => a < b ? a : b)
         : 1; // treat absent indices as 1-based (offset 1)
-    // KSS-family m3u song numbers are ABSOLUTE KSS song numbers (e.g. Vampire
-    // Killer lists 128..142) fed straight to KSSPLAY_reset — never a 0/1-based
-    // convention to normalize. Stripping 1 played every track one song too low.
+    // Numéro ABSOLU du driver ⇒ on ne retire rien (voir
+    // kAbsoluteSongNumberExts). Sinon c'est une position: 1-based ⇒ −1.
     final firstExt = p.extension(raw.first.path).replaceFirst('.', '').toLowerCase();
-    const kssExts  = {'kss', 'mgs', 'bgm', 'mpk', 'mbm', 'opx', 'mus'};
-    final offset   = kssExts.contains(firstExt) ? 0 : (minRaw == 0 ? 0 : 1);
+    final offset   = kAbsoluteSongNumberExts.contains(firstExt)
+        ? 0
+        : (minRaw == 0 ? 0 : 1);
 
     // Sequential fallback indices only make sense when every entry targets the
     // SAME file (a subsong list). In a multi-file playlist (jw_hes: .hes
@@ -7534,10 +8745,67 @@ class RewampDb {
 
   /// Given a local audio file path, looks for an M3U alongside it and
   /// parses it. Returns subsong list, or null if no M3U / empty result.
-  static Future<List<SubsongInfo>?> probeLocalM3u(String audioPath) async {
+  /// L'en-tête du M3U voisin de [audioPath] — album, artistes, éditeur, année,
+  /// sources. null quand le fichier n'a pas de playlist à côté.
+  ///
+  /// Un rip LOCAL n'a aucune ligne serveur: son M3U est la seule chose qui
+  /// sache le nom de l'album et ses compositeurs. Voir m3u_info.dart.
+  static Future<M3uInfo?> localM3uInfo(String audioPath,
+      {M3uLookupCache? cache}) async {
+    try {
+      final dir = p.dirname(audioPath);
+      final m3u = await _findM3uForFile(dir, audioPath, cache: cache);
+      if (m3u == null) return null;
+      if (cache != null && cache.info.containsKey(m3u.path)) {
+        return cache.info[m3u.path];
+      }
+      final content = cache?.text[m3u.path] ?? await readM3uText(m3u);
+      if (cache != null) cache.text[m3u.path] = content;
+      final parsed = parseM3uInfo(content);
+      final info = parsed.isEmpty ? null : parsed;
+      if (cache != null) cache.info[m3u.path] = info;
+      return info;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// L'entrée du M3U voisin qui désigne EXACTEMENT [audioPath], quand il n'y
+  /// en a qu'une. null sinon.
+  ///
+  /// « Qu'une seule » est la garde qui compte: un fichier listé PLUSIEURS fois
+  /// est un conteneur dont le M3U décrit les sous-chansons, et ce chemin-là a
+  /// déjà son traitement (`m3uSubsongsFor`). Ici on ne vise que le cas d'un
+  /// M3U d'ALBUM qui nomme chacun de ses fichiers une fois.
+  static Future<SubsongInfo?> localM3uEntryFor(String audioPath,
+      {M3uLookupCache? cache}) async {
+    try {
+      final subs = await probeLocalM3u(audioPath, cache: cache);
+      if (subs == null) return null;
+      final want = p.basename(audioPath).toLowerCase();
+      final mine = [
+        for (final s in subs)
+          if (p.basename(s.filePath).toLowerCase() == want) s
+      ];
+      return mine.length == 1 ? mine.first : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<List<SubsongInfo>?> probeLocalM3u(String audioPath,
+      {M3uLookupCache? cache}) async {
     final dir = p.dirname(audioPath);
-    final m3u = await _findM3uForFile(dir, audioPath);
+    final m3u = await _findM3uForFile(dir, audioPath, cache: cache);
     if (m3u == null) return null;
+    if (cache != null) {
+      // Un même M3U sert TOUS les fichiers de son dossier: lu et parsé une fois.
+      final hit = cache.subs[m3u.path];
+      if (hit != null) return hit.isNotEmpty ? hit : null;
+      final content = cache.text[m3u.path] ??= await readM3uText(m3u);
+      final subs = cache.subs[m3u.path] = parseM3uToSubsongs(content, dir);
+      return subs.isNotEmpty ? subs : null;
+    }
     final content = await readM3uText(m3u);
     final subs    = parseM3uToSubsongs(content, dir);
     return subs.isNotEmpty ? subs : null;
@@ -7578,19 +8846,18 @@ class RewampDb {
       p.basename(path).toLowerCase() == '!tags.m3u';
 
   /// Reads an M3U / tag file tolerant of non-UTF-8 encodings — joshw playlists
-  /// are frequently Shift-JIS or Latin-1, and `File.readAsString()` (UTF-8)
-  /// throws on the first invalid byte (crash: "Failed to decode data using
-  /// encoding 'utf-8'"). Tries UTF-8, falls back to Latin-1 (never throws; every
-  /// byte 0x00–0xFF maps). Titles come from the server tracklist anyway, so a
-  /// mildly garbled fallback only affects ordering fallbacks, not display.
-  static Future<String> readM3uText(File f) async {
-    final bytes = await f.readAsBytes();
-    try {
-      return utf8.decode(bytes);
-    } catch (_) {
-      return latin1.decode(bytes);
-    }
-  }
+  /// are frequently Shift-JIS, and `File.readAsString()` (UTF-8) throws on the
+  /// first invalid byte (crash: "Failed to decode data using encoding
+  /// 'utf-8'").
+  ///
+  /// ⚠️ Le repli était Latin-1, justifié par « les titres viennent de toute
+  /// façon du serveur ». Faux deux fois: les titres `%TITLE` d'un `!tags.m3u`
+  /// SONT affichés, et un import local n'a pas de serveur. Et Latin-1 sur du
+  /// Shift-JIS fait des octets 0x80–0x9F des contrôles C1 — sans glyphe, donc
+  /// des RECTANGLES. Même règle que les tags du moteur désormais: voir
+  /// legacy_text.dart.
+  static Future<String> readM3uText(File f) async =>
+      decodeFileText(await f.readAsBytes());
 
   /// Number of playable entries in an M3U (non-blank, non-comment lines).
   /// `#EXTINF`/`# %TAG` metadata lines don't count — one path line per track.
@@ -7612,7 +8879,7 @@ class RewampDb {
   /// when given, breaks ties in favour of the M3U named like the audio file.
   /// Returns null when [m3us] is empty.
   static Future<File?> _pickPlaylistM3u(List<File> m3us,
-      {String? stemForTie}) async {
+      {String? stemForTie, M3uLookupCache? cache}) async {
     File? best;
     var bestN = -1;
     File? tags;
@@ -7621,7 +8888,10 @@ class RewampDb {
         tags ??= f;
         continue;
       }
-      final n = _countM3uEntries(await readM3uText(f));
+      final n = cache == null
+          ? _countM3uEntries(await readM3uText(f))
+          : (cache.entryCount[f.path] ??=
+              _countM3uEntries(cache.text[f.path] ??= await readM3uText(f)));
       final isStem = stemForTie != null &&
           p.basenameWithoutExtension(f.path).toLowerCase() == stemForTie;
       // Strictly more entries wins; on a tie, the stem-matching M3U wins.
@@ -7637,15 +8907,20 @@ class RewampDb {
   /// the MOST entries wins (ties broken toward the M3U named like [audioPath]);
   /// a `!tags.m3u` (vgmstream tagging file) is used only as LAST resort — when
   /// it is the only M3U in a joshw 7z it doubles as the playlist.
-  static Future<File?> _findM3uForFile(String dir, String audioPath) async {
+  static Future<File?> _findM3uForFile(String dir, String audioPath,
+      {M3uLookupCache? cache}) async {
     final stem = p.basenameWithoutExtension(audioPath).toLowerCase();
-    final m3us = <File>[];
-    await for (final e in Directory(dir).list(recursive: false)) {
-      if (e is! File) continue;
-      final ext = p.extension(e.path).replaceFirst('.', '').toLowerCase();
-      if (ext == 'm3u' || ext == 'm3u8') m3us.add(e);
+    var m3us = cache?.m3usByDir[dir];
+    if (m3us == null) {
+      m3us = <File>[];
+      await for (final e in Directory(dir).list(recursive: false)) {
+        if (e is! File) continue;
+        final ext = p.extension(e.path).replaceFirst('.', '').toLowerCase();
+        if (ext == 'm3u' || ext == 'm3u8') m3us.add(e);
+      }
+      cache?.m3usByDir[dir] = m3us;
     }
-    return _pickPlaylistM3u(m3us, stemForTie: stem);
+    return _pickPlaylistM3u(m3us, stemForTie: stem, cache: cache);
   }
 
   static Future<List<SubsongInfo>> _probeArchive(String path) async {
@@ -7781,10 +9056,11 @@ class RewampDb {
     // = the 23rd song).
     final rawSubs = subs.map((s) => s.subsong).whereType<int>();
     final minSub = rawSubs.isEmpty ? 0 : rawSubs.reduce((a, b) => a < b ? a : b);
-    // KSS-family song numbers are ABSOLUTE (fed to KSSPLAY_reset), not a 0/1-based
-    // convention → never strip (see parseM3uToSubsongs).
-    const kssExts = {'kss', 'mgs', 'bgm', 'mpk', 'mbm', 'opx', 'mus'};
-    final isKss = kssExts.contains(container.formatExt.toLowerCase());
+    // Numéro ABSOLU du driver (famille KSS, NEZ) → on ne retire jamais rien;
+    // le serveur republie le numéro du M3U, donc la MÊME règle que
+    // parseM3uToSubsongs (voir kAbsoluteSongNumberExts).
+    final isAbsolute =
+        kAbsoluteSongNumberExts.contains(container.formatExt.toLowerCase());
     // ⚠️ Ce repérage du 1-based lit le MINIMUM de la liste, donc il n'a de sens
     // que si la liste couvre le FICHIER. Une tracklist d'UNE entrée ne dit rien
     // de sa base: zxart publie le même conteneur .ay une fois par tune, et
@@ -7793,7 +9069,7 @@ class RewampDb {
     // lieu de la 7, et ainsi de suite pour sept lignes sur huit. Une entrée
     // unique est prise telle quelle: le serveur la publie 0-based.
     final subOffset =
-        (isKss || subs.length < 2) ? 0 : (minSub == 0 ? 0 : 1);
+        (isAbsolute || subs.length < 2) ? 0 : (minSub == 0 ? 0 : 1);
     return [
       for (var i = 0; i < subs.length; i++)
         () {
@@ -7817,7 +9093,7 @@ class RewampDb {
             collection:    container.collection,
             title:         (subs[i].title != null && subs[i].title!.isNotEmpty)
                 ? subs[i].title!
-                : '${container.displayTitle} (${i + 1})',
+                : '${container.subsongTitleBase} (${i + 1})',
             filename:      file ?? container.filename,
             album:         container.album ?? container.displayTitle,
             albumId:       container.albumId,
@@ -7883,7 +9159,7 @@ class RewampDb {
     final suspect = rows.where((r) =>
         (r.durationMs ?? 0) <= 0 &&
         r.localPath != null &&
-        UadeInfoService.isUadePath(r.localPath!));
+        UadeInfoService.isUadeFileAt(r.localPath!));
     if (suspect.isEmpty) return rows;
 
     // md5 per FILE (a module's subsongs all share one), cached by the service.
@@ -7914,10 +9190,10 @@ class RewampDb {
       // that idx exists, else fall back to the row's position among its file's
       // rows (the same "never assume 1-based" rule as durationMsFor).
       final byIdx = info.subsongs.where((s) => s.idx == r.subsongIdx);
-      if (byIdx.isNotEmpty) return !byIdx.first.isNoSound;
+      if (byIdx.isNotEmpty) return !byIdx.first.isBroken;
       final pos = orderInFile[r] ?? -1;
       if (pos < 0 || pos >= info.subsongs.length) return true;
-      return !info.subsongs[pos].isNoSound;
+      return !info.subsongs[pos].isBroken;
     }).toList();
 
     // Never empty an album out (same safety net as upstream).
@@ -7936,26 +9212,108 @@ class RewampDb {
     return null;
   }
 
-  /// Efface le CONTENU (artwork gardé) de chaque dossier + les lignes DB
-  /// dessous — le ménage des copies d'un album (périmées ou re-téléchargées).
-  static Future<void> _wipeAlbumDirs(Iterable<String> dirs) async {
+  /// Efface le CONTENU de chaque dossier + les lignes DB dessous — le ménage
+  /// des copies d'un album (périmées ou re-téléchargées).
+  ///
+  /// [keepArtwork] : la pochette survit à un ménage de COPIE PÉRIMÉE (elle est
+  /// juste au bon endroit et rien ne dit qu'elle a changé), mais PAS à un
+  /// « Re-télécharger », dont le sens est « ce que j'ai est périmé » — pochette
+  /// comprise. Le cache mémoire est invalidé avec elle, sinon le bitmap déjà
+  /// décodé continuerait d'être servi.
+  static Future<void> _wipeAlbumDirs(Iterable<String> dirs,
+      {bool keepArtwork = true, bool keepUserState = false}) async {
     for (final sd in dirs) {
       debugPrint('[RewampDb] wiping album copy: $sd');
       try {
         await for (final e in Directory(sd).list()) {
           final base = p.basename(e.path);
-          if (base.startsWith('artwork.')) continue;
+          if (keepArtwork && base.startsWith('artwork.')) continue;
+          if (!keepArtwork && e is File) {
+            await ArtworkCache.instance.forgetLocalFile(e.path);
+          }
           try {
             await e.delete(recursive: true);
           } catch (_) {}
         }
       } catch (_) {}
-      await LocalDb.instance.deleteEntriesUnderPath(sd);
+      await LocalDb.instance
+          .deleteEntriesUnderPath(sd, keepUserState: keepUserState);
     }
+    // Une seule fois pour tout le ménage: les vignettes montées se
+    // reconstruisent sur ce compteur (voir ArtworkCache.generation).
+    if (!keepArtwork) ArtworkCache.generation.value++;
+  }
+
+  /// Table rase avant un « Re-télécharger » d'ALBUM: le contenu du dossier
+  /// (pochette comprise) et les lignes DB dessous — en gardant ce que
+  /// l'utilisateur a posé (♥, bibliothèque, historique d'écoute).
+  static Future<void> purgeAlbumDirBeforeRedownload(String dirPath) =>
+      _wipeAlbumDirs({dirPath}, keepArtwork: false, keepUserState: true);
+
+  /// Table rase avant un « Re-télécharger » de FICHIER: les octets, tout ce qui
+  /// les accompagnait, et tout ce que la base en disait.
+  ///
+  /// Efface CHAQUE copie connue du fichier — celle qui joue, le chemin DÉRIVÉ
+  /// du moment (les champs serveur bougent: un nom, une extension, un niveau de
+  /// dossier) et celle que la base a enregistrée —, puis les COMPAGNONS que
+  /// plus personne ne revendique (une banque `smpl.X`, un `.as` Startrekker,
+  /// une pochette voisine: les laisser, c'est re-jouer le nouveau module avec
+  /// les vieux échantillons), la pochette (disque + bitmap décodé), les lignes
+  /// `tracks`/`recent_albums` et l'url de provenance mémorisée.
+  ///
+  /// ⚠️ Ce que le geste ne touche PAS: ce que l'utilisateur a posé. Le ♥ et
+  /// l'appartenance à la bibliothèque restent (`keepUserState`), l'entrée
+  /// `library_items` n'est jamais consultée ici — re-télécharger n'est pas
+  /// supprimer.
+  ///
+  /// ⚠️ L'appelant doit avoir LÂCHÉ le fichier (arrêt de la lecture) avant:
+  /// le décodeur ne doit pas tenir un fichier qui n'existe plus.
+  static Future<void> purgeBeforeRedownload(SearchResult r,
+      {String? currentPath, String? artworkUrl}) async {
+    final paths = <String>{};
+    if (currentPath != null && currentPath.isNotEmpty) paths.add(currentPath);
+    try {
+      paths.add(await _localPath(r));
+    } catch (_) {}
+    final id = catalogueSongId(r.songId) ?? r.songId;
+    if (id.isNotEmpty) {
+      try {
+        final known = await LocalDb.instance.getTrackByOnlineId(id);
+        if (known != null && known.filePath.isNotEmpty) paths.add(known.filePath);
+      } catch (_) {}
+    }
+
+    // La pochette d'abord: elle se résout à partir des champs de la ligne ET du
+    // chemin du fichier (une pochette Amiga est un VOISIN nommé d'après le
+    // fichier complet), donc pendant qu'ils existent encore.
+    for (final path in paths) {
+      await invalidateArtworkFor(r, alsoUrl: artworkUrl, localFilePath: path);
+    }
+
+    final root = await onlineLibraryDir();
+    for (final path in paths) {
+      try {
+        final f = File(path);
+        if (await f.exists()) await f.delete();
+      } catch (_) {}
+      // Compagnons: seulement sous `online/` — un fichier IMPORTÉ par
+      // l'utilisateur n'a rien à re-télécharger, et son dossier ne nous
+      // appartient pas.
+      if (p.isWithin(root, path)) {
+        await cleanCompanionsAfterDelete(p.dirname(path), p.basename(path),
+            root: root);
+      }
+      await LocalDb.instance
+          .deleteEntriesUnderPath(path, keepUserState: true, notify: false);
+    }
+    if (id.isNotEmpty) {
+      await LocalDb.instance.clearDownloadSourceUrl(id);
+    }
+    LocalDb.instance.notifyListenersNow();
   }
 
   /// Tous les dossiers portant une copie de l'album de [containerId] d'après
-  /// les lignes DB de ses pistes ('<containerId>#i') — y compris les anciens
+  /// les lignes DB de ses pistes (`<containerId>#i`) — y compris les anciens
   /// layouts artiste. [anchors] = noms de dossier valides (album/albumId).
   static Future<Set<String>> _albumCopyDirs(
       String containerId, Set<String> anchors) async {
@@ -8010,10 +9368,11 @@ class RewampDb {
           // TOUTES les copies existantes (anciens dossiers artiste compris)
           // sont purgées, lignes DB avec, sinon le repli « reusing » continue
           // de servir l'ancienne et le re-téléchargement est un no-op.
-          await _wipeAlbumDirs({
-            extractedDir,
-            ...await _albumCopyDirs(container.songId, anchors),
-          });
+          await _wipeAlbumDirs(
+            {extractedDir, ...await _albumCopyDirs(container.songId, anchors)},
+            keepArtwork: false,
+            keepUserState: true,
+          );
         } else {
           final firstFile = File(p.joinAll(
               [extractedDir, ..._fileSegments(rows.first.filename)]));
@@ -8111,7 +9470,7 @@ class RewampDb {
             : tagsTitles[p.basename(s.filePath).toLowerCase()] ??
                 (external
                     ? p.basenameWithoutExtension(s.filePath)
-                    : '${container.displayTitle} (${s.index + 1})'),
+                    : '${container.subsongTitleBase} (${s.index + 1})'),
         filename:    p.basename(s.filePath),
         album:       container.album ?? container.displayTitle,
         formatExt:   entryExt.isNotEmpty ? entryExt : container.formatExt,
@@ -8200,17 +9559,43 @@ class RewampDb {
   }
 
   /// Base directory for downloaded files.
-  /// Android: app-specific external storage (Android/data/<pkg>/files) —
+  /// Android: app-specific external storage (`Android/data/<pkg>/files`) —
   ///          always writable without permission; visible in Files by Google
   ///          under Android → data → com.rewamp.app (the applicationId).
   /// Others:  app Documents (exposed in iOS Files app).
+  /// Le dossier qui contient `online/` — exposé pour l'écran Stockage, qui
+  /// mesure les postes sur le DISQUE et doit viser le même endroit que les
+  /// téléchargements (stockage externe sur Android, Documents ailleurs).
+  static Future<Directory> downloadsBaseDir() => _baseDir();
+
+  /// Couture de TEST: remplace la racine des téléchargements. `path_provider`
+  /// n'a pas d'implémentation dans l'hôte de test Dart, et le simuler
+  /// demanderait une dépendance de plus pour une seule racine.
+  @visibleForTesting
+  static Directory? debugDownloadsBaseOverride;
+
+  /// Point d'entrée de test du tampon d'archives partagé.
+  @visibleForTesting
+  static Future<(Uint8List, String)> fetchArchiveSharedForTest(
+          String? mirrorUrl, String originUrl,
+          {required int expectedSize, bool bustCache = false}) =>
+      _fetchArchiveShared(mirrorUrl, originUrl,
+          label: 'test', expectedSize: expectedSize, bustCache: bustCache);
+
   static Future<Directory> _baseDir() async {
+    final override = debugDownloadsBaseOverride;
+    if (override != null) return override;
     if (!kIsWeb && Platform.isAndroid) {
       try {
         final ext = await getExternalStorageDirectory();
         if (ext != null) return ext;
       } catch (_) {}
     }
+    // Linux et Windows: « Documents » y est le dossier PERSONNEL de
+    // l'utilisateur, pas un conteneur privé — `online/` y atterrissait à côté
+    // de ses propres fichiers. Tout va sous `Documents/Rewamp/`, et la
+    // migration des dossiers d'avant est dans storage_roots.dart.
+    if (usesRewampFolder) return rewampDocumentsDir();
     return getApplicationDocumentsDirectory();
   }
 
@@ -8295,6 +9680,36 @@ class RewampDb {
     return parts.isEmpty ? [_sanitize(filename)] : parts;
   }
 
+  /// Oublie la pochette de [r] — table, fichier sur disque et bitmap décodé.
+  ///
+  /// Une pochette est mise en cache SOUS SON URL et resservie depuis le disque
+  /// sans rien redemander; une image remplacée côté serveur garde la même URL,
+  /// donc rien ne se re-télécharge et l'ancienne reste affichée pour toujours.
+  /// Tout geste « ce que j'ai est périmé » doit passer par ici — et les DEUX
+  /// portes de re-téléchargement (le lecteur, l'écran de conteneur) partagent
+  /// donc cette fonction plutôt que d'en recopier la règle.
+  ///
+  /// [alsoUrl] couvre l'url que l'écran affiche RÉELLEMENT quand elle diffère
+  /// de celle du catalogue (le lecteur tient la sienne).
+  /// [localFilePath] n'est pas facultatif en pratique: sans album, la pochette
+  /// est un VOISIN du fichier audio (`<morceau>.png`) et non le `artwork.png`
+  /// du dossier — l'oublier ferait viser le mauvais fichier, donc effacer un
+  /// cache qui n'existe pas pendant que le vrai reste en place.
+  static Future<void> invalidateArtworkFor(SearchResult r,
+      {String? alsoUrl, String? localFilePath}) async {
+    final dir = await artworkDirForResult(r);
+    for (final url in {r.artworkUrl, alsoUrl}) {
+      if (url == null || url.isEmpty) continue;
+      await ArtworkCache.instance.invalidate(
+        url,
+        artist:        r.artistNames.isEmpty ? null : r.artistNames.first,
+        album:         r.album,
+        localFilePath: localFilePath,
+        targetDir:     dir,
+      );
+    }
+  }
+
   /// Full directory path where artwork for [r] should be stored.
   /// Matches _localPath() — artwork lives in the same folder as the tracks.
   static Future<String> artworkDirForResult(SearchResult r) async {
@@ -8303,7 +9718,7 @@ class RewampDb {
   }
 
   /// Directory segments for a SearchResult (no filename).
-  /// Structure: online/<collection>/<artist>/<platform|format>/<album>
+  /// Structure: `online/<collection>/<artist>/<platform|format>/<album>`
   ///
   /// EXCEPTION — album-grain zip collections (smspower, vgmrips, snesmusic):
   /// the album is downloaded as ONE zip and each member resolves by filename
@@ -8394,8 +9809,87 @@ class RewampDb {
               : 'unknown_album';
 
   /// Replaces characters that are invalid in directory/file names.
+  /// Un échec RÉSEAU, par opposition à une réponse du serveur.
+  ///
+  /// Hors ligne, `http` lève une `SocketException` (« Failed host lookup »)
+  /// enveloppée dans une `ClientException`. La distinguer d'une vraie erreur
+  /// serveur change ce qu'on peut faire: hors ligne, ce que le disque connaît
+  /// DÉJÀ fait très bien l'affaire; sur un 500, non.
+  static bool isOffline(Object e) {
+    if (e is SocketException) return true;
+    final s = e.toString();
+    return s.contains('SocketException') ||
+        s.contains('Failed host lookup') ||
+        s.contains('Network is unreachable') ||
+        s.contains('Connection refused') ||
+        s.contains('Connection closed') ||
+        s.contains('Connection timed out');
+  }
+
+  /// Une ligne LOCALE vue comme une ligne de catalogue.
+  ///
+  /// ⚠️ `songId` VIDE quand la piste n'a pas d'identité catalogue — c'est la
+  /// convention que lisent les écrans de conteneur, et inventer un id serait
+  /// pire que ne pas en avoir. `localPath` porte le fichier: c'est lui qui
+  /// permet de jouer sans réseau.
+  static SearchResult searchResultFromTrack(TrackRecord t) => SearchResult(
+        songId:       t.onlineId ?? '',
+        collection:   t.collectionSlug ?? '',
+        title:        t.title,
+        filename:     p.basename(t.filePath),
+        album:        t.metaAlbum,
+        albumId:      t.albumId,
+        formatExt:    t.formatExt ?? '',
+        downloadUrl:  null,
+        fileSize:     0,
+        year:         t.year,
+        artistNames:  [if (t.artist != null && t.artist!.isNotEmpty) t.artist!],
+        totalCount:   -1,
+        platform:     t.platformName,
+        artworkUrl:   t.artworkUrl,
+        trackPosition: t.position,
+        subsongIdx:   t.subsongIdx,
+        subsongCount: t.subsongCount,
+        resolvedSubsong: true,
+        durationMs:   t.durationS == null ? null : (t.durationS! * 1000).round(),
+        localPath:    t.filePath,
+      );
+
   static String _sanitize(String s) =>
       s.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_').trim();
+
+  /// Le chemin d'un fichier COMPAGNON, relatif au dossier du module — et il
+  /// peut porter un SOUS-DOSSIER.
+  ///
+  /// Longtemps aplati au basename, ce qui marche pour les compagnons frères
+  /// (TFMX `mdat.X` / `smpl.X`, `.pdx` de mdxplay) mais casse les formats dont
+  /// le player cherche ses échantillons dans un RÉPERTOIRE. C'est le cas de
+  /// SMUS (Sonix Music Driver): le catalogue modland livre ses instruments
+  /// sous `Instruments/…` (`aux_files[].filename` vaut bien
+  /// « Instruments/Bello.instr »), et UADE résout le volume Amiga
+  /// `Instruments:` en `<dossier du module>/instruments/`
+  /// (`ossupport.c`, « ScottJohnston player loads samples from Instruments: »).
+  /// Aplatis à côté du `.smus`, les instruments sont introuvables et le
+  /// morceau joue sans eux.
+  ///
+  /// ⚠️ La sécurité NE PEUT PLUS être « un basename, donc pas de traversée »:
+  /// chaque composant est assaini séparément, et `.` / `..` / un préfixe
+  /// absolu sont JETÉS. Un chemin qui ne laisse aucun composant rend une
+  /// chaîne vide — l'appelant saute l'entrée.
+  @visibleForTesting
+  static String auxRelativePath(String filename) {
+    final parts = <String>[];
+    for (final raw in filename.split(RegExp(r'[/\\]'))) {
+      final seg = raw.trim();
+      if (seg.isEmpty || seg == '.' || seg == '..') continue;
+      // Même assainissement que le fichier principal (_localPath), appliqué
+      // par COMPOSANT: le séparateur a déjà fait son office ci-dessus.
+      final clean = _sanitize(seg);
+      if (clean.isEmpty || clean == '.' || clean == '..') continue;
+      parts.add(clean);
+    }
+    return parts.join(p.separator);
+  }
 
   // ── User API ──────────────────────────────────────────────────────────────
 
@@ -9109,6 +10603,32 @@ class RewampDb {
     return DateTime.tryParse(map['updated_at'] as String? ?? '');
   }
 
+  /// Lot de gestes de bibliothèque (`set_library_batch`, migration serveur
+  /// 271): chaque élément porte les paramètres de [setLibrary] SANS le
+  /// préfixe `p_`, absents = mêmes défauts qu'en unitaire; ≤ 200 éléments
+  /// (au-delà 23514), appliqués DANS L'ORDRE, chacun par `set_library`
+  /// elle-même. Un élément irrecevable ne tue pas le lot: il revient dans
+  /// `rejected` avec son index et son code. Un serveur sans la fonction
+  /// répond 404 (PostgREST): l'appelant retombe sur l'unitaire.
+  static Future<LibraryBatchResult> setLibraryBatch(
+      List<Map<String, dynamic>> items) async {
+    final json = await _rpc('set_library_batch', {'p_items': items});
+    final map = json is List ? (json.isEmpty ? null : json.first) : json;
+    if (map is! Map) return const LibraryBatchResult(0, []);
+    final rejected = <LibraryBatchRejection>[];
+    final raw = map['rejected'];
+    if (raw is List) {
+      for (final r in raw) {
+        if (r is! Map) continue;
+        final idx = r['index'];
+        if (idx is! num) continue;
+        rejected.add(LibraryBatchRejection(idx.toInt(),
+            '${r['code'] ?? ''}', '${r['message'] ?? ''}'));
+      }
+    }
+    return LibraryBatchResult((map['applied'] as num?)?.toInt() ?? 0, rejected);
+  }
+
   /// Ranked entries of a competition (`get_competition_entries`, mig 183).
   /// The tap target of a podium badge when the compo has no playlist — and of
   /// a `kind='competition'` featured card.
@@ -9194,6 +10714,7 @@ class RewampDb {
     /// depuis les migrations 207/208. `popularity` est un percentile décayé sur
     /// 90 j: il classe autrement que le simple volume d'écoutes.
     String? sortBy,
+    List<String>? collections, // p_collections (mig 243) — voir search()
   }) async {
     // Throws on network failure / non-200 — the caller needs to tell a failed
     // fetch (retry later) apart from a server that genuinely has no rows.
@@ -9201,34 +10722,200 @@ class RewampDb {
     final body = <String, dynamic>{'period': period, 'n': n};
     if (sortBy != null) body['sort_by'] = sortBy;
     if (collectionSlug != null) body['collection_slug'] = collectionSlug;
-    final resp = await http.post(uri,
-      headers: _headers,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 20));
+    if (collectionSlug == null && collections != null && collections.isNotEmpty) {
+      body['p_collections'] = collections;
+    }
+    final resp = await _postJsonOptional(uri, body,
+        optional: const {'p_collections'}, headers: _headers);
     if (resp.statusCode != 200) {
       throw Exception('most_popular_songs HTTP ${resp.statusCode}');
     }
     final list = jsonDecode(resp.body) as List<dynamic>;
     final out = <SearchResult>[];
     for (final j in list) {
-      final m = Map<String, dynamic>.of(j as Map<String, dynamic>);
-      // item_id replaces song_id (album-grouping migration); fall back to
-      // song_id in case an older server is still serving the old schema.
-      m['song_id'] ??= m['item_id'];
-      // item_type="album" (migration 107): the row IS the album — point
-      // albumId at it too so the tap handler can call albumTracks().
-      if (m['item_type'] == 'album') m['album_id'] ??= m['item_id'];
-      // Stats rows carry no filename (SearchResult requires one) and name
-      // the rating column avg_rating.
-      m['filename'] ??= (m['title'] as String?) ?? '';
-      m['rating'] ??= m['avg_rating'];
-      try {
-        out.add(SearchResult.fromJson(m));
-      } catch (_) {
-        // Skip a single malformed row rather than losing the whole rail.
-      }
+      final r = popularRowToResult(Map<String, dynamic>.of(j as Map<String, dynamic>));
+      if (r != null) out.add(r);
     }
     return out;
+  }
+
+  /// Une ligne de `most_popular_songs` → [SearchResult]. Pure, testable.
+  ///
+  /// Depuis le 2026-09-05 la ligne est une ŒUVRE (`item_type` dit dans quelle
+  /// table vit `item_id`: `albums` ou `songs`) et désigne son entrée la plus
+  /// écoutée `(top_song_id, top_subsong_index)`. **`song_id` vient de
+  /// `top_song_id`**, plus jamais de `item_id`: sur une ligne `album`, `item_id`
+  /// est un uuid d'ALBUM et la feuille de choix comme le ♥ tomberaient sur la
+  /// mauvaise clé. `item_id` ne nourrit plus que `album_id`. Serveur d'avant
+  /// (pas de `top_song_id`): l'ancien repli sur `item_id` tient toujours. Les
+  /// lignes de stats n'ont pas de `filename` et nomment la note `avg_rating`;
+  /// une ligne malformée est sautée plutôt que de perdre le rail.
+  static SearchResult? popularRowToResult(Map<String, dynamic> m) {
+    m['song_id'] = (m['top_song_id'] as String?) ?? m['song_id'] ?? m['item_id'];
+    if (m['item_type'] == 'album') m['album_id'] ??= m['item_id'];
+    m['filename'] ??= (m['title'] as String?) ?? '';
+    m['rating'] ??= m['avg_rating'];
+    try {
+      return SearchResult.fromJson(m);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// La durée à MONTRER sur une ligne de liste, en ms — null si on ne sait pas.
+  ///
+  /// Un conteneur montre la durée du FICHIER (`total_length_ms`) et jamais
+  /// celle de son premier sous-chant: écrire 3:55 sous « Commando », dont les
+  /// 19 sous-chants totalisent bien autre chose, désigne une durée que rien ne
+  /// joue. Une ligne qui désigne UN morceau (fichier mono, sous-chant résolu)
+  /// montre la sienne, et retombe sur le total quand le serveur ne connaît que
+  /// lui — sur un mono les deux sont la même valeur.
+  static int? listDurationMs(SearchResult r) {
+    // ⚠️ Une ligne peut PORTER un conteneur tout en DÉSIGNANT une piste: un
+    // résultat de recherche qui a matché un titre à l'intérieur du fichier
+    // (`match_track_title`), une entrée épinglée à un sous-chant, une ligne
+    // dépliée. Elle affiche ce titre-là, donc la durée du FICHIER y serait un
+    // contresens — « Iron Arms [Iron Ore Weapon Battle] » annonçait 1:18:37,
+    // la durée des 73 sous-chants de « Juukou Senki Bullet Battlers.gbs ».
+    // Le serveur ne donne pas la durée de CETTE piste sur cette ligne: on
+    // n'affiche donc rien, comme partout ailleurs où l'on ne sait pas.
+    final narrowed = r.matchSubsongTitle != null ||
+        r.matchSubsongIndex != null ||
+        r.resolvedSubsong ||
+        r.subsongIdx != 0;
+    // Le serveur donne la durée de la piste nommée depuis le 2026-09-06
+    // (`match_track_length_ms`); avant, ces lignes n'en avaient aucune.
+    if (narrowed) return r.matchSubsongLengthMs ?? r.durationMs;
+    return isContainerRow(r) ? r.totalLengthMs : (r.durationMs ?? r.totalLengthMs);
+  }
+
+  /// Somme des durées d'une liste de sous-chants — null si UNE seule manque.
+  ///
+  /// C'est le repli quand le serveur ne donne pas de total: un fichier LOCAL,
+  /// ou une collection sans `total_length_ms`. Partielle, elle mentirait
+  /// (« 2:04 » pour un fichier qui en fait 12), donc on n'affiche rien plutôt
+  /// qu'un total faux. Les entrées mortes n'y sont pas: elles ont déjà été
+  /// retirées de la liste (voir `UadeSubsong.isBroken`).
+  static int? sumSubsongDurationsMs(Iterable<int?> durations) {
+    var total = 0;
+    var any = false;
+    for (final d in durations) {
+      if (d == null || d <= 0) return null;
+      total += d;
+      any = true;
+    }
+    return any ? total : null;
+  }
+
+  /// Durée d'un ALBUM: la somme de ce qu'on connaît, et si c'est PARTIEL on
+  /// le dit — « 45:26+ ». null quand aucune piste n'a de durée.
+  ///
+  /// Le serveur ne rend pas de total d'album: `total_length_ms` est PAR
+  /// FICHIER, donc le client somme les lignes (règle 4 du contrat). Une somme
+  /// partielle est utile — l'album fait au moins ça — à condition de ne pas se
+  /// faire passer pour exacte, d'où le suffixe. Chaque ligne apporte la durée
+  /// que sa LISTE afficherait ([listDurationMs]): pour un conteneur c'est le
+  /// fichier entier, jamais son premier sous-chant.
+  static String? albumDurationLabel(Iterable<SearchResult> rows) {
+    var total = 0;
+    var known = 0, missing = 0;
+    for (final r in rows) {
+      final ms = listDurationMs(r);
+      if (ms != null && ms > 0) {
+        total += ms;
+        known++;
+      } else {
+        missing++;
+      }
+    }
+    if (known == 0) return null;
+    return missing == 0
+        ? formatDurationMs(total)
+        : '${formatDurationMs(total)}+';
+  }
+
+  /// « m:ss », ou « h:mm:ss » au-delà de l'heure. Partagé par les listes et
+  /// l'écran de détail — deux formats pour la même chose se remarquent.
+  static String formatDurationMs(int ms) {
+    final total = ms ~/ 1000;
+    final h = total ~/ 3600;
+    final m = (total % 3600) ~/ 60;
+    final s = total % 60;
+    final ss = s.toString().padLeft(2, '0');
+    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:$ss';
+    return '$m:$ss';
+  }
+
+  /// Position, dans [rows], de l'entrée la plus écoutée que [top] désigne —
+  /// le point de départ de la rotation. Fichier ET sous-chant, puis fichier
+  /// seul, puis 0: une entrée disparue de la tracklist (piste retirée,
+  /// renommée) n'est jamais un échec, un rail ne doit pas casser sur une carte.
+  static int topEntryIndex(List<SearchResult> rows, SearchResult top) {
+    final id = top.topSongId;
+    if (id == null || id.isEmpty) return 0;
+    final sub = top.topSubsongIndex ?? 0;
+    String base(String s) => s.split('#').first;
+    var i = rows.indexWhere((r) => base(r.songId) == id && r.subsongIdx == sub);
+    if (i < 0) i = rows.indexWhere((r) => base(r.songId) == id);
+    return i < 0 ? 0 : i;
+  }
+
+  /// Palmarès d'ALBUMS (`most_popular_albums`). ⚠️ Signature vérifiée sur le
+  /// serveur: `(collection_slug, n, p_collections, p_country_code, period)` —
+  /// PAS de `sort_by`, contrairement aux morceaux: un palmarès d'albums est
+  /// toujours au volume d'écoutes.
+  static Future<List<PopularAlbum>> mostPopularAlbums({
+    String period = 'all',
+    int n = 100,
+    String? collectionSlug,
+  }) async {
+    final j = await _rpc('most_popular_albums', {
+      'period': period,
+      'n': n,
+      if (collectionSlug != null) 'collection_slug': collectionSlug,
+    });
+    if (j is! List) return const [];
+    return [
+      for (final e in j)
+        if (e is Map && e['album_id'] is String)
+          PopularAlbum.fromJson(Map<String, dynamic>.from(e)),
+    ];
+  }
+
+  /// Les playlists de CLASSEMENT (`list_charts`), toutes ou pour une
+  /// collection. Voir [ChartPlaylist] pour le contrat.
+  static Future<List<ChartPlaylist>> listCharts({String? collection}) async {
+    final j = await _rpc('list_charts', {
+      if (collection != null) 'p_collection': collection,
+    });
+    if (j is! List) return const [];
+    return [
+      for (final e in j)
+        if (e is Map && e['id'] is String)
+          ChartPlaylist.fromJson(Map<String, dynamic>.from(e)),
+    ];
+  }
+
+  /// Les ALBUMS d'un classement au grain 'album' (`get_chart_albums`), dans
+  /// l'ordre du rang. Colonnes alignées sur `search_albums` — le parseur
+  /// [ArtistAlbum.fromJson] sert tel quel — plus `rank`. 100 lignes au lieu
+  /// des 2364 pistes de la playlist vgmrips.
+  static Future<List<(int rank, ArtistAlbum album)>> chartAlbums(
+      String playlistId, {int limit = 200, int offset = 0}) async {
+    final j = await _rpc('get_chart_albums', {
+      'p_playlist_id': playlistId,
+      'lim': limit,
+      'from_offset': offset,
+    });
+    if (j is! List) return const [];
+    return [
+      for (final e in j)
+        if (e is Map && e['album'] is String)
+          (
+            ((e['rank'] as num?)?.toInt()) ?? 0,
+            ArtistAlbum.fromJson(Map<String, dynamic>.from(e)),
+          ),
+    ];
   }
 
   // ── Écoutes: backup en ligne des stats (log_plays_ext & co) ──────────────
@@ -9535,5 +11222,103 @@ class RewampDb {
     } catch (_) {
       return null;
     }
+  }
+}
+
+
+/// Mémoire des M3U pour la durée d'UN geste d'ouverture (« Tout lire » sur un
+/// dossier, archive dépliée).
+///
+/// Chercher le M3U voisin d'un fichier LISTAIT tout son dossier puis relisait
+/// chaque M3U pour en compter les entrées — pour CHAQUE fichier: sur un dossier
+/// de n conteneurs, n listages de n entrées et n relectures du même M3U, un
+/// coût qui croît comme n². Avec elle, chaque dossier est listé une fois, chaque
+/// M3U lu, compté et parsé une fois. Créée et jetée par l'appelant: sa durée de
+/// vie est celle du geste, donc rien n'a le temps de périmer.
+class M3uLookupCache {
+  /// Les fichiers `.m3u`/`.m3u8` de chaque dossier déjà listé.
+  final Map<String, List<File>> m3usByDir = {};
+  /// Texte de chaque M3U lu (tolérant UTF-8 / Latin-1, voir readM3uText).
+  final Map<String, String> text = {};
+  /// Nombre d'entrées de chaque M3U (choix de la playlist du dossier).
+  final Map<String, int> entryCount = {};
+  /// Sous-chansons parsées de chaque M3U retenu.
+  final Map<String, List<SubsongInfo>> subs = {};
+  /// En-tête parsé de chaque M3U retenu (album, artistes, bloc libre).
+  final Map<String, M3uInfo?> info = {};
+}
+
+/// Où va un téléchargement: en MÉMOIRE (fichiers courts) ou dans un FICHIER
+/// (archives de plusieurs centaines de Mo). Un seul cœur (`_fetchInto`) les
+/// alimente, donc annulation, bannière et délais sont identiques par
+/// construction — les dupliquer, c'était fabriquer deux règles qui divergent.
+abstract class _FetchSink {
+  Uint8List _head = Uint8List(0);
+  int _length = 0;
+
+  /// Octets reçus jusqu'ici.
+  int get length => _length;
+
+  /// Les 512 premiers octets: tout ce que regardent les reniflages
+  /// (`_looksLikeHtml` s'arrête à 512, `Rar!` et gzip en prennent 4 et 2).
+  Uint8List get head => _head;
+
+  /// Fichier où l'isolate de transfert écrit, ou null pour la mémoire.
+  String? get path;
+
+  /// Avancement rapporté par l'isolate.
+  void progress(int n) => _length = n;
+
+  /// Fin du transfert.
+  void finish(IsolateFetchResult r) {
+    _length = r.length;
+    _head = r.head;
+  }
+
+  /// Repart de zéro (rejeu après un interstitiel). Le contenu lui-même est
+  /// remplacé par le transfert suivant: l'isolate ouvre le fichier en le
+  /// TRONQUANT, et la mémoire est remplacée en bloc par [finish].
+  Future<void> reset() async {
+    _head = Uint8List(0);
+    _length = 0;
+  }
+}
+
+class _MemorySink extends _FetchSink {
+  Uint8List? _bytes;
+
+  @override
+  String? get path => null;
+
+  @override
+  void finish(IsolateFetchResult r) {
+    super.finish(r);
+    _bytes = r.bytes;
+  }
+
+  Uint8List takeBytes() {
+    final b = _bytes ?? Uint8List(0);
+    _bytes = null;
+    return b;
+  }
+}
+
+class _FileSink extends _FetchSink {
+  _FileSink._(this._file);
+  final File _file;
+
+  // ⚠️ L'isolate de transfert ouvre le fichier lui-même et y attend
+  // `writeFrom` à CHAQUE bloc (contre-pression: un `IOSink` tamponnerait sans
+  // limite quand le disque est plus lent que le réseau).
+  static Future<_FileSink> open(File f) async => _FileSink._(f);
+
+  @override
+  String get path => _file.path;
+
+  Future<void> close() async {}
+
+  /// Échec: on efface — un `.part` resté derrière ne sert à rien.
+  Future<void> discard() async {
+    try { if (await _file.exists()) await _file.delete(); } catch (_) {}
   }
 }

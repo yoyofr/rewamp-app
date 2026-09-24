@@ -98,3 +98,32 @@ packages/rewamp_audio/macos/Classes/*_cores/
 # Ignore the whole tree (same as the unused MetalANGLE vendor above); re-download
 # the full prebuilt when reviving a real ffmpeg integration.
 packages/rewamp_audio/third_party/ffmpeg-kit/
+
+# ── Résidu de build des arbres vendorés ─────────────────────────────────────
+# 276 fichiers (17,3 Mo) étaient entrés au dépôt avec les snapshots amont:
+# objets compilés, comptabilité d'automake, cache d'autoconf, et un arbre de
+# binaires de test du pilote USBSID de libsidplayfp. Aucun build ne les
+# touchait — nos arbres se compilent par CMake et par les podspecs, jamais par
+# autotools — et un `.o` versionné n'apprend rien à personne.
+#
+# Ces règles ne servent pas au quotidien mais au PROCHAIN re-vendorage: c'est
+# lui qui les a introduits, et c'est lui qui les réintroduirait.
+*.o
+*.a
+*.so
+*.lo
+*.la
+*.Plo
+*.Po
+*.dirstamp
+**/.deps/
+**/autom4te.cache/
+packages/rewamp_audio/third_party/libsidplayfp/libsidplayfp/src/builders/usbsid-builder/driver/test/build/
+
+# Fichiers d’échange vim (`.<nom>.swp` et consorts) — jamais versionnés.
+*.swp
+*.swo
+
+# flatpak: artefacts de build locaux (scripts/flatpak/)
+scripts/flatpak/.build/
+scripts/flatpak/.flatpak-builder/

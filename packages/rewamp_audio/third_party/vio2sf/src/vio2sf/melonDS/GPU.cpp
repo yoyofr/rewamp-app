@@ -77,6 +77,22 @@ GPU::GPU(melonDS::NDS& nds, std::unique_ptr<Renderer>&& renderer) noexcept :
     GPU2D_B(1, *this),
     GPU3D(*this)
 {
+    // rewamp: VRAMCaptureBlockFlags est LU avant d'être écrit.
+    //
+    // `SetRenderer` (juste en dessous) commence par `SyncAllVRAMCaptures()`,
+    // qui parcourt ce tableau — or il n'est mis à zéro que par `Reset()`, qui
+    // n'a pas encore tourné. Un octet qui traîne avec `CBFlag_IsCapture` posé
+    // et `CBFlag_Synced` absent suffit à faire déréférencer `Rend`, encore nul
+    // à ce stade: SIGSEGV à l'ouverture d'un `.2sf`, de façon INTERMITTENTE
+    // puisque c'est la mémoire recyclée qui décide.
+    //
+    // Rapporté sur macOS le 2026-09-03 (GPU.cpp:1662, `Rend->SyncVRAMCapture`,
+    // KERN_INVALID_ADDRESS à l'adresse 0). Le garde dans SyncAllVRAMCaptures
+    // suffirait à ne pas planter; on remet aussi le tableau à zéro, parce que
+    // lire de la mémoire non initialisée reste un comportement indéfini même
+    // quand il ne se voit pas.
+    memset(VRAMCaptureBlockFlags, 0, sizeof(VRAMCaptureBlockFlags));
+
     NDS.RegisterEventFuncs(Event_LCD, this,
     {
         MakeEventThunk(GPU, StartHBlank),
@@ -314,6 +330,9 @@ void GPU::DoSavestate(Savestate* file) noexcept
 
 void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
 {
+    // rewamp: appelé DEPUIS LE CONSTRUCTEUR, donc `Rend` peut être nul — voir
+    // le commentaire du constructeur. La synchronisation n'a alors rien à
+    // synchroniser: aucun renderer n'a jamais vu ces banques.
     SyncAllVRAMCaptures();
 
     bool good = false;
@@ -1647,6 +1666,12 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
 
 void GPU::SyncAllVRAMCaptures()
 {
+    // rewamp: pas de renderer = rien à synchroniser. `SetRenderer` appelle
+    // cette fonction AVANT d'installer `Rend`, y compris à la construction où
+    // il est encore nul.
+    if (!Rend)
+        return;
+
     for (u32 b = 0; b < 16; b++)
     {
         u16 flags = VRAMCaptureBlockFlags[b];

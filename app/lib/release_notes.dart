@@ -13,10 +13,25 @@ import 'user_settings.dart';
 /// **Bumper ce nombre = remontrer la note**, sur chaque appareil, au prochain
 /// démarrage. Il est indépendant du numéro de build: une build de correction
 /// n'a rien à raconter et ne doit pas rouvrir l'écran.
-const kReleaseNotesVersion = 4;
+///
+/// Beta 6: la note passe à 6 parce que son CONTENU change (trois points de
+/// plus). Ni la 5.0 ni la 5.1 n'ayant été téléversées, personne n'a vu la
+/// version 5 — les douze puces qu'elle portait restent donc des nouveautés
+/// pour tout le monde.
+///
+/// **7 = beta 6.1.** La note 6 a été VUE (la beta 6 est partie sur les trois
+/// canaux le 2026-09-08), donc ses vingt puces sont RETIRÉES et remplacées:
+/// une version de note est un jeu de clés, et remontrer ce que le lecteur a
+/// déjà lu noie ce qui a réellement changé depuis.
+///
+/// Portée GELÉE le 2026-09-19, toujours en **7**: la beta 6.1 (`0.6.1+13`)
+/// n'avait été ni bâtie ni envoyée, donc personne n'a vu cette note — elle
+/// s'élargit à dix jours de plus au lieu de passer à 8. Quinze puces: les
+/// nouveautés d'abord, puis les correctifs, les gains de ressources en
+/// dernier (juste avant l'éventuel avertissement d'effacement).
+const kReleaseNotesVersion = 7;
 
-/// Nom public de la version. Pas de traduction: c'est un nom, comme « Rewamp ».
-const kReleaseNotesLabel = 'Beta 4';
+const kReleaseNotesLabel = 'Beta 6.1';
 
 /// Les points de la note, dans l'ordre d'affichage. Une note SYNTHÉTIQUE: ce
 /// que l'utilisateur verra changer, pas le journal des commits. Le dernier
@@ -24,16 +39,21 @@ const kReleaseNotesLabel = 'Beta 4';
 /// délibérément en dernier et signalé, c'est la seule ligne qui demande
 /// quelque chose au lecteur plutôt que de lui annoncer un gain.
 List<String> releaseNotesBullets(AppLocalizations l10n) => [
-      l10n.releaseNotesV4Downloads,
-      l10n.releaseNotesV4Queue,
-      l10n.releaseNotesV4DropFiles,
-      l10n.releaseNotesV4Soundfont,
-      l10n.releaseNotesV4Formats,
-      l10n.releaseNotesV4Chips,
-      l10n.releaseNotesV4Zx,
-      l10n.releaseNotesV4Loop,
-      l10n.releaseNotesV4Info,
-      l10n.releaseNotesV4Linux,
+      l10n.releaseNotesV7Mt32,
+      l10n.releaseNotesV7Xmp,
+      l10n.releaseNotesV7AmigaAdlib,
+      l10n.releaseNotesV7MiniPlayer,
+      l10n.releaseNotesV7Instruments,
+      l10n.releaseNotesV7Podium,
+      l10n.releaseNotesV7ShortSubsongs,
+      l10n.releaseNotesV7LocalFolders,
+      l10n.releaseNotesV7Subsongs,
+      l10n.releaseNotesV7Midi,
+      l10n.releaseNotesV7ProjectM,
+      l10n.releaseNotesV7Piano,
+      l10n.releaseNotesV7VizIdle,
+      l10n.releaseNotesV7Cpu,
+      l10n.releaseNotesV7Database,
     ];
 
 /// L'écran lui-même: fond du splash, logo réduit, la note, un bouton.
@@ -157,6 +177,21 @@ class _Bullet extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Ouvre la note de version à la demande (depuis « À propos »).
+///
+/// Même écran qu'au premier lancement, sans le logo: hors de la continuité du
+/// splash il n'y a pas d'intro à prolonger, et le rappeler ferait un deuxième
+/// écran de bienvenue là où l'utilisateur a simplement demandé à relire.
+Future<void> showReleaseNotes(BuildContext context) {
+  return Navigator.of(context, rootNavigator: true).push(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (ctx) =>
+          ReleaseNotesSplash(onDismiss: () => Navigator.of(ctx).pop()),
+    ),
+  );
 }
 
 /// La note est-elle encore à montrer sur cet appareil ?

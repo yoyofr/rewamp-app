@@ -7,15 +7,14 @@ import 'browse_screen.dart' show PlaylistTracksScreen;
 import 'favorite_color.dart';
 import 'featured_reason.dart';
 import 'home_refresh.dart';
+import 'home_sections.dart';
 import 'hover_grow.dart';
 import 'local_badge.dart';
 import 'marquee_text.dart';
 import 'track_options_sheet.dart'
     show globalOnAlbumQueueAdd, globalOnLocalQueueAdd, globalOnQueueAdd,
          globalOnStartFeaturedRadio, showPlayChoiceSheet, PlayChoice;
-import 'package:file_selector/file_selector.dart';
-import 'package:file_picker/file_picker.dart' as fp;
-import 'package:path_provider/path_provider.dart';
+import 'charts_screen.dart' show ChartMode, ChartResultsScreen;
 import 'competition_screen.dart';
 import 'l10n.dart';
 import 'local_open.dart';
@@ -30,6 +29,7 @@ import 'rewamp_db.dart'
     show FeaturedSlot, OnPlayAlbum, OnPlayLocalAlbum, Playlist, RewampDb,
          SearchResult;
 import 'formats.dart' show kAllDecoderExts;
+import 'stats_screen.dart' show LocalTopTracksScreen;
 import 'user_settings.dart';
 import 'shell_insets.dart';
 
@@ -37,6 +37,40 @@ import 'shell_insets.dart';
 // UADE multi-subsong files (TFMX, some FC/…) are handled separately below by
 // path detection (UadeInfoService.isUadePath), not by extension, so they don't
 // need an entry here.
+
+/// Faut-il compléter la liste d'un album LOCAL en scannant son dossier ?
+///
+/// Non quand l'album a reçu sa liste COMPLÈTE du catalogue
+/// (`album_materialised`): elle fait autorité et le dossier en contient
+/// davantage — « Wild Arms 3 » (jw_psf2) a 115 pistes au catalogue et 138
+/// fichiers d'allure audio sur le disque (doublons `[jp]`/`[us]`, `.vgmstream`
+/// non listés). Sinon oui, mais seulement si la base n'a rien apporté de plus
+/// que ce qu'elle contenait: les branches précédentes (M3U, sous-chansons,
+/// songdb UADE) ont pu déplier la liste, et le scan les écraserait.
+///
+/// Et JAMAIS pour un album sans identité catalogue. Le scan prend le dossier
+/// PARENT du premier fichier connu pour « le dossier de l'album » — vrai d'un
+/// album téléchargé (`online/<collection>/<uuid>/` lui est dédié), faux d'un
+/// fichier LOCAL dont l'album vient des tags: un `.hip` posé à la RACINE des
+/// imports a pour parent `local/` tout entier. Mesuré le 2026-09-04 sur « The
+/// Seven Gates of Jambala »: relancé depuis les récents, l'album devenait une
+/// file de 200 pistes qui démarrait sur Battle Garegga, chacune estampillée de
+/// la pochette et de l'album de Jambala — puis PERSISTÉE ainsi par la lecture
+/// (`_persistPlay`), d'où des lignes Garegga portant le `.gif` de Jambala. Un
+/// album local n'a pas besoin du scan: l'import enregistre chaque fichier de
+/// son dossier, la base EST sa liste.
+///
+/// Pur et hors classe pour être testable — construire l'écran d'accueil
+/// appellerait le natif.
+bool shouldScanAlbumDirectory({
+  required bool catalogueAlbum,
+  required bool materialised,
+  required int tracks,
+  required int dbTracks,
+}) =>
+    catalogueAlbum && !materialised && tracks > 0 && tracks == dbTracks;
+
+
 class HomeScreen extends StatelessWidget {
   final PlayerController  controller;
   final OnFileReady       onFileReady;
@@ -70,148 +104,7 @@ class HomeScreen extends StatelessWidget {
     ...RewampDb.kContainerFormats,
   };
 
-  // Extensions offered in the OPEN-FILE picker. Adds M3U/M3U8 (playlists) on top
-  // of the playable formats — a picked .m3u is expanded and its referenced files
-  // are queued (see _openFile). Kept separate from _audioExtensions so the
-  // local-album folder scan never mistakes an .m3u for a playable track.
-  static final _pickerExtensions = [
-    ..._audioExtensions, 'm3u', 'm3u8',
-    // Archives extracted+enqueued on open (UnExotica .lha, …). Kept out of
-    // _audioExtensions so the folder scan never treats one as a playable track.
-    ...RewampDb.kLocalArchiveExts,
-  ];
 
-  List<XTypeGroup> _pickerTypeGroups(AppLocalizations l10n) {
-    if (Platform.isIOS || Platform.isMacOS) {
-      // Also pass `extensions`: file_selector resolves each via
-      // UTType(filenameExtension:) to the system UTI it actually maps to.
-      // This matters for extensions another installed app already owns —
-      // e.g. .rsn resolves to an archive UTI (not our exported trackermodule
-      // type), so filtering by our UTI alone greys it out in the panel.
-      // `public.data` keeps *every* file selectable in the open panel. Many Amiga
-      // formats UADE plays use the prefix convention ("mdat.song", "ahx.tune")
-      // where the format token is the prefix and the suffix isn't a known
-      // extension — those would otherwise be greyed out. Routing is decided by
-      // the native registry probe (suffix + content magic), not the panel.
-      return [
-        XTypeGroup(
-          label: l10n.pickerLabelAudio,
-          uniformTypeIdentifiers: const [
-            'public.audio',
-            'com.rewamp.app.trackermodule',
-            'public.data',
-          ],
-          extensions: _pickerExtensions,
-        ),
-      ];
-    }
-    if (Platform.isAndroid) return const [];
-    return [XTypeGroup(label: l10n.pickerLabelAudio, extensions: _pickerExtensions)];
-  }
-
-  /// Returns the best initial directory for the file picker on Android.
-  /// Tries Music, then Download, then external storage root.
-  static Future<String?> _androidInitialDir() async {
-    try {
-      final ext = await getExternalStorageDirectory();
-      if (ext == null) return null;
-      // ext = .../Android/data/<pkg>/files — go up 4 levels to storage root
-      Directory root = ext;
-      for (int i = 0; i < 4; i++) {
-        root = root.parent;
-      }
-      // Prefer Rewamp subfolder if it exists (matches download location)
-      for (final name in ['Music/Rewamp', 'Music', 'Download', 'Downloads']) {
-        final d = Directory('${root.path}/$name');
-        if (await d.exists()) return d.path;
-      }
-      return root.path;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> _pickFile(BuildContext context) async {
-    final l10n = context.l10n;
-    final initialDir = Platform.isAndroid ? await _androidInitialDir() : null;
-    // Sélection MULTIPLE: demandé par un utilisateur Android qui voulait
-    // « importer un dossier ». Sur Android on ne PEUT pas ouvrir un dossier
-    // arbitraire — SAF rend une URI d'arbre, pas un chemin, et nos décodeurs C
-    // exigent un vrai chemin (getDirectoryPath du plugin échoue d'ailleurs sur
-    // les dossiers protégés, Téléchargements compris). Tout sélectionner dans
-    // le dossier donne le même résultat sans permission de stockage ni copie.
-    // Le reste du chemin était DÉJÀ multi-fichiers (tracksForLocalPaths prend
-    // N chemins, la branche album gère N pistes): seul le sélecteur bridait.
-    final List<XFile> files;
-    if (Platform.isAndroid) {
-      // file_selector_android rewrites the cached copy's extension from the
-      // resolved MIME type — "axe.rsn" (octet-stream) becomes "axe.bin",
-      // breaking extension-based format routing. file_picker keeps the real
-      // display name on its cache copy.
-      final res = await fp.FilePicker.platform.pickFiles(
-        type: fp.FileType.any,
-        allowMultiple: true,
-        initialDirectory: initialDir,
-      );
-      files = (res?.files ?? const [])
-          .map((f) => f.path)
-          .whereType<String>()
-          .map(XFile.new)
-          .toList();
-    } else {
-      files = await openFiles(
-        acceptedTypeGroups: _pickerTypeGroups(l10n),
-        initialDirectory: initialDir,
-      );
-    }
-    if (files.isEmpty || !context.mounted) return;
-    final file = files.first;
-
-    // Format routing lives in local_open.dart: a picker hands over ONE path, a
-    // drag-and-drop hands over several, and both need the same expansion
-    // (archive -> every module, M3U -> every entry, container -> every subsong).
-    final tracks = await tracksForLocalPaths(
-      [for (final f in files) f.path],
-      controller: controller,
-      report: (n) {
-        if (!context.mounted) return;
-        AppSnack.show(context, switch (n) {
-          LocalOpenNotice.extractingArchive  => l10n.homeExtractingArchive,
-          LocalOpenNotice.archiveEmpty       => l10n.homeArchiveEmpty,
-          LocalOpenNotice.playlistUnreadable => l10n.homePlaylistUnreadable,
-          LocalOpenNotice.presetsImported    => l10n.pmPresetsImported,
-          LocalOpenNotice.nothingPlayable    => l10n.homeNothingPlayable,
-        }, duration: const Duration(seconds: 2));
-      },
-    );
-    if (!context.mounted || tracks.isEmpty) return;
-
-    // Même popup que sur tout tap qui ÉCRASERAIT la file (règle du projet).
-    // Elle s'escamote d'elle-même quand rien n'est en file ni en lecture, donc
-    // une première ouverture joue toujours directement.
-    final choice = await showPlayChoiceSheet(
-      context,
-      title: files.length == 1
-          ? file.name
-          : l10n.albumTrackCount(tracks.length),
-    );
-    if (choice == null || !context.mounted) return;
-    if (choice != PlayChoice.now && onLocalTracksQueueAdd != null) {
-      await onLocalTracksQueueAdd!(tracks, atEnd: choice == PlayChoice.end);
-      return;
-    }
-
-    // One track: keep the picker's old behaviour of clearing both queues before
-    // playing. Several tracks is a queue, so it goes through the album path.
-    // `files.length == 1` compte: un SEUL fichier qui se déplie en une seule
-    // piste reste l'ancien cas; plusieurs fichiers sont une queue même si l'un
-    // d'eux ne donne rien.
-    if ((files.length == 1 && tracks.length == 1) || onPlayLocalAlbum == null) {
-      (onPlaySingleLocalFile ?? onFileReady)(file.path, file.name);
-      return;
-    }
-    await onPlayLocalAlbum!(context, tracks);
-  }
 
   // ── Online discovery rails: tap handlers ────────────────────────────────
 
@@ -227,7 +120,8 @@ class HomeScreen extends StatelessWidget {
     // all route through here.
     final choice = await showPlayChoiceSheet(ctx,
         title: r.displayTitle,
-        subtitle: r.artistLabel.isEmpty ? null : r.artistLabel);
+        subtitle: r.artistLabel.isEmpty ? null : r.artistLabel,
+        result: r);
     if (choice == null || !ctx.mounted) return;
     final asQueueAdd = choice != PlayChoice.now;
     if (r.isAlbumRow) {
@@ -237,8 +131,13 @@ class HomeScreen extends StatelessWidget {
         // AlbumDetailScreen's own fetches do (which all use 'position'),
         // scrambling both track order and, downstream, which title lands on
         // which queue slot.
-        final tracks = await RewampDb.albumTracks(
+        final fetched = await RewampDb.albumTracks(
             albumId: r.albumId!, sortBy: 'position');
+        // Un seul geste, quel que soit le type: l'œuvre entière, TOURNÉE à
+        // partir de son entrée la plus écoutée (comme un « tout lire » qui
+        // démarre au sous-chant de départ: 5 pistes, 3e ⇒ 3,4,5,1,2).
+        final tracks = rotateToDefaultSubsong(
+            fetched, RewampDb.topEntryIndex(fetched, r));
         if (tracks.isNotEmpty && ctx.mounted) {
           if (asQueueAdd && globalOnAlbumQueueAdd != null) {
             await globalOnAlbumQueueAdd!(tracks,
@@ -264,7 +163,14 @@ class HomeScreen extends StatelessWidget {
         }
         return;
       }
-      resolved = r.subsongIdx != 0 ? c.song.withSubsong(r.subsongIdx) : c.song;
+      // Une ligne de palmarès reste un CONTENEUR: on reporte l'entrée la plus
+      // écoutée (rotation en aval), on ne l'épingle pas à une sous-chanson.
+      resolved = r.topSubsongIndex != null
+          ? c.song.copyWith(
+              subsongIdx: r.subsongIdx,
+              topSongId: r.topSongId,
+              topSubsongIndex: r.topSubsongIndex)
+          : (r.subsongIdx != 0 ? c.song.withSubsong(r.subsongIdx) : c.song);
     }
     if (!ctx.mounted) return;
 
@@ -317,7 +223,33 @@ class HomeScreen extends StatelessWidget {
         ));
       case 'album':
         if (onPlayAlbum == null) return;
-        final choice = await showPlayChoiceSheet(ctx, title: s.name);
+        // « Voir l'album » aussi depuis une carte du rail. La feuille déduit
+        // ses tuiles de la LIGNE, et une carte d'album n'en passait aucune —
+        // le tap ne menait donc qu'à la lecture. La section « Nouveautés du
+        // catalogue » (mig serveur 258) en apporte jusqu'à 24 d'un coup, ce
+        // qui rend le manque voyant.
+        //
+        // Le slot n'est pas une piste: on fabrique la ligne minimale que la
+        // feuille sait lire — nom d'album et uuid, seuls champs dont la tuile
+        // « Voir l'album » a besoin. Pas de `subsongCount`, donc aucune tuile
+        // de sous-chansons, ce qui est juste: un album n'est pas un fichier.
+        final choice = await showPlayChoiceSheet(ctx,
+            title: s.name,
+            track: TrackRecord(
+              id:           '',
+              filePath:     '',
+              entryPath:    '',
+              subsongIdx:   0,
+              title:        s.name,
+              metaAlbum:    s.name,
+              albumId:      s.id,
+              artworkUrl:   s.artworkUrl,
+              collectionSlug: s.collection,
+              source:       'online',
+              isFavorite:   false,
+              inLibrary:    false,
+              playCount:    0,
+            ));
         if (choice == null || !ctx.mounted) return;
         try {
           final tracks =
@@ -407,17 +339,23 @@ class HomeScreen extends StatelessWidget {
           ).createShader(rect);
         },
         child: ListenableBuilder(
-            listenable: controller,
-            builder: (context, _) => CustomScrollView(
-              slivers: [
-                // Pushes first item below the status bar at rest; scrolls away
-                // freely so content passes behind the bar (full-screen feel).
-                SliverToBoxAdapter(child: SizedBox(height: statusBarH)),
-
+            // Les réglages AUSSI: l'ordre des sections est relu à chaque build,
+            // et sans cette écoute revenir de l'éditeur ne redessinerait rien
+            // (le lecteur, lui, n'a pas bougé). `Listenable.merge` plutôt qu'un
+            // second builder imbriqué: une seule reconstruction par événement.
+            listenable: Listenable.merge([controller, UserSettings.instance]),
+            builder: (context, _) {
+              // Chaque section est une LISTE de slivers (un en-tête + son
+              // rail), rangée sous son identifiant: l'ordre d'affichage est
+              // celui que l'utilisateur a choisi (voir home_sections.dart), et
+              // il est relu à CHAQUE build — `UserSettings` étant un
+              // ChangeNotifier, revenir de l'éditeur suffit à réordonner.
+              final sections = <HomeSection, List<Widget>>{
                 // ── Recently played ────────────────────────────────────────
+                HomeSection.recents: [
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                    padding: const EdgeInsets.fromLTRB(16, _kSectionTopGap, 16, 8),
                     child: Text(
                       l10n.recentlyPlayed,
                       style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -435,9 +373,24 @@ class HomeScreen extends StatelessWidget {
                       // entry resolves into the exact same track lists either
                       // way, only the terminal action differs (replace queue /
                       // insert next / append).
+                      // La LIGNE, pas seulement son libellé: sans elle la
+                      // feuille n'a rien à interroger et n'offre que les trois
+                      // choix de lecture — un module multi-sous-chansons
+                      // rejoué depuis les récents ne proposait donc pas
+                      // « Voir les sous-chansons », alors que c'est justement
+                      // le geste qui doit REDÉPLIER.
+                      //
+                      // ⚠️ Passée AUSSI pour une entrée d'ALBUM, alors que je
+                      // l'en avais d'abord exclue: la feuille déduit ses tuiles
+                      // de la ligne, donc l'exclure supprimait « Voir l'album »
+                      // là où il a le plus de sens. Rien à filtrer ici — une
+                      // entrée d'album n'a pas de `subsongCount` (la moitié
+                      // ALBUM de la requête rend NULL), donc la tuile des
+                      // sous-chansons ne s'affiche pas d'elle-même.
                       final choice = await showPlayChoiceSheet(ctx,
                           title: entry.label,
-                          subtitle: entry.artist);
+                          subtitle: entry.artist,
+                          track: entry.asTrackRecord());
                       if (choice == null || !ctx.mounted) return;
                       final queueLocal  = globalOnLocalQueueAdd;
                       final queueOnline = globalOnAlbumQueueAdd;
@@ -599,13 +552,20 @@ class HomeScreen extends StatelessWidget {
                                         .split(Platform.pathSeparator)
                                         .last
                                         .replaceAll(RegExp(r'\.\w+$'), '');
+                                    // ⚠️ La POSITION n'est pas l'index: une
+                                    // liste peut être CREUSE (`.adl`). Voir
+                                    // subsongIndicesFor.
+                                    final idx = subsongIndicesFor(
+                                        fp, controller, count);
                                     tracks = List.generate(count, (i) {
-                                      if (byIdx.containsKey(i)) return byIdx[i]!;
+                                      if (byIdx.containsKey(idx[i])) {
+                                        return byIdx[idx[i]]!;
+                                      }
                                       return TrackRecord(
                                         id:         '',
                                         filePath:   fp,
                                         entryPath:  '',
-                                        subsongIdx: i,
+                                        subsongIdx: idx[i],
                                         title:      '$baseName (${i + 1})',
                                         artist:     ref.artist,
                                         metaAlbum:  ref.metaAlbum,
@@ -628,8 +588,31 @@ class HomeScreen extends StatelessWidget {
                             // Multi-file album: DB only contains played tracks.
                             // Scan the directory for the full file list and
                             // merge, using DB data for already-played entries.
-                            if (tracks.isNotEmpty &&
-                                tracks.length == dbTracks.length) {
+                            //
+                            // ⚠️ SAUF quand l'album a reçu sa liste COMPLÈTE du
+                            // catalogue (`album_materialised`): elle fait alors
+                            // autorité, et le dossier contient plus de fichiers
+                            // qu'elle n'en nomme. Mesuré sur « Wild Arms 3 »
+                            // (jw_psf2): 115 pistes au catalogue et en base,
+                            // 138 fichiers d'allure audio sur le disque —
+                            // doublons régionaux `[jp]`/`[us]` et `.vgmstream`
+                            // que le rip embarque sans les lister. Lancé depuis
+                            // l'écran album on avait 115, depuis « Écoutés
+                            // récemment » 139, dont certains injouables. Le
+                            // marqueur est le SEUL juge: un simple compte de
+                            // lignes ne distingue pas « liste complète » de
+                            // « ce qui a été joué », ce pour quoi ce marqueur
+                            // existe (il n'est posé que sur un lot COMPLET).
+                            final materialised = entry.albumId != null &&
+                                entry.albumId!.isNotEmpty &&
+                                await LocalDb.instance
+                                    .isAlbumMaterialised(entry.albumId!);
+                            if (shouldScanAlbumDirectory(
+                                catalogueAlbum:
+                                    (entry.albumId ?? '').isNotEmpty,
+                                materialised: materialised,
+                                tracks: tracks.length,
+                                dbTracks: dbTracks.length)) {
                               final dir = File(dbTracks.first.filePath).parent;
                               if (await dir.exists()) {
                                 // RECURSIVE: an extracted archive album keeps
@@ -838,13 +821,17 @@ class HomeScreen extends StatelessWidget {
                               .replaceAll(RegExp(r'\.\w+$'), '');
                           final ext =
                               entry.filePath.split('.').last.toLowerCase();
+                          // ⚠️ La POSITION n'est pas l'index quand la liste
+                          // est CREUSE (`.adl`). Voir subsongIndicesFor.
+                          final idx = subsongIndicesFor(
+                              entry.filePath, controller, count);
                           final tracks = List.generate(count, (i) {
-                            if (byIdx.containsKey(i)) return byIdx[i]!;
+                            if (byIdx.containsKey(idx[i])) return byIdx[idx[i]]!;
                             return TrackRecord(
                               id:         '',
                               filePath:   entry.filePath,
                               entryPath:  '',
-                              subsongIdx: i,
+                              subsongIdx: idx[i],
                               title:      '$baseName (${i + 1})',
                               artist:     ref?.artist ?? entry.artist,
                               metaAlbum:  ref?.metaAlbum,
@@ -927,94 +914,126 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
 
+                ],
+
                 // ── En vedette aujourd'hui (party en cours, anniversaires…) ──
-                // Right under Recently played, per request: it's the day's
-                // content and perishes, so it gets the top spot after history.
-                SliverToBoxAdapter(
-                  child: _FeaturedRail(
-                    title: l10n.featuredTitle,
-                    onTap: _playFeatured,
-                    onOpenGroup: _openFeaturedSeries,
+                // Sa place PAR DÉFAUT est juste sous les écoutes récentes:
+                // c'est le contenu du jour, il périme.
+                HomeSection.featured: [
+                  SliverToBoxAdapter(
+                    child: _FeaturedRail(
+                      title: l10n.featuredTitle,
+                      onTap: _playFeatured,
+                      onOpenGroup: _openFeaturedSeries,
+                    ),
                   ),
-                ),
+                ],
 
                 // ── Vos tendances (local, play_events; période au choix) ───
-                if (onPlayLocalAlbum != null)
-                  SliverToBoxAdapter(
-                    child: _LocalTrendRail(
-                      title:            l10n.homeYourTrends,
-                      selectablePeriod: true,
-                      onPlayLocalAlbum: onPlayLocalAlbum!,
+                HomeSection.yourTrends: [
+                  if (onPlayLocalAlbum != null)
+                    SliverToBoxAdapter(
+                      child: _LocalTrendRail(
+                        title:            l10n.homeYourTrends,
+                        selectablePeriod: true,
+                        onPlayLocalAlbum: onPlayLocalAlbum!,
+                      ),
                     ),
-                  ),
+                ],
 
                 // ── Votre top all-time (local, tout l'historique) ──────────
-                if (onPlayLocalAlbum != null)
-                  SliverToBoxAdapter(
-                    child: _LocalTrendRail(
-                      title:            l10n.homeYourAllTimeTop,
-                      selectablePeriod: false,
-                      onPlayLocalAlbum: onPlayLocalAlbum!,
+                HomeSection.yourAllTimeTop: [
+                  if (onPlayLocalAlbum != null)
+                    SliverToBoxAdapter(
+                      child: _LocalTrendRail(
+                        title:            l10n.homeYourAllTimeTop,
+                        selectablePeriod: false,
+                        onPlayLocalAlbum: onPlayLocalAlbum!,
+                      ),
                     ),
-                  ),
+                ],
 
                 // ── Découverte en ligne (rails; masqués si vide/erreur) ────
-                SliverToBoxAdapter(
-                  child: _SongRail(
-                    title: l10n.homeTrending,
-                    // Server accepts '7d'|'30d'|'90d'|'1y'|'YYYY'|'all'
-                    // (_period_bounds, migration 034) — anything else (the
-                    // stale 'week' this used to send) silently means all-time.
-                    fetchForPeriod: (p) => RewampDb.mostPopularSongs(
-                        period: p.serverValue, n: 20),
-                    onTap: _playOnlineSong,
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: _SongRail(
-                    title: l10n.homeAllTimeTop,
-                    fetch: () =>
-                        RewampDb.mostPopularSongs(period: 'all', n: 20),
-                    onTap: _playOnlineSong,
-                  ),
-                ),
-
-                // ── Local files ────────────────────────────────────────────
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 28, 16, 8),
-                    child: Text(
-                      l10n.openLocalFile,
-                      style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _pickFile(context),
-                        icon: const Icon(Icons.folder_open),
-                        label: Text(l10n.browseFiles),
+                HomeSection.trending: [
+                  SliverToBoxAdapter(
+                    child: _SongRail(
+                      title: l10n.homeTrending,
+                      // Server accepts '7d'|'30d'|'90d'|'1y'|'YYYY'|'all'
+                      // (_period_bounds, migration 034) — anything else (the
+                      // stale 'week' this used to send) silently means all-time.
+                      fetchForPeriod: (p) => RewampDb.mostPopularSongs(
+                          period: p.serverValue, n: 20),
+                      onTap: _playOnlineSong,
+                      // La carte « … »: MÊME source que le rail — période
+                      // courante comprise — plafond 1000 au lieu de 20.
+                      onMore: (ctx, p) => Navigator.of(ctx).push(
+                        MaterialPageRoute(
+                          builder: (_) => ChartResultsScreen(
+                            title: l10n.homeTrending,
+                            mode: ChartMode.songs,
+                            fetchSongs: () => RewampDb.mostPopularSongs(
+                                period: p.serverValue, n: 1000),
+                            onTap: _playOnlineSong,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
+                HomeSection.allTimeTop: [
+                  SliverToBoxAdapter(
+                    child: _SongRail(
+                      title: l10n.homeAllTimeTop,
+                      fetch: () =>
+                          RewampDb.mostPopularSongs(period: 'all', n: 20),
+                      onTap: _playOnlineSong,
+                      onMore: (ctx, _) => Navigator.of(ctx).push(
+                        MaterialPageRoute(
+                          builder: (_) => ChartResultsScreen(
+                            title: l10n.homeAllTimeTop,
+                            mode: ChartMode.songs,
+                            fetchSongs: () => RewampDb.mostPopularSongs(
+                                period: 'all', n: 1000),
+                            onTap: _playOnlineSong,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
 
-                // « Parcourir » now lives in the search tab's empty-state
-                // landing (Facet Browser cards) — see search_screen.dart.
-                const SliverToBoxAdapter(child: SizedBox(height: 60)),
-                // Room for the floating chrome (see shellInsetSliver).
-                shellInsetSliver(context),
-              ],
-            ),
+              };
+
+              return CustomScrollView(
+                slivers: [
+                  // Pushes first item below the status bar at rest; scrolls
+                  // away freely so content passes behind the bar.
+                  SliverToBoxAdapter(child: SizedBox(height: statusBarH)),
+                  // L'ordre choisi. `?[]` et non `[]!`: une section qu'une
+                  // version future retirerait ne doit pas faire planter
+                  // l'accueil de qui l'a encore dans ses préférences.
+                  for (final s in UserSettings.instance.homeSectionOrder)
+                    ...?sections[s],
+
+                  // Pas de bouton « ordre des sections » ICI: il vit dans
+                  // Réglages → Général. L'accueil est une pile de rails, et un
+                  // bouton de configuration au milieu s'y lit comme du bruit —
+                  // pour un geste qu'on fait une fois.
+
+                  // « Parcourir » now lives in the search tab's empty-state
+                  // landing (Facet Browser cards) — see search_screen.dart.
+                  const SliverToBoxAdapter(child: SizedBox(height: 60)),
+                  // Room for the floating chrome (see shellInsetSliver).
+                  shellInsetSliver(context),
+                ],
+              );
+            },
           ),
         ),
     );
   }
 }
+
 
 /// Toutes les sous-chansons d'un module UADE, prêtes à mettre en queue.
 ///
@@ -1069,8 +1088,26 @@ Future<List<TrackRecord>> _uadeSubsongRows(
 
 // ── Recently-played row ───────────────────────────────────────────────────────
 
+/// Écart au-dessus d'un titre de section — c'est LUI qui sépare deux rails
+/// (avec les 8 px sous le titre). Nommé parce qu'il était écrit en dur à
+/// quatre endroits, avec déjà deux valeurs différentes (28 et 20): un écart
+/// qui se recopie finit par diverger, et une page de rails dont les blancs ne
+/// sont pas égaux se voit tout de suite.
+const _kSectionTopGap = 18.0;
+
 const _kRecentCardWidth  = 110.0;
-const _kRecentCardHeight = 158.0; // square artwork + text below
+// Pochette carrée (110) + 5 d'écart + DEUX lignes de titre + une de sous-titre.
+// Le titre passe à deux lignes parce qu'un nom de module tronqué ne dit plus
+// rien: « mdat.monkey isl… » ne se distingue pas de son voisin. La hauteur suit
+// — sans elle la colonne DÉBORDE (mesuré: la place restante ne portait qu'une
+// ligne de chaque).
+//
+// ⚠️ Pas de défilement automatique sur ces deux lignes: un texte replié a un
+// bord droit irrégulier (la 1re ligne s'arrête sur un mot), donc faire glisser
+// le bloc ne révèle rien de cohérent. Les deux formes qui marchent sont
+// « replier + ellipse » ou « une ligne qui défile », jamais les deux ensemble.
+// Le `MarqueeText` reste donc pour le sous-titre et pour le lecteur.
+const _kRecentCardHeight = 175.0;
 
 String _entryKey(RecentEntry e) =>
     '${e.isAlbum ? "a" : "t"}|${e.key}';
@@ -1296,10 +1333,15 @@ class _RecentCard extends StatelessWidget {
             ),
             const SizedBox(height: 5),
             // ── Title ─────────────────────────────────────────────────
-            Text(
+            // Titre: deux lignes, et il DÉFILE verticalement quand elles ne
+            // suffisent pas (« Indiana Jones and the Fate of Atlantis »). Le
+            // défilement vertical est le seul cohérent sur un texte replié —
+            // chaque ligne est complète, la fenêtre glisse. Il ne bouge que
+            // s'il déborde: une carte dont le titre tient reste immobile.
+            MarqueeText(
               entry.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              axis: Axis.vertical,
+              maxLines: 2,
               style: theme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
             ),
             // ── Artist ────────────────────────────────────────────────
@@ -1467,7 +1509,7 @@ class _LocalTrendRailState extends State<_LocalTrendRail> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 28, 12, 8),
+          padding: const EdgeInsets.fromLTRB(16, _kSectionTopGap, 12, 8),
           child: Row(children: [
             Expanded(
               child: Text(
@@ -1487,9 +1529,25 @@ class _LocalTrendRailState extends State<_LocalTrendRail> {
               controller: controller,
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _stats.length,
+              itemCount: _stats.length + 1,
               separatorBuilder: (_, __) => const SizedBox(width: 12),
               itemBuilder: (ctx, i) {
+                if (i == _stats.length) {
+                  // « … » — même source que le rail (période comprise),
+                  // plafond 1000: LocalTopTracksScreen (stats_screen).
+                  return _MoreRailCard(
+                    cs: cs, theme: theme,
+                    onTap: () => Navigator.of(ctx).push(MaterialPageRoute(
+                      builder: (_) => LocalTopTracksScreen(
+                        title: widget.title,
+                        from: widget.selectablePeriod
+                            ? _period.sinceEpoch
+                            : null,
+                        onPlay: widget.onPlayLocalAlbum,
+                      ),
+                    )),
+                  );
+                }
                 final s = _stats[i];
                 final t = s.track;
                 return _RailCard(
@@ -1506,7 +1564,7 @@ class _LocalTrendRailState extends State<_LocalTrendRail> {
                   // established behaviour); queue insert = just this track.
                   onTap: () async {
                     final choice = await showPlayChoiceSheet(ctx,
-                        title: t.displayTitle, subtitle: t.artist);
+                        title: t.displayTitle, subtitle: t.artist, track: t);
                     if (choice == null || !ctx.mounted) return;
                     if (choice != PlayChoice.now &&
                         globalOnLocalQueueAdd != null) {
@@ -1550,12 +1608,17 @@ class _SongRail extends StatefulWidget {
   /// 7/30/90-day picker and refetches on change (the server RPC takes `period`).
   final Future<List<SearchResult>> Function(TrendPeriod)? fetchForPeriod;
   final Future<void> Function(BuildContext, SearchResult) onTap;
+  /// Carte « … » en fin de rail: ouvre la liste complète (même source que le
+  /// rail, plafond plus haut). Reçoit la période COURANTE du rail — c'est le
+  /// rail qui la tient, pas l'appelant.
+  final void Function(BuildContext, TrendPeriod)? onMore;
 
   const _SongRail({
     required this.title,
     this.fetch,
     this.fetchForPeriod,
     required this.onTap,
+    this.onMore,
   });
 
   @override
@@ -1635,7 +1698,7 @@ class _SongRailState extends State<_SongRail> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 28, 12, 8),
+              padding: const EdgeInsets.fromLTRB(16, _kSectionTopGap, 12, 8),
               child: Row(children: [
                 Expanded(
                   child: Text(
@@ -1661,15 +1724,35 @@ class _SongRailState extends State<_SongRail> {
                 controller: controller,
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: songs.length,
+                itemCount: songs.length + (widget.onMore != null ? 1 : 0),
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (ctx, i) {
+                  if (i == songs.length) {
+                    return _MoreRailCard(
+                      cs: cs, theme: theme,
+                      onTap: () => widget.onMore!(ctx, _period),
+                    );
+                  }
                   final s = songs[i];
                   return _RailCard(
                     title:      s.displayTitle,
+                    // Le sous-titre ne doit JAMAIS répéter le titre. Sur une
+                    // ligne d'ALBUM des palmarès, `title` et `album` valent
+                    // tous deux le nom de l'album (`a.name AS s_title2,
+                    // a.name AS s_album2`), et le repli affichait donc le nom
+                    // deux fois. Les artistes seraient le bon sous-titre, mais
+                    // ils ne sont PAS dans la charge utile: le serveur laisse
+                    // les colonnes play-ready — `artist_names` comprise — à
+                    // NULL sur une ligne album (mig 216, dit dans son propre
+                    // commentaire). On retombe donc sur la collection, qui
+                    // apprend quelque chose, plutôt que sur une répétition.
                     subtitle:   s.artistLabel.isNotEmpty
                         ? s.artistLabel
-                        : (s.album ?? s.collection),
+                        : ((s.album != null &&
+                                s.album!.isNotEmpty &&
+                                s.album != s.displayTitle)
+                            ? s.album!
+                            : s.collection),
                     artworkUrl: s.artworkUrl,
                     artist:     s.artistNames.isEmpty ? null : s.artistNames.first,
                     album:      s.album,
@@ -1852,7 +1935,7 @@ class _FeaturedRailState extends State<_FeaturedRail> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 28, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, _kSectionTopGap, 16, 8),
               child: Text(
                 widget.title,
                 style: theme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -2206,6 +2289,55 @@ class _FeaturedSeriesScreenState extends State<FeaturedSeriesScreen> {
   }
 }
 
+/// La carte « … » qui FERME un rail: le bouton occupe la place de la
+/// pochette, le libellé sous lui dit ce qu'il ouvre (statsSeeAll — pas de
+/// texte en dur, règle i18n).
+class _MoreRailCard extends StatelessWidget {
+  final ColorScheme  cs;
+  final TextTheme    theme;
+  final VoidCallback onTap;
+
+  const _MoreRailCard({
+    required this.cs,
+    required this.theme,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return HoverGrow(child: GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: _kRecentCardWidth,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: _kRecentCardWidth,
+              height: _kRecentCardWidth,
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.more_horiz,
+                  size: 36, color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              context.l10n.statsSeeAll,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    ));
+  }
+}
+
+
 class _RailCard extends StatelessWidget {
   final String       title;
   final String?      subtitle;
@@ -2266,10 +2398,15 @@ class _RailCard extends StatelessWidget {
               size:          artworkSize,
             ),
             const SizedBox(height: 5),
-            Text(
+            // Titre: deux lignes, et il DÉFILE verticalement quand elles ne
+            // suffisent pas (« Indiana Jones and the Fate of Atlantis »). Le
+            // défilement vertical est le seul cohérent sur un texte replié —
+            // chaque ligne est complète, la fenêtre glisse. Il ne bouge que
+            // s'il déborde: une carte dont le titre tient reste immobile.
+            MarqueeText(
               title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              axis: Axis.vertical,
+              maxLines: 2,
               style: theme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
             ),
             if (subtitle != null && subtitle!.isNotEmpty)

@@ -5,12 +5,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:path_provider/path_provider.dart';
 import 'package:rewamp_audio/rewamp_audio.dart';
+import 'library_identity.dart' show libraryRefIsPath, libraryRefRewrite;
 import 'local_db.dart';
+import 'artwork_image.dart' show ArtworkCache;
 import 'queue_persistence.dart';
 import 'rewamp_db.dart';
 import 'sync_service.dart';
 import 'uade_info.dart';
+import 'transport_log.dart';
 import 'user_settings.dart';
+import 'linux_notifications.dart';
 
 class QueueEntry {
   final String  title;
@@ -29,6 +33,13 @@ class QueueEntry {
   final String? platformName;
   final String? formatHint;
 
+  /// La SOUS-CHANSON que cette entrée joue dans [localFilePath].
+  ///
+  /// Sans elle, la seule façon de désigner une entrée était sa POSITION — et
+  /// une position n'est pas une identité (règle payée plusieurs fois dans ce
+  /// dépôt). Voir [PlayerController.updateQueueEntries].
+  final int? subsongIdx;
+
   /// Stable identity of the queue ITEM this row mirrors, for widget keys.
   /// A position is not an identity: with index keys, removing row 2 left the
   /// row that shifted up wearing the same key — so Flutter handed it the
@@ -46,28 +57,101 @@ class QueueEntry {
     this.platformName,
     this.formatHint,
     this.id,
+    this.subsongIdx,
   });
+
+  /// N'énonce que la DIFFÉRENCE. Recopier dix champs à la main en perd en
+  /// silence — c'est exactement ce qui vidait la pochette et l'`id` d'une
+  /// entrée renommée.
+  QueueEntry copyWith({String? title, String? artist}) => QueueEntry(
+        id: id,
+        title: title ?? this.title,
+        artist: artist ?? this.artist,
+        subtitle: subtitle,
+        artworkUrl: artworkUrl,
+        album: album,
+        localFilePath: localFilePath,
+        platformName: platformName,
+        formatHint: formatHint,
+        subsongIdx: subsongIdx,
+      );
 }
 
 
-/// Total à AFFICHER pendant une lecture en boucle INFINIE: la durée nominale
-/// arrondie au nombre de passes ENTAMÉES.
+/// Position AFFICHÉE sous boucle infinie: le temps écoulé, PLAFONNÉ à une
+/// passe.
 ///
-/// Sans ça le total reste figé à la durée nominale, et l'UI clampe la position
-/// dessus (`player_screen.dart`: `displayPos.clamp(0, ctrl.duration)`), donc le
-/// compteur gèle à « nominal / nominal » dès la première passe finie alors que
-/// la musique continue. Le vocabulaire est celui du mode N passes (base ×
-/// passes), le total montant d'une passe à chaque tour au lieu d'être fixé au
-/// chargement.
+/// La règle graduée ne couvre qu'une passe, et c'est ce qui rend le seek
+/// exact: toute cible est dans `[0, base]`, donc dans le domaine que le
+/// décodeur connaît. Traduire une cible au-delà demanderait le POINT DE BOUCLE
+/// du fichier — après la première passe, la vérité musicale est
+/// `L + (T − len) % (len − L)`, pas `T % len` — et peu de moteurs savent le
+/// dire (libopenmpt boucle en interne sans l'exposer). Un modulo naïf casserait
+/// justement les fichiers qui bouclent correctement.
 ///
-/// Rend null si la durée nominale est inconnue: on n'a alors rien de mieux à
-/// afficher que ce qu'on avait. Pendant la première passe le résultat vaut la
-/// durée nominale, donc l'affichage ne bouge pas — pas de saut au démarrage.
-double? infiniteDisplayTotal(double elapsedSeconds, double? nominalSeconds) {
-  if (nominalSeconds == null || nominalSeconds <= 0) return null;
-  final passes = (elapsedSeconds / nominalSeconds).ceil();
-  return nominalSeconds * (passes < 1 ? 1 : passes);
+/// ⚠️ **Plafonner, et non reboucler.** Faire retomber la barre à zéro à chaque
+/// passe prétend savoir OÙ la musique est repartie — c'est faux dès qu'il y a
+/// un point de boucle, et on ne le connaît pas. Une barre pleine ne prétend
+/// rien: elle dit « au-delà de la durée nominale », ce qui est exactement ce
+/// qu'on sait. La barre n'est donc juste que pendant la première passe, et
+/// muette ensuite plutôt que menteuse.
+///
+/// (Le total, lui, ne monte plus. Il l'a fait — base × passes — pour éviter que
+/// l'UI clampe une position qui grimpe sur un total figé; plafonner la position
+/// lève le même gel par l'autre bout.)
+///
+/// ⚠️ Ce plafond ne vaut QUE pour la barre. Le compteur de gauche, lui, dit
+/// depuis combien de temps ça joue et n'a rien à deviner: il continue de
+/// monter (`PlayerController.elapsedPosition`).
+///
+/// Durée nominale inconnue ⇒ on rend le temps écoulé tel quel: rien pour
+/// plafonner.
+double infiniteDisplayPosition(double elapsedSeconds, double? nominalSeconds) {
+  if (nominalSeconds == null || nominalSeconds <= 0) return elapsedSeconds;
+  if (elapsedSeconds <= 0) return 0;
+  return elapsedSeconds < nominalSeconds ? elapsedSeconds : nominalSeconds;
 }
+
+/// Un SILENCE peut-il vouloir dire « le morceau est fini » ?
+///
+/// Le détecteur de silence est le seul moyen de voir la fin d'un morceau qui
+/// n'en déclare pas (SID, NSF: pas de longueur, le décodeur ne s'arrête
+/// jamais). Mais appliqué SANS condition il confond une RESPIRATION MUSICALE
+/// avec une fin, et sous boucle infinie il relance alors le morceau depuis
+/// zéro — indéfiniment.
+///
+/// Deux fichiers l'ont montré le 2026-08-29, tous deux en boucle infinie:
+///  - « Run » (sceneorg) a des passages silencieux au milieu: la lecture
+///    rebouclait sur ses premières secondes.
+///  - « Inside The BORG Cube » commence par **1,54 s de silence NUMÉRIQUE**
+///    (mesuré sous le seuil du moteur, `REWAMP_SILENCE_EPS`), soit plus que le
+///    seuil de relance (1,2 s): la piste se relançait avant d'avoir joué une
+///    seule note, en boucle — **aucun son du tout**.
+///
+/// La règle: un silence n'est une fin que si le décodeur est ARRIVÉ AU BOUT.
+/// À 0:03 d'un flux de 2:25, ce qu'on entend est un blanc, pas une fin.
+///
+/// ⚠️ Ce n'est PAS la règle « la durée nominale ne coupe rien » que la boucle
+/// infinie applique par ailleurs — c'est son exact opposé et les deux tiennent
+/// ensemble: on ne se sert jamais de la durée pour ARRÊTER une musique qui
+/// joue encore, on s'en sert ici pour REFUSER une relance prématurée. La
+/// première couperait, la seconde protège.
+///
+/// Durée nominale inconnue (SID, NSF, PSF sans tag) ⇒ on garde l'ancien
+/// comportement: le silence est la seule fin observable, il fait foi. C'est
+/// exactement la population pour laquelle ce détecteur a été écrit.
+bool silenceCanMeanEnd({
+  required double decoderPositionSeconds,
+  required double? nominalSeconds,
+}) {
+  if (nominalSeconds == null || nominalSeconds <= 0) return true;
+  return decoderPositionSeconds >= nominalSeconds - _kSilenceEndMarginSecs;
+}
+
+/// Marge sous la durée nominale: un décodeur peut s'arrêter quelques dixièmes
+/// avant le total annoncé (fondu, padding de fin), et le curseur est échantillonné
+/// au tick de 250 ms.
+const double _kSilenceEndMarginSecs = 2.0;
 
 /// Ce qu'il faut faire d'une piste qui BOUCLE quand le mode repeat vient d'être
 /// coupé en cours de lecture. Pure et hors classe pour être testable (voir
@@ -105,6 +189,51 @@ LoopCutAction loopCutActionFor({
 /// testable: instancier un PlayerController appelle le natif.
 ///
 /// Voir PlayerController.effectiveForceLoopMode pour le pourquoi de chaque cas.
+/// « Le moteur s'est-il arrêté TOUT SEUL ? » — la question dont dépendent la
+/// fin de piste (avancer la file) et la relance d'une boucle forcée.
+///
+/// Fonction PURE et hors classe pour être testable: instancier un
+/// [PlayerController] appelle le natif (même raison que
+/// [effectiveForceLoopModeFor]).
+///
+/// L'invariant du lecteur est que toute transition pose `isPlaying` AVANT de
+/// toucher au moteur: `pause()`, `stop()` et `loadFile()` le font, donc
+/// « moteur à l'arrêt alors qu'on se croit en lecture » ne peut vouloir dire
+/// qu'une chose — la piste s'est terminée seule.
+///
+/// La REPRISE est la seule transition en sens inverse: le drapeau passe à vrai
+/// tout de suite (l'UI doit répondre à l'appui) et le moteur ne démarre qu'après
+/// une porte ASYNCHRONE — réactiver la session audio de la plateforme. Entre les
+/// deux, l'état est mot pour mot celui d'une piste finie, et un tick qui tombe
+/// là faisait avancer la file ou relançait le morceau depuis zéro: on appuie sur
+/// lecture/pause et c'est « suivant » ou « précédent » qui part, au hasard —
+/// selon que le tick de 250 ms tombe ou non dans la fenêtre d'activation.
+bool engineStoppedByItself({
+  required bool enginePlaying,
+  required bool uiPlaying,
+  required bool engineStartPending,
+}) =>
+    !enginePlaying && uiPlaying && !engineStartPending;
+
+/// Applique des titres STIL à une file, par FICHIER et SOUS-CHANSON.
+///
+/// Fonction PURE et hors classe pour être testable (instancier un
+/// [PlayerController] appelle le natif) — même patron que
+/// [effectiveForceLoopModeFor]. Rend la MÊME instance pour une entrée
+/// inchangée, ce qui laisse l'appelant détecter s'il y a lieu de notifier.
+List<QueueEntry> applyQueueTitles(
+    List<QueueEntry> queue, String filePath, Map<int, String> subsongToTitle) {
+  return [
+    for (final e in queue)
+      if (e.localFilePath == filePath &&
+          (subsongToTitle[e.subsongIdx ?? 0]?.isNotEmpty ?? false) &&
+          e.title != subsongToTitle[e.subsongIdx ?? 0])
+        e.copyWith(title: subsongToTitle[e.subsongIdx ?? 0])
+      else
+        e,
+  ];
+}
+
 String effectiveForceLoopModeFor(int transportLoopMode, String setting) =>
     switch (transportLoopMode) {
       2 => 'infinite',   // repeat-morceau = boucle infinie, pas un rechargement
@@ -217,6 +346,14 @@ class PlayerController extends ChangeNotifier {
   bool     isPlaying  = false;
   double   position   = 0;
   double   duration   = 0;
+  /// Temps écoulé depuis le début du morceau, NON PLAFONNÉ.
+  ///
+  /// Égal à [position] partout — SAUF en boucle infinie, où [position] sature
+  /// à la durée nominale parce que la barre ne peut pas dire OÙ la musique est
+  /// repartie (voir [infiniteDisplayPosition]), alors que le compteur de
+  /// gauche, lui, n'a rien à deviner: il dit depuis combien de temps ça joue,
+  /// et doit continuer de monter. Deux grandeurs, deux champs.
+  double   elapsedPosition = 0;
   // Duration override from server metadata (HVSC songlength / SID STIL).
   // When set, overrides audio.durationSeconds (which is 0 for SID/GME files
   // that have no natural length reported by the decoder).
@@ -225,8 +362,32 @@ class PlayerController extends ChangeNotifier {
   // Currently playing track's DB id (null until first play or DB load)
   String? _currentTrackId;
 
+  /// Le FICHIER que [_currentTrackId] décrit.
+  ///
+  /// ⚠️ Sans lui, l'id est une identité SANS PORTÉE, et c'est ce qui produisait
+  /// les écritures croisées d'origine. `_persistPlay` tourne en arrière-plan et
+  /// ne pose `_currentTrackId` qu'APRÈS son aller-retour SQL; pendant ce temps
+  /// le champ pointe encore la ligne du morceau PRÉCÉDENT — il n'était remis à
+  /// zéro nulle part. `setAlbumContext` gardait bien le FICHIER (`forPath`),
+  /// mais écrivait ensuite sur « la ligne courante », c'est-à-dire l'ancienne:
+  /// le morceau N recevait la collection de N+1. Mesuré sur la base réelle:
+  /// `hexplosion.hvl` (modland) estampillé `asma` et `Airball.sap` (asma)
+  /// estampillé `modland`, à une minute d'intervalle, `play_count = 1` des deux
+  /// côtés — donc des lignes NEUVES, pas d'anciennes rejouées.
+  ///
+  /// Le commentaire de la remontée d'origine, plus bas, frôlait la cause: il
+  /// supposait l'id « pas encore produit », donc NULL. Il ne l'était pas.
+  String? _currentTrackIdPath;
+
   // log_play tracking: accumulates real play time, fires once per track.
   int  _elapsedPlayMs  = 0;
+
+  /// Horloge D'AFFICHAGE du compteur écoulé, en ms. Même accumulation que
+  /// [_elapsedPlayMs] — mais elle, un SEEK la recale sur sa cible, alors que
+  /// le temps réellement écouté ne recule pas. Deux questions différentes: la
+  /// première nourrit le compteur de gauche sous boucle infinie (voir
+  /// [elapsedPosition]), la seconde `log_play`.
+  int  _playClockMs    = 0;
   bool _logPlayFired   = false;
   int  _lastTickMs     = 0;
 
@@ -315,7 +476,13 @@ class PlayerController extends ChangeNotifier {
   /// with is_favorite=1). ALWAYS subsong-scoped so the two writers agree.
   String? get libraryRefId {
     final base = currentOnlineId ?? filePath;
-    return base == null ? null : '$base?subsong=$subsongIdx';
+    if (base == null) return null;
+    // La garde d'ajout peut avoir RÉÉCRIT cette identité (un chemin jetable
+    // devenu la copie importée, un téléchargement devenu son songId): sans
+    // consulter la réécriture, le ♥ qu'on vient de poser s'éteindrait au
+    // relevé suivant — il chercherait la ligne sous l'ancienne clé. Voir
+    // library_identity.dart.
+    return libraryRefRewrite('$base?subsong=$subsongIdx');
   }
 
   /// Track title to show; falls back to "Subsong N" (1-based) when the
@@ -336,6 +503,10 @@ class PlayerController extends ChangeNotifier {
     // Le ♥ peut changer sans passer par le lecteur (retrait depuis une liste,
     // geste redescendu d'un autre appareil): la base prévient, on relit.
     LocalDb.instance.addListener(_onDbChanged);
+    // Réglages → Lecture (boucles forcées, fondu) se change en cours de
+    // morceau: le moteur doit le voir tout de suite, voir
+    // _pushForcedLoopSnapshot.
+    UserSettings.instance.addListener(_pushForcedLoopSnapshot);
   }
 
   void _onDbChanged() {
@@ -346,7 +517,43 @@ class PlayerController extends ChangeNotifier {
   @override
   void dispose() {
     LocalDb.instance.removeListener(_onDbChanged);
+    UserSettings.instance.removeListener(_pushForcedLoopSnapshot);
     super.dispose();
+  }
+
+  /// Durée d'UNE passe du morceau chargé, telle que transmise au moteur
+  /// (catalogue, sinon la longueur par défaut des réglages).
+  double? _forcedLoopBaseSecs;
+
+  /// Pousse au moteur l'instantané de boucle forcée EN VIGUEUR: mode effectif
+  /// (bouton repeat + Réglages → Lecture), passes, fondu, durée de base.
+  ///
+  /// Appelé à l'ouverture, comme avant — mais AUSSI à chaque geste qui change
+  /// cet état en cours de lecture (bouton repeat, réglage). Les moteurs
+  /// lisent la plupart de ces valeurs à l'ouverture, où c'est sans effet;
+  /// mais la famille PSF consulte `g_force_loop_mode` à CHAQUE BLOC pour
+  /// décider d'appliquer ou non son fondu de fin (rewamp_psf_fade.h): repeat
+  /// infini armé à 1:00 d'un .dsf laissait le fondu calculé à l'ouverture
+  /// éteindre le morceau avant qu'il ne reboucle. Le chemin générique Dart,
+  /// lui, relit `effectiveForceLoopMode` à chaque tick et n'a pas besoin de ça.
+  ///
+  /// Sans fichier chargé, rien à pousser: `loadFile` le fera avec la bonne
+  /// durée de base.
+  void _pushForcedLoopSnapshot() {
+    final base = _forcedLoopBaseSecs;
+    if (base == null) return;
+    final loopModeCode = switch (effectiveForceLoopMode) {
+      'infinite' => 2,
+      'on'       => 1,
+      _          => 0,
+    };
+    audio.setForcedLoop(
+      loopModeCode,
+      UserSettings.instance.loopCount,
+      fadeoutEnabled: UserSettings.instance.forceFadeoutEnabled,
+      fadeoutSeconds: UserSettings.instance.fadeoutSeconds,
+      baseDurationSeconds: base,
+    );
   }
 
   /// The app's single live controller — lets delete flows (album options,
@@ -373,8 +580,12 @@ class PlayerController extends ChangeNotifier {
   /// hit a file that no longer exists).
   Future<bool> handleDeletedAlbum(String dirPath) async {
     final wasPlaying = isPlayingUnder(dirPath);
+    // ⚠️ AVANT le stop: après, `isPlaying` est faux quoi qu'il arrive, et la
+    // file ne saurait plus si elle doit ENCHAÎNER ou seulement s'armer.
+    final wasAudible = wasPlaying && isPlaying;
     if (wasPlaying) stop();
-    final tookOver = await notifyTrackDeleted(dirPath, asPrefix: true);
+    final tookOver = await notifyTrackDeleted(dirPath,
+        asPrefix: true, resume: wasAudible);
     if (wasPlaying && !tookOver) _tearDownPlayerUi();
     return tookOver;
   }
@@ -405,9 +616,11 @@ class PlayerController extends ChangeNotifier {
   /// which queue entries share the file reads those rows.
   Future<bool> handleDeletedTrack(String path) async {
     final wasPlaying = isPlayingUnder(path);
+    // ⚠️ Lu AVANT le stop — voir handleDeletedAlbum.
+    final wasAudible = wasPlaying && isPlaying;
     // Stop BEFORE the file disappears from under the decoder.
     if (wasPlaying) stop();
-    final tookOver = await notifyTrackDeleted(path);
+    final tookOver = await notifyTrackDeleted(path, resume: wasAudible);
     if (wasPlaying && !tookOver) _tearDownPlayerUi();
     return tookOver;
   }
@@ -459,11 +672,18 @@ class PlayerController extends ChangeNotifier {
     String? artworkUrl,
     String? artworkTargetDir,
     bool    recordAsAlbum    = false,
+    /// GAPLESS ADOPTION: the native engine already switched to this track (a
+    /// producer-side handoff whose boundary the listener just crossed). Run
+    /// the METADATA half only — title, duration, persistence, media session —
+    /// and leave the audio strictly alone: no stop, no load, no play. The
+    /// forced-loop snapshot was staged at arm time (armNextTrack) and applied
+    /// by the native side just before the handoff's open().
+    bool    adoptHandoff     = false,
   }) async {
     // The previous track's play ends here — backfill its real listened time
     // BEFORE _elapsedPlayMs is reset below.
     _flushPlayEventDuration();
-    audio.stop();
+    if (!adoptHandoff) audio.stop();
     // Forced-loop (Settings → Lecture): snapshotted for the plugin about to
     // open, in case it has native support (see hasNativeLoopSupport below).
     // The fadeout is passed through too — when the plugin supports native
@@ -488,13 +708,8 @@ class PlayerController extends ChangeNotifier {
     final baseSecs = (durationS != null && durationS > 0)
         ? durationS
         : UserSettings.instance.defaultTrackLengthSeconds;
-    audio.setForcedLoop(
-      loopModeCode,
-      UserSettings.instance.loopCount,
-      fadeoutEnabled: UserSettings.instance.forceFadeoutEnabled,
-      fadeoutSeconds: UserSettings.instance.fadeoutSeconds,
-      baseDurationSeconds: baseSecs,
-    );
+    _forcedLoopBaseSecs = baseSecs;
+    if (!adoptHandoff) _pushForcedLoopSnapshot();
     // Remember this attempt's identity before decoding, so a failure can name
     // and report the exact file (these outlive a failed decode; filePath does
     // not update on failure).
@@ -505,13 +720,26 @@ class PlayerController extends ChangeNotifier {
     lastLoadOnlineId   = onlineId;
     // Encode subsong as a query suffix parsed by the native GME plugin.
     final audioPath = subsongIdx > 0 ? '$path?subsong=$subsongIdx' : path;
-    // Crash guard ("safe launch"): flag on disk while the native decoder
-    // opens the file. Cleared right after — success or clean failure, either
-    // way the app survived. If it's still there at the next launch, this load
-    // killed the app and the saved queue is not restored.
-    QueuePersistence.markLoading(audioPath);
-    final loaded = audio.loadFile(audioPath);
-    QueuePersistence.clearLoading();
+    final bool loaded;
+    if (adoptHandoff) {
+      // The native side is ALREADY playing this file (the handoff opened it
+      // through the same registry cascade a load would have used).
+      loaded = true;
+    } else {
+      // Crash guard ("safe launch"): flag on disk while the native decoder
+      // opens the file. Cleared right after — success or clean failure, either
+      // way the app survived. If it's still there at the next launch, this load
+      // killed the app and the saved queue is not restored.
+      QueuePersistence.markLoading(audioPath);
+      loaded = audio.loadFile(audioPath);
+      QueuePersistence.clearLoading();
+    }
+    // Either path leaves the boundary counter CONSUMED: a plain load resets
+    // the native pipeline, an adoption IS the boundary being handled.
+    _lastHandoffSerial = audio.handoffSerial;
+    // Et le staging natif est consommé/annulé dans les deux cas — AppShell
+    // ré-arme après coup (_onLoadResult → _armNext).
+    _nextArmed = false;
     lastLoadMissingOnDisk = false;
     // True when a native plugin is handling the loop this time — Dart's own
     // generic seek+volume machinery (_forceLoopActive) stays out of the way
@@ -578,6 +806,17 @@ class PlayerController extends ChangeNotifier {
           final t = audio.tagArtist;
           if (t.isNotEmpty) currentArtist = t;
         }
+        // Le TITRE que le FICHIER déclare (GD3 d'un VGM, ID3, Vorbis…) bat un
+        // libellé qui n'est que le nom de fichier — « 01 Raizing Logo.vgz »
+        // s'appelle « Raizing Logo ». Fichier MONO-piste seulement: les
+        // libellés de sous-chansons (« NOM (n) », M3U, NSFe) portent une
+        // information que le tag du conteneur n'a pas. C'est aussi ce qui
+        // RÉPARE les titres corrompus déjà en base (la ligne réutilisée
+        // repassait son libellé tel quel à chaque lecture).
+        if (subsongIdx == 0 && (subsongCount ?? 1) <= 1) {
+          final t = audio.tagTitle.trim();
+          if (t.isNotEmpty) fileName = t;
+        }
       }
       // The album line is milder — it only becomes a link when metaAlbumId is
       // set — but the same rule applies where it matters: a tag must never
@@ -596,6 +835,12 @@ class PlayerController extends ChangeNotifier {
       currentCollectionSlug    = null;
       currentPlatformName      = null;
       currentYear              = null;
+      // L'id de ligne appartient au morceau qu'on QUITTE: tant que
+      // `_persistPlay` n'a pas rendu celui du nouveau, personne ne doit écrire
+      // dessus. Vaut aussi pour `toggleFavorite`, qui posait sinon le ♥ sur la
+      // ligne précédente pendant la même fenêtre.
+      _currentTrackId          = null;
+      _currentTrackIdPath      = null;
       videos                   = const [];
       notes                    = const [];
       // The row that started this play already CARRIED its podium
@@ -609,9 +854,23 @@ class PlayerController extends ChangeNotifier {
       _fetchVideos(onlineId);  // async; notifies when they land
       isFavorite               = false; // reset; updated async after DB upsert
       isPlaying         = true;
+      // ⚠️ `audio.play()` n'arrive que bien plus bas, APRÈS des `await`
+      // (pochette locale). Sans armement, un tick tombant dans cet intervalle
+      // lit « moteur à l'arrêt alors qu'on se croit en lecture » et fait
+      // avancer la file. Voir _engineStartPending.
+      //
+      // ⚠️ SAUF en adoption de relais: là on ne DEMANDE aucun démarrage — le
+      // moteur joue déjà la piste, c'est la prémisse même du gapless. Armer y
+      // neutralisait la fin de piste pour un morceau que le producteur a pu
+      // terminer entre-temps (une sous-chanson `.adl` de 13 ms tient tout
+      // entière dans l'avance de 200 ms du tampon), et le lecteur restait 5 s
+      // à se croire en lecture avant de s'arrêter SANS avancer la file.
+      if (!adoptHandoff) _armEngineStart();
       isSeeking         = false;
       position          = 0;
+      elapsedPosition   = 0;
       _elapsedPlayMs    = 0;
+      _playClockMs      = 0;
       _loopStopAtSecs   = null;
       _lastLoopRestartMs = 0;
       _logPlayFired     = false;
@@ -660,16 +919,29 @@ class PlayerController extends ChangeNotifier {
         _knownDuration = UserSettings.instance.defaultTrackLengthSeconds;
       }
       duration          = _knownDuration ?? audio.durationSeconds;
-      audio.play();
+      // Pochette d'un fichier LOCAL: résolue EN LIGNE, avant le premier
+      // notifyListeners — la découverte n'est qu'un listage de dossier
+      // (quelques ms), et la faire APRÈS coup faisait flasher le placeholder
+      // à chaque changement de piste avant que la vraie pochette n'arrive
+      // (rapporté deux fois sur Battle Garegga; la persistance seule ne
+      // suffisait pas: la file en mémoire garde ses artworkUrl d'avant).
+      if (artworkUrl == null || artworkUrl.isEmpty) {
+        try {
+          await _applyLocalArtwork(path, entryPath, subsongIdx);
+        } catch (e) {
+          debugPrint('local artwork: $e');
+        }
+      }
+      // Fin de piste pour le producteur natif (moteurs sans fin propre —
+      // SID/NSF: le gapless et le crossfade en dépendent). La longueur du
+      // décodeur prime côté C quand il en a une; re-posée à chaque
+      // correction asynchrone (songdb UADE, songlengths SID).
+      audio.setTrackEndSeconds(_producerTrackEndSecs);
+      if (!adoptHandoff) _playAndConfirmStart();
       notifyListeners();
       _notifyTrackChange();
 
-      // Embedded cover (ID3/FLAC/Ogg picture) when nothing better is known:
-      // dump it to the cache and use the file path as the artwork source.
-      if (artworkUrl == null || artworkUrl.isEmpty) {
-        _applyEmbeddedArtwork(path).catchError(
-            (Object e) => debugPrint('embedded artwork: $e'));
-      }
+
 
       // UADE songdb duration (audacious-uade): md5 → cache/server → apply the
       // per-subsong length.
@@ -690,9 +962,27 @@ class PlayerController extends ChangeNotifier {
         path:          path,
         entryPath:     entryPath,
         subsongIdx:    subsongIdx,
-        label:         label,
-        artist:        artist,
-        metaAlbum:     metaAlbum,
+        // fileName, pas label: le titre a pu etre ameliore par le tag du
+        // fichier ci-dessus - persister le libelle entrant re-graverait le
+        // nom de fichier (ou un titre corrompu) a chaque lecture.
+        label:         fileName,
+        // Même règle pour l'artiste et l'album: le FICHIER les déclare (GD3
+        // d'un VGM, ID3, Vorbis…) et le lecteur les affichait déjà — sans
+        // jamais les écrire, `_persistPlay` recevant le paramètre entrant.
+        // « Dune » importé localement montrait « Stéphane Picq » pendant
+        // l'écoute et rien sous l'album dans les récents (recent_albums.artist
+        // vide), alors que le GD3 de chaque .vgz porte l'auteur. Hors
+        // catalogue seulement: un morceau du catalogue garde l'artiste du
+        // serveur (ids, liens). Et seulement si l'entrant est VIDE: la ligne
+        // d'un album importé porte déjà son album (nom de dossier, M3U), et
+        // le tag ne doit pas le renommer — deux noms pour un même dossier
+        // couperaient l'album en deux.
+        artist:        (artist ?? '').isEmpty && (onlineId ?? '').isEmpty
+            ? currentArtist
+            : artist,
+        metaAlbum:     (metaAlbum ?? '').isEmpty && (onlineId ?? '').isEmpty
+            ? currentAlbum
+            : metaAlbum,
         // Persist the SINGLE-PASS length only, never the forced-loop total.
         // When a native plugin is handling the loop, audio.durationSeconds is
         // the looped total (base×loops+fade) — caching that as the track's
@@ -719,18 +1009,49 @@ class PlayerController extends ChangeNotifier {
     return loaded;
   }
 
-  /// Optional system notification on track change (Réglages). macOS only:
-  /// Android/iOS already show the track in their media notification, and the
-  /// desktop channel lives in the mac AppDelegate. Fire-and-forget — a failed
-  /// post must never touch playback.
+  /// Optional system notification on track change (Réglages). Desktop only
+  /// (macOS, Linux): Android/iOS already show the track in their media
+  /// notification. macOS posts through the AppDelegate channel, Linux through
+  /// `org.freedesktop.Notifications` (linux_notifications.dart). Fire-and-forget
+  /// — a failed post must never touch playback.
   static const _notifyChannel = MethodChannel('rewamp/notify');
+  /// Résout un chemin de FICHIER local pour la pochette de la notification
+  /// (posé par initMediaSession — la session média possède déjà la logique
+  /// pochette-ou-placeholder-plateforme; le rappel évite un import cyclique).
+  /// ASYNCHRONE: la pochette AFFICHÉE arrive après le chargement (téléchargée
+  /// dans le dossier de la piste, ou extraite des tags) — résoudre au moment
+  /// du load ne donnait que le placeholder.
+  static Future<String?> Function()? notificationArtProvider;
   void _notifyTrackChange() {
-    if (!Platform.isMacOS) return;
+    if (!(Platform.isMacOS || Platform.isLinux)) return;
     if (!UserSettings.instance.notifyTrackChange) return;
-    _notifyChannel.invokeMethod('track', {
-      'title':  displayTitle,
-      'artist': currentArtist ?? '',
-    }).catchError((_) => null);
+    // Différée: au moment du load, la pochette du morceau n'est le plus
+    // souvent PAS ENCORE sur disque (téléchargement / extraction des tags en
+    // vol). 1,5 s laisse ces chemins aboutir; la garde d'identité jette la
+    // notification si la piste a changé entre-temps (skip rapide).
+    final expectPath = filePath;
+    final expectSub  = subsongIdx;
+    Future.delayed(const Duration(milliseconds: 1500), () async {
+      if (filePath != expectPath || subsongIdx != expectSub) return;
+      String art = '';
+      try {
+        art = await notificationArtProvider?.call() ?? '';
+      } catch (_) {}
+      if (filePath != expectPath || subsongIdx != expectSub) return;
+      if (Platform.isLinux) {
+        await LinuxTrackNotifier.show(
+          title:     displayTitle,
+          body:      currentArtist ?? '',
+          imagePath: art.isEmpty ? null : art,
+        );
+        return;
+      }
+      _notifyChannel.invokeMethod('track', {
+        'title':   displayTitle,
+        'artist':  currentArtist ?? '',
+        'artwork': art,
+      }).catchError((_) => null);
+    });
   }
 
   /// Looks up the UADE songdb duration for [audioPath]'s [subsongIdx] and
@@ -746,6 +1067,7 @@ class PlayerController extends ChangeNotifier {
       _forceBaseSecs = ms / 1000.0;
       _knownDuration = _displayedDurationFor(ms / 1000.0);
       duration = _knownDuration!;
+      audio.setTrackEndSeconds(_producerTrackEndSecs);  // le producteur suit
       notifyListeners();
     } catch (e) {
       debugPrint('uade duration: $e');
@@ -755,6 +1077,33 @@ class PlayerController extends ChangeNotifier {
   /// Writes the embedded cover picture (if the native tag reader found one)
   /// to the cache and points [artworkUrl] at it. No-op when the file has no
   /// picture. Keyed by audio file path so repeated plays reuse the file.
+  /// Découvre la pochette d'un fichier LOCAL (voisin de dossier d'abord,
+  /// embarquée ensuite), l'applique ET la grave dans la ligne `tracks` — la
+  /// prochaine lecture part avec `artworkUrl` déjà posé, plus de flash.
+  Future<void> _applyLocalArtwork(
+      String audioPath, String entryPath, int subsongIdx) async {
+    final local = await ArtworkCache.instance.findLocalArtwork(audioPath);
+    if (local != null) {
+      if (filePath == audioPath &&
+          (artworkUrl == null || artworkUrl!.isEmpty)) {
+        artworkUrl = local;
+        notifyListeners();
+      }
+      // ⚠️ PAS upsertTrack: ses champs null ÉCRASENT titre/artiste/durée —
+      // une mise à jour ciblée, COALESCE côté SQL.
+      unawaited(LocalDb.instance
+          .setTrackArtwork(
+            filePath:   audioPath,
+            entryPath:  entryPath,
+            subsongIdx: subsongIdx,
+            artworkUrl: local,
+          )
+          .catchError((Object _) {}));
+      return;
+    }
+    await _applyEmbeddedArtwork(audioPath);
+  }
+
   Future<void> _applyEmbeddedArtwork(String audioPath) async {
     final bytes = audio.trackArtwork;
     if (bytes == null || bytes.isEmpty) return;
@@ -789,6 +1138,15 @@ class PlayerController extends ChangeNotifier {
     String?  artworkUrl,
     bool     recordAsAlbum = false,
   }) async {
+    // ⚠️ Tout ce qui décrit la piste se lit AVANT le premier `await`: cette
+    // méthode tourne en arrière-plan et l'utilisateur a pu passer à la piste
+    // suivante entre-temps — `backend`, `currentAlbumId`, `currentOnlineId`
+    // désignent alors l'AUTRE morceau. Mesuré dans `play_events` du
+    // 2026-09-04: des `.vgz` enregistrés « libopenmpt », des `.mid` en
+    // « gbsplay », au rythme des sauts de piste.
+    final backendNow  = backend;
+    final albumIdNow  = currentAlbumId;
+    final onlineIdNow = currentOnlineId;
     // `subsong_count` décrit le FICHIER, et l'appelant ne le sait pas toujours:
     // pour un `.sid` de HVSC le catalogue envoie `track_count = 1` (une ligne
     // = un fichier), alors que le fichier porte 21 sous-chansons. Le MOTEUR,
@@ -803,7 +1161,7 @@ class PlayerController extends ChangeNotifier {
         if (probed > 1) count = probed;
       } catch (_) {}
     }
-    _currentTrackId = await LocalDb.instance.upsertTrack(
+    final persistedId = await LocalDb.instance.upsertTrack(
       filePath:     path,
       entryPath:    entryPath,
       subsongIdx:   subsongIdx,
@@ -832,6 +1190,13 @@ class PlayerController extends ChangeNotifier {
           : null,
       artworkUrl:   artworkUrl,
     );
+    // L'id ET le fichier qu'il décrit, posés ENSEMBLE: c'est l'appariement qui
+    // rend l'id inutilisable pour un autre morceau. Si la lecture a déjà changé
+    // pendant l'aller-retour SQL, on garde quand même la paire — elle décrit
+    // honnêtement une ligne qui existe, et les gardes `== filePath` des
+    // appelants feront le tri.
+    _currentTrackId     = persistedId;
+    _currentTrackIdPath = path;
     // A play just SUCCEEDED for this catalogue identity, which is the exact
     // moment the mig-53 criterion is free: this row's file is present, so any
     // sibling row (same online_id + subsong, other path) whose file is absent
@@ -871,25 +1236,47 @@ class PlayerController extends ChangeNotifier {
         ((currentCollectionSlug ?? '').isNotEmpty ||
             (currentPlatformName ?? '').isNotEmpty ||
             currentYear != null)) {
-      unawaited(LocalDb.instance.setTrackOrigin(_currentTrackId!,
+      // `persistedId`, pas `_currentTrackId`: la variable LOCALE désigne la
+      // ligne de CETTE passe. Le champ, lui, a pu être repris entre-temps par
+      // la persistance d'un morceau suivant — c'est la mécanique même qui a
+      // produit les écritures croisées.
+      unawaited(LocalDb.instance.setTrackOrigin(persistedId,
           currentCollectionSlug, currentPlatformName, currentYear));
     }
 
     _playEventId =
-        await LocalDb.instance.recordPlay(_currentTrackId!, backend: backend);
+        await LocalDb.instance.recordPlay(persistedId, backend: backendNow);
     _pushablePlayEventId = _playEventId;
-    if (recordAsAlbum && metaAlbum != null && metaAlbum.isNotEmpty) {
+    // ⚠️ **Un CONTENEUR du catalogue sans album n'est pas un album.** Un
+    // fichier multi-sous-chansons (SNDH, SID…) que le catalogue ne rattache à
+    // AUCUN album (`albumId` vide) peut arriver ici avec un `metaAlbum` qui
+    // n'est que le NOM DU CONTENEUR, posé pour l'affichage par certains
+    // dépliages — et seulement sur la sous-chanson LANCÉE, les suivantes de la
+    // file n'en portent pas. L'accepter écrivait une entrée ALBUM dans les
+    // récents pour la première, pendant que les autres restaient une entrée
+    // FICHIER (le masquage de la requête exige un `meta_album`): « Amberstar »
+    // sortait DEUX fois. Les récents listent des albums OU des fichiers, et un
+    // conteneur est un FICHIER: son entrée porte déjà l'icône multi-pistes et
+    // le lien vers ses sous-chansons. Borné aux lignes du CATALOGUE — un album
+    // LOCAL (tags, pas d'uuid) de fichiers à sous-chansons reste un album.
+    final pseudoContainerAlbum = (albumIdNow ?? '').isEmpty &&
+        (onlineIdNow ?? '').isNotEmpty &&
+        (count ?? 0) > 1;
+    if (recordAsAlbum &&
+        metaAlbum != null &&
+        metaAlbum.isNotEmpty &&
+        !pseudoContainerAlbum) {
       // Album play: the album carries the recents entry, not the track.
       await LocalDb.instance.upsertRecentAlbum(
         metaAlbum,
         path,
         artist:     artist,
         artworkUrl: artworkUrl,
-        albumId:    currentAlbumId,
+        albumId:    albumIdNow,
         // Identity of the FILE this entry points at, so replaying the album
         // from the recents rail knows what it is playing (a subsong list
         // rebuilt from disk carries none of its own).
-        onlineId:   currentOnlineId,
+        onlineId:   onlineIdNow,
       );
     } else {
       // Recents lists ALBUMS or standalone FILES only: a track of a real
@@ -898,15 +1285,15 @@ class PlayerController extends ChangeNotifier {
       // names, albumId null) stay file entries.
       if (metaAlbum != null &&
           metaAlbum.isNotEmpty &&
-          currentAlbumId != null &&
-          currentAlbumId!.isNotEmpty) {
+          albumIdNow != null &&
+          albumIdNow.isNotEmpty) {
         await LocalDb.instance.upsertRecentAlbum(
           metaAlbum,
           path,
           artist:     artist,
           artworkUrl: artworkUrl,
-          albumId:    currentAlbumId,
-          onlineId:   currentOnlineId,
+          albumId:    albumIdNow,
+          onlineId:   onlineIdNow,
         );
       }
     }
@@ -1057,7 +1444,18 @@ class PlayerController extends ChangeNotifier {
     // null origin — and a later replay would be back to guessing it from the
     // file path. Fire-and-forget; upsertTrack COALESCEs, so a call that knows
     // nothing erases nothing.
-    final trackId = _currentTrackId;
+    // ⚠️ La garde `forPath` ci-dessus protège le FICHIER; celle-ci protège la
+    // LIGNE. Les deux sont nécessaires: entre le début d'un chargement et la
+    // fin de `_persistPlay`, `filePath` désigne déjà le nouveau morceau alors
+    // que `_currentTrackId` désigne encore l'ancien. Quand l'id n'est pas
+    // encore celui de ce fichier on n'écrit RIEN et rien n'est perdu: les
+    // champs `current*` viennent d'être posés synchronement, et la remontée
+    // d'origine à la fin de `_persistPlay` (gardée sur `path == filePath`) les
+    // écrira sur la bonne ligne.
+    final trackId = (_currentTrackIdPath != null &&
+            _currentTrackIdPath == (forPath ?? filePath))
+        ? _currentTrackId
+        : null;
     if (trackId != null &&
         ((collectionSlug ?? '').isNotEmpty ||
             (platformName ?? '').isNotEmpty ||
@@ -1095,7 +1493,12 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
-  Future<void> toggleFavorite() async {
+  /// [guardedRefId] est l'identité rendue par la garde d'ajout
+  /// ([ensureLibraryRefForAdd]) quand l'appelant en a passé une: elle peut
+  /// différer de [libraryRefId] — un chemin de téléchargement y devient le
+  /// songId du catalogue, un fichier jetable le chemin de sa copie importée.
+  /// Absente (un un-♥, un appelant sans contexte), on garde [libraryRefId].
+  Future<void> toggleFavorite({String? guardedRefId}) async {
     final id = _currentTrackId;
     if (id == null) return;
     isFavorite = !isFavorite;
@@ -1105,7 +1508,7 @@ class PlayerController extends ChangeNotifier {
     // subsong-scoped ref_id the library button uses (libraryRefId), else the two
     // disagree (bare online id vs "…?subsong=N") → button stays dark + duplicate
     // library rows. Un-favourite keeps the row (favourite ⊆ library).
-    final refId = libraryRefId;
+    final refId = guardedRefId ?? libraryRefId;
     if (refId != null) {
       if (isFavorite) {
         await LocalDb.instance.addToLibrary(
@@ -1128,10 +1531,22 @@ class PlayerController extends ChangeNotifier {
     // Server-side favourite/library sync uses the bare online identity. Queued,
     // not POSTed: a gesture made offline (or lost to a 500) must survive until
     // it is actually delivered.
-    if (currentOnlineId != null) {
+    //
+    // L'identité envoyée est celle que le LOCAL vient d'écrire — sinon les deux
+    // moitiés du geste décrivent deux morceaux: la garde d'ajout peut avoir
+    // remplacé un chemin de téléchargement par son songId (le compte veut alors
+    // l'uuid, pas un instantané de fichier) ou un chemin jetable par celui de la
+    // copie importée (le compte veut alors l'instantané de CETTE copie).
+    final refBase = refId == null ? null : splitLibraryRefId(refId).$1;
+    final onlineId = refBase != null && !libraryRefIsPath(refBase)
+        ? refBase
+        : currentOnlineId;
+    final localFile =
+        refBase != null && libraryRefIsPath(refBase) ? refBase : filePath;
+    if (onlineId != null) {
       await SyncService.recordLibraryChange(
         itemType:   'song',
-        itemId:     currentOnlineId!,
+        itemId:     onlineId,
         // Le ♥, pas l'appartenance (migration serveur 206): un ♥ pose l'entrée
         // en bibliothèque côté serveur, un un-♥ l'y laisse. Avant, un un-♥
         // partait en `p_value: false` et RETIRAIT le morceau de la
@@ -1140,7 +1555,7 @@ class PlayerController extends ChangeNotifier {
         favourite:  isFavorite,
         subsongIdx: subsongIdx,
       );
-    } else if (filePath != null) {
+    } else if (localFile != null) {
       // A file of the user's own: queued with its snapshot so it travels the
       // day the server can take it (proposal §2bis) instead of staying local
       // for ever.
@@ -1154,8 +1569,8 @@ class PlayerController extends ChangeNotifier {
         // the round trip then minted a row at the computed path
         // `local/Kingdom Baron` instead of finding the .spc already on disk,
         // and the tune appeared twice in the library.
-        fileName:   filePath!.split(Platform.pathSeparator).last,
-        relPath:    await LocalDb.instance.relPathOf(filePath),
+        fileName:   localFile.split(Platform.pathSeparator).last,
+        relPath:    await LocalDb.instance.relPathOf(localFile),
         value:      isFavorite,
         entryPath:  entryPath,
         subsongIdx: subsongIdx,
@@ -1170,7 +1585,11 @@ class PlayerController extends ChangeNotifier {
 
   void _maybeFireLogPlay({bool forceEnd = false}) {
     if (_logPlayFired) return;
-    if (_elapsedPlayMs < 10000) return; // client-side guard: ignore very short plays
+    // Garde client: on n'envoie pas une lecture trop courte. Le MÊME seuil
+    // sert au comptage LOCAL des stats (LocalDb.kCountedPlayMinMs) — s'ils
+    // divergent, le rail « Vos tendances » et l'écran Stats affichent deux
+    // nombres pour la même chose, ce qui est arrivé (74 contre 24).
+    if (_elapsedPlayMs < LocalDb.kCountedPlayMinMs) return;
     // The token is what attributes the play; without one the call is refused.
     if (!UserSettings.instance.hasAuthToken) return;
 
@@ -1297,6 +1716,7 @@ class PlayerController extends ChangeNotifier {
     if (isPlaying) {
       audio.pause();
       isPlaying = false;
+      _disarmEngineStart();
       // iOS: Now Playing / Control Center keeps showing the PAUSE glyph as
       // long as the audio unit is running (it ignores the playbackRate=0 the
       // media session advertises) — pause only stops the ma_sound, the device
@@ -1316,16 +1736,101 @@ class PlayerController extends ChangeNotifier {
       final gate = ensureAudioSession;
       if (gate != null) {
         isPlaying = true; // optimistic: the UI flips immediately
+        _armEngineStart();
+        // ⚠️ Le drapeau est en AVANCE sur le moteur, et c'est la SEULE
+        // transition dans ce sens: pause/stop/loadFile posent `isPlaying`
+        // AVANT d'arrêter le moteur, et toute la détection de fin de piste
+        // repose là-dessus (« `!audio.isPlaying` alors qu'on se croit en
+        // lecture » = la piste s'est terminée seule). Ici, entre l'appui et le
+        // `audio.play()` d'après la porte ASYNCHRONE, l'état est exactement
+        // celui d'une piste finie — et un tick qui tombe dans cette fenêtre
+        // faisait avancer la file (chemin générique) ou relançait le morceau
+        // depuis zéro (boucle forcée). Vu de l'utilisateur: on appuie sur le
+        // bouton lecture/pause et c'est « suivant » ou « précédent » qui part,
+        // au hasard. `_engineStartPending` neutralise les deux détections le
+        // temps que le moteur démarre pour de bon.
         gate().catchError((_) {}).whenComplete(() {
-          if (isPlaying) audio.play();
+          // Le drapeau n'est PAS désarmé ici: `audio.play()` peut très bien
+          // ne rien démarrer (rien de chargé côté natif). Seul le moteur qui
+          // se déclare en lecture le désarme, dans le tick.
+          if (isPlaying) {
+            _playAndConfirmStart();
+          } else {
+            _disarmEngineStart();
+          }
         });
         notifyListeners();
         return;
       }
-      audio.play();
       isPlaying = true;
+      _armEngineStart();
+      _playAndConfirmStart();
     }
     notifyListeners();
+  }
+
+  /// Vrai entre le moment où `isPlaying` passe à vrai et le démarrage EFFECTIF
+  /// du moteur.
+  ///
+  /// Pendant ce temps `isPlaying` est vrai et `audio.isPlaying` est faux —
+  /// l'exacte signature d'une piste qui vient de se terminer. Tout test de fin
+  /// de piste doit donc l'écarter.
+  ///
+  /// ⚠️ Cette fenêtre a TROIS formes, et n'en couvrir qu'une laissait le bug
+  /// entier: la porte asynchrone de [ensureAudioSession] (iOS, Android **et
+  /// macOS**), le `audio.play()` qui ÉCHOUE parce que le natif n'a rien de
+  /// chargé (`REWAMP_ERROR_NO_SOUND` — un appui sur lecture pendant qu'un
+  /// chargement est en vol), et surtout le chargement lui-même: [loadFile]
+  /// pose `isPlaying = true` bien AVANT son `audio.play()`, avec des `await`
+  /// entre les deux. Mesuré sur macOS: en martelant lecture/pause au début
+  /// d'un morceau, le tick de 250 ms tombait dans l'une de ces fenêtres,
+  /// concluait « la piste s'est terminée seule » et faisait avancer la file —
+  /// vu de l'utilisateur, le bouton pause déclenche « suivant ».
+  ///
+  /// D'où un drapeau ARMÉ à chaque pose optimiste et désarmé par le MOTEUR
+  /// (le tick le voit démarrer), jamais par le code qui a demandé le démarrage.
+  bool _engineStartPending = false;
+  int  _engineStartArmedMs = 0;
+
+  /// Au-delà, le moteur ne démarrera plus: on rend l'affichage HONNÊTE
+  /// (`isPlaying = false`) plutôt que de laisser un lecteur qui se dit en
+  /// lecture sans un son — et surtout sans jamais faire avancer la file, ce
+  /// qui est exactement ce qu'on cherche à empêcher ici. Se répare tout seul
+  /// si le moteur démarre plus tard (le tick recopie alors son état).
+  static const int _kEngineStartTimeoutMs = 5000;
+
+  void _armEngineStart() {
+    _engineStartPending = true;
+    _engineStartArmedMs = DateTime.now().millisecondsSinceEpoch;
+  }
+
+  void _disarmEngineStart() => _engineStartPending = false;
+
+  /// Démarre le moteur, puis lui DEMANDE aussitôt s'il tourne.
+  ///
+  /// ⚠️ Le désarmement ne pouvait pas attendre le tick. [_engineStartPending]
+  /// n'est levé que par le MOTEUR, et son SEUL observateur était le tick de
+  /// 250 ms: une piste plus COURTE que ça démarrait et se terminait entre deux
+  /// ticks, sans qu'aucun ne voie jamais `audio.isPlaying` vrai. Le drapeau
+  /// restait donc armé, la détection de fin de piste restait neutralisée, et au
+  /// bout de 5 s le lecteur se déclarait à l'arrêt **sans avancer la file** —
+  /// vu de l'utilisateur, la lecture s'arrête et il faut la relancer à la main.
+  ///
+  /// Ce n'est pas un cas de laboratoire: un `.adl` Westwood en fait la règle.
+  /// Mesuré avec `songlength()` d'AdPlug — « eob2 - catacomb »: 28 de ses 120
+  /// sous-chansons durent moins de 250 ms, la plus courte **13 ms**; DUNE19.ADL
+  /// en a 10, LOREINTR.ADL 13. Une série de bruitages courts arrêtait donc la
+  /// file à coup sûr.
+  ///
+  /// ⚠️ Ce n'est PAS un désarmement à l'aveugle, et l'invariant tient: côté C,
+  /// `ma_sound_start` a déjà posé l'état quand `rewamp_play` rend la main, donc
+  /// `audio.isPlaying` juste après est la réponse du MOTEUR et non une
+  /// supposition de l'appelant. Un `play()` qui n'a rien démarré (rien de
+  /// chargé côté natif, `REWAMP_ERROR_NO_SOUND`) répond faux et le drapeau
+  /// reste armé — ce qui est exactement son rôle.
+  void _playAndConfirmStart() {
+    audio.play();
+    if (audio.isPlaying) _disarmEngineStart();
   }
 
   /// Reactivates the platform audio session before an engine resume — set by
@@ -1338,7 +1843,10 @@ class PlayerController extends ChangeNotifier {
     // rewamp_stop() already sets g_seek_cancel; the audio.stop() call triggers it.
     audio.stop();
     isPlaying  = false;
+    _disarmEngineStart();
     position   = 0;
+    elapsedPosition = 0;
+    _playClockMs = 0;
     isSeeking  = false;
     notifyListeners();
   }
@@ -1358,18 +1866,24 @@ class PlayerController extends ChangeNotifier {
       final base   = _forceBaseSecs;
       final within = (base != null && base > 0) ? seconds % base : seconds;
       _elapsedPlayMs   = (seconds * 1000).round();
+      _playClockMs     = (seconds * 1000).round();
       _forceSeekOffset = seconds - within;   // completed-passes offset
       audio.seek(within);
       audio.resetSilence();   // fresh decode position → don't trip restart-on-silence
       isSeeking = true;       // animate progress via the tick() polling below
       position  = seconds;
+      elapsedPosition = seconds;
       notifyListeners();
       return;
     }
     // rewamp_seek_seconds() cancels any previous seek and starts a new one.
     audio.seek(seconds);
     isSeeking = true;
+    // Le compteur de gauche doit se caler sur la CIBLE. `_elapsedPlayMs` reste
+    // intact: sauter en avant n'a rien fait écouter de plus.
+    _playClockMs = (seconds * 1000).round();
     position  = seconds;
+    elapsedPosition = seconds;
     notifyListeners();
   }
 
@@ -1384,6 +1898,20 @@ class PlayerController extends ChangeNotifier {
     return baseSeconds;
   }
 
+  /// Fin de piste à armer sur le PRODUCTEUR natif — 0 = « pas de fin connue ».
+  ///
+  /// ⚠️ **En boucle INFINIE, la piste n'a pas de fin, et le producteur doit le
+  /// savoir.** La règle « en infini la durée nominale n'est JAMAIS consultée »
+  /// était appliquée côté Dart mais pas transmise ici: on armait quand même la
+  /// durée d'UNE passe, donc le producteur coupait le morceau juste avant que
+  /// le moteur n'atteigne son point de boucle. La piste « se terminait », et
+  /// repeat-morceau la rechargeait depuis zéro — au lieu de la laisser boucler
+  /// là où le fichier le demande. Mesuré sur un VGM: en mode 1 avec un grand
+  /// nombre de passes la durée armée vaut base×(n+1) et tout fonctionne, ce qui
+  /// isolait la fin de piste comme seule différence.
+  double get _producerTrackEndSecs =>
+      effectiveForceLoopMode == 'infinite' ? 0 : (_knownDuration ?? 0);
+
   /// Override the displayed duration (e.g. from HVSC songlength database).
   /// Pass null to revert to the audio engine's own reported length. The value
   /// is a SINGLE-pass length; a generic forced loop expands it to base×passes.
@@ -1391,6 +1919,7 @@ class PlayerController extends ChangeNotifier {
     _forceBaseSecs = (seconds != null && seconds > 0) ? seconds : null;
     _knownDuration = _displayedDurationFor(seconds);
     duration = _knownDuration ?? audio.durationSeconds;
+    audio.setTrackEndSeconds(_producerTrackEndSecs);  // le producteur suit
     notifyListeners();
   }
 
@@ -1411,6 +1940,62 @@ class PlayerController extends ChangeNotifier {
   /// Called when the track ends naturally (not via stop/pause/loadFile).
   /// AppShell wires this up to advance the album queue.
   VoidCallback? onTrackEnded;
+
+  /// GAPLESS: called when the listener audibly crossed into the track staged
+  /// by [armNextTrack] (the native producer switched decoders earlier, at the
+  /// look-ahead's depth — the flip waits for the EAR). AppShell advances the
+  /// queue pointer and adopts the track's metadata WITHOUT reloading.
+  VoidCallback? onTrackHandoff;
+  int _lastHandoffSerial = 0;
+
+  /// Called after [cycleLoopMode] — the staged next track's loop snapshot
+  /// depends on the transport mode, so AppShell re-arms.
+  VoidCallback? onLoopModeChanged;
+
+  /// GAPLESS: stage [path] as the track the native engine opens the instant
+  /// the current one ends — same ring, no audible break. Carries the same
+  /// per-track forced-loop snapshot a plain load would have applied.
+  ///
+  /// Declines (clears instead) when the handoff cannot work:
+  ///  - repeat-track: the engine loops forever, there is no end to hand off;
+  ///  - the CURRENT track runs the GENERIC forced loop (non-native): its
+  ///    restart machinery replays the decoder after EOF, and a staged next
+  ///    would hijack that first EOF and kill the loop.
+  /// Un suivant est ARMÉ côté natif: la fin de la piste courante appartient
+  /// alors au producteur (relais/crossfade), et le filet Dart de fin-à-durée
+  /// prend 2 s de marge au lieu de couper pile — sans ça il tuerait le
+  /// relais qu'il est censé doubler.
+  bool _nextArmed = false;
+
+  void armNextTrack({required String path,
+                     int subsongIdx = 0,
+                     double? durationS}) {
+    if (!audio.supportsGapless) return;
+    final mode = effectiveForceLoopMode;
+    if (mode == 'infinite' || _forceLoopActive) {
+      audio.clearNextFile();
+      _nextArmed = false;
+      return;
+    }
+    _nextArmed = true;
+    final baseSecs = (durationS != null && durationS > 0)
+        ? durationS
+        : UserSettings.instance.defaultTrackLengthSeconds;
+    final audioPath = subsongIdx > 0 ? '$path?subsong=$subsongIdx' : path;
+    audio.setNextFile(
+      audioPath,
+      mode == 'on' ? 1 : 0,
+      UserSettings.instance.loopCount,
+      fadeoutEnabled: UserSettings.instance.forceFadeoutEnabled,
+      fadeoutSeconds: UserSettings.instance.fadeoutSeconds,
+      baseDurationSeconds: baseSecs,
+    );
+  }
+
+  void clearNextTrack() {
+    audio.clearNextFile();
+    _nextArmed = false;
+  }
 
   /// Called at the end of every [loadFile] with its result. AppShell uses it as
   /// a safety net: a file that DOWNLOADED fine but the native decoder REFUSED
@@ -1493,7 +2078,10 @@ class PlayerController extends ChangeNotifier {
     this.subsongIdx       = subsongIdx;
     duration              = durationS ?? 0;
     position              = 0;
+    elapsedPosition       = 0;
+    _playClockMs          = 0;
     isPlaying             = false;
+    _disarmEngineStart();
     primed                = true;
     notifyListeners();
   }
@@ -1501,6 +2089,17 @@ class PlayerController extends ChangeNotifier {
   /// Called by AppShell's periodic timer to refresh position.
   void tick() {
     if (!hasFile) return;
+
+    // GAPLESS: has the listener crossed a staged track boundary since the
+    // last tick? The serial only moves when the CONSUMER heard the switch —
+    // the handler adopts metadata/queue state without touching the audio.
+    if (audio.supportsGapless) {
+      final hs = audio.handoffSerial;
+      if (hs != _lastHandoffSerial) {
+        _lastHandoffSerial = hs;
+        onTrackHandoff?.call();
+      }
+    }
 
     // While a fast-forward seek is running, poll C-side progress so the slider
     // animates.  Transition isSeeking→false when the audio thread finishes.
@@ -1511,13 +2110,20 @@ class PlayerController extends ChangeNotifier {
       // Under a forced loop the C seek runs on the single-pass timeline; shift
       // its progress onto the base×passes slider by the completed-passes offset.
       final isForce = _forceLoopActive;
+      // Sous boucle infinie le seek du C court sur la timeline d'UNE passe: sa
+      // progression ne dit rien du temps écoulé. L'horloge d'affichage, elle,
+      // a été recalée sur la cible par `seek()` et n'avance pas pendant le
+      // seek — c'est elle qui fait autorité sur le compteur de gauche.
+      final infinite = effectiveForceLoopMode == 'infinite';
       if (!seeking) {
         isSeeking = false;
         // Snap to the real cursor once done — elapsed target for a forced loop,
         // the decoder cursor otherwise.
         final p = isForce ? (_elapsedPlayMs / 1000.0) : audio.positionSeconds;
-        if (p != position || d != duration) {
+        final e = infinite ? (_playClockMs / 1000.0) : p;
+        if (p != position || e != elapsedPosition || d != duration) {
           position = p;
+          elapsedPosition = e;
           duration = d;
           notifyListeners();
         } else {
@@ -1525,8 +2131,10 @@ class PlayerController extends ChangeNotifier {
         }
       } else {
         final disp = isForce ? (_forceSeekOffset + prog) : prog;
-        if (disp != position) {
+        final e    = infinite ? (_playClockMs / 1000.0) : disp;
+        if (disp != position || e != elapsedPosition) {
           position = disp;
+          elapsedPosition = e;
           if (d != duration) duration = d;
           notifyListeners();
         }
@@ -1541,8 +2149,25 @@ class PlayerController extends ChangeNotifier {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (isPlaying && !isSeeking && _lastTickMs > 0) {
       _elapsedPlayMs += nowMs - _lastTickMs;
+      _playClockMs   += nowMs - _lastTickMs;
     }
     _lastTickMs = nowMs;
+
+    // Le moteur est le SEUL à pouvoir désarmer une pose optimiste de
+    // `isPlaying`: tant qu'il ne se déclare pas en lecture, l'état est celui
+    // d'une piste finie et toute détection de fin doit rester neutralisée.
+    // Passé le délai, le démarrage n'aura pas lieu (rien de chargé, périphérique
+    // en échec): on rend l'affichage honnête SANS avancer la file.
+    if (_engineStartPending) {
+      if (audio.isPlaying) {
+        _disarmEngineStart();
+      } else if (nowMs - _engineStartArmedMs > _kEngineStartTimeoutMs) {
+        _disarmEngineStart();
+        isPlaying = false;
+        notifyListeners();
+        return;
+      }
+    }
 
     // Forced-fadeout in progress: ramp volume down in real time, independent
     // of the normal position/duration bookkeeping below.
@@ -1571,19 +2196,50 @@ class PlayerController extends ChangeNotifier {
     // engine here so the end-of-track branch below fires normally (for a
     // genuinely finite format, audio.isPlaying already went false on its
     // own instead).
-    final reachedKnownEnd = _knownDuration != null && _knownDuration! > 0 &&
-        p >= _knownDuration! && audio.isPlaying;
+    // Avec un suivant armé, la fin appartient au PRODUCTEUR natif (relais ou
+    // crossfade à la même durée): couper ici pile à la durée tuerait le
+    // relais. 2 s de marge — si le natif n'a pas relayé d'ici là (échec
+    // d'open, format sans fin connue de son côté), le filet reprend.
+    // ⚠️ **Sous boucle INFINIE, la durée nominale ne coupe RIEN.** La règle
+    // était écrite pour la branche générique (« en infini on ne consulte
+    // jamais la durée nominale ») mais ce filet-ci, qui sert la boucle NATIVE,
+    // la consultait quand même: à 2:30 il appelait `audio.stop()`, la piste
+    // passait pour terminée et repeat-morceau la rechargeait depuis zéro —
+    // juste avant que le moteur n'atteigne son point de boucle. Mesuré sur un
+    // VGM: avec un nombre de passes FIXE la durée vaut base×(n+1) et rien ne
+    // se déclenche, ce qui isolait ce test comme seule différence.
+    //
+    // Un moteur en boucle infinie native n'a pas de fin à faire respecter:
+    // c'est lui qui décide où et quand reboucler.
+    final endSlack = _nextArmed ? 2.0 : 0.0;
+    final reachedKnownEnd = effectiveForceLoopMode != 'infinite' &&
+        _knownDuration != null && _knownDuration! > 0 &&
+        p >= _knownDuration! + endSlack && audio.isPlaying;
     if (reachedKnownEnd) {
+      logTransport('fin forcée', source: 'durée connue atteinte',
+          detail: 'pos=${p.toStringAsFixed(1)}s durée=${_knownDuration!.toStringAsFixed(1)}s');
       audio.stop();
     }
 
     final pl = audio.isPlaying;
-    final naturalEnd = !pl && isPlaying;
+    final naturalEnd = engineStoppedByItself(
+      enginePlaying:      pl,
+      uiPlaying:          isPlaying,
+      engineStartPending: _engineStartPending,
+    );
 
     // Natural end-of-track: audio stopped on its own.
     // stop(), pause() and loadFile() all update `isPlaying` before this tick
     // runs (Dart is single-threaded), so they never trigger this branch.
     if (naturalEnd) {
+      // ⚠️ LE suspect quand « pause » enchaîne sur la piste suivante: personne
+      // n'a rien demandé, c'est cette conclusion-là qui avance la file. Les
+      // trois états qui la décident sont donc dans la ligne — l'interface se
+      // croyait en lecture, le moteur ne jouait pas, et aucun démarrage
+      // n'était en attente (voir engineStoppedByItself).
+      logTransport('fin de piste', source: 'auto (moteur arrêté seul)',
+          detail: 'moteur=$pl ui=$isPlaying démarrageEnAttente=$_engineStartPending '
+              'pos=${p.toStringAsFixed(1)}s');
       _maybeFireLogPlay(forceEnd: true);
       _flushPlayEventDuration();
       onTrackEnded?.call();
@@ -1605,25 +2261,53 @@ class PlayerController extends ChangeNotifier {
     else if (pl && isPlaying && !isSeeking &&
         UserSettings.instance.silenceSkipEnabled &&
         audio.silentSeconds >= UserSettings.instance.silenceSkipSeconds) {
+      logTransport('fin de piste', source: 'auto (silence)',
+          detail: 'silence=${audio.silentSeconds.toStringAsFixed(1)}s '
+              'seuil=${UserSettings.instance.silenceSkipSeconds}s');
       audio.resetSilence();
       _maybeFireLogPlay(forceEnd: true);
       onTrackEnded?.call();
     }
     _maybeFireLogPlay();
 
-    // Boucle infinie NATIVE (libvgm, vgmstream): le moteur annonce la durée
-    // d'UNE passe mais sa position continue de monter — même gel d'affichage
-    // que le chemin générique, par un autre trajet. On ne fait suivre le total
-    // que s'il est réellement dépassé, ce qui laisse tranquille un moteur dont
-    // la position REBOUCLE à chaque passe (libopenmpt): là le curseur repart à
-    // zéro et l'affichage est déjà cohérent.
-    final dShown = (effectiveForceLoopMode == 'infinite' && p > d)
-        ? (infiniteDisplayTotal(p, _forceBaseSecs ?? (d > 0 ? d : null)) ?? d)
-        : d;
-    if (p != position || dShown != duration || pl != isPlaying) {
-      position  = p;
+    // Boucle infinie NATIVE (libvgm, vgmstream, libopenmpt): le moteur annonce
+    // la durée d'UNE passe et notre curseur, lui, est le nombre d'images
+    // LIVRÉES — monotone à travers les boucles. On ramène donc la position
+    // dans la passe plutôt que d'allonger le total: la règle graduée reste
+    // celle du fichier, et un seek vise toujours un point que le décodeur sait
+    // atteindre. Voir infiniteDisplayPosition.
+    final infinite = effectiveForceLoopMode == 'infinite';
+    final pShown = infinite
+        ? infiniteDisplayPosition(p, _forceBaseSecs ?? (d > 0 ? d : null))
+        : p;
+    // Le temps ÉCOULÉ, lui, ne sature pas. Sous boucle infinie il ne peut pas
+    // venir du curseur du moteur: celui de libvgm est monotone à travers les
+    // passes, mais celui de libopenmpt REBOUCLE (c'est déjà pourquoi le total
+    // natif ne s'allonge que quand la position dépasse le total) — le compteur
+    // retomberait à zéro à chaque passe. On prend donc l'horloge d'affichage,
+    // qui répond exactement à la question posée: depuis combien de temps ça
+    // joue. Elle est RECALÉE par un seek et remise à zéro au chargement, donc
+    // elle suit aussi les sauts — c'est ce qui la distingue de
+    // `_elapsedPlayMs`, que le seek ne doit PAS toucher.
+    final elapsedShown = infinite ? (_playClockMs / 1000.0) : p;
+    final dShown = d;
+    // Le moteur fait autorité sur `isPlaying` — SAUF pendant une reprise en
+    // vol, où le drapeau est volontairement en avance sur lui. Le recopier là
+    // le remettrait à faux, et c'est précisément ce que teste le
+    // `whenComplete` de togglePlay: la reprise n'aurait alors jamais lieu et
+    // l'appui sur lecture ne ferait RIEN.
+    final plShown = _engineStartPending ? isPlaying : pl;
+    // `pShown` est FIGÉ dès la première passe en boucle infinie — sans le test
+    // sur `elapsedPosition`, plus aucune notification ne partait et le compteur
+    // de gauche gelait avec la barre.
+    if (pShown != position ||
+        elapsedShown != elapsedPosition ||
+        dShown != duration ||
+        plShown != isPlaying) {
+      position  = pShown;
+      elapsedPosition = elapsedShown;
       duration  = dShown;
-      isPlaying = pl;
+      isPlaying = plShown;
       notifyListeners();
     }
   }
@@ -1644,6 +2328,19 @@ class PlayerController extends ChangeNotifier {
   /// RIEN ne se fasse pas relancer à chaque tick (250 ms) sans fin.
   static const int _kForceLoopRestartCooldownMs = 1000;
   int _lastLoopRestartMs = 0;
+  /// Relances consécutives qui n'ont PAS réveillé le moteur.
+  ///
+  /// Le repli générique relance par `seek(0)` + `play()`, ce qui suppose qu'un
+  /// décodeur TERMINÉ redevienne vivant après un seek. Trois bibliothèques ont
+  /// déjà démenti cette supposition — vgmstream (`decode_done` jamais effacé),
+  /// furnace (`seek` ne rallume pas le moteur), zxtune (`LOOPED` qui reboucle
+  /// sur du vide) — et il y a 39 greffons. Plutôt que de les auditer un par un,
+  /// on garde un filet: au bout de deux relances sans effet, on RECHARGE le
+  /// fichier, ce qu'aucun état interne de décodeur ne peut refuser.
+  ///
+  /// Le compteur est remis à zéro dès que le moteur repart, donc un greffon
+  /// sain n'atteint jamais le rechargement.
+  int _loopRestartsFailed = 0;
 
   /// Drives forced-loop playback on the elapsed-time timeline.
   ///
@@ -1672,17 +2369,40 @@ class PlayerController extends ChangeNotifier {
     // second cas, la branche 'infinite' sortait par son `return` avant toute
     // détection de fin: ni relance, ni avancement de file. Cas réaliste: un
     // flux vgmstream SANS point de boucle, vetoé donc générique.
-    final engineStopped = !audio.isPlaying &&
+    final engineStopped = engineStoppedByItself(
+          enginePlaying:      audio.isPlaying,
+          uiPlaying:          isPlaying,
+          engineStartPending: _engineStartPending,
+        ) &&
         _elapsedPlayMs > _kForceLoopStartGraceMs;
+    final silentLongEnough =
+        audio.isPlaying && audio.silentSeconds >= _kForceLoopRestartSilence;
     final stalled = isPlaying &&
         (engineStopped ||
-            (audio.isPlaying &&
-                audio.silentSeconds >= _kForceLoopRestartSilence));
+            (silentLongEnough &&
+                silenceCanMeanEnd(
+                  decoderPositionSeconds: audio.positionSeconds,
+                  nominalSeconds: _forceBaseSecs,
+                )));
 
     void restartIfStalled() {
       if (!stalled) return;
       if (nowMs - _lastLoopRestartMs < _kForceLoopRestartCooldownMs) return;
       _lastLoopRestartMs = nowMs;
+      // Le moteur est-il reparti depuis la relance précédente ? Si oui, le
+      // greffon sait revivre et le filet reste au repos.
+      if (engineStopped) {
+        _loopRestartsFailed++;
+      } else {
+        _loopRestartsFailed = 0;
+      }
+      if (_loopRestartsFailed > 2) {
+        // Deux relances sans effet: ce décodeur ne revient pas d'un seek.
+        // Le rechargement, lui, repart d'un `open()` neuf.
+        _loopRestartsFailed = 0;
+        unawaited(replayCurrent());
+        return;
+      }
       audio.seek(0);
       audio.resetSilence();
       // Un seek seul ne relance pas un son TERMINÉ — miniaudio l'a démonté.
@@ -1691,9 +2411,14 @@ class PlayerController extends ChangeNotifier {
 
     if (mode == 'infinite') {
       restartIfStalled();
-      final total = infiniteDisplayTotal(elapsed, _forceBaseSecs) ?? duration;
-      if (elapsed != position || total != duration) {
-        position = elapsed;
+      final total = _forceBaseSecs ?? duration;
+      final shown = infiniteDisplayPosition(elapsed, _forceBaseSecs);
+      // La barre sature, le compteur continue: c'est `elapsed` qui monte.
+      if (shown != position ||
+          elapsed != elapsedPosition ||
+          total != duration) {
+        position = shown;
+        elapsedPosition = elapsed;
         duration = total;
         notifyListeners();
       }
@@ -1726,6 +2451,7 @@ class PlayerController extends ChangeNotifier {
     restartIfStalled();
     if (elapsed != position || total != duration) {
       position = elapsed;
+      elapsedPosition = elapsed;
       duration = total;
       notifyListeners();
     }
@@ -1749,6 +2475,7 @@ class PlayerController extends ChangeNotifier {
     audio.stop();
     audio.setVolume(1.0); // restore for whatever plays next
     isPlaying = false;
+    _disarmEngineStart();
     _maybeFireLogPlay(forceEnd: true);
     onTrackEnded?.call();
     notifyListeners();
@@ -1776,15 +2503,30 @@ class PlayerController extends ChangeNotifier {
 
   /// Update queue entry titles after async metadata fetch (e.g. STIL names).
   /// [idxToTitle] maps 0-based queue position → new title string.
-  void updateQueueEntries(Map<int, String> idxToTitle) {
-    bool changed = false;
-    for (final e in idxToTitle.entries) {
-      if (e.key >= 0 && e.key < _queue.length && _queue[e.key].title != e.value) {
-        _queue[e.key] = QueueEntry(title: e.value, artist: _queue[e.key].artist);
-        changed = true;
+  /// Renomme les entrées de file qui jouent [filePath], par SOUS-CHANSON.
+  ///
+  /// ⚠️ Deux bugs vécus, tous deux dans l'ancienne signature `Map<int,String>`
+  /// indexée par POSITION:
+  ///
+  /// 1. Elle supposait « position = index de sous-chanson », vrai seulement
+  ///    quand la file est le dépliage d'UN conteneur. Lancer un morceau depuis
+  ///    le rail « Vos tendances » donne une file de morceaux SANS RAPPORT: STIL
+  ///    nomme la sous-chanson 0 « Space Game », et c'était l'entrée 0 de la
+  ///    file qui était renommée — « Panic », un .s3m de Purple Motion.
+  /// 2. Elle reconstruisait l'entrée avec DEUX champs sur dix: pochette,
+  ///    sous-titre, album et `id` partaient à la poubelle. Un `id` nul casse
+  ///    les clés de widget du panneau (voir [QueueEntry.id]) — donc renommer
+  ///    une ligne pouvait rendre à une autre l'état d'un glissement en cours.
+  ///    D'où `copyWith`, même patron et même raison que `TrackRecord.copyWith`.
+  void updateQueueEntries(String filePath, Map<int, String> subsongToTitle) {
+    final next = applyQueueTitles(_queue, filePath, subsongToTitle);
+    for (var i = 0; i < _queue.length; i++) {
+      if (!identical(next[i], _queue[i])) {
+        _queue = next;
+        notifyListeners();
+        return;
       }
     }
-    if (changed) notifyListeners();
   }
 
   void clearQueue() {
@@ -1829,9 +2571,15 @@ class PlayerController extends ChangeNotifier {
   /// started the next queue entry in its place.
   /// [asPrefix] = [path] is a DIRECTORY: every entry under it goes, not just
   /// the entries playing from that exact file.
-  Future<bool> Function(String path, {bool asPrefix})? onTrackDeleted;
-  Future<bool> notifyTrackDeleted(String path, {bool asPrefix = false}) async =>
-      await onTrackDeleted?.call(path, asPrefix: asPrefix) ?? false;
+  /// [resume] = la lecture était EN COURS quand la suppression est arrivée.
+  /// Supprimer un fichier n'est pas « joue le suivant »: à l'arrêt ou en pause,
+  /// la file prend la place libérée sans rien lancer.
+  Future<bool> Function(String path, {bool asPrefix, bool resume})?
+      onTrackDeleted;
+  Future<bool> notifyTrackDeleted(String path,
+          {bool asPrefix = false, bool resume = true}) async =>
+      await onTrackDeleted?.call(path, asPrefix: asPrefix, resume: resume) ??
+          false;
 
   // ── Shuffle (real queue-reorder logic owned by AppShell; mirrored here so
   // the queue panel — reachable from the full player AND the sidebar — can
@@ -1862,7 +2610,13 @@ class PlayerController extends ChangeNotifier {
     final wasLooping = effectiveForceLoopMode != 'off';
     _loopMode = (_loopMode + 1) % 3;
     UserSettings.instance.transportLoopMode = _loopMode;
+    // Le moteur voit le nouveau mode TOUT DE SUITE (fondu PSF, voir
+    // _pushForcedLoopSnapshot) — le setter ci-dessus notifie UserSettings,
+    // dont on est déjà auditeur, mais l'ordre des auditeurs n'est pas un
+    // contrat: on pousse explicitement.
+    _pushForcedLoopSnapshot();
     if (wasLooping && effectiveForceLoopMode == 'off') _endLoopedPlayback();
+    onLoopModeChanged?.call();  // gapless: the staged next track must re-arm
     notifyListeners();
   }
 

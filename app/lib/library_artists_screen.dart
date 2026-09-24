@@ -5,6 +5,7 @@ import 'library_toolbar.dart';
 import 'local_db.dart';
 import 'l10n.dart';
 import 'shell_insets.dart';
+import 'scrolling_text.dart';
 import 'user_settings.dart';
 
 typedef OnNavigateArtist = void Function(String artistName,
@@ -125,8 +126,7 @@ class _LibraryArtistsScreenState extends State<LibraryArtistsScreen> {
                           ),
                         ),
                       ),
-                      title: Text(item.name,
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      title: ScrollingText(text: item.name),
                       trailing: widget.onNavigateArtist != null
                           ? const Icon(Icons.chevron_right)
                           : null,

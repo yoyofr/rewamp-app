@@ -48,6 +48,8 @@ class _SpectrumWidgetState extends State<SpectrumWidget>
   /// push them here too — the user may open this viz without ever having
   /// opened the oscilloscope this session.
   void _applySettings() {
+    // Un réglage a changé: l'image doit suivre même à l'arrêt.
+    widget.audio.vizWake();
     final s = UserSettings.instance;
     void rgb(int v, void Function(double, double, double) f) =>
         f(((v >> 16) & 0xFF) / 255.0, ((v >> 8) & 0xFF) / 255.0,
@@ -60,6 +62,9 @@ class _SpectrumWidgetState extends State<SpectrumWidget>
   }
 
   void _onTick(Duration _) {
+    // Lecteur en pause et rien qui bouge: on ne redessine pas (voir
+    // src/rewamp_viz_idle.h). Le réveil vient du `build` et des gestes.
+    if (!widget.audio.vizFrameDue) return;
     if (_gpuTextureId >= 0) widget.audio.spectrumRenderAndNotify();
   }
 

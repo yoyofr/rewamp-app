@@ -51,71 +51,127 @@ set(REWAMP_CORE_SOURCES
   "${REWAMP_SRC_DIR}/rewamp_datasource.c"
   "${REWAMP_SRC_DIR}/rewamp_channel_data.c"
   "${REWAMP_SRC_DIR}/rewamp_loaded_files.c"
+  "${REWAMP_SRC_DIR}/rewamp_declick.c"
+  "${REWAMP_SRC_DIR}/rewamp_viz_idle.c"
   "${REWAMP_SRC_DIR}/rewamp_tags.c"
   "${REWAMP_SRC_DIR}/rewamp_notes.c"
   "${REWAMP_SRC_DIR}/rewamp_pattern.c"
+  # « ce MIDI vise-t-il le MT-32 ? » — partagé par les DEUX greffons MIDI,
+  # donc compilé quel que soit REWAMP_WITH_MT32.
+  "${REWAMP_SRC_DIR}/rewamp_mt32_detect.c"
   "${REWAMP_SRC_DIR}/rewamp_extract.c"
   "${REWAMP_SRC_DIR}/miniaudio_impl.c"
 )
 
-option(REWAMP_WITH_OPENMPT "Build the libopenmpt decoder plugin" ON)
-option(REWAMP_WITH_VGM     "Build the libvgm decoder plugin (VGM/VGZ/S98/GYM/DRO)" ON)
-option(REWAMP_WITH_GME      "Build the libgme decoder plugin (NSF/GBS/SPC/AY/HES/KSS/SAP/RSN)" ON)
-option(REWAMP_WITH_SID      "Build the libsidplayfp SID decoder plugin (.sid/.psid/.rsid)" ON)
-option(REWAMP_WITH_NSFPLAY  "Build the libnsfplay NSF/NSFe decoder plugin" ON)
-option(REWAMP_WITH_GBSPLAY  "Build the libgbsplay Game Boy GBS decoder plugin" ON)
-option(REWAMP_WITH_HIGHLYEXP "Build the Highly Experimental PSF/PSF2 decoder plugin" ON)
-option(REWAMP_WITH_VGMSTREAM "Build the vgmstream decoder plugin (200+ game formats)" ON)
-option(REWAMP_WITH_ARCHIVE  "Build vendored liblzma+libarchive (zip/7z/tar/gz/xz extraction)" ON)
-option(REWAMP_WITH_FURNACE  "Build the Furnace (DivEngine) tracker plugin (.fur/.dmf/.dmp)" ON)
+# ─────────────────────────────────────────────────────────────────────────────
+# rewamp_option — une option dont l'ENVIRONNEMENT peut fixer le défaut
+#
+# ⚠️ CMake IGNORE l'environnement pour `option()` et `set(... CACHE ...)`. Les
+# podspecs Apple, eux, lisent `ENV[...]`. Conséquence, MESURÉE le 2026-09-21 sur
+# une configuration réelle: `REWAMP_WITH_UNRAR=0 flutter build linux` laissait
+# le cache à `REWAMP_WITH_UNRAR:BOOL=ON`. Autrement dit la recette de build
+# « propre » de LICENSING.md — celle qui retire psgplay, UnRAR et
+# highlytheoritical pour une distribution GPL conforme — ne valait QUE sur
+# Apple, et échouait en SILENCE sur Linux et Windows: le drapeau existe, on
+# croit l'avoir posé, et le binaire contient quand même ce qu'on voulait
+# retirer. Sur le canal PUBLIC, c'est le pire endroit pour ce genre de panne.
+#
+# ⚠️ L'ORDRE de précédence est obtenu PAR CONSTRUCTION, pas par un test: un `-D`
+# de ligne de commande crée déjà l'entrée de cache, et `option()` n'écrase
+# jamais une entrée existante. D'où -D > environnement > défaut. Android, qui
+# passe ses `-D` explicitement (android/build.gradle), n'est donc pas affecté.
+#
+# ⚠️ Une valeur que l'on ne sait pas lire est une ERREUR, pas un repli. Un
+# `REWAMP_WITH_UNRAR=non` silencieusement ignoré ramènerait exactement le bug
+# qu'on corrige ici — et `flutter build` FILTRE la sortie de configuration de
+# CMake (ni STATUS ni WARNING n'atteignent le terminal, cf. le bloc vgmstream),
+# donc seule une erreur se voit.
+function(rewamp_option _name _doc _default)
+  set(_def "${_default}")
+  if(DEFINED ENV{${_name}})
+    string(TOUPPER "$ENV{${_name}}" _env)
+    if(_env MATCHES "^(0|OFF|NO|FALSE|N)$")
+      set(_def OFF)
+    elseif(_env MATCHES "^(1|ON|YES|TRUE|Y)$")
+      set(_def ON)
+    else()
+      message(FATAL_ERROR
+        "${_name}=$ENV{${_name}} : valeur incomprise.\n"
+        "Attendu 0/1, OFF/ON, NO/YES, FALSE/TRUE.")
+    endif()
+    message(STATUS "rewamp: ${_name}=${_def} (environnement)")
+  endif()
+  option(${_name} "${_doc}" ${_def})
+endfunction()
+
+rewamp_option(REWAMP_WITH_OPENMPT "Build the libopenmpt decoder plugin" ON)
+rewamp_option(REWAMP_WITH_XMP      "Build the libxmp decoder plugin (.musx/.liq/.fnk/.mgt/…)" ON)
+rewamp_option(REWAMP_WITH_VGM     "Build the libvgm decoder plugin (VGM/VGZ/S98/GYM/DRO)" ON)
+rewamp_option(REWAMP_WITH_GME      "Build the libgme decoder plugin (NSF/GBS/SPC/AY/HES/KSS/SAP/RSN)" ON)
+rewamp_option(REWAMP_WITH_SID      "Build the libsidplayfp SID decoder plugin (.sid/.psid/.rsid)" ON)
+rewamp_option(REWAMP_WITH_NSFPLAY  "Build the libnsfplay NSF/NSFe decoder plugin" ON)
+rewamp_option(REWAMP_WITH_GBSPLAY  "Build the libgbsplay Game Boy GBS decoder plugin" ON)
+rewamp_option(REWAMP_WITH_HIGHLYEXP "Build the Highly Experimental PSF/PSF2 decoder plugin" ON)
+rewamp_option(REWAMP_WITH_VGMSTREAM "Build the vgmstream decoder plugin (200+ game formats)" ON)
+rewamp_option(REWAMP_WITH_ARCHIVE  "Build vendored liblzma+libarchive (zip/7z/tar/gz/xz extraction)" ON)
+rewamp_option(REWAMP_WITH_FURNACE  "Build the Furnace (DivEngine) tracker plugin (.fur/.dmf/.dmp)" ON)
 # Default OFF until the 237-file engine build is validated; enabled per-platform.
-option(REWAMP_WITH_ZXTUNE   "Build the libzxtune ZX Spectrum/AY chiptune plugin" OFF)
+rewamp_option(REWAMP_WITH_ZXTUNE   "Build the libzxtune ZX Spectrum/AY chiptune plugin" OFF)
 # Default OFF until the UADE engine build is validated on each platform; flip ON once green.
-option(REWAMP_WITH_UADE     "Build the UADE Amiga custom-chip plugin (.ahx/.tfmx/.cust/.fc/…)" ON)
-option(REWAMP_WITH_NEZ      "Build the NEZplug++ plugin (.hes HuC6280 / .sgc SN76489+YM2413)" ON)
-option(REWAMP_WITH_KSS      "Build the libkss MSX plugin (.kss/.mgs/.bgm/.mpk/.mbm/.opx/.mus)" ON)
-option(REWAMP_WITH_MAC      "Build the Monkey's Audio decoder plugin (.ape)" ON)
-option(REWAMP_WITH_ASAP     "Build the ASAP Atari 8-bit plugin (.sap/.cmc/.rmt/...)" ON)
-option(REWAMP_WITH_HVL      "Build the HivelyTracker plugin (.hvl/.ahx)" ON)
-option(REWAMP_WITH_V2M      "Build the Farbrausch V2M plugin (.v2m/.v2mz)" ON)
-option(REWAMP_WITH_MIDI     "Build the FluidLite MIDI plugin (.mid, SF2 SoundFont)" ON)
-option(REWAMP_WITH_GSF      "Build the libgsf plugin (GBA .gsf/.minigsf via VBA)" ON)
-option(REWAMP_WITH_VIO2SF   "Build the vio2sf plugin (Nintendo DS .2sf/.mini2sf via melonDS)" ON)
-option(REWAMP_WITH_NCSF     "Build the NCSF plugin (Nintendo DS .ncsf/.minincsf via SSEQPlayer)" ON)
-option(REWAMP_WITH_SNSF     "Build the SNSF plugin (Super Nintendo .snsf/.minisnsf via snsf9x)" ON)
-option(REWAMP_WITH_PROJECTM "Build the projectM (Milkdrop) visualizer — Android/desktop" ON)
-option(REWAMP_PM_PROFILE    "projectM: log preset-load CPU/GL timings (adds a link sync point)" OFF)
-option(REWAMP_WITH_ADPLUG   "Build the AdPlug plugin (AdLib OPL2/OPL3 .d00/.hsc/.cmf/.imf/.rol/.a2m/…)" ON)
-option(REWAMP_WITH_SNDH     "Build the SNDH plugin (Atari ST .sndh via AtariAudio/Musashi)" ON)
-option(REWAMP_WITH_PSGPLAY  "Build the PSG play plugin (2nd .sndh engine: Atari ST machine + LMC1992)" ON)
-option(REWAMP_WITH_LAZYUSF  "Build the libLazyusf plugin (N64 .usf/.miniusf, R4300 interpreter)" ON)
-option(REWAMP_WITH_WONDERSWAN "Build the WonderSwan plugin (.wsr rip, beetle-wswan/Mednafen V30MZ core)" ON)
-option(REWAMP_WITH_HIGHLYQUIXOTIC "Build the HighlyQuixotic plugin (Capcom QSound .qsf/.qsflib)" ON)
-option(REWAMP_WITH_HIGHLYTHEORITICAL "Build the highlytheoritical plugin (Saturn .ssf / Dreamcast .dsf)" ON)
-option(REWAMP_WITH_LIBPT3 "Build the libpt3 plugin (ZX Spectrum .pt3, AY-3-8910/YM2149)" ON)
-option(REWAMP_WITH_ORGANYA "Build the Organya plugin (Cave Story .org)" ON)
-option(REWAMP_WITH_TIATRACKER "Build the TIATracker plugin (Atari VCS 2600 .ttt)" ON)
-option(REWAMP_WITH_PXTONE  "Build the PxTone Collage plugin (.ptcop/.pttune)" ON)
-option(REWAMP_WITH_PMD     "Build the PMD plugin (PC-98 .m/.m2/.mz, OPNA)" ON)
-option(REWAMP_WITH_MDX     "Build the MDX plugin (X68000 .mdx + .pdx, YM2151)" ON)
-option(REWAMP_WITH_FMP     "Build the FMP plugin (PC-98 .opi/.ovi/.ozi, OPNA)" ON)
-option(REWAMP_WITH_EUP     "Build the EUP plugin (FM Towns .eup, YM2612 + PCM)" ON)
-option(REWAMP_WITH_SC68    "Build the sc68 plugin (.sc68 Atari ST + Amiga, emu68 68k)" ON)
-option(REWAMP_WITH_SUNVOX  "Build the SunVox plugin (.sunvox modular synth+tracker)" ON)
-option(REWAMP_WITH_PROWIZARD "Build ProWizard packed-Amiga-module conversion (last-resort, no plugin of its own)" ON)
+rewamp_option(REWAMP_WITH_UADE     "Build the UADE Amiga custom-chip plugin (.ahx/.tfmx/.cust/.fc/…)" ON)
+rewamp_option(REWAMP_WITH_NEZ      "Build the NEZplug++ plugin (.hes HuC6280 / .sgc SN76489+YM2413)" ON)
+rewamp_option(REWAMP_WITH_KSS      "Build the libkss MSX plugin (.kss/.mgs/.bgm/.mpk/.mbm/.opx/.mus)" ON)
+rewamp_option(REWAMP_WITH_MAC      "Build the Monkey's Audio decoder plugin (.ape)" ON)
+rewamp_option(REWAMP_WITH_ASAP     "Build the ASAP Atari 8-bit plugin (.sap/.cmc/.rmt/...)" ON)
+rewamp_option(REWAMP_WITH_HVL      "Build the HivelyTracker plugin (.hvl/.ahx)" ON)
+rewamp_option(REWAMP_WITH_V2M      "Build the Farbrausch V2M plugin (.v2m/.v2mz)" ON)
+rewamp_option(REWAMP_WITH_MIDI     "Build the FluidLite MIDI plugin (.mid, SF2 SoundFont)" ON)
+rewamp_option(REWAMP_WITH_MT32     "Build the mt32emu MIDI plugin (.mid on a Roland MT-32 / CM-32L, user-imported ROMs)" ON)
+rewamp_option(REWAMP_WITH_GSF      "Build the libgsf plugin (GBA .gsf/.minigsf via VBA)" ON)
+rewamp_option(REWAMP_WITH_VIO2SF   "Build the vio2sf plugin (Nintendo DS .2sf/.mini2sf via melonDS)" ON)
+rewamp_option(REWAMP_WITH_NCSF     "Build the NCSF plugin (Nintendo DS .ncsf/.minincsf via SSEQPlayer)" ON)
+rewamp_option(REWAMP_WITH_SNSF     "Build the SNSF plugin (Super Nintendo .snsf/.minisnsf via snsf9x)" ON)
+rewamp_option(REWAMP_WITH_PROJECTM "Build the projectM (Milkdrop) visualizer — Android/desktop" ON)
+rewamp_option(REWAMP_PM_PROFILE    "projectM: log preset-load CPU/GL timings (adds a link sync point)" OFF)
+rewamp_option(REWAMP_WITH_ADPLUG   "Build the AdPlug plugin (AdLib OPL2/OPL3 .d00/.hsc/.cmf/.imf/.rol/.a2m/…)" ON)
+rewamp_option(REWAMP_WITH_SNDH     "Build the SNDH plugin (Atari ST .sndh via AtariAudio/Musashi)" ON)
+rewamp_option(REWAMP_WITH_PSGPLAY  "Build the PSG play plugin (2nd .sndh engine: Atari ST machine + LMC1992)" ON)
+rewamp_option(REWAMP_WITH_LAZYUSF  "Build the libLazyusf plugin (N64 .usf/.miniusf, R4300 interpreter)" ON)
+rewamp_option(REWAMP_WITH_WONDERSWAN "Build the WonderSwan plugin (.wsr rip, beetle-wswan/Mednafen V30MZ core)" ON)
+rewamp_option(REWAMP_WITH_HIGHLYQUIXOTIC "Build the HighlyQuixotic plugin (Capcom QSound .qsf/.qsflib)" ON)
+rewamp_option(REWAMP_WITH_HIGHLYTHEORITICAL "Build the highlytheoritical plugin (Saturn .ssf / Dreamcast .dsf)" ON)
+rewamp_option(REWAMP_WITH_LIBPT3 "Build the libpt3 plugin (ZX Spectrum .pt3, AY-3-8910/YM2149)" ON)
+rewamp_option(REWAMP_WITH_ORGANYA "Build the Organya plugin (Cave Story .org)" ON)
+rewamp_option(REWAMP_WITH_TIATRACKER "Build the TIATracker plugin (Atari VCS 2600 .ttt)" ON)
+rewamp_option(REWAMP_WITH_PXTONE  "Build the PxTone Collage plugin (.ptcop/.pttune)" ON)
+rewamp_option(REWAMP_WITH_PMD     "Build the PMD plugin (PC-98 .m/.m2/.mz, OPNA)" ON)
+rewamp_option(REWAMP_WITH_MDX     "Build the MDX plugin (X68000 .mdx + .pdx, YM2151)" ON)
+rewamp_option(REWAMP_WITH_FMP     "Build the FMP plugin (PC-98 .opi/.ovi/.ozi, OPNA)" ON)
+rewamp_option(REWAMP_WITH_EUP     "Build the EUP plugin (FM Towns .eup, YM2612 + PCM)" ON)
+rewamp_option(REWAMP_WITH_SC68    "Build the sc68 plugin (.sc68 Atari ST + Amiga, emu68 68k)" ON)
+rewamp_option(REWAMP_WITH_SUNVOX  "Build the SunVox plugin (.sunvox modular synth+tracker)" ON)
+rewamp_option(REWAMP_WITH_PROWIZARD "Build ProWizard packed-Amiga-module conversion (last-resort, no plugin of its own)" ON)
 # Official UnRAR: required for *solid* RARv3/v4 archives (RSN = solid SPC sets),
 # which libarchive cannot decode. Wires libgme's Rsn_Emu (RARDLL path).
-option(REWAMP_WITH_UNRAR    "Build the bundled UnRAR (solid RAR/RSN support in libgme)" ON)
+rewamp_option(REWAMP_WITH_UNRAR    "Build the bundled UnRAR (solid RAR/RSN support in libgme)" ON)
 # Path to an FFmpeg install (ffmpeg-kit prebuilt dir with include/ + lib/) for the
 # current ABI. When set + valid, vgmstream is built with USE_FFMPEG=ON.
-set(REWAMP_FFMPEG_DIR "" CACHE PATH "FFmpeg prebuilt dir (include/+lib/) for vgmstream")
+# Même remarque que pour rewamp_option: l'environnement ne traverse pas CMake
+# tout seul. Utile hors Android — la recette AppImage y met son FFmpeg minimal
+# (scripts/appimage/), justement pour ne pas dépendre du SONAME de la distro.
+if(DEFINED ENV{REWAMP_FFMPEG_DIR} AND NOT DEFINED REWAMP_FFMPEG_DIR)
+  set(REWAMP_FFMPEG_DIR "$ENV{REWAMP_FFMPEG_DIR}" CACHE PATH "FFmpeg prebuilt dir (include/+lib/) for vgmstream")
+  message(STATUS "rewamp: REWAMP_FFMPEG_DIR=${REWAMP_FFMPEG_DIR} (environnement)")
+else()
+  set(REWAMP_FFMPEG_DIR "" CACHE PATH "FFmpeg prebuilt dir (include/+lib/) for vgmstream")
+endif()
 # Échappatoire pour construire sur Linux sans FFmpeg (scope vgmstream réduit).
 # Sans ça, l'absence de FFmpeg est une ERREUR de configuration — voir le bloc
 # vgmstream. Ne concerne QUE Linux: Android pose lui-même REWAMP_FFMPEG_DIR par
 # ABI dans android/CMakeLists.txt, depuis le ffmpeg-kit vendoré, et le seul
 # risque de perte silencieuse y est l'ABI 32 bits sans tranche vendorée — déjà
 # fermé par l'exclusion 64-bit-only d'android/build.gradle.
-option(REWAMP_ALLOW_NO_FFMPEG "Linux: autoriser un vgmstream sans FFmpeg" OFF)
+rewamp_option(REWAMP_ALLOW_NO_FFMPEG "Linux: autoriser un vgmstream sans FFmpeg" OFF)
 
 # Builds libopenmpt as a static library from vendored source (git submodule),
 # self-contained with no external dependencies. See PLUGINS.md.
@@ -210,9 +266,13 @@ function(rewamp_add_libvgm target)
   # ── Utility layer (C) ──────────────────────────────────────────────────────
   # Charset conversion backend selection:
   #   Windows  → CPConv_Win.c  (MultiByteToWideChar)
-  #   Android  → CPConv_Stub.c (no-op; iconv is only in bionic from API 28,
-  #               but minSdk may be lower — audio is unaffected, only title
-  #               encoding conversion is skipped)
+  #   Android  → CPConv_Stub.c (le NÔTRE: iconv n'est dans bionic qu'à partir
+  #               de l'API 28 et notre plancher est 26. Il le cherche à
+  #               l'exécution et, à défaut, convertit lui-même l'UTF-16LE des
+  #               GD3 et le CP1252 des GYM. ⚠️ Ne PAS revenir à une recopie
+  #               d'octets: un GD3 est en UTF-16, donc « Game Over » sortait
+  #               « G » — la chaîne C s'arrête au premier octet nul. Oracle:
+  #               scripts/verify_cpconv.sh)
   #   Others   → CPConv_IConv.c (POSIX iconv, in glibc/macOS/iOS libc)
   if(WIN32)
     set(_str_conv "${_libvgm}/utils/StrUtils-CPConv_Win.c")
@@ -793,9 +853,17 @@ function(rewamp_add_kss target)
     "${KSS_ROOT}/modules/kmz80/kmz80c.c"
     "${KSS_ROOT}/modules/kmz80/kmz80t.c")
 
+  # FAC Soundtracker: le .MUS est enveloppé avec FST2.BIN — le replayer FAC
+  # d'origine — dans une image KSS que la VM Z80 de libkss exécute. Même patron
+  # que mgs2kss/mbm2kss/opx2kss, qui embarquent chacun leur driver MSX.
+  list(APPEND KSS_SOURCES "${REWAMP_THIRD_PARTY_DIR}/mus2kss/mus2kss.c")
+
   add_library(rewamp_kss STATIC ${KSS_SOURCES})
   set_target_properties(rewamp_kss PROPERTIES POSITION_INDEPENDENT_CODE ON)
   target_compile_definitions(rewamp_kss PRIVATE REWAMP_WITH_KSS=1)
+  # mus2kss porte un `main()` sous `#ifndef MUS2KSS_LIBRARY`: sans ce define, un
+  # SECOND point d'entrée entre dans le binaire.
+  target_compile_definitions(rewamp_kss PRIVATE MUS2KSS_LIBRARY=1)
   # libkss bundles Mamiya's kmz80 Z80 core; nez (wkmz80) bundles the SAME core and
   # exports 11 identical C symbols (kmevent_* + kmz80_ot_*, unprefixed — nez only
   # renamed its kmz80_/exec/reset to wkmz80_). Namespace libkss's to kss_* so both
@@ -810,6 +878,7 @@ function(rewamp_add_kss target)
     KMEVENT_FLAG=kss_KMEVENT_FLAG
     kmz80_ot_cbxx=kss_kmz80_ot_cbxx kmz80_ot_xx=kss_kmz80_ot_xx)
   target_include_directories(rewamp_kss PRIVATE
+    "${REWAMP_THIRD_PARTY_DIR}/mus2kss"
     "${KSS_ROOT}/src"
     "${KSS_ROOT}/src/kss"
     "${KSS_ROOT}/src/vm"
@@ -823,7 +892,10 @@ function(rewamp_add_kss target)
   # only subdirs (emu2149/, kmz80/, …), no loose generic headers, so exposing it to
   # ${target} can't shadow another plugin's headers.
   target_include_directories(rewamp_kss PUBLIC
-    "${KSS_ROOT}/src" "${KSS_ROOT}/src/kss" "${KSS_ROOT}/modules")
+    "${KSS_ROOT}/src" "${KSS_ROOT}/src/kss" "${KSS_ROOT}/modules"
+    # mus2kss.h: nom unique, aucun risque d'ombrage — le TU du greffon en a
+    # besoin pour la porte .MUS.
+    "${REWAMP_THIRD_PARTY_DIR}/mus2kss")
 
   target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_kss.cpp")
   target_compile_definitions(${target} PRIVATE REWAMP_WITH_KSS=1)
@@ -1732,10 +1804,55 @@ function(rewamp_add_midi target)
     PRIVATE "${FL_ROOT}/src"
     PUBLIC  "${FL_ROOT}/include")
 
-  target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_midi.c")
+  # tml.h implementation, shared with the MT-32 plugin (one per binary).
+  target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_midi.c" "${REWAMP_SRC_DIR}/rewamp_tml.c")
   target_compile_definitions(${target} PRIVATE REWAMP_WITH_MIDI=1)
   target_include_directories(${target} PRIVATE "${REWAMP_THIRD_PARTY_DIR}/tml")
   target_link_libraries(${target} PRIVATE rewamp_fluidlite)
+endfunction()
+
+# ── MT-32: Roland MT-32 / CM-32L emulation for .mid (munt mt32emu, LGPL-2.1) ──
+# Second MIDI engine next to FluidLite; shares tml.h (implementation TU
+# rewamp_tml.c is added by whichever of the two is on first). ROMs are NOT
+# bundled (Roland copyright): imported by the user into <datadir>/mt32.
+# Static C++ API build, internal resampler, no c_interface / VersionTagging.
+# Baked third_party/mt32emu/mt32emu/config.h (the upstream cmake generates it).
+function(rewamp_add_mt32 target)
+  set(MT_ROOT "${REWAMP_THIRD_PARTY_DIR}/mt32emu")
+  if(NOT EXISTS "${MT_ROOT}/mt32emu/Synth.cpp")
+    message(FATAL_ERROR "REWAMP_WITH_MT32=ON but mt32emu sources are missing at ${MT_ROOT}")
+  endif()
+  set(_mt_names Analog BReverbModel Display File FileStream LA32FloatWaveGenerator
+      LA32Ramp LA32WaveGenerator MidiStreamParser Part Partial PartialManager Poly
+      ROMInfo Synth Tables TVA TVF TVP SampleRateConverter)
+  set(_mt_srcs "")
+  foreach(_n IN LISTS _mt_names)
+    list(APPEND _mt_srcs "${MT_ROOT}/mt32emu/${_n}.cpp")
+  endforeach()
+  list(APPEND _mt_srcs
+    "${MT_ROOT}/mt32emu/sha1/sha1.cpp"
+    "${MT_ROOT}/mt32emu/srchelper/InternalResampler.cpp"
+    "${MT_ROOT}/mt32emu/srchelper/srctools/src/FIRResampler.cpp"
+    "${MT_ROOT}/mt32emu/srchelper/srctools/src/IIR2xResampler.cpp"
+    "${MT_ROOT}/mt32emu/srchelper/srctools/src/LinearResampler.cpp"
+    "${MT_ROOT}/mt32emu/srchelper/srctools/src/ResamplerModel.cpp"
+    "${MT_ROOT}/mt32emu/srchelper/srctools/src/SincResampler.cpp")
+  add_library(rewamp_mt32emu STATIC ${_mt_srcs})
+  set_target_properties(rewamp_mt32emu PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_STANDARD 11)
+  target_compile_definitions(rewamp_mt32emu PRIVATE MT32EMU_WITH_INTERNAL_RESAMPLER MT32EMU_WITH_STD_SNPRINTF)
+  # Per-part scope hooks (rewamp_mt32_capture.h) are included by relative path
+  # from the vendored Partial.cpp / Synth.cpp; only the top dir goes on the
+  # plugin's path (<mt32emu/mt32emu.h>): its generic header names (File.h,
+  # Types.h, Tables.h) stay off the target-wide include path.
+  target_include_directories(rewamp_mt32emu PRIVATE "${MT_ROOT}" "${REWAMP_SRC_DIR}")
+
+  target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_mt32.cpp")
+  if(NOT REWAMP_WITH_MIDI)
+    target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_tml.c")
+  endif()
+  target_compile_definitions(${target} PRIVATE REWAMP_WITH_MT32=1)
+  target_include_directories(${target} PRIVATE "${MT_ROOT}" "${REWAMP_THIRD_PARTY_DIR}/tml")
+  target_link_libraries(${target} PRIVATE rewamp_mt32emu)
 endfunction()
 
 # Official UnRAR as a static lib — only the .cpp files its makefile compiles
@@ -2139,6 +2256,42 @@ function(rewamp_add_adplug target)
   target_link_libraries(${target} PRIVATE rewamp_adplug)
 endfunction()
 
+# libxmp (.musx Archimedes Tracker, .liq, .fnk, .mgt, .stim, .emod, .mfp,
+# .coco, .muse) — the module formats libopenmpt cannot load. Three things this
+# target must keep doing:
+#   - LIBXMP_NO_PROWIZARD: third_party/prowizard IS libxmp's ProWizard set,
+#     vendored separately as a last-resort converter; building it twice would
+#     define pw_* / ptk_table / tun_table twice,
+#   - LIBXMP_NO_DEPACKERS: rewamp unpacks archives itself, and libxmp's
+#     depackers duplicate zip/lzma/crc32 symbols from libarchive + liblzma,
+#   - the force-included rename header, which prefixes the ~68 globals libxmp
+#     exports outside the xmp_/libxmp_ namespace (hio_*, read*/write* endian
+#     helpers, MD5*) — see third_party/libxmp/rewamp_xmp_rename.h.
+# Includes stay PRIVATE: libxmp's headers are named common.h / mixer.h /
+# player.h / format.h / loader.h, about as collision-prone as it gets.
+function(rewamp_add_libxmp target)
+  set(_x "${REWAMP_THIRD_PARTY_DIR}/libxmp")
+  if(NOT EXISTS "${_x}/src/mixer.c")
+    message(FATAL_ERROR "REWAMP_WITH_XMP=ON but libxmp is missing at ${_x}")
+  endif()
+
+  file(GLOB _xmp_src "${_x}/src/*.c" "${_x}/src/loaders/*.c")
+  add_library(rewamp_xmp STATIC ${_xmp_src})
+  set_target_properties(rewamp_xmp PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_compile_options(rewamp_xmp PRIVATE -w
+    "-include" "${_x}/rewamp_xmp_rename.h")
+  target_compile_definitions(rewamp_xmp PRIVATE
+    LIBXMP_STATIC LIBXMP_NO_DEPACKERS LIBXMP_NO_PROWIZARD)
+  # REWAMP_SRC_DIR: mixer.c's scope capture includes ModizerVoicesData.h.
+  target_include_directories(rewamp_xmp PRIVATE
+    "${_x}/src" "${_x}/include" "${REWAMP_SRC_DIR}")
+  target_include_directories(rewamp_xmp PUBLIC "${_x}/include")
+
+  target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_xmp.c")
+  target_compile_definitions(${target} PRIVATE REWAMP_WITH_XMP=1)
+  target_link_libraries(${target} PRIVATE rewamp_xmp)
+endfunction()
+
 function(rewamp_configure_decoders target)
   target_include_directories(${target} PRIVATE "${REWAMP_SRC_DIR}")
 
@@ -2147,6 +2300,10 @@ function(rewamp_configure_decoders target)
     target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_openmpt.c")
     target_compile_definitions(${target} PRIVATE REWAMP_WITH_OPENMPT)
     target_link_libraries(${target} PRIVATE openmpt)
+  endif()
+
+  if(REWAMP_WITH_XMP)
+    rewamp_add_libxmp(${target})
   endif()
 
   if(REWAMP_WITH_VGM)
@@ -2199,6 +2356,10 @@ function(rewamp_configure_decoders target)
 
   if(REWAMP_WITH_MIDI)
     rewamp_add_midi(${target})
+  endif()
+
+  if(REWAMP_WITH_MT32)
+    rewamp_add_mt32(${target})
   endif()
 
   if(REWAMP_WITH_GSF)

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'l10n.dart';
 import 'local_db.dart';
 import 'view_mode_picker.dart';
+import 'cancel_field.dart';
 
 /// Sur quoi trier une liste de bibliothèque. Chaque écran n'en propose que ce
 /// qui a un sens chez lui (un artiste n'a pas d'album).
@@ -49,6 +50,81 @@ List<LibraryItem> filterLibraryItems(List<LibraryItem> items, String query) {
           _fold(i.album ?? '').contains(q))
         i,
   ];
+}
+
+/// Seuil à partir duquel une liste ORDONNÉE (favoris, playlist) mérite un
+/// champ de filtre.
+///
+/// En dessous, l'œil va plus vite que le clavier et le champ ne fait que voler
+/// une ligne à la liste. Le champ n'est donc pas « toujours là, discret »: il
+/// APPARAÎT quand la liste devient trop longue pour être parcourue d'un coup
+/// d'œil.
+const kListFilterThreshold = 16;
+
+/// [query] se retrouve-t-elle dans l'un de [fields] ? Sans accent ni casse.
+///
+/// Une requête vide accepte tout: l'appelant n'a pas à traiter ce cas à part.
+bool matchesFilterQuery(String query, Iterable<String?> fields) {
+  final q = _fold(query);
+  if (q.isEmpty) return true;
+  for (final f in fields) {
+    if (f != null && f.isNotEmpty && _fold(f).contains(q)) return true;
+  }
+  return false;
+}
+
+/// Le champ de filtre d'une liste ORDONNÉE — favoris, playlists.
+///
+/// Distinct de [LibraryToolbar]: une playlist a un ORDRE qui lui appartient,
+/// donc pas de tri à proposer, et rien à disposer autrement. Ne reste que le
+/// filtre — mais avec la même apparence et la même croix d'annulation que
+/// partout ailleurs, ce qui est justement la raison de le poser ici et non
+/// dans chaque écran.
+class ListFilterField extends StatelessWidget {
+  final String query;
+  final ValueChanged<String> onQuery;
+  final String? hintText;
+
+  const ListFilterField({
+    super.key,
+    required this.query,
+    required this.onQuery,
+    this.hintText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: SizedBox(
+        height: 40,
+        child: CancelField(
+          hasText: query.isNotEmpty,
+          onCleared: (_) => onQuery(''),
+          builder: (_) => TextField(
+            // Même règle que [LibraryToolbar]: un `controller` recréé à chaque
+            // build replacerait le curseur au début à la frappe. L'état vit
+            // chez l'appelant, la valeur initiale suffit ici.
+            controller: TextEditingController(text: query)
+              ..selection = TextSelection.collapsed(offset: query.length),
+            onChanged: onQuery,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: hintText ?? l10n.searchFilterPlaceholder,
+              prefixIcon: const Icon(Icons.search, size: 18),
+              prefixIconConstraints:
+                  const BoxConstraints(minWidth: 34, minHeight: 34),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Tri STABLE et sans accent, avec un repli sur le nom pour que deux entrées
@@ -193,7 +269,10 @@ class LibraryToolbar extends StatelessWidget {
         Expanded(
           child: SizedBox(
             height: 40,
-            child: TextField(
+            child: CancelField(
+              hasText: query.isNotEmpty,
+              onCleared: (_) => onQuery(''),
+              builder: (_) => TextField(
               // Un `controller` recréé à chaque build replacerait le curseur au
               // début à la frappe: l'état vit chez l'appelant, la valeur
               // initiale suffit ici.
@@ -207,16 +286,10 @@ class LibraryToolbar extends StatelessWidget {
                 prefixIcon: const Icon(Icons.search, size: 18),
                 prefixIconConstraints:
                     const BoxConstraints(minWidth: 34, minHeight: 34),
-                suffixIcon: query.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        tooltip: l10n.commonClear,
-                        onPressed: () => onQuery(''),
-                      ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20)),
+              ),
               ),
             ),
           ),

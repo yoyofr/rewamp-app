@@ -54,12 +54,12 @@ static void my_application_activate(GApplication* application) {
 
   gtk_window_set_default_size(window, 1280, 720);
 
-  // Taille minimale, en parité avec macOS (MainFlutterWindow.swift, minSize
-  // 480x640): en dessous, la feuille du lecteur, les visualiseurs et les
-  // grilles se coupent. Le gabarit Flutter n'en pose aucune sur Linux, donc la
-  // fenêtre pouvait être réduite jusqu'à casser la mise en page — un défaut qui
-  // ne se voit qu'en redimensionnant, pas au lancement.
-  gtk_widget_set_size_request(GTK_WIDGET(window), 480, 640);
+  // Taille minimale (480x640, en parité avec macOS): posée depuis DART
+  // (lib/mini_window.dart, `MiniWindow.init` -> window_manager, qui passe par
+  // des geometry hints). ⚠️ NE PAS la remettre ici en
+  // `gtk_widget_set_size_request`: c'est un plancher DUR que les geometry
+  // hints ne peuvent pas traverser, donc le mini lecteur (440x132) ne pourrait
+  // jamais descendre sous 480x640.
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(

@@ -989,6 +989,35 @@ static INLINE int16_t calc_slot_hat(OPLLKSS *opll) {
 #define _MO(x) (-(x) >> 1)
 #define _RO(x) (x)
 
+//YOYOFR: notes par voie pour le viz-notes — Hz dans vgm_last_note (0 = voie
+// silencieuse), meme convention que libvgm/emu2413. La cle se lit dans
+// slot_key_status (le meme bit que le sequenceur d'enveloppe), et une voie dont
+// l'enveloppe est arrivee a EG_MUTE ne tient pas de note. Canaux 6-8 remplaces
+// par les percussions en mode rythme; 9-13 = BD HH SD TOM CYM, note arbitraire
+// (A3) tant que la cle est posee — une percussion n'a pas de hauteur.
+static void opllkss_capture_notes(OPLLKSS *opll) {
+  if (m_voicesForceOfs < 0) return;
+  for (int i = 0; i < 9; i++) {
+    unsigned note = 0, vol = 0;
+    const int fm = (i < 6) || !opll->rhythm_mode;
+    const OPLLKSS_SLOT *car = CAR(opll, i);
+    if (fm && car->fnum && BIT(opll->slot_key_status, (i << 1) | 1) && car->eg_out < EG_MUTE) {
+      note = (unsigned)(((uint64_t)car->fnum << car->blk) * opll->clk / 72 / (1 << 19));
+      vol = 1;
+    }
+    vgm_last_note[m_voicesForceOfs + i] = note;
+    vgm_last_vol[m_voicesForceOfs + i] = vol;
+    if (note) vgm_last_instr[m_voicesForceOfs + i] = (unsigned char)opll->patch_number[i];
+  }
+  static const int rslot[5] = { SLOT_BD2, SLOT_HH, SLOT_SD, SLOT_TOM, SLOT_CYM };
+  for (int k = 0; k < 5; k++) {
+    const OPLLKSS_SLOT *s = &opll->slot[rslot[k]];
+    const int on = opll->rhythm_mode && BIT(opll->slot_key_status, rslot[k]) && s->eg_out < EG_MUTE;
+    vgm_last_note[m_voicesForceOfs + 9 + k] = on ? 220 : 0;
+    vgm_last_vol[m_voicesForceOfs + 9 + k] = on ? 1 : 0;
+  }
+}
+
 static void update_output(OPLLKSS *opll) {
   int16_t *out;
   int i;
@@ -1069,6 +1098,7 @@ INLINE static void mix_output(OPLLKSS *opll) {
     
     //TODO:  MODIZER changes start / YOYOFR
     int64_t smplIncr=(int64_t)(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_rateratio;
+    opllkss_capture_notes(opll); //YOYOFR
     if (m_voicesForceOfs>=0) {
         int val=0;
         for (int i = 0; i < 14; i++) {
@@ -1111,6 +1141,7 @@ INLINE static void mix_output_stereo(OPLLKSS *opll) {
     
     //TODO:  MODIZER changes start / YOYOFR
     int64_t smplIncr=(int64_t)(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_rateratio;
+    opllkss_capture_notes(opll); //YOYOFR
     if (m_voicesForceOfs>=0) {
         int val=0;
         for (int i = 0; i < 14; i++) {

@@ -4,6 +4,10 @@
 #ifdef REWAMP_WITH_ZXTUNE
 
 #include "rewamp_plugin.h"
+
+/* Boucle forcée (rewamp_audio.c) — lus à l'open, comme vgmstream. */
+extern "C" int g_force_loop_mode;
+extern "C" int g_force_loop_native_veto;
 #include "rewamp_channel_data.h"   // per-voice oscilloscope buffers (m_voice_buff[*])
 
 #include "Spectre.h"   // ZxTuneWrapper + SongInfo (libzxtune/emscripten, on the include path)
@@ -29,7 +33,40 @@ struct RewampDecoder {
     double         rate;
     int16_t*       pcm;         // scratch stereo int16
     int            pcmFrames;
+    int            lastOrder;    // dernière (ordre,ligne) vue (boucle infinie)
+    int            lastRow;
+    int            cursorMoves;  // 1 dès que (ordre,ligne) a bougé une fois
+    int64_t        stalledFrames;// images rendues sans que la LIGNE bouge
 };
+
+/* Boucle infinie: au-delà de ce temps rendu SANS que la LIGNE du motif change,
+ * le module tourne sur place et on repart du début.
+ *
+ * ⚠️ Le critère est la (ORDRE, LIGNE), et les deux autres candidats ont été
+ * essayés puis écartés, chacun pour une raison mesurée:
+ *
+ *  • le SILENCE marche mais confond une vraie respiration du morceau avec une
+ *    boucle morte — un passage muet de plus de deux secondes se ferait couper;
+ *  • la POSITION (`get_current_position`) ne bouge JAMAIS: `Frame()` est un
+ *    compteur de TICS, pas un numéro de ligne. Il continue d'avancer pendant
+ *    que le module reboucle sur place, donc rien ne se déclenchait.
+ *
+ * La ligne, elle, distingue exactement les deux cas: un morceau qui se tait
+ * continue d'avancer dans son motif; un module qui reboucle sur une région
+ * vide reste sur la même ligne. C'est littéralement ce qu'on voit à l'écran —
+ * le curseur figé sur la dernière ligne pendant que le temps défile.
+ *
+ * 0,5 s: une ligne peut légitimement durer plusieurs tics à tempo lent, mais
+ * pas un demi-tic de seconde — et surtout, ce seuil ne dit rien du CONTENU
+ * musical, contrairement à celui du silence.
+ *
+ * ⚠️ **Le test ne s'arme qu'après avoir vu le curseur bouger AU MOINS UNE
+ * FOIS.** Tous les modules zxtune n'ont pas de motifs: pour un format STREAMÉ
+ * (.ym, .vtx, .psg), `streaming.cpp` rend `Position() = 0` et `Line() = 0` en
+ * dur, pour toujours. Sans cette garde, le détecteur aurait relancé chacun de
+ * ces morceaux toutes les demi-secondes. Un module à motifs, lui, fait bouger
+ * son curseur dès les premières lignes. */
+static const int64_t ZX_LOOP_STALL_FRAMES = ZXTUNE_RATE / 2;
 
 // ZX Spectrum / AY chiptune formats zxtune owns. Kept to ones not already handled
 // by other plugins (libvgm/libgme/openmpt/sid). Registered before vgmstream's
@@ -37,10 +74,36 @@ struct RewampDecoder {
 static const char* const kZxExts[] = {
     "ay", "ym", "vtx", "psg", "pt1", "pt2", "pt3", "stc", "st1", "stp",
     "asc", "sqt", "psc", "gtr", "chi", "dst", "sqd", "str", "dmm",
-    "tfc", "tfd", "tfe", "ftc", "psm", "pdt", "chp", "vt2", NULL
+    "tfc", "tfd", "tfe", "ftc", "psm", "pdt", "chp", "vt2",
+    /* E-Tracker (SAM Coupé, SAA1099): le décodeur était VENDORÉ et ENREGISTRÉ
+     * depuis le début (cop_supp + devices/saa), seul le routage d'extension
+     * manquait — même histoire que le .vt2. zxart sert la famille sous TROIS
+     * extensions (.cop, .etc, .saa — vérifié sur le catalogue: son format
+     * `cop` couvre les trois), et l'identité se confirme au CONTENU par le
+     * décodeur lui-même: une extension usurpée échoue à l'open() et retombe.
+     * Capture scope/notes/motifs: VÉRIFIÉE sur un .etc réel — le collecteur
+     * de motifs passe par CreateTrackStateIterator (le point unique des 18
+     * lecteurs, cop_supp compris) et la capture par voix couvre aussi le
+     * SAA, pas seulement l'AY de psg.h. */
+    "cop", "etc", "saa",
+    /* MultiTrackContainer (magie "MTC1", outil mtctool): plusieurs modules de
+     * formats zxtune INTERNES joues ENSEMBLE (fusion multi-device, le plus
+     * long fait la duree) — un .mtc = UN morceau, PAS des sous-chansons.
+     * Limite assumee: seuls les formats de notre set curate s'ouvrent a
+     * l'interieur (AY/tracker/TFM/SAA/DAC); un MTC-SID resterait muet. */
+    "mtc",
+    /* .mct: renommage vu sur zxart ("200%", Xenium 2024 — magie MTC1). La
+     * sonde native attrape la magie quel que soit le nom; l'alias sert aux
+     * portes DART (jouabilite par extension, palier de format). */
+    "mct", NULL
 };
 
 static int zx_probe(const char* ext, const uint8_t* hdr, size_t n) {
+    /* La magie "MTC1" AVANT la porte d'extension: zxart sert des fichiers mal
+     * nommes (.mct vu en prod, magie MTC1 a l'interieur) et une magie de
+     * conteneur dedie vaut plus qu'un suffixe. Score 101 = confirme par
+     * l'en-tete, passe devant le fourre-tout vgmstream quel que soit le nom. */
+    if (hdr && n >= 4 && memcmp(hdr, "MTC1", 4) == 0) return 101;
     if (!ext || !rewamp_ext_in_list(ext, kZxExts)) return 0;
     // An .ay is claimed by libgme too, and libgme wins on score (100: extension
     // plus a header it identifies). For the variant zxtune actually supports we
@@ -157,6 +220,10 @@ static RewampDecoder* zx_open(const char* path, RewampAudioFormat* outFormat) {
     }
     free(data);   // wrapper copies what it needs
 
+    /* Mode 1 (N boucles): pas de compte natif chez ce zxtune — veto, le
+     * générique Dart compte les passes (voir zx_configure_loop). */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
+
     RewampDecoder* dec = (RewampDecoder*)calloc(1, sizeof(*dec));
     if (!dec) { delete w; return NULL; }
     dec->w         = w;
@@ -164,6 +231,12 @@ static RewampDecoder* zx_open(const char* path, RewampAudioFormat* outFormat) {
     dec->rate      = ZXTUNE_RATE;
     dec->pcm       = NULL;
     dec->pcmFrames = 0;
+    /* -2 et non 0: `calloc` donne 0, et (ordre 0, ligne 0) est un état RÉEL —
+     * la toute première comparaison se croirait bloquée. -2 ne peut être ni
+     * une ligne valide ni le -1 que `pattern_cursor` rend quand il ne sait
+     * pas. */
+    dec->lastOrder = -2;
+    dec->lastRow   = -2;
 
     outFormat->channels   = 2;                 // wrapper renders stereo
     outFormat->sampleRate = (uint32_t)ZXTUNE_RATE;
@@ -181,7 +254,60 @@ static uint64_t zx_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     if (!dec->pcm) return 0;
 
     int rendered = dec->w->render_sound(dec->pcm, (size_t)frameCount);
-    if (rendered <= 0) return 0;
+
+    /* ⚠️ **`Sound::LOOPED` peut « boucler » sur RIEN.** Il reboucle au point de
+     * boucle du module, et quand ce point tombe dans une queue morte le
+     * renderer continue de rendre — indéfiniment, sans avancer et sans un son.
+     * Vu de l'utilisateur: le temps défile, le curseur de motif reste figé sur
+     * la dernière ligne. Mesuré sur « touchingthedew_6ch.vt2 ».
+     *
+     * Et comme on annonce cette boucle comme NATIVE, le repli générique de
+     * Dart est désarmé. Le filet doit donc vivre ici.
+     *
+     * Il ne teste PAS `rendered <= 0` (le rendu continue), NI le silence (un
+     * morceau a le droit de se taire), NI la position (elle avance quand
+     * même): il teste que la LIGNE du motif ne change plus. Voir
+     * ZX_LOOP_STALL_FRAMES. */
+    if (rendered > 0 && g_force_loop_mode == 2) {
+        int o = -1, r = -1;
+        dec->w->pattern_cursor(&o, &r);
+        if (o != dec->lastOrder || r != dec->lastRow) {
+            /* Le curseur bouge: ce module a bien un modèle de motif, le test
+             * devient valide pour lui (voir ZX_LOOP_STALL_FRAMES). */
+            if (dec->lastOrder != -2) dec->cursorMoves = 1;
+            dec->lastOrder = o;
+            dec->lastRow   = r;
+            dec->stalledFrames = 0;
+        } else if (dec->cursorMoves) {
+            dec->stalledFrames += rendered;
+            if (dec->stalledFrames >= ZX_LOOP_STALL_FRAMES) {
+                dec->stalledFrames = 0;
+                dec->w->seek_position(0);   /* millisecondes, comme zx_seek */
+                dec->w->pattern_cursor(&dec->lastOrder, &dec->lastRow);
+                rendered = dec->w->render_sound(dec->pcm, (size_t)frameCount);
+            }
+        }
+    }
+
+    if (rendered <= 0) {
+        /* ⚠️ **`Sound::LOOPED` ne suffit pas.** On annonce la boucle infinie
+         * comme NATIVE (voir zx_configure_loop), ce qui DÉSARME le repli
+         * générique de Dart: si le module ne reboucle pas, plus rien ne le
+         * relance et la piste s'arrête. Mesuré sur
+         * « touchingthedew_6ch.vt2 »: `natifRetenu=true`, LOOPED posé, et le
+         * rendu s'arrête quand même — tous les modules zxtune n'honorent pas
+         * ce paramètre (le décodeur Vortex TEXTE en particulier).
+         *
+         * Filet: quand le rendu se tarit en mode INFINI, on repart de zéro et
+         * on réessaie une fois. Inerte pour les modules dont LOOPED marche —
+         * ils ne rendent jamais 0 — et une relance au début vaut infiniment
+         * mieux qu'un silence. */
+        if (g_force_loop_mode != 2) return 0;
+        dec->stalledFrames = 0;
+        dec->w->seek_position(0);
+        rendered = dec->w->render_sound(dec->pcm, (size_t)frameCount);
+        if (rendered <= 0) return 0;
+    }
 
     const int samples = rendered * 2;
     const float inv = 1.0f / 32768.0f;
@@ -190,7 +316,10 @@ static uint64_t zx_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
 }
 
 static void zx_seek(RewampDecoder* dec, uint64_t frameIndex) {
-    if (dec && dec->w) dec->w->seek_position((int)(frameIndex * 1000 / (uint64_t)dec->rate));
+    if (!dec || !dec->w) return;
+    dec->stalledFrames = 0;   /* un seek repart d'un endroit qui progresse */
+    dec->w->seek_position((int)(frameIndex * 1000 / (uint64_t)dec->rate));
+    dec->w->pattern_cursor(&dec->lastOrder, &dec->lastRow);
 }
 
 static uint64_t zx_length(RewampDecoder* dec) {
@@ -198,6 +327,21 @@ static uint64_t zx_length(RewampDecoder* dec) {
     int ms = dec->w->get_max_position();
     if (ms <= 0) return 0;
     return (uint64_t)((double)ms * dec->rate / 1000.0);
+}
+
+/* Boucle FORCÉE (Réglages → Lecture / bouton repeat). zxtune boucle
+ * NATIVEMENT au point de boucle du module (`Sound::LOOPED`, un paramètre
+ * DYNAMIQUE relu par le renderer — donc applicable ici, après l'open) — c'est
+ * ce que le repli générique ne peut pas faire: sa relance repart du DÉBUT et
+ * s'entend (rapporté sur un .ay, « Midnight Resistance », en repeat-piste).
+ *
+ * Seul l'INFINI (mode 2) est natif: ce zxtune n'a pas de compte de boucles,
+ * donc un mode 1 (N passes) pose le VETO et laisse le générique Dart compter —
+ * comportement inchangé pour lui. */
+static void zx_configure_loop(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (!dec || !dec->w) return;
+    dec->w->setLoopMode(mode == 2 ? 1 : 0);
 }
 
 static void zx_close(RewampDecoder* dec) {
@@ -375,7 +519,7 @@ static const RewampPluginVTable kZxVTable = {
     zx_seek,
     zx_length,
     zx_close,
-    NULL,                    /* configure_loop */
+    zx_configure_loop,
     0,                       /* supportsNativeFadeout */
     NULL,                    /* engine_id */
     NULL,                    /* param_changed */

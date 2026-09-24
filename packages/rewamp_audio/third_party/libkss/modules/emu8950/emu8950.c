@@ -908,6 +908,35 @@ static void update_timer(OPLKSS *opl) {
 
 }
 
+//YOYOFR: notes par voie (voir opllkss_capture_notes dans kss_emu2413.c).
+// F-number sur 10 bits ici: F = fnum * 2^blk * clk/72 / 2^20 (fmopl de libvgm
+// ecrit la meme chose sous la forme fnum*2^blk/2*clk/72/2^19). Voie 14 = ADPCM,
+// sans hauteur: laissee a 0.
+static void oplkss_capture_notes(OPLKSS *opl) {
+  if (m_voicesForceOfs < 0) return;
+  for (int i = 0; i < 9; i++) {
+    unsigned note = 0, vol = 0;
+    const int fm = (i < 6) || !opl->rhythm_mode;
+    const OPLKSS_SLOT *car = CAR(opl, i);
+    if (fm && car->fnum && BIT(opl->slot_key_status, (i << 1) | 1) && car->eg_out < EG_MUTE) {
+      note = (unsigned)(((uint64_t)car->fnum << car->blk) * opl->clk / 72 / (1 << 20));
+      vol = 1;
+    }
+    vgm_last_note[m_voicesForceOfs + i] = note;
+    vgm_last_vol[m_voicesForceOfs + i] = vol;
+    if (note) vgm_last_instr[m_voicesForceOfs + i] = (unsigned char)(m_voicesForceOfs + i);
+  }
+  static const int rslot[5] = { SLOT_BD2, SLOT_HH, SLOT_SD, SLOT_TOM, SLOT_CYM };
+  for (int k = 0; k < 5; k++) {
+    const OPLKSS_SLOT *s = &opl->slot[rslot[k]];
+    const int on = opl->rhythm_mode && BIT(opl->slot_key_status, rslot[k]) && s->eg_out < EG_MUTE;
+    vgm_last_note[m_voicesForceOfs + 9 + k] = on ? 220 : 0;
+    vgm_last_vol[m_voicesForceOfs + 9 + k] = on ? 1 : 0;
+  }
+  vgm_last_note[m_voicesForceOfs + 14] = 0;
+  vgm_last_vol[m_voicesForceOfs + 14] = 0;
+}
+
 static void update_output(OPLKSS *opl) {
   int16_t *out;
   int i;
@@ -993,6 +1022,7 @@ INLINE static void mix_output(OPLKSS *opl) {
     
     //TODO:  MODIZER changes start / YOYOFR
     int64_t smplIncr=(int64_t)(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_rateratio;
+    oplkss_capture_notes(opl); //YOYOFR
     if (m_voicesForceOfs>=0) {
         int val=0;
         for (int i = 0; i < 15; i++) {
@@ -1038,6 +1068,7 @@ INLINE static void mix_output_stereo(OPLKSS *opl) {
     
     //TODO:  MODIZER changes start / YOYOFR
     int64_t smplIncr=(int64_t)(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_rateratio;
+    oplkss_capture_notes(opl); //YOYOFR
     if (m_voicesForceOfs>=0) {
         int val=0;
         for (int i = 0; i < 15; i++) {

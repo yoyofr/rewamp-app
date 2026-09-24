@@ -89,6 +89,21 @@ typedef struct {
 // A decoder plugin. One instance of this vtable is registered per library
 // (libopenmpt, libxmp, gme, ...). All plugins emit interleaved float32 PCM;
 // miniaudio handles device output, resampling and mixing downstream.
+/* Score au-dessus duquel un greffon affirme une IDENTIFICATION EXCLUSIVE: « ce
+ * fichier-ci est d'un format que je suis le seul à jouer », par opposition au
+ * « je sais lire cette extension » ordinaire.
+ *
+ * Un tel score passe DEVANT l'épingle de l'utilisateur
+ * (`rewamp_registry_set_preferred_plugin`), et c'est voulu: l'épingle arbitre
+ * entre des greffons qui savent TOUS jouer le fichier — « les .mod par
+ * libopenmpt plutôt que par UADE » — elle ne demande pas qu'on le joue MAL. Un
+ * Audio Sculpture est un `.mod` que libopenmpt rend comme un Startrekker
+ * ordinaire, échantillons synthétiques muets: ce n'est pas une préférence,
+ * c'est une erreur.
+ *
+ * Au-dessus de 100, le maximum d'un greffon qui confirme par l'en-tête. */
+#define REWAMP_SCORE_EXCLUSIVE 105
+
 typedef struct {
     // Human-readable backend name, e.g. "libopenmpt".
     const char* name;
@@ -100,6 +115,7 @@ typedef struct {
     // Returns a confidence score in [0, 100]; 0 means "cannot handle".
     // Convention: extension match alone ~= 60, header confirmation pushes higher.
     int (*probe)(const char* ext, const uint8_t* header, size_t headerSize);
+
 
     // Open a decoder for `path`. On success returns a non-NULL handle and fills
     // `outFormat`. Returns NULL on failure.
@@ -180,6 +196,49 @@ typedef struct {
     // visualizer reads it at the HEARD position (see rewamp_pattern.c). Writes
     // -1 to both when unknown.
     void (*pattern_cursor)(RewampDecoder* dec, int* order, int* row);
+    /* ⚠️ CE CHAMP EST EN FIN DE STRUCTURE, ET C'EST OBLIGATOIRE: les vtables
+     * des 38 greffons sont initialisées PAR POSITION, donc insérer un champ au
+     * milieu décalerait silencieusement tous leurs pointeurs de fonction — le
+     * `open` d'un greffon deviendrait son `probe`. Ajouté en queue, les
+     * initialiseurs plus courts laissent simplement le champ à zéro.
+     */
+    /* OPTIONNEL (NULL = utiliser `probe`). Même question, mais avec le CHEMIN
+     * et la TAILLE RÉELLE du fichier.
+     *
+     * Certains formats ne se distinguent que par un fichier VOISIN. Audio
+     * Sculpture est un Startrekker dont le seul signe est un compagnon `.as`
+     * à côté: même magie, même en-tête, deux moteurs différents. L'en-tête
+     * seul ne peut pas trancher, et aucune extension non plus — un Audio
+     * Sculpture s'appelle couramment `NOM.mod`.
+     *
+     * Même patron que `configure_loop`: un champ à NULL veut dire « je n'en ai
+     * pas besoin », et le registre retombe sur `probe`. */
+    int (*probe_path)(const char* ext, const uint8_t* header, size_t headerSize,
+                      const char* path, uint64_t fileSize);
+
+    /* 1 = ne PAS interroger ce greffon avec le TOKEN DE PRÉFIXE Amiga.
+     *
+     * Le registre score chaque greffon avec DEUX jetons — le suffixe et le
+     * préfixe de `token.nom` (`mdat.turrican`) — et garde le meilleur des deux.
+     * Pour un nom ORDINAIRE (`fosterzlx_borg.mp3`), ce « préfixe » est le
+     * radical, un jeton qui ne veut rien dire. Sans conséquence pour un
+     * greffon qui répond par une LISTE (le radical n'y est pas), mais fatal
+     * pour un FOURRE-TOUT: vgmstream rend 50 pour toute extension hors
+     * `kSkipExts`, donc le radical lui rendait le fichier que le suffixe lui
+     * avait fait REFUSER. `max(score("mp3") = 0, score("fosterzlx_borg") = 50)`
+     * — sa liste d'exclusion était inopérante sur TOUT nom de la forme
+     * `radical.ext`, c'est-à-dire presque tous: un `.mp3` partait chez FFmpeg
+     * au lieu du décodeur natif de miniaudio, sans que rien ne le signale
+     * (repéré au panneau ⓘ, « Format: FFmpeg format (mp3) »).
+     *
+     * Le côté Dart avait déjà tiré la leçon pour son classement d'archive
+     * (`_formatTier`: « l'EXTENSION fait autorité; le préfixe n'est qu'un
+     * REPLI », mesuré sur `bgm.vgz`); le registre C avait le même défaut.
+     *
+     * Champ EN FIN de structure: ces vtables sont initialisées par POSITION,
+     * un champ inséré au milieu décalerait les 39 greffons. */
+    int noPrefixProbe;
+
 } RewampPluginVTable;
 
 // Helper for plugins: returns 1 if `ext` (lowercase, no dot) is in a

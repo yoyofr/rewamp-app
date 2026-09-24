@@ -10,6 +10,22 @@
 		<array>
 			<string>en</string>
 			<string>fr</string>
+			<string>de</string>
+			<string>es</string>
+			<string>pt</string>
+			<string>it</string>
+			<string>nl</string>
+			<string>pl</string>
+			<string>fi</string>
+			<string>sv</string>
+			<string>no</string>
+			<string>da</string>
+			<string>cs</string>
+			<string>hu</string>
+			<string>ru</string>
+			<string>ja</string>
+			<string>zh</string>
+			<string>ko</string>
 		</array>
 		<key>CFBundleDisplayName</key>
 		<string>Rewamp</string>
@@ -455,6 +471,7 @@
 					<string>fwav</string>
 					<string>fwse</string>
 					<string>g1l</string>
+					<string>gbr</string>
 					<string>gbs</string>
 					<string>gbts</string>
 					<string>gca</string>

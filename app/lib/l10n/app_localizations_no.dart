@@ -15,6 +15,28 @@ class AppLocalizationsNo extends AppLocalizations {
   String get navSearch => 'Søk';
 
   @override
+  String get navLocal => 'Lokalt';
+
+  @override
+  String get settingsTabsOrderTitle => 'Rekkefølge på faner';
+
+  @override
+  String get settingsTabsOrderSubtitle =>
+      'Dra for å ordne. De fire første vises i bunnlinjen, resten under «Mer».';
+
+  @override
+  String get settingsTabsInBar => 'I linjen';
+
+  @override
+  String get settingsTabsInMore => 'Under «Mer»';
+
+  @override
+  String get settingsLaunchTab => 'Fane ved oppstart';
+
+  @override
+  String get settingsLaunchTabSubtitle => 'Hvilken fane appen åpner på';
+
+  @override
   String get navLibrary => 'Bibliotek';
 
   @override
@@ -42,6 +64,16 @@ class AppLocalizationsNo extends AppLocalizations {
   @override
   String playbackFileGone(String file) {
     return 'Filen finnes ikke lenger på serveren: $file';
+  }
+
+  @override
+  String playbackTrackNotInArchive(String file) {
+    return '$file finnes ikke i albumets arkiv — rippen lister filen, men leverer den ikke.';
+  }
+
+  @override
+  String playbackSourceTimeout(String host) {
+    return '$host svarte ikke. Sjekk tilkoblingen og prøv igjen.';
   }
 
   @override
@@ -130,16 +162,29 @@ class AppLocalizationsNo extends AppLocalizations {
   String get noRecentTracks => 'Ingen nylig spilte spor';
 
   @override
-  String get openLocalFile => 'Åpne lokal fil';
-
-  @override
   String get playerSourceLocal => 'lokal';
 
   @override
-  String get browseFiles => 'Bla gjennom filer';
+  String get homePlayFiles => 'Spill av filer';
 
   @override
-  String countTotal(int loaded, int total) {
+  String get homePlayFolder => 'Spill av en mappe';
+
+  @override
+  String get homeSectionsOrderTitle => 'Rekkefølge på seksjoner';
+
+  @override
+  String get homeSectionsOrderSubtitle =>
+      'Dra for å ordne startskjermen slik du vil.';
+
+  @override
+  String get homeSectionsOrderReset => 'Standardrekkefølge';
+
+  @override
+  String get homeSectionsOrderSettings => 'Rekkefølge på startseksjoner';
+
+  @override
+  String countTotal(int loaded, String total) {
     return '$loaded / $total resultater';
   }
 
@@ -552,6 +597,16 @@ class AppLocalizationsNo extends AppLocalizations {
   String get searchMinRating => 'Vurdering ≥';
 
   @override
+  String get searchPodium => 'Pallplass';
+
+  @override
+  String get searchPodiumAny => 'Hvilken som helst pallplass';
+
+  @override
+  String get searchPodiumUnavailable =>
+      'Pallfilteret er ikke tilgjengelig på serveren ennå';
+
+  @override
   String searchRatingValue(String value) {
     return '★ $value';
   }
@@ -631,7 +686,7 @@ class AppLocalizationsNo extends AppLocalizations {
   String get searchSurpriseTooltip => 'En tilfeldig sang';
 
   @override
-  String searchTabWithCount(String label, int count) {
+  String searchTabWithCount(String label, String count) {
     return '$label ($count)';
   }
 
@@ -689,6 +744,10 @@ class AppLocalizationsNo extends AppLocalizations {
   String get engineDescOpenmpt => 'Tracker-moduler (MOD/XM/S3M/IT/…)';
 
   @override
+  String get engineDescXmp =>
+      'Moduler libopenmpt ikke leser (.musx, .liq, .fnk…)';
+
+  @override
   String get engineDescVgm => 'VGM/S98/GYM/DRO — lydbrikker, scope per kanal';
 
   @override
@@ -699,7 +758,7 @@ class AppLocalizationsNo extends AppLocalizations {
   String get engineDescNsfplay => 'NES NSF/NSFe — stemmer per kanal';
 
   @override
-  String get engineDescGbsplay => 'Game Boy GBS';
+  String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
   String get engineDescSidplayfp => 'Commodore 64 SID (reSIDfp-motor)';
@@ -1052,6 +1111,9 @@ class AppLocalizationsNo extends AppLocalizations {
   }
 
   @override
+  String get subsongDefaultTrack => 'Standardspor';
+
+  @override
   String subsongCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -1136,6 +1198,21 @@ class AppLocalizationsNo extends AppLocalizations {
   String get libraryRemovedArtist => 'Artisten er fjernet fra biblioteket';
 
   @override
+  String get libraryImportBeforeAddTitle => 'Importere først?';
+
+  @override
+  String get libraryImportBeforeAddBody =>
+      'Denne filen spilles fra et midlertidig sted som systemet kan tømme. Importere den til det lokale biblioteket så oppføringen overlever?';
+
+  @override
+  String get libraryImportBeforeAddArchiveBody =>
+      'Dette sporet kommer fra et arkiv som er åpnet i en midlertidig hurtigbuffer. Hele arkivet importeres til det lokale biblioteket, følgefiler inkludert.';
+
+  @override
+  String get libraryAddNeedsCatalogueId =>
+      'Kan ikke legge til sporet: katalog-ID-en er ukjent på denne enheten.';
+
+  @override
   String songTilePlayFailed(String message) {
     return 'Avspilling mislyktes: $message';
   }
@@ -1211,6 +1288,9 @@ class AppLocalizationsNo extends AppLocalizations {
   String get vizNotes => 'Noter';
 
   @override
+  String get vizPiano => 'Piano';
+
+  @override
   String get vizPatterns => 'Patterns';
 
   @override
@@ -1218,6 +1298,9 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get patternSmoothScroll => 'Jevn rulling';
+
+  @override
+  String get patternPinnedRow => 'Festet aktiv rad';
 
   @override
   String get patternVolumeBars => 'Volumsøyler';
@@ -1296,7 +1379,7 @@ class AppLocalizationsNo extends AppLocalizations {
       count,
       locale: localeName,
       other: '$count formater',
-      one: '1 format',
+      one: '$count format',
     );
     return '$license · $_temp0';
   }
@@ -1373,6 +1456,9 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get playerAddToPlaylist => 'Legg til i spilleliste';
+
+  @override
+  String get playerEngineSettings => 'Motorinnstillinger';
 
   @override
   String get queueAddToPlaylist => 'Legg køen til i en spilleliste';
@@ -1887,9 +1973,6 @@ class AppLocalizationsNo extends AppLocalizations {
   String get playlistEmpty => 'Tom spilleliste';
 
   @override
-  String get playlistRemoveEntry => 'Fjern fra spillelisten';
-
-  @override
   String get trackOptionsAddToLibrary => 'Legg til i biblioteket';
 
   @override
@@ -2264,9 +2347,6 @@ class AppLocalizationsNo extends AppLocalizations {
   String get settingsLineThickness => 'Linjetykkelse';
 
   @override
-  String get settingsColors => 'Farger';
-
-  @override
   String get settingsScopeVoiceColor => 'Stemmeoscilloskop';
 
   @override
@@ -2288,9 +2368,6 @@ class AppLocalizationsNo extends AppLocalizations {
   String get settingsStereoRightColor => 'Stereo høyre';
 
   @override
-  String get settingsNotation => 'Notasjon (noter)';
-
-  @override
   String get settingsNotePalette => 'Fargepalett';
 
   @override
@@ -2303,10 +2380,21 @@ class AppLocalizationsNo extends AppLocalizations {
   String get settingsNoteStyleBox => 'Box';
 
   @override
-  String get settingsCrtEffects => 'CRT-effekter';
+  String get settingsVizAll => 'Alle visualiseringer';
 
   @override
-  String get settingsCrtGlow => 'Glød (glow)';
+  String get settingsVizScopes => 'Oscilloskop (stereo og per stemme)';
+
+  @override
+  String get settingsVizFrameRate => 'Bildefrekvens';
+
+  @override
+  String get settingsVizFrameRateScreen => 'Skjerm';
+
+  @override
+  String settingsValueFps(int value) {
+    return '$value fps';
+  }
 
   @override
   String get settingsCrtSpeed => 'Intensitet / hastighet';
@@ -2329,6 +2417,171 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get settingsSilenceDetection => 'Stillhetsdeteksjon';
+
+  @override
+  String get settingsCrossfade => 'Kryssfading';
+
+  @override
+  String get localActionPlay => 'Spill av filer eller en mappe';
+
+  @override
+  String get localActionImport => 'Importer filer eller en mappe';
+
+  @override
+  String localOpsImporting(String name) {
+    return 'Importerer $name…';
+  }
+
+  @override
+  String get localOpsImportingSelection => 'Importerer valgte filer…';
+
+  @override
+  String localOpsDeleting(String name) {
+    return 'Sletter $name…';
+  }
+
+  @override
+  String get localOpsPhaseCopying => 'kopierer';
+
+  @override
+  String get localOpsPhaseExtracting => 'pakker ut';
+
+  @override
+  String get localOpsPhaseRegistering => 'legger til i biblioteket';
+
+  @override
+  String get localOpsPhaseDeleting => 'fjerner filer';
+
+  @override
+  String get localImportFiles => 'Importer filer';
+
+  @override
+  String get storageLocalImports => 'Lokale importer';
+
+  @override
+  String get settingsVgmJapaneseTags => 'Japanske tagger (GD3)';
+
+  @override
+  String get settingsVgmJapaneseTagsHelp =>
+      'Foretrekker de japanske feltene (tittel, spill, artist) i VGM-tagger når de finnes.';
+
+  @override
+  String get localImportFolder => 'Importer en mappe';
+
+  @override
+  String get localLibraryTitle => 'På denne enheten';
+
+  @override
+  String get libraryOnAnotherDevice => 'På en annen enhet';
+
+  @override
+  String get localLibraryEmpty =>
+      'Ingen lokale importer ennå. Bruk «Importer filer» eller «Importer en mappe» fra startsiden.';
+
+  @override
+  String queueLimitReached(int count) {
+    return 'Køen er begrenset til de første $count sporene';
+  }
+
+  @override
+  String localDeleteTrackConfirm(String name) {
+    return 'Slette «$name»? Filen og tilhørende filer (omslag…) fjernes.';
+  }
+
+  @override
+  String localDeleteFolderConfirm(String name, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Slette mappen «$name» og dens $count spor?',
+      one: 'Slette mappen «$name» og dens $count spor?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String localImportDone(int count) {
+    return '$count spor importert til biblioteket';
+  }
+
+  @override
+  String localImportDoneAlbums(int tracks, int albums) {
+    return '$tracks spor importert — $albums album';
+  }
+
+  @override
+  String localImportFailed(String error) {
+    return 'Import mislyktes: $error';
+  }
+
+  @override
+  String get settingsCrossfadeHelp =>
+      'Toner slutten av hvert spor over i starten av neste. Ved 0 er avspillingen fortsatt sømløs.';
+
+  @override
+  String get settingsMinSubsongSection => 'For korte delspor';
+
+  @override
+  String get settingsMinSubsongTitle => 'Minste lengde';
+
+  @override
+  String get settingsMinSubsongHelp =>
+      'Kortere delspor holdes utenfor listen og køen – en spillfil inneholder ofte flere lydeffekter enn musikk. Ved 0 utelates ingenting; en ukjent lengde regnes aldri som kort.';
+
+  @override
+  String get localNewFolder => 'Ny mappe';
+
+  @override
+  String get localFolderName => 'Mappenavn';
+
+  @override
+  String get localRename => 'Gi nytt navn';
+
+  @override
+  String get localMoveTo => 'Flytt til…';
+
+  @override
+  String get localMove => 'Flytt';
+
+  @override
+  String get localMoveNothing => 'Ingenting ble flyttet';
+
+  @override
+  String get localNameInvalid => 'Ugyldig navn';
+
+  @override
+  String get localNameTaken => 'Navnet er allerede i bruk';
+
+  @override
+  String get localMoveIntoItself => 'En mappe kan ikke flyttes inn i seg selv';
+
+  @override
+  String get localManageFailed => 'Handlingen mislyktes';
+
+  @override
+  String subsongSkippedShort(int seconds) {
+    return 'Legges ikke i kø: under $seconds s (Innstillinger → Avspilling)';
+  }
+
+  @override
+  String get settingsQueuePrefetchSection => 'Nedlastinger i køen';
+
+  @override
+  String get settingsQueuePrefetchTitle => 'Last ned hele køen';
+
+  @override
+  String get settingsQueuePrefetchSubtitle =>
+      'Én fil om gangen; neste manglende spor starter så snart det forrige er ferdig. Av: bare neste spor.';
+
+  @override
+  String get settingsCdRipDeclickSection => 'CD-ripper';
+
+  @override
+  String get settingsCdRipDeclickTitle => 'Fjern klikk ved starten av sporet';
+
+  @override
+  String get settingsCdRipDeclickSubtitle =>
+      'Dårlige CD-ripper (mp3, ape, ogg, flac…) begynner ofte med noen korrupte sampler. De repareres til 200 ms ekte musikk er spilt; deretter trekker filteret seg tilbake.';
 
   @override
   String get settingsSilenceSkipTitle => 'Gå til neste spor ved stillhet';
@@ -2397,6 +2650,10 @@ class AppLocalizationsNo extends AppLocalizations {
   String get settingsEngineOpenmptSubtitle => 'Trackere — MOD, XM, S3M, IT…';
 
   @override
+  String get settingsEngineXmpSubtitle =>
+      'Moduler libopenmpt ikke leser — .musx, .liq, .fnk…';
+
+  @override
   String get settingsEngineGmeSubtitle =>
       'SPC, VGM(gme), KSS, AY… — EQ, stereo';
 
@@ -2437,6 +2694,9 @@ class AppLocalizationsNo extends AppLocalizations {
   String get settingsMasterVolume => 'Hovedvolum';
 
   @override
+  String get settingsAmplification => 'Forsterkning';
+
+  @override
   String get settingsAmigaFilter => 'Amiga-filter';
 
   @override
@@ -2450,6 +2710,17 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get settingsChorus => 'Chorus';
+
+  @override
+  String get playbackMt32NoRoms =>
+      'Denne MIDI-filen er skrevet for en Roland MT-32. Uten ROM-ene spilles den med SoundFonten, med instrumentene oversatt til General MIDI — importer ROM-ene i Innstillinger › Motorer › Munt.';
+
+  @override
+  String get settingsMidiMt32ToGm => 'Tilpass MT-32-filer';
+
+  @override
+  String get settingsMidiMt32ToGmSubtitle =>
+      'En MIDI skrevet for Roland MT-32 nummererer programmene etter MT-32-ens egen liste: oversatt til nærmeste General MIDI-instrument høres de troverdige ut i stedet for tilfeldige.';
 
   @override
   String get settingsInterpNone => 'Ingen';
@@ -2919,6 +3190,142 @@ class AppLocalizationsNo extends AppLocalizations {
   }
 
   @override
+  String get storageTitle => 'Lagring';
+
+  @override
+  String get storageSubtitle => 'Hva appen beholder på disk, med sletting';
+
+  @override
+  String get storageDownloads => 'Nedlastinger';
+
+  @override
+  String get storageArtworkCache => 'Omslagsbuffer';
+
+  @override
+  String get storageSoundfonts => 'SoundFonts';
+
+  @override
+  String get storagePresets => 'Visualiseringsforvalg';
+
+  @override
+  String get storageOpenedFiles => 'Åpnede filer';
+
+  @override
+  String get storageOpenedEmpty =>
+      'Filer åpnet utenfra (deling, «Åpne med», velgeren på mobil) kopieres hit.';
+
+  @override
+  String get storageInUse => 'i en spilleliste eller biblioteket';
+
+  @override
+  String get storageDeleteAll => 'Slett alle';
+
+  @override
+  String get storageClear => 'Tøm';
+
+  @override
+  String get storageDeleteSelection => 'Slett utvalget';
+
+  @override
+  String get storageSelectAll => 'Velg alle';
+
+  @override
+  String get storageFilterHint => 'Filtrer på navn';
+
+  @override
+  String get storageNoMatch => 'Ingen fil samsvarer med filteret.';
+
+  @override
+  String storageSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count valgt',
+      one: '$count valgt',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Slette $count filer?',
+      one: 'Slette $count fil?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionInUseBody(int count, int inUse) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Slette $count filer? $inUse brukes av en spilleliste eller biblioteket — de oppføringene mister filen sin.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get storageDownloadsClearBody =>
+      'Slette alle nedlastede filer og bibliotekradene deres? Favoritter og spillelister beholder oppføringene, men filene må lastes ned på nytt.';
+
+  @override
+  String get storageSoundfontsClearBody =>
+      'Slette alle SoundFonts, også importerte? Katalogens lastes ned igjen ved behov; importerte går tapt.';
+
+  @override
+  String get storagePresetsClearBody =>
+      'Slette nedlastede preset-pakker og importerte presets? Medfølgende beholdes; pakker lastes ned igjen, importerte går tapt.';
+
+  @override
+  String get storageOpenedDeleteAllTitle => 'Slett åpnede filer';
+
+  @override
+  String get storageInUseDeleteTitle => 'Filen er i bruk';
+
+  @override
+  String get storageInUseDeleteBody =>
+      'En spilleliste eller biblioteket peker fortsatt på denne filen. Sletting etterlater oppføringene uten fil.';
+
+  @override
+  String storageCategoryStat(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count filer — $size',
+      one: '$count fil — $size',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDownloadsSubtitle(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count filer — $size · håndteres via album og spor',
+      one: '$count fil — $size · håndteres via album og spor',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageOpenedDeleteAllBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Slette $count filer? Filer brukt av en spilleliste eller biblioteket beholdes.',
+      one:
+          'Slette $count fil? Filer brukt av en spilleliste eller biblioteket beholdes.',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetStats => 'Nullstill statistikken';
 
   @override
@@ -2946,6 +3353,38 @@ class AppLocalizationsNo extends AppLocalizations {
   String get settingsResetDbTitle => 'Nullstille databasen?';
 
   @override
+  String get settingsCleanLocalTitle =>
+      'Rydd opp i uspillbare lokale oppføringer';
+
+  @override
+  String get cleanStageScan => 'Skanner oppføringer…';
+
+  @override
+  String get cleanStageSync => 'Synkroniserer med kontoen din…';
+
+  @override
+  String get cleanStagePurge => 'Fjerner fra kontoen din…';
+
+  @override
+  String get cleanStageDelete => 'Fjerner lokalt…';
+
+  @override
+  String get settingsCleanLocalBody =>
+      'Biblioteksoppføringer som peker på en fil som ikke lenger finnes på denne enheten. De fjernes også fra kontoen din, altså fra de andre enhetene dine.';
+
+  @override
+  String settingsCleanLocalDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count oppføringer fjernet',
+      one: '$count oppføring fjernet',
+      zero: 'Ingenting å rydde',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetDbBody =>
       'Dette sletter permanent:\n• hele lyttehistorikken\n• alle tellere\n• alle favoritter\n• alle spillelister\n• alle metadata i hurtiglageret\n\nLydfilene dine slettes ikke.';
 
@@ -2958,6 +3397,33 @@ class AppLocalizationsNo extends AppLocalizations {
   @override
   String get settingsDeleteDownloadsSubtitle =>
       'Sletter alle filene i online-mappen (spor, omslag)';
+
+  @override
+  String get settingsCleanAll => 'Rydd lokal database og hurtigbuffer';
+
+  @override
+  String get settingsCleanAllSubtitle =>
+      'Fjerner oppføringer uten fil, bibliotekoppføringer som peker på filer på en annen enhet, og tømmer hurtigbufferen for omslag og metadata';
+
+  @override
+  String get settingsCleanAllConfirmBody =>
+      'Bibliotekoppføringer som peker på filer på en annen enhet fjernes også fra kontoen din, altså fra de andre enhetene dine. Omslag og metadata lastes ned igjen ved neste avspilling.';
+
+  @override
+  String get settingsDataAdvanced => 'Avansert';
+
+  @override
+  String get settingsDataAdvancedSubtitle =>
+      'Hvert ryddetrinn for seg, hurtigbufferen og tilbakestillingene';
+
+  @override
+  String get settingsDataGroupDb => 'Database';
+
+  @override
+  String get settingsDataGroupCache => 'Hurtigbuffer';
+
+  @override
+  String get settingsDataGroupReset => 'Tilbakestill';
 
   @override
   String get settingsDeleteDownloadsTitle => 'Slette nedlastingene?';
@@ -3213,6 +3679,10 @@ class AppLocalizationsNo extends AppLocalizations {
   String get accountErrorCodeLength => 'Koden har 6 sifre';
 
   @override
+  String get albumOfflinePartial =>
+      'Frakoblet – viser det som allerede finnes på denne enheten';
+
+  @override
   String get accountErrorNetwork => 'Tilkoblingen mislyktes, prøv igjen';
 
   @override
@@ -3452,6 +3922,9 @@ class AppLocalizationsNo extends AppLocalizations {
   String get commonSave => 'Lagre';
 
   @override
+  String get commonImport => 'Importer';
+
+  @override
   String get accountDisplayName => 'Offentlig navn';
 
   @override
@@ -3576,46 +4049,63 @@ class AppLocalizationsNo extends AppLocalizations {
   String get settingsSpectrumModeRing => 'Ring';
 
   @override
+  String get settingsPianoMode => 'Pianoets utseende';
+
+  @override
+  String get settingsPianoModeRoll => 'Klaviaturer';
+
+  @override
+  String get settingsPianoModeFalling => 'Fallende noter';
+
+  @override
+  String get settingsPianoColor => 'Farger';
+
+  @override
+  String get settingsPianoColorVoice => 'Per stemme';
+
+  @override
+  String get settingsPianoColorInstrument => 'Per instrument';
+
+  @override
+  String get settingsPianoGlow => 'Glød på anslåtte tangenter';
+
+  @override
+  String get settingsPianoLighting => 'Lys og skygger på tangentene';
+
+  @override
+  String get settingsPianoVoiceNames => 'Stemmenes navn';
+
+  @override
+  String get featuredAdditionsHeader => 'Nytt i katalogen';
+
+  @override
+  String get featuredAdditionsCard => 'Nettopp lagt til';
+
+  @override
+  String get featuredAdditionsPlaylist => 'De nylig tillagte låtene';
+
+  @override
   String get releaseNotesTitle => 'Nyheter';
 
   @override
-  String get releaseNotesV4Downloads =>
-      'Nedlastinger: en lang kan avbrytes underveis, og et albumarkiv lastes ikke lenger ned flere ganger.';
+  String get releaseNotesV7Cpu =>
+      'Appen jobber ikke lenger i bakgrunnen når ingenting spilles: mye mindre prosessor og batteri.';
 
   @override
-  String get releaseNotesV4Queue =>
-      'Kø: en knapp for å tømme den, med bekreftelse — den stopper også avspillingen.';
+  String get releaseNotesV7VizIdle =>
+      'Visualiseringer står stille når avspillingen er stoppet, og er begrenset til 60 bilder per sekund (justerbart).';
 
   @override
-  String get releaseNotesV4DropFiles =>
-      'Filer sluppet på vinduet: spill nå, som neste eller til slutt; omslag og følgefiler holdes utenfor, og en spilleliste som følger med et arkiv respekteres (ekte titler, ingen døde spor).';
+  String get releaseNotesV7Subsongs =>
+      'Rettet: på PC Engine, Master System og Atari ST (.sndh) startet noen spor sangen ved siden av.';
 
   @override
-  String get releaseNotesV4Soundfont =>
-      'MIDI: importer din egen SoundFont fra enheten, ved siden av serverens.';
+  String get releaseNotesV7Piano =>
+      'Pianovisualiseringen forble tom med PC Engine-musikk.';
 
   @override
-  String get releaseNotesV4Formats =>
-      'Wwise-, FSB- og OGL-spillstrømmer spilles endelig (eget Vorbis).';
-
-  @override
-  String get releaseNotesV4Chips =>
-      'Seks lydbrikker til, valg av emuleringskjerne per brikke (SameBoy for Game Boy) og riktig tonehøyde på sampelbrikker.';
-
-  @override
-  String get releaseNotesV4Zx =>
-      'ZX Spectrum: .vt2 spilles, og note- og mønstervisningene dekker hele ZX-familien.';
-
-  @override
-  String get releaseNotesV4Loop =>
-      'Gjenta spor looper på ekte i stedet for å laste om, og telleren fryser ikke lenger ved uendelig løkke.';
-
-  @override
-  String get releaseNotesV4Info =>
-      'ⓘ-panelet lister filene et spor faktisk åpnet — følgefiler og biblioteker inkludert.';
-
-  @override
-  String get releaseNotesV4Linux => 'Linux-skrivebordsversjon.';
+  String get releaseNotesV7Database =>
+      'En database som ble skadet av en oppdatering, reparerer seg nå selv i stedet for å gjøre biblioteket utilgjengelig.';
 
   @override
   String get releaseNotesDataReset =>
@@ -3657,7 +4147,7 @@ class AppLocalizationsNo extends AppLocalizations {
       count,
       locale: localeName,
       other: '$count forhåndsinnstillinger lagt til side',
-      one: '1 forhåndsinnstilling lagt til side',
+      one: '$count forhåndsinnstilling lagt til side',
     );
     return '$_temp0';
   }
@@ -3908,4 +4398,164 @@ class AppLocalizationsNo extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get browseCharts => 'Topplister';
+
+  @override
+  String get chartsGlobal => 'Globalt';
+
+  @override
+  String get chartsByCollection => 'Etter samling';
+
+  @override
+  String get chartsTopSongs => 'Topplåter';
+
+  @override
+  String get chartsTopAlbums => 'Toppalbum';
+
+  @override
+  String get chartsRewampSection => 'Top rewamp';
+
+  @override
+  String get chartsPublishedSection => 'Publiserte lister';
+
+  @override
+  String chartsUpdated(String date) {
+    return 'Oppdatert $date';
+  }
+
+  @override
+  String get chartsSource => 'Kilde';
+
+  @override
+  String get settingsMidiSynth => 'MIDI-synth';
+
+  @override
+  String get settingsMidiSynthAuto => 'Automatisk (MT-32 når filen ber om det)';
+
+  @override
+  String get settingsMidiSynthSoundfont => 'SoundFont (FluidLite)';
+
+  @override
+  String get settingsMidiSynthMt32 => 'Roland MT-32 (emulering)';
+
+  @override
+  String get settingsMt32Section => 'Roland MT-32-emulering';
+
+  @override
+  String get settingsMt32RomsTitle => 'MT-32-ROM-er';
+
+  @override
+  String get settingsMt32RomsMissing =>
+      'Ingen brukbar ROM-samling — importer kontroll- og PCM-ROM fra en MT-32 eller CM-32L';
+
+  @override
+  String settingsMt32RomsActive(String set) {
+    return 'Aktiv samling: $set';
+  }
+
+  @override
+  String get settingsMt32Import => 'Importer ROM-filer…';
+
+  @override
+  String get settingsMt32ImportSubtitle =>
+      'Kontroll- + PCM-ROM (.rom/.bin), MAME-halvdeler godtas. ROM-er følger ikke med appen.';
+
+  @override
+  String settingsMt32ImportRejected(String name) {
+    return '$name er ikke en kjent MT-32-/CM-32L-ROM';
+  }
+
+  @override
+  String settingsMt32ImportDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ROM-filer importert',
+      one: '$count ROM-fil importert',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsMt32Model => 'Modell';
+
+  @override
+  String get settingsMt32ModelAuto => 'Automatisk (CM-32L hvis tilgjengelig)';
+
+  @override
+  String get settingsMt32Reverb => 'Klang';
+
+  @override
+  String get engineDescMt32 =>
+      'Roland MT-32-/CM-32L-emulering for MIDI (.mid/.midi/.kar/.rmi)';
+
+  @override
+  String get miniWindowEnter => 'Minispiller';
+
+  @override
+  String get miniWindowExit => 'Tilbake til hovedvinduet';
+
+  @override
+  String get miniWindowIdle => 'Ingenting spilles';
+
+  @override
+  String get settingsAlwaysOnTopTitle => 'Alltid øverst';
+
+  @override
+  String get settingsAlwaysOnTopSubtitle =>
+      'Holder vinduet over alle andre — både hovedvinduet og minispilleren';
+
+  @override
+  String get windowAlwaysOnTopOn => 'Alltid øverst: på';
+
+  @override
+  String get miniWindowCoverFill => 'Zoom omslaget så det fyller flaten';
+
+  @override
+  String get miniWindowCoverFit => 'Vis hele omslaget';
+
+  @override
+  String get releaseNotesV7Mt32 =>
+      'Ny Roland MT-32-motor for MIDI-spillmusikk, med dine egne ROM-filer. Uten ROM-filer tilpasses en MIDI skrevet for MT-32 til General MIDI.';
+
+  @override
+  String get releaseNotesV7Xmp =>
+      'Ti sjeldne modulformater spilles nå (Archimedes Tracker .musx, .liq, .fnk…).';
+
+  @override
+  String get releaseNotesV7AmigaAdlib =>
+      'Westwoods AdLib-musikk (.adl) spiller alle sporene sine, og BP SoundMon V1 gjenkjennes på Amiga.';
+
+  @override
+  String get releaseNotesV7MiniPlayer =>
+      'Mac: en minispiller, kompakt eller med visualiseringen, og valget «Alltid øverst».';
+
+  @override
+  String get releaseNotesV7Instruments =>
+      'Oscilloskop, noter og piano kan navngi og fargelegge hvert instrument, ikke bare hver stemme.';
+
+  @override
+  String get releaseNotesV7Podium =>
+      'Søk: filtrer låtene som ble nummer 1, 2 eller 3 i en demoscenekonkurranse.';
+
+  @override
+  String get releaseNotesV7ShortSubsongs =>
+      'For korte dellåter (lydeffekter fra spill) utelates fra «Spill alle» — terskel under Innstillinger → Avspilling.';
+
+  @override
+  String get releaseNotesV7LocalFolders =>
+      'Importene dine: slipp en hel mappe (arkiver pakkes ut), og opprett, gi nytt navn til eller flytt mapper.';
+
+  @override
+  String get releaseNotesV7Midi =>
+      'MIDI: trommene høres ikke lenger ut som et piano, og volumet klipper ikke lenger.';
+
+  @override
+  String get releaseNotesV7ProjectM =>
+      'projectM: forhåndsinnstillinger gjentas ikke lenger fra én oppstart til den neste, og en forhåndsinnstilling blir ikke lenger feilaktig satt til side etter en pause.';
+
+  @override
+  String get libraryFileMissing => 'Filen mangler';
 }

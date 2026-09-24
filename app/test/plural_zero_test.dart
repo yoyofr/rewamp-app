@@ -8,6 +8,8 @@
 // Le remède est d'interpoler le nombre dans TOUTES les branches, y compris la
 // singulière. Ce test le fige sur les deux familles de langues: celles où zéro
 // est « one » (fr, pt) et celles où il ne l'est pas (en, de…).
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rewamp/l10n/app_localizations.dart';
 import 'package:rewamp/l10n/app_localizations_de.dart';
@@ -16,6 +18,37 @@ import 'package:rewamp/l10n/app_localizations_fr.dart';
 import 'package:rewamp/l10n/app_localizations_pt.dart';
 
 void main() {
+  test('aucun ARB ne code un nombre en dur dans une branche =1', () {
+    // Balayage STATIQUE, pas une liste de clés: c'est une liste de clés qui a
+    // laissé passer `storageCategoryStat` — écrit avec `=1{1 file …}`, il
+    // affichait « 1 fichier — 0 B » sur un poste VIDE (zéro est « one » en
+    // français), et les quatre tests ci-dessous, verts, n'en savaient rien.
+    // La règle mécanique: toute branche `=1{…}` doit interpoler {count} — ou
+    // n'être qu'un libellé sans chiffre (« Un morceau »), que ce scan tolère
+    // en ne cherchant que les branches commençant par un chiffre littéral.
+    final offenders = <String>[];
+    final re = RegExp(r'=1\{([^{}]|\{[a-zA-Z]+\})*\}');
+    for (final f in Directory('lib/l10n')
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.arb'))) {
+      final text = f.readAsStringSync();
+      for (final m in re.allMatches(text)) {
+        final branch = m.group(0)!;
+        final body = branch.substring(3, branch.length - 1);
+        final hasDigit = RegExp(r'^\s*\d').hasMatch(body);
+        final hasCount = body.contains('{count}') ||
+            RegExp(r'\{\w*[Cc]ount\w*\}').hasMatch(body);
+        if (hasDigit && !hasCount) {
+          offenders.add('${f.path}: $branch');
+        }
+      }
+    }
+    expect(offenders, isEmpty,
+        reason: 'branche =1 avec nombre en dur (zéro est « one » en fr/pt):\n'
+            '${offenders.join('\n')}');
+  });
+
   test('zéro ne s\'affiche jamais « 1 » (français: zéro est « one »)', () {
     final fr = AppLocalizationsFr();
     expect(fr.libraryItemCount(0), '0 élément');

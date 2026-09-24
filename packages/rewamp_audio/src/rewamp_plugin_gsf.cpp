@@ -11,7 +11,12 @@
 #ifdef REWAMP_WITH_GSF
 
 #include "rewamp_plugin.h"
+
+/* Boucle forcée (rewamp_audio.c) — lus à l'open. */
+extern "C" int g_force_loop_mode;
+extern "C" int g_force_loop_native_veto;
 #include "rewamp_channel_data.h"   // per-voice scope + chip grouping
+#include "rewamp_psf_fade.h"   // fondu de fin décrit par le tag `fade`
 #include "libpsflib/psflib.h"      // GSF is a PSF (0x22): read length/fade tags
 
 #include <stdio.h>
@@ -74,6 +79,7 @@ struct RewampDecoder {
     int      rate;
     int      ended;
     uint64_t totalFrames;        // from the length+fade tags; 0 = unknown
+    uint64_t fadeFrames = 0;     // rampe finale (tag `fade`), 0 = aucune
     uint64_t framePos;           // frames emitted so far
 };
 
@@ -105,8 +111,7 @@ struct gsf_tag_state {
     char title[256], artist[256], game[256], year[64], copyright[256], gsfby[128];
 };
 static void gsf_copy_tag(char* dst, size_t n, const char* v) {
-    strncpy(dst, v, n - 1); dst[n - 1] = '\0';
-    char* nl = strchr(dst, '\n'); if (nl) *nl = '\0';
+    rewamp_psf_tag_copy(dst, n, v);   // 1re ligne, Shift-JIS → UTF-8 au besoin
 }
 static int gsf_tag_cb(void* ctx, const char* name, const char* value) {
     struct gsf_tag_state* st = (struct gsf_tag_state*)ctx;
@@ -153,6 +158,9 @@ static int gsf_probe(const char* ext, const uint8_t* hdr, size_t n) {
 }
 
 static RewampDecoder* gsf_open(const char* path, RewampAudioFormat* outFormat) {
+    /* Mode 1 (N boucles): pas de compte natif -> veto, le generique
+     * Dart compte les passes (voir configure_loop ci-dessous). */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
     if (!path) return NULL;
 
     char clean[4096];
@@ -192,6 +200,8 @@ static RewampDecoder* gsf_open(const char* path, RewampAudioFormat* outFormat) {
         int len_ms = ts.length_ms + ts.fade_ms;
         if (len_ms > 0)
             d->totalFrames = (uint64_t)((double)len_ms / 1000.0 * d->rate);
+        d->fadeFrames = rewamp_psf_fade_frames(ts.fade_ms, (uint32_t)d->rate,
+                                               d->totalFrames);
     }
     d->framePos = 0;
 
@@ -233,6 +243,7 @@ static RewampDecoder* gsf_open(const char* path, RewampAudioFormat* outFormat) {
 
 static uint64_t gsf_read(RewampDecoder* d, float* out, uint64_t frameCount) {
     if (!d || !d->fifo || !out || frameCount == 0 || d->ended) return 0;
+    const uint64_t fadeBase = d->framePos;
     g_active = d;
 
     // Enforce the tagged length (length + fade): GSF drivers loop forever.
@@ -260,6 +271,8 @@ static uint64_t gsf_read(RewampDecoder* d, float* out, uint64_t frameCount) {
         out[produced * 2 + 1] = r * inv;
         produced++;
     }
+    rewamp_psf_fade_apply(out, produced, 2, fadeBase,
+                          d->totalFrames, d->fadeFrames);
     d->framePos += produced;
     return produced;
 }
@@ -300,6 +313,24 @@ static uint64_t gsf_length(RewampDecoder* d) {
     return d ? d->totalFrames : 0;
 }
 
+
+/* Boucle FORCÉE (repeat-morceau): le moteur ÉMULÉ boucle DE LUI-MÊME au point
+ * de boucle de la musique — c'est notre troncature à totalFrames (longueur de
+ * catalogue/tag) qui coupait, et la relance générique repartait du DÉBUT, ce
+ * qui s'entend (même famille que le .ay zxtune, « Midnight Resistance »).
+ * Mode 2 (infini): on lève la troncature, l'émulation joue et boucle au bon
+ * endroit. Mode 1 (N passes): pas de compte natif ici → VETO posé à l'open,
+ * le générique Dart compte — comportement inchangé. Filet: un moteur qui
+ * s'arrêterait quand même rend un read() à 0 → rechargement replayCurrent,
+ * exactement le comportement d'avant ce câblage. */
+static void gsf_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (dec == NULL) return;
+    if (mode == 2) dec->totalFrames = 0;
+    // Toute boucle forcée retire le fondu natif: voir rewamp_psf_fade.h.
+    if (mode != 0) dec->fadeFrames = 0;
+}
+
 static void gsf_close(RewampDecoder* d) {
     if (!d) return;
     if (g_active == d) {
@@ -328,7 +359,7 @@ static const RewampPluginVTable kGsfVTable = {
     gsf_seek,
     gsf_length,
     gsf_close,
-    NULL,               /* configure_loop */
+    gsf_configure_loop_fn,
     0,                  /* supportsNativeFadeout */
     "gsf",              /* engine_id */
     gsf_param_changed,  /* live settings */

@@ -1234,6 +1234,40 @@ static int do_specialties (void)
     return 0;
 }
 
+/*
+ * rewamp: uadecore tourne DANS notre processus (pthread, -DUADE_IN_PROCESS),
+ * là où l'amont le lance en SOUS-PROCESSUS. Conséquence: un lecteur Amiga qui
+ * part dans le décor coûte à l'amont un « score died » propre, et chez nous un
+ * SIGSEGV qui emporte toute l'application.
+ *
+ * `regs.pc_p` est un pointeur HÔTE brut. Seuls les SAUTS passent par
+ * get_real_address() (et donc par default_xlate(), qui sait finir le morceau);
+ * l'exécution LINÉAIRE avance ensuite par simple `pc_p += n` sans jamais
+ * revérifier. Un PC qui sort de la mémoire allouée lit donc du tas hôte, puis
+ * finit par toucher une page non mappée.
+ *
+ * On borne donc la lecture d'opcode: une entrée de table + un appel indirect
+ * par instruction, le même `check` que valid_address() utilise partout.
+ * On termine comme default_xlate: message de fin, puis PC redirigé vers la
+ * même cible sûre, pour que la CPU reste vivante jusqu'à ce que le client
+ * prenne acte.
+ */
+static int uadecore_pc_is_mapped(void)
+{
+	uaecptr safepc;
+
+	if (valid_address(m68k_getpc(), 4))
+		return 1;
+
+	uadecore_song_end("the amiga player jumped outside of memory", 1);
+
+	safepc = get_long(0xF80000);
+	if (!valid_address(safepc, 4))
+		return 0;
+	m68k_setpc(safepc);
+	return 1;
+}
+
 void m68k_run_1 (void)
 {
   int cycles;
@@ -1246,6 +1280,9 @@ void m68k_run_1 (void)
 #endif
 
   while (1) {
+
+    if (!uadecore_pc_is_mapped())
+      break;
 
     opcode = GET_OPCODE;
 

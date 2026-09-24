@@ -6,6 +6,7 @@ import 'app_snack.dart';
 import 'favorite_color.dart';
 import 'package:path/path.dart' as p;
 import 'l10n.dart';
+import 'library_identity.dart';
 import 'local_db.dart';
 import 'queue_position_icon.dart';
 import 'player_controller.dart';
@@ -74,6 +75,18 @@ OnNavigateTag? globalOnNavigateTag;
 /// tag, it is released BY a group). Set once by AppShell so the push lands on
 /// the active tab navigator and the player is restored on the way back.
 OnOpenGroup? globalOnOpenGroup;
+/// Écran d'ALBUM. Posé une fois par AppShell, comme les autres crochets — il
+/// sert à la feuille de choix, qui décide SEULE si une ligne mérite un « Voir
+/// l'album » (voir [showPlayChoiceSheet]).
+OnNavigateAlbum? globalOnNavigateAlbum;
+/// Liste des SOUS-CHANSONS d'un fichier (ContainerSubsongScreen). Posé une
+/// fois par AppShell.
+void Function(SearchResult container)? globalOnOpenSubsongs;
+/// Même chose pour une ligne LOCALE. La fabrication du conteneur reste dans
+/// AppShell — c'est là que vit déjà la règle d'identité (`songId` vide = un
+/// conteneur purement local, que lisent `_openSubsongList` et
+/// ContainerSubsongScreen), et la refaire ici serait la dédoubler.
+void Function(TrackRecord track)? globalOnOpenSubsongsForTrack;
 
 /// Shows a modal bottom sheet with library + navigation + queue options for a
 /// [SearchResult]. Pass null for callbacks that are unavailable in context.
@@ -133,7 +146,10 @@ class _TrackOptionsSheetState extends State<_TrackOptionsSheet> {
   /// Canonical library_items key — ALWAYS subsong-scoped, matching
   /// PlayerController.libraryRefId, so this sheet and the player heart agree on
   /// the same row (they used to write two different keys for the same track).
-  String get _libraryRefId => '${r.songId}?subsong=${r.subsongIdx}';
+  /// La réécriture de la garde d'ajout est consultée: après un import, la
+  /// ligne vit sous la clé pérenne et plus sous celle-ci.
+  String get _libraryRefId =>
+      libraryRefRewrite('${r.songId}?subsong=${r.subsongIdx}');
 
   @override
   void initState() {
@@ -214,12 +230,23 @@ class _TrackOptionsSheetState extends State<_TrackOptionsSheet> {
 
   Future<void> _toggleLibrary() async {
     final next = !_inLibrary;
+    // Garde d'identité: un AJOUT ne peut pas nommer un chemin jetable ni un
+    // téléchargement sans songId (voir library_identity.dart). Elle passe
+    // AVANT le `setState` et le `pop`: elle peut ouvrir une boîte de dialogue,
+    // et l'utilisateur peut renoncer — auquel cas rien ne doit avoir bougé.
+    var refId = _libraryRefId;
+    if (next) {
+      final ok = await ensureLibraryRefForAdd(context, refId);
+      if (ok == null) return;
+      refId = ok;
+    }
+    if (!mounted) return;
     setState(() => _inLibrary = next);
     Navigator.pop(context);
     if (next) {
       await LocalDb.instance.addToLibrary(
         type:        'track',
-        refId:       _libraryRefId,
+        refId:       refId,
         name:        r.displayTitle,
         artist:      r.artistLabel.isEmpty ? null : r.artistLabel,
         album:       r.album,
@@ -233,13 +260,13 @@ class _TrackOptionsSheetState extends State<_TrackOptionsSheet> {
       // type) — returning nothing threw a TypeError on any download failure.
       RewampDb.downloadToLibrary(r).onError((_, __) => '');
     } else {
-      await LocalDb.instance.removeFromLibrary('track', _libraryRefId);
+      await LocalDb.instance.removeFromLibrary('track', refId);
       // Legacy rows were keyed by the bare song id — clean those up too.
       await LocalDb.instance.removeFromLibrary('track', r.songId);
     }
     // Le geste doit PARTIR: cette feuille écrivait en local et rien d'autre.
     await SyncService.recordTrackMembership(
-      refId:     _libraryRefId,
+      refId:     refId,
       value:     next,
       title:     r.displayTitle,
       artist:    r.artistLabel.isEmpty ? null : r.artistLabel,
@@ -828,11 +855,27 @@ enum PlayChoice { now, next, end, open }
 /// ensuite" / "Ajouter à la fin de la file". [openLabel] adds a navigation
 /// tile (album cards: "Voir l'album") so the popup never becomes a dead end
 /// to the detail screen the tap used to open. Null = dismissed.
+///
+/// [result] donne à la feuille de quoi décider SEULE d'un lien « voir »:
+/// « Voir les subsongs » pour un fichier à plusieurs sous-chansons, « Voir
+/// l'album » pour une ligne qui en nomme un. Le lecteur offrait déjà les deux;
+/// les LISTES ne les avaient pas, et un tap n'y menait qu'à la lecture.
+///
+/// ⚠️ Ces deux tuiles NAVIGUENT elles-mêmes et rendent `null` — le geste n'est
+/// pas un choix de lecture, et l'appelant le traite donc comme un abandon,
+/// sans avoir une ligne à écrire. C'est ce qui permet de les offrir dans TOUTE
+/// liste au lieu de les recoder à chaque écran; les crochets viennent
+/// d'AppShell ([globalOnOpenSubsongs], [globalOnNavigateAlbum]).
+///
+/// [openLabel] reste distinct: il rend `PlayChoice.open`, que son appelant
+/// gère lui-même (la carte d'album de la bibliothèque).
 Future<PlayChoice?> showPlayChoiceSheet(
   BuildContext context, {
   String? title,
   String? subtitle,
   String? openLabel,
+  SearchResult? result,
+  TrackRecord? track,
 }) {
   // Nothing queued and nothing playing: every choice collapses into "play
   // now" — skip the popup and start playback directly.
@@ -845,12 +888,19 @@ Future<PlayChoice?> showPlayChoiceSheet(
     // (mini player + nav bar, an AppShell Stack overlay) — a sheet pushed on
     // them slides in BEHIND the chrome. The root overlay covers everything.
     useRootNavigator: true,
+    // Sans ça, la feuille est plafonnée à 9/16 de l'écran et la colonne
+    // DÉBORDE dès que les tuiles de navigation s'ajoutent aux trois choix de
+    // lecture (mesuré: 3,5 px de trop). `isScrollControlled` lève le plafond,
+    // le `SingleChildScrollView` fait le reste sur un écran vraiment court —
+    // même patron que `showTrackOptionsSheet`, juste au-dessus.
+    isScrollControlled: true,
     builder: (ctx) {
       final l10n = ctx.l10n;
       final tt   = Theme.of(ctx).textTheme;
       final cs   = Theme.of(ctx).colorScheme;
       return SafeArea(
-        child: Column(
+        child: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (title != null) ...[
@@ -896,8 +946,98 @@ Future<PlayChoice?> showPlayChoiceSheet(
                 title: Text(openLabel),
                 onTap: () => Navigator.pop(ctx, PlayChoice.open),
               ),
+            // Les mêmes deux liens pour une ligne LOCALE (rails d'accueil,
+            // stats, bibliothèque), qui ne portent pas de SearchResult.
+            if (track != null &&
+                globalOnOpenSubsongsForTrack != null &&
+                (track.subsongCount ?? 0) > 1)
+              ListTile(
+                leading: const Icon(Icons.queue_music_outlined),
+                title: Text(l10n.playerViewSubsongs),
+                subtitle: Text(l10n.subsongCount(track.subsongCount!),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  globalOnOpenSubsongsForTrack!(track);
+                },
+              ),
+            if (openLabel == null &&
+                track != null &&
+                globalOnNavigateAlbum != null &&
+                (track.metaAlbum?.isNotEmpty ?? false))
+              ListTile(
+                leading: const Icon(Icons.album_outlined),
+                title: Text(l10n.playerViewAlbum),
+                subtitle: Text(track.metaAlbum!,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  globalOnNavigateAlbum!(
+                    track.metaAlbum!,
+                    collection: track.collectionSlug,
+                    platform:   track.platformName,
+                    artworkUrl: track.artworkUrl,
+                    albumId:    track.albumId,
+                  );
+                },
+              ),
+            // Voir les SOUS-CHANSONS.
+            //
+            // ⚠️ Une ligne de PALMARÈS est déjà résolue (le serveur y nomme la
+            // sous-chanson via `subsong_index`) et pourtant la tuile a sa place:
+            // c'est un LIEN, pas une lecture. Depuis un morceau on veut pouvoir
+            // remonter au fichier qui le contient — et un palmarès est
+            // justement l'endroit où l'on tombe sur une sous-chanson isolée.
+            // Ce qui doit rester interdit, c'est de DÉPLIER une ligne résolue
+            // pour la jouer (`_subsongEntries`), pas de la regarder.
+            //
+            // Reste exclu: un rang de tracklist (`uuid#i`), dont l'identité
+            // PORTE le rang — on ne peut pas en dériver le conteneur sans
+            // couper l'id, et `expandContainerAlbum` a déjà fait ce travail.
+            if (result != null &&
+                globalOnOpenSubsongs != null &&
+                !result.songId.contains('#') &&
+                (result.subsongCount ?? 0) > 1)
+              ListTile(
+                leading: const Icon(Icons.queue_music_outlined),
+                title: Text(l10n.playerViewSubsongs),
+                subtitle: Text(l10n.subsongCount(result.subsongCount!),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  // Rendre sa forme CONTENEUR à une ligne épinglée: l'écran
+                  // liste les sous-chansons du FICHIER, il ne doit pas hériter
+                  // du pin de la ligne d'où l'on vient.
+                  globalOnOpenSubsongs!(result.resolvedSubsong
+                      ? result.copyWith(resolvedSubsong: false, subsongIdx: 0)
+                      : result);
+                },
+              ),
+            // Voir l'ALBUM, quand la ligne en nomme un et qu'on n'a pas déjà
+            // proposé un `openLabel` (sinon deux tuiles pour le même écran).
+            if (openLabel == null &&
+                result != null &&
+                globalOnNavigateAlbum != null &&
+                (result.album?.isNotEmpty ?? false))
+              ListTile(
+                leading: const Icon(Icons.album_outlined),
+                title: Text(l10n.playerViewAlbum),
+                subtitle: Text(result.album!,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  globalOnNavigateAlbum!(
+                    result.album!,
+                    collection: result.collection,
+                    platform:   result.platform,
+                    artworkUrl: result.artworkUrl,
+                    albumId:    result.albumId,
+                  );
+                },
+              ),
             const SizedBox(height: 8),
           ],
+          ),
         ),
       );
     },

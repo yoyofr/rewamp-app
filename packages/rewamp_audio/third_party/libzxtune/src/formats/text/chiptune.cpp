@@ -136,6 +136,9 @@ extern const Char TFMMUSICMAKER05_DECODER_DESCRIPTION[] = {
 extern const Char TFMMUSICMAKER13_DECODER_DESCRIPTION[] = {
   'T','F','M',' ','M','u','s','i','c',' ','M','a','k','e','r',' ','v','1','.','3','+',0
 };
+extern const Char MULTITRACK_CONTAINER_DECODER_DESCRIPTION[] = {
+  'M','u','l','t','i','t','r','a','c','k',' ','C','o','n','t','a','i','n','e','r',0
+};
 extern const Char TURBOSOUND_DECODER_DESCRIPTION[] = {
   'T','u','r','b','o','S','o','u','n','d',0
 };

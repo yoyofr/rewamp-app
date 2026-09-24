@@ -19,7 +19,12 @@
 #ifdef REWAMP_WITH_HIGHLYQUIXOTIC
 
 #include "rewamp_plugin.h"
+
+/* Boucle forcée (rewamp_audio.c) — lus à l'open. */
+extern "C" int g_force_loop_mode;
+extern "C" int g_force_loop_native_veto;
 #include "rewamp_channel_data.h"
+#include "rewamp_psf_fade.h"   // fondu de fin décrit par le tag `fade`
 #include "ModizerVoicesData.h"
 #include "qsound.h"
 extern "C"
@@ -51,6 +56,7 @@ struct RewampDecoder
     uint16_t addrKey;
     uint8_t xorKey;
     uint64_t totalFrames; // from length+fade tags; 0 = unknown
+    uint64_t fadeFrames = 0;  // rampe finale (tag `fade`), 0 = aucune
     uint64_t framePos;
     int64_t lastMuteMask; // applied generic_mute_mask snapshot
 };
@@ -202,11 +208,7 @@ struct hq_tag_state
 };
 static void hq_copy_tag(char *dst, size_t n, const char *v)
 {
-    strncpy(dst, v, n - 1);
-    dst[n - 1] = '\0';
-    char *nl = strchr(dst, '\n');
-    if (nl)
-        *nl = '\0';
+    rewamp_psf_tag_copy(dst, n, v);   /* 1re ligne, Shift-JIS → UTF-8 au besoin */
 }
 static int hq_tag_cb(void *ctx, const char *name, const char *value)
 {
@@ -266,6 +268,9 @@ static void hq_apply_roms(RewampDecoder *dec)
 
 static RewampDecoder *hq_open(const char *path, RewampAudioFormat *outFormat)
 {
+    /* Mode 1 (N boucles): pas de compte natif -> veto, le generique
+     * Dart compte les passes (voir configure_loop). */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
     if (!path)
         return NULL;
 
@@ -353,6 +358,7 @@ static RewampDecoder *hq_open(const char *path, RewampAudioFormat *outFormat)
 
     if (ts.length_ms > 0)
         dec->totalFrames = (uint64_t)((double)(ts.length_ms + ts.fade_ms) / 1000.0 * QSF_RATE);
+        dec->fadeFrames = rewamp_psf_fade_frames(ts.fade_ms, QSF_RATE, dec->totalFrames);
 
     if (ts.title[0])
         rewamp_track_message_append("Title: %s\n", ts.title);
@@ -378,6 +384,7 @@ static uint64_t hq_read(RewampDecoder *dec, float *out, uint64_t frameCount)
 {
     if (!dec || frameCount == 0)
         return 0;
+    const uint64_t fadeBase = dec->framePos;
 
     if (dec->lastMuteMask != generic_mute_mask)
     {
@@ -414,6 +421,8 @@ static uint64_t hq_read(RewampDecoder *dec, float *out, uint64_t frameCount)
         if (got < want)
             break;
     }
+    rewamp_psf_fade_apply(out, written, 2, fadeBase,
+                          dec->totalFrames, dec->fadeFrames);
     return written;
 }
 
@@ -458,6 +467,24 @@ static uint64_t hq_length(RewampDecoder *dec)
     return dec ? dec->totalFrames : 0;
 }
 
+
+/* Boucle FORCÉE (repeat-morceau): le moteur ÉMULÉ boucle DE LUI-MÊME au point
+ * de boucle de la musique — c'est notre troncature à totalFrames (longueur de
+ * catalogue/tag) qui coupait, et la relance générique repartait du DÉBUT, ce
+ * qui s'entend (même famille que le .ay zxtune, « Midnight Resistance »).
+ * Mode 2 (infini): on lève la troncature, l'émulation joue et boucle au bon
+ * endroit. Mode 1 (N passes): pas de compte natif ici → VETO posé à l'open,
+ * le générique Dart compte — comportement inchangé. Filet: un moteur qui
+ * s'arrêterait quand même rend un read() à 0 → rechargement replayCurrent,
+ * exactement le comportement d'avant ce câblage. */
+static void hq_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (dec == NULL) return;
+    if (mode == 2) dec->totalFrames = 0;
+    // Toute boucle forcée retire le fondu natif: voir rewamp_psf_fade.h.
+    if (mode != 0) dec->fadeFrames = 0;
+}
+
 static void hq_close(RewampDecoder *dec)
 {
     if (!dec)
@@ -476,6 +503,7 @@ static const RewampPluginVTable kHqVTable = {
     hq_seek,
     hq_length,
     hq_close,
+    hq_configure_loop_fn,
 };
 
 extern "C" const RewampPluginVTable *rewamp_highlyquixotic_plugin(void) { return &kHqVTable; }

@@ -27,6 +27,10 @@
 #ifdef REWAMP_WITH_EUP
 
 #include "rewamp_plugin.h"
+
+/* Boucle forcée (rewamp_audio.c) — lus à l'open. */
+extern "C" int g_force_loop_mode;
+extern "C" int g_force_loop_native_veto;
 #include "rewamp_loaded_files.h"
 #include "rewamp_channel_data.h"
 #include "ModizerVoicesData.h"
@@ -242,6 +246,9 @@ static void eup_setup_and_load(RewampDecoder* dec, EUPHEAD* outHeader) {
 }
 
 static RewampDecoder* eup_open(const char* path, RewampAudioFormat* outFormat) {
+    /* Mode 1 (N boucles): pas de compte natif -> veto, le generique
+     * Dart compte les passes (voir configure_loop). */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
     if (!path) return NULL;
 
     RewampDecoder* dec = (RewampDecoder*)calloc(1, sizeof(*dec));
@@ -363,6 +370,21 @@ static uint64_t eup_length(RewampDecoder* dec) {
     return dec ? dec->totalFrames : 0;
 }
 
+
+/* Boucle FORCÉE (repeat-morceau): le moteur ÉMULÉ boucle DE LUI-MÊME au point
+ * de boucle de la musique — c'est notre troncature à totalFrames (longueur de
+ * catalogue/tag) qui coupait, et la relance générique repartait du DÉBUT, ce
+ * qui s'entend (même famille que le .ay zxtune, « Midnight Resistance »).
+ * Mode 2 (infini): on lève la troncature, l'émulation joue et boucle au bon
+ * endroit. Mode 1 (N passes): pas de compte natif ici → VETO posé à l'open,
+ * le générique Dart compte — comportement inchangé. Filet: un moteur qui
+ * s'arrêterait quand même rend un read() à 0 → rechargement replayCurrent,
+ * exactement le comportement d'avant ce câblage. */
+static void eup_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (dec != NULL && mode == 2) dec->totalFrames = 0;
+}
+
 static void eup_close(RewampDecoder* dec) {
     if (!dec) return;
     if (dec->player) dec->player->stopPlaying();
@@ -380,6 +402,7 @@ static const RewampPluginVTable kEupVTable = {
     eup_seek,
     eup_length,
     eup_close,
+    eup_configure_loop_fn,
 };
 
 extern "C" const RewampPluginVTable* rewamp_eup_plugin(void) { return &kEupVTable; }

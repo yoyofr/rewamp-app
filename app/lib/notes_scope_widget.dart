@@ -160,8 +160,12 @@ class _NotesScopeWidgetState extends State<NotesScopeWidget>
   void _onSettings() => _pushStyle();
 
   void _pushStyle() {
+    // Un réglage a changé: l'image doit suivre même à l'arrêt (voir
+    // src/rewamp_viz_idle.h).
+    widget.audio.vizWake();
     widget.audio.setNotePalette(UserSettings.instance.notePalette);
     widget.audio.setNoteStyle(UserSettings.instance.noteBoxStyle ? 1 : 0);
+    widget.audio.setNoteColorMode(UserSettings.instance.noteColorMode);
   }
 
   // ── Manual vertical range: drag = pan, pinch = zoom ───────────────────────
@@ -325,10 +329,10 @@ class _NotesScopeWidgetState extends State<NotesScopeWidget>
         ),
         if (_manual)
           Positioned(
-            // TOP-LEFT, le coin des réglages par visualiseur (spectre et
-            // patterns y mettent déjà les leurs). La notation n'a pas de
-            // cluster à cet endroit, donc AUTO ne recouvre rien.
-            top: 8, left: 8,
+            // TOP-LEFT, le coin des réglages par visualiseur, SOUS le
+            // cluster de la notation (8 px de marge + une rangée de 34 px,
+            // posée par VizSelectorWidget._notesControls) — comme le piano.
+            top: 8 + 34 + 6, left: 8,
             child: AnimatedOpacity(
               opacity: _autoBtnVisible ? 1.0 : 0.0,
               duration: const Duration(milliseconds: 200),
@@ -374,6 +378,9 @@ class _NotesScopeWidgetState extends State<NotesScopeWidget>
   }
 
   void _onTick(Duration elapsed) {
+    // Lecteur en pause et rien qui bouge: on ne redessine pas (voir
+    // src/rewamp_viz_idle.h). Le réveil vient du `build` et des gestes.
+    if (!widget.audio.vizFrameDue) return;
     if (widget.audio.vizGpuAvailable) {
       if (_gpuTextureId >= 0) {
         // Frame-grid timestamp → native scroll clock (kills wall-clock jitter).

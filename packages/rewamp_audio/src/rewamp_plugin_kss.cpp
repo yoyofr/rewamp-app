@@ -25,6 +25,8 @@
 extern "C" {
 #include "kssplay.h"               // KSSPLAY API + full struct (opll_stereo, kss…)
 #include "kss.h"                   // KSS struct, KSS_load_file, KSS_check_type
+#include "mus2kss.h"               // FAC Soundtracker .MUS → image KSS
+#include "rewamp_loaded_files.h"   // le kit .SM1/.SM2 est un fichier COMPAGNON
 }
 
 #include <stdio.h>
@@ -55,8 +57,28 @@ static const char* const kKssExts[] = {
     "kss", "mgs", "bgm", "mpk", "mbm", "opx", "mus", NULL
 };
 
+// Un `.MUS` de FAC Soundtracker est un fichier BSAVE MSX: `FE`, adresse de
+// début, adresse de fin, adresse d'exécution, puis 0x4000 octets de données
+// chargés en #8000. La signature est donc `FE 00 80 FF BF` — début #8000, fin
+// #BFFF, soit exactement les 16384 octets que le format décrit.
+//
+// ⚠️ Tester le seul `FE` (ce que fait `mus2kss_is_mus_file`) ne suffirait PAS
+// pour une SONDE: c'est le marqueur BSAVE, que portent aussi d'autres fichiers
+// MSX. Les adresses, elles, sont propres à ce format.
+static int kss_is_fac_mus(const char* ext, const uint8_t* hdr, size_t n) {
+    if (!ext || strcmp(ext, "mus") != 0) return 0;
+    if (!hdr || n < 5) return 0;
+    return hdr[0] == 0xFE && hdr[1] == 0x00 && hdr[2] == 0x80 &&
+           hdr[3] == 0xFF && hdr[4] == 0xBF;
+}
+
 static int kss_probe(const char* ext, const uint8_t* hdr, size_t n) {
     if (!ext || !rewamp_ext_in_list(ext, kKssExts)) return 0;
+    // FAC Soundtracker: libkss ne connaît PAS ce format — `KSS_check_type` le
+    // rendrait UNKNOWN et ce greffon ne serait jamais choisi, alors que
+    // libsidplayfp revendique `.mus` à 60 (format MUS du C64) et l'emporterait.
+    // C'est `kss_load_any` qui l'enveloppe ensuite avec le replayer FAC.
+    if (kss_is_fac_mus(ext, hdr, n)) return 95;
     // Confirm the bytes actually decode to a libkss format (KSS_check_type reads
     // magic for MGS/MPK/OPX/BGM/KSS and the extension for MBM). This declines
     // e.g. Doom-style .mus files so we don't hijack them.
@@ -94,6 +116,129 @@ static int kss_setup_voices(const KSS* kss) {
     return total;
 }
 
+
+// Lit un fichier entier. Rend NULL (sans bruit) s'il n'existe pas: le kit de
+// percussions est OPTIONNEL et son absence est un cas normal, pas une erreur.
+static uint8_t* kss_read_all(const char* path, size_t* outSize) {
+    *outSize = 0;
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (size <= 0) { fclose(f); return NULL; }
+    uint8_t* buf = (uint8_t*)malloc((size_t)size);
+    if (!buf) { fclose(f); return NULL; }
+    const size_t got = fread(buf, 1, (size_t)size, f);
+    fclose(f);
+    if (got != (size_t)size) { free(buf); return NULL; }
+    *outSize = got;
+    return buf;
+}
+
+// ── FAC Soundtracker (.MUS) ──────────────────────────────────────────────────
+//
+// Un `.mus` de FAC Soundtracker n'est PAS un format que libkss connaît:
+// `KSS_check_type` détecte MGS, MPK, KSS/KSSX, OPX et BGM par leur CONTENU, MBM
+// par son extension, et rien d'autre — un `.mus` FAC y tombe donc sur
+// `KSS_TYPE_UNKNOWN`, et `KSS_bin2kss` rend NULL. C'est pour ça qu'il ne jouait
+// pas, alors que l'extension était revendiquée depuis toujours.
+//
+// `mus2kss` (script d'origine par NYYRIKKI, porté en C par le projet modizer)
+// enveloppe les données avec FST2.BIN — le replayer FAC de 1990/1991 — dans une
+// image KSS que la VM Z80 de libkss exécute. C'est le patron NATIF de libkss:
+// `mgs2kss`, `mbm2kss`, `opx2kss`… embarquent tous le driver MSX d'origine.
+// L'intérêt est décisif: c'est le replayer AUTHENTIQUE qui joue, donc aucune
+// sémantique à deviner — la spécification publique du format documente les
+// offsets mais PAS les enveloppes, les effets ni le tempo.
+//
+// ⚠️ Ordre d'essai: le contenu D'ABORD, la conversion ENSUITE. `.mus` est une
+// extension partagée (MuSICA et consorts), et `mus2kss_is_mus_file` ne teste
+// que l'octet BSAVE `0xFE`, que ces formats portent aussi. Tenter la conversion
+// en premier produirait du bruit sur un fichier d'une autre famille; l'inverse
+// ne peut rien casser, la détection de libkss étant fondée sur le contenu.
+static KSS* kss_load_any(const char* cleanPath) {
+    // 1) Ce que libkss reconnaît lui-même, y compris sous l'extension .mus.
+    if (KSS* direct = KSS_load_file((char*)cleanPath)) return direct;
+
+    // 2) Sinon, la conversion FAC.
+    FILE* f = fopen(cleanPath, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (size <= 0) { fclose(f); return NULL; }
+    uint8_t* mus = (uint8_t*)malloc((size_t)size);
+    if (!mus) { fclose(f); return NULL; }
+    size_t got = fread(mus, 1, (size_t)size, f);
+    fclose(f);
+    if (got != (size_t)size) { free(mus); return NULL; }
+
+    if (!mus2kss_is_mus_file(mus, got)) { free(mus); return NULL; }
+
+    // Le kit de PERCUSSIONS est un fichier VOISIN: son nom vit à l'offset
+    // `taille - 124` du .mus, et le `.SM2` se déduit du `.SM1`. Sans lui la
+    // conversion réussit quand même — en mode MSX-Audio, sans percussions.
+    uint8_t *sm1 = NULL, *sm2 = NULL;
+    size_t   sm1Size = 0, sm2Size = 0;
+    char     drumkit[16];
+    if (mus2kss_get_drumkit_name(mus, got, drumkit, sizeof(drumkit)) > 0) {
+        char base[4096];
+        strncpy(base, cleanPath, sizeof(base) - 1);
+        base[sizeof(base) - 1] = '\0';
+        char* slash = strrchr(base, '/');
+        char* dirEnd = slash ? slash + 1 : base;
+        // Les deux casses: un rip peut porter « KIT.SM1 » comme « kit.sm1 ».
+        static const char* const kExts[2][2] = { { ".SM1", ".SM2" },
+                                                 { ".sm1", ".sm2" } };
+        for (int c = 0; c < 2 && !sm1; c++) {
+            snprintf(dirEnd, sizeof(base) - (size_t)(dirEnd - base), "%s%s",
+                     drumkit, kExts[c][0]);
+            sm1 = kss_read_all(base, &sm1Size);
+            if (!sm1) continue;
+            rewamp_loaded_files_add(base);
+            snprintf(dirEnd, sizeof(base) - (size_t)(dirEnd - base), "%s%s",
+                     drumkit, kExts[c][1]);
+            sm2 = kss_read_all(base, &sm2Size);
+            if (sm2) rewamp_loaded_files_add(base);
+        }
+    }
+
+    const size_t cap = (sm1 && sm2) ? mus2kss_get_output_size_with_drums()
+                                    : mus2kss_get_output_size();
+    uint8_t* kssBuf = (uint8_t*)malloc(cap);
+    KSS* out = NULL;
+    if (kssBuf) {
+        size_t kssSize = 0;
+        const int rc = (sm1 && sm2)
+            ? mus2kss_convert_with_drums(mus, got, sm1, sm1Size, sm2, sm2Size,
+                                         kssBuf, &kssSize)
+            : mus2kss_convert(mus, got, kssBuf, &kssSize,
+                              MUS2KSS_MODE_MSXAUDIO);
+        if (rc == 0 && kssSize > 0)
+            out = KSS_bin2kss(kssBuf, (uint32_t)kssSize, "fac.kss");
+        free(kssBuf);
+    }
+    free(sm1);
+    free(sm2);
+    free(mus);
+    return out;
+}
+
+
+// Les titres MSX (MGS, OPX, BGM…) sont du Shift-JIS: « Lost.OPX » (modland,
+// My Neighbor Totoro) porte « となりのトトロ まいご » que le panneau ⓘ
+// affichait en mojibake. Un titre deja en UTF-8 valide passe tel quel; le
+// reste est converti (CP932 par iconv sur Apple, '?' par glyphe ailleurs).
+// Les blancs de fin sont retires: opx2kss recopie le champ de 53 octets
+// bourre d'espaces.
+static const char* kss_text_utf8(const void* raw, char* buf, size_t cap) {
+    rewamp_text_to_utf8((const char*)raw, buf, cap);
+    size_t n = strlen(buf);
+    while (n > 0 && (buf[n - 1] == ' ' || buf[n - 1] == '\r' || buf[n - 1] == '\n' || buf[n - 1] == '\t')) buf[--n] = '\0';
+    return buf;
+}
+
 static RewampDecoder* kss_open(const char* path, RewampAudioFormat* outFormat) {
     if (!path) return NULL;
 
@@ -106,7 +251,7 @@ static RewampDecoder* kss_open(const char* path, RewampAudioFormat* outFormat) {
     char* q = strrchr(clean, '?');
     if (q && strncmp(q, "?subsong=", 9) == 0) { subsong = atoi(q + 9); *q = '\0'; }
 
-    KSS* kss = KSS_load_file(clean);
+    KSS* kss = kss_load_any(clean);
     if (!kss) return NULL;
 
     // ?subsong=N is the ABSOLUTE KSS song number (KSSPLAY_reset's argument), the
@@ -157,9 +302,10 @@ static RewampDecoder* kss_open(const char* path, RewampAudioFormat* outFormat) {
         dec->lengthFrames = (uint64_t)kss->info[track].time_in_ms * KSS_RATE / 1000;
 
     // Info panel metadata.
-    if (kss->title[0]) rewamp_track_message_append("Title: %s\n", (const char*)kss->title);
+    char text[KSS_TITLE_MAX * 3];
+    if (kss->title[0]) rewamp_track_message_append("Title: %s\n", kss_text_utf8(kss->title, text, sizeof(text)));
     if (kss->info && track < (int)kss->info_num && kss->info[track].title[0])
-        rewamp_track_message_append("Track: %s\n", kss->info[track].title);
+        rewamp_track_message_append("Track: %s\n", kss_text_utf8(kss->info[track].title, text, sizeof(text)));
     int subCount = (int)kss->trk_max - (int)kss->trk_min + 1;
     if (subCount > 1) rewamp_track_message_append("Subsongs: %d\n", subCount);
     if (kss->extra && kss->extra[0])
@@ -218,7 +364,7 @@ static void kss_close(RewampDecoder* dec) {
 // through kss->info. State is kept until the next probe (rewamp_audio.c contract).
 static KSS* g_probe_kss    = NULL;
 static int  g_probe_trkmin = 0;
-static char g_probe_title[KSS_TITLE_MAX];
+static char g_probe_title[KSS_TITLE_MAX * 3];
 
 extern "C" int rewamp_kss_probe_subsong_count(const char* path) {
     if (g_probe_kss) { KSS_delete(g_probe_kss); g_probe_kss = NULL; }
@@ -229,7 +375,7 @@ extern "C" int rewamp_kss_probe_subsong_count(const char* path) {
     char* q = strrchr(clean, '?');
     if (q && strncmp(q, "?subsong=", 9) == 0) *q = '\0';
 
-    KSS* kss = KSS_load_file(clean);
+    KSS* kss = kss_load_any(clean);
     if (!kss) return 0;
     g_probe_kss    = kss;
     g_probe_trkmin = (int)kss->trk_min;
@@ -246,9 +392,7 @@ extern "C" const char* rewamp_kss_probe_get_title(int idx) {
     if (!kss) return "";
     int track = g_probe_trkmin + idx;
     if (kss->info && track >= 0 && track < (int)kss->info_num && kss->info[track].title[0]) {
-        strncpy(g_probe_title, kss->info[track].title, sizeof(g_probe_title) - 1);
-        g_probe_title[sizeof(g_probe_title) - 1] = '\0';
-        return g_probe_title;
+        return kss_text_utf8(kss->info[track].title, g_probe_title, sizeof(g_probe_title));
     }
     return "";
 }

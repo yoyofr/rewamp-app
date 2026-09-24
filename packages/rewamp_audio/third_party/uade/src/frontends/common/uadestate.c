@@ -387,6 +387,77 @@ static int send_file_back(struct uade_file *f, const char *name,
 	return 0;
 }
 
+/* rewamp: complète la table de routines d'un compagnon Startrekker AM /
+ * Audio Sculpture TRONQUÉ, pour que le player ne sorte jamais du fichier.
+ *
+ * Le player AudioSculpture relit l'effet MOD `Exy` comme « appelle la routine
+ * de synthèse personnalisée n° x », cherchée à un offset FIXE du compagnon
+ * (mesuré dans son code relocalisé):
+ *
+ *     slot x : bloc  [0xF00 + x*0x110, 0xF00 + (x+1)*0x110)
+ *              code  à +0xA0 dans le bloc, JSR dessus
+ *              sauf si le premier mot du code vaut 0xABCD (« emplacement vide »)
+ *
+ * Il ne vérifie JAMAIS la taille du fichier. Or l'éditeur Startrekker
+ * sauvegarde couramment un `.as`/`.nt` de 4104 octets (144 d'en-tête + 32
+ * blocs d'instrument de 120) qui s'arrête à 0x1008 — en plein milieu du bloc
+ * du slot 0 (fin 0x1010), et avant tous les autres (table complète: 0x2000).
+ * Ce qui traîne à 0xFA0 dans un tel fichier est un RÉSIDU de la mémoire de
+ * l'éditeur (pointeurs absolus vers la machine d'origine, BSR hors fichier):
+ * l'exécuter écrit dans les registres custom (DSKLEN) puis part dans le
+ * décor. Et un slot au-delà de la fin du fichier fait sauter le player dans
+ * la mémoire qui SUIT le compagnon chargé. Mesuré sur `m.mod` (Phornee), un
+ * seul `E01` en tête de la sous-chanson 1: 2,4 s de silence puis mort — chez
+ * `uade123` 3.05 comme chez nous.
+ *
+ * Le correctif sert au 68k un compagnon ÉTENDU à la table complète, chaque
+ * slot que le fichier d'origine ne porte pas EN ENTIER marqué 0xABCD — le
+ * player prend alors sa branche « emplacement vide » et joue la suite.
+ * Vérifié: stamper 0xABCD à 0xFA0 fait jouer la sous-chanson 1 de `m.mod`
+ * (RMS 5714 sur 20 s, contre 0). Un compagnon complet (le `.as` de 8336
+ * octets de `daisy.adsc`) dépasse 0x2000 et ressort INTACT.
+ *
+ * ICI et pas dans le player: `data/players/AudioSculpture` est un binaire
+ * 68k dont nous n'avons pas la source, et cette fonction est l'entonnoir
+ * unique par où passe tout fichier servi au 68k — même règle que les
+ * correctifs de résolution de noms dans ossupport.c. */
+static void rewamp_pad_startrekker_am_slots(struct uade_file *f)
+{
+	static const size_t kSlotBase = 0xF00;
+	static const size_t kSlotPitch = 0x110;
+	static const size_t kSlotCodeOff = 0xA0;
+	static const size_t kSlotCount = 16;
+	static const size_t kTableEnd = 0xF00 + 16 * 0x110; /* 0x2000 */
+	size_t orig, x;
+	char *grown;
+
+	if (f == NULL || f->data == NULL || f->size < 16)
+		return;
+	if (memcmp(f->data, "ST1.2 ModuleINFO", 16) != 0 &&
+	    memcmp(f->data, "ST1.3 ModuleINFO", 16) != 0 &&
+	    memcmp(f->data, "AudioSculpture10", 16) != 0)
+		return;
+	if (f->size >= kTableEnd)
+		return; /* table complète: rien à faire */
+
+	orig = f->size;
+	grown = realloc(f->data, kTableEnd);
+	if (grown == NULL)
+		return; /* à court de mémoire: on sert le fichier tel quel */
+	memset(grown + orig, 0, kTableEnd - orig);
+	f->data = grown;
+	f->size = kTableEnd;
+
+	for (x = 0; x < kSlotCount; x++) {
+		size_t blockEnd = kSlotBase + (x + 1) * kSlotPitch;
+		size_t code = kSlotBase + x * kSlotPitch + kSlotCodeOff;
+		if (blockEnd <= orig)
+			continue; /* slot entier dans le fichier: routine réelle */
+		f->data[code] = (char) 0xAB;
+		f->data[code + 1] = (char) 0xCD;
+	}
+}
+
 static int handle_request_amiga_file(const char *name, struct uade_state *state)
 {
 	struct uade_file *f = NULL;
@@ -407,6 +478,7 @@ static int handle_request_amiga_file(const char *name, struct uade_state *state)
 		f = uade_load_amiga_file(name, playerdir, state);
 
 sendfile:
+	rewamp_pad_startrekker_am_slots(f);
 	return send_file_back(f, name, state);
 }
 

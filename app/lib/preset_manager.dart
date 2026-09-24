@@ -21,10 +21,10 @@ import 'user_settings.dart';
 /// engine got via setDataDir — its default scan targets `presets/`):
 ///   presets/         bundled martins — REWRITTEN on `_kBundledAssetsVersion`
 ///                    bump, so nothing user-owned may live there
-///   packs/<slug>/    installed server packs (archive structure preserved)
-///   packtex/<key>/   pack texture bundles, key = sha1 of the URL — several
+///   `packs/<slug>/`    installed server packs (archive structure preserved)
+///   `packtex/<key>/`   pack texture bundles, key = sha1 of the URL — several
 ///                    packs share one bundle, it is downloaded once
-///   single/<id>.milk presets downloaded one by one (id = server uuid5,
+///   `single/<id>.milk` presets downloaded one by one (id = server uuid5,
 ///                    stable across re-imports → the filename IS the id)
 ///   user/            local imports (picker, drag'n'drop, archives) — preset
 ///                    AND texture files (a .milk names its bitmaps bare)
@@ -40,7 +40,7 @@ class PresetManager extends ChangeNotifier {
   RewampAudio? _audio;
   bool _ready = false;
 
-  /// Progress 0..1 per job key ('pack:<slug>', 'srvlist:<id>'), removed when
+  /// Progress 0..1 per job key (`pack:<slug>`, `srvlist:<id>`), removed when
   /// idle. UI listens per row (same mechanism as SoundfontManager).
   final ValueNotifier<Map<String, double>> progress = ValueNotifier(const {});
 
@@ -930,7 +930,7 @@ class PresetManager extends ChangeNotifier {
 
   /// Imports (or refreshes) a curated server playlist as a local pm_playlist:
   /// downloads missing presets into `single/`, rewrites the item list, returns
-  /// the LOCAL playlist id (source 'plist:<id>'). Progress key 'srvlist:<id>'.
+  /// the LOCAL playlist id (source `plist:<id>`). Progress key `srvlist:<id>`.
   Future<String> importServerPlaylist(PresetPlaylistInfo pl) async {
     final key = 'srvlist:${pl.id}';
     _setProgress(key, 0);

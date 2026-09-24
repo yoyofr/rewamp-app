@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'l10n.dart';
+import 'library_identity.dart';
 import 'local_db.dart';
 import 'sync_service.dart';
 import 'user_settings.dart';
@@ -91,7 +92,11 @@ class _LibraryButtonState extends State<LibraryButton> {
           .isAlbumInLibrary(widget.refId, albumId: widget.albumId),
       'artist' => await LocalDb.instance
           .isArtistInLibrary(widget.name, refId: widget.refId),
-      _ => await LocalDb.instance.isInLibrary(widget.type, widget.refId),
+      // Réécriture consultée: si l'ajout est passé par l'import d'une copie
+      // pérenne, la ligne existe sous CETTE clé — pas sous le chemin jetable
+      // que ce widget porte encore. Voir library_identity.dart.
+      _ => await LocalDb.instance
+          .isInLibrary(widget.type, libraryRefRewrite(widget.refId)),
     };
     if (mounted) setState(() { _inLibrary = v; _loading = false; });
   }
@@ -99,16 +104,30 @@ class _LibraryButtonState extends State<LibraryButton> {
   Future<void> _toggle() async {
     final next = !_inLibrary;
 
+    // Garde d'identité pour les PISTES: un ajout ne peut pas nommer un chemin
+    // jetable (cache d'ouverture, copie `opened/`) ni un téléchargement dont
+    // on ignore le songId — c'est ce qui fabriquait les entrées mortes. Elle
+    // peut proposer un import et rendre une AUTRE identité, celle de la copie
+    // pérenne. Un RETRAIT n'est jamais gardé: c'est le seul moyen de retirer
+    // une entrée déjà cassée. Voir library_identity.dart.
+    var refId = widget.refId;
+    if (next && widget.type == 'track') {
+      final ok = await ensureLibraryRefForAdd(context, refId);
+      if (ok == null) return;
+      refId = ok;
+      if (!mounted) return;
+    }
+
     setState(() => _inLibrary = next);
     if (next) {
       // Artist saved under its uuid: absorb a legacy NAME-keyed row first, so
       // the upsert (keyed on ref_id) cannot leave two rows for one artist.
-      if (widget.type == 'artist' && widget.refId != widget.name) {
+      if (widget.type == 'artist' && refId != widget.name) {
         await LocalDb.instance.removeFromLibrary('artist', widget.name);
       }
       await LocalDb.instance.addToLibrary(
         type:           widget.type,
-        refId:          widget.refId,
+        refId:          refId,
         name:           widget.name,
         artist:         widget.artist,
         album:          widget.album,
@@ -125,9 +144,9 @@ class _LibraryButtonState extends State<LibraryButton> {
       // un-heart clears an existing duplicate pair, and a name-only caller
       // still removes a uuid-saved row.
       await LocalDb.instance
-          .removeArtistFromLibrary(widget.name, refId: widget.refId);
+          .removeArtistFromLibrary(widget.name, refId: refId);
     } else {
-      await LocalDb.instance.removeFromLibrary(widget.type, widget.refId);
+      await LocalDb.instance.removeFromLibrary(widget.type, refId);
     }
     // Sync to server for track/album/playlist (artist has no server-side
     // library counterpart). The server keys albums by their UUID (albumId), NOT
@@ -143,16 +162,16 @@ class _LibraryButtonState extends State<LibraryButton> {
       if (widget.type == 'album') {
         serverId = widget.albumId;
       } else if (widget.type == 'playlist') {
-        serverId = widget.refId;
+        serverId = refId;
       } else {
-        final base = splitLibraryRefId(widget.refId).$1;
+        final base = splitLibraryRefId(refId).$1;
         if (!base.startsWith('/') && !base.contains(':\\')) serverId = base;
       }
       if (signedIn && (serverId == null || serverId.isEmpty) &&
           widget.type == 'track') {
         // Local file (the ref_id is a path): no catalogue identity, so it goes
         // out with a snapshot instead — parked until the server can take it.
-        final base = splitLibraryRefId(widget.refId).$1;
+        final base = splitLibraryRefId(refId).$1;
         await SyncService.recordLocalLibraryChange(
           itemType:   'song',
           fileName:   base.split(Platform.pathSeparator).last,
@@ -162,7 +181,7 @@ class _LibraryButtonState extends State<LibraryButton> {
           // `local/<name>` path and the tune appeared TWICE in the library.
           relPath:    await LocalDb.instance.relPathOf(base),
           value:      next,
-          subsongIdx: splitLibraryRefId(widget.refId).$2 ?? 0,
+          subsongIdx: splitLibraryRefId(refId).$2 ?? 0,
           title:      widget.name,
           artist:     widget.artist,
           album:      widget.album,
@@ -180,7 +199,7 @@ class _LibraryButtonState extends State<LibraryButton> {
           itemId:     serverId,
           value:      next,
           subsongIdx: widget.type == 'track'
-              ? (splitLibraryRefId(widget.refId).$2 ?? 0)
+              ? (splitLibraryRefId(refId).$2 ?? 0)
               : 0,
         );
       } else if (signedIn) {
@@ -188,7 +207,7 @@ class _LibraryButtonState extends State<LibraryButton> {
         // album_id has no server identity, so the favourite stays on this
         // device only — and looks like a broken sync on the other one. Name it.
         debugPrint('[LibraryButton] no server id for ${widget.type} '
-            '"${widget.refId}" — favourite kept local, not synced');
+            '"$refId" — favourite kept local, not synced');
       }
     }
     widget.onChanged?.call(next);

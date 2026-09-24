@@ -337,6 +337,13 @@ static void wrap_io_callback(cycles_t cycles, uint32_t addr, uint8_t value, void
 	gbs->io_cb(gbs, cycles, addr, value, gbs->io_cb_priv);
 }
 
+//YOYOFR
+void gbs_set_voice_capture(struct gbs* const gbs, int on)
+{
+	gbs->gbhw.capture_voices = on ? 1 : 0;
+}
+//YOYOFR
+
 void gbs_set_io_callback(struct gbs* const gbs, gbs_io_cb fn, void *priv)
 {
 	gbs->io_cb = fn;

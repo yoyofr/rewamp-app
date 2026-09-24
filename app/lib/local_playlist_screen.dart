@@ -4,6 +4,9 @@ import 'app_snack.dart';
 import 'artwork_image.dart';
 import 'download_cancel.dart';
 import 'l10n.dart';
+import 'library_presence.dart';
+import 'library_toolbar.dart' show ListFilterField, kListFilterThreshold,
+    matchesFilterQuery;
 import 'local_db.dart';
 import 'playlist_options.dart';
 import 'playlist_sync.dart';
@@ -38,6 +41,10 @@ class LocalPlaylistScreen extends StatefulWidget {
 
 class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
   List<PlaylistEntry> _entries = [];
+  /// Fichiers locaux absents d'ICI (entrée connue de la base, fichier sur un
+  /// autre appareil) — voir library_presence. Distinct de `isMissing`, qui
+  /// est une entrée sans LIGNE.
+  Set<String> _elsewhere = const {};
   bool _loading = true;
   /// The playlist as it is NOW. widget.playlist is the caller's snapshot: after
   /// a rename or a first backup made from this screen's own menu it is stale,
@@ -45,6 +52,39 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
   UserPlaylist? _live;
 
   UserPlaylist get _playlist => _live ?? widget.playlist;
+
+  /// Mode ÉDITION: les lignes prennent une case à cocher, le tap sélectionne au
+  /// lieu de jouer, et le bandeau propose de retirer le lot. Même modèle que le
+  /// panneau de file — retirer UNE entrée est un glissement, en retirer
+  /// plusieurs demande un mode, sinon c'est N glissements sans annulation.
+  bool _editing = false;
+  String _query = '';
+  /// Des ROW IDS, jamais des positions: un réordonnancement ou un retrait
+  /// renumérote les lignes et une sélection tenue par index désignerait
+  /// aussitôt d'autres entrées.
+  final _selected = <int>{};
+
+  void _setEditing(bool on) => setState(() {
+        _editing = on;
+        _selected.clear();
+      });
+
+  Future<void> _removeEntries(Set<int> rowIds) async {
+    if (rowIds.isEmpty) return;
+    await LocalDb.instance
+        .removePlaylistEntries(widget.playlist.id, rowIds);
+    // L'ordre fait partie de la playlist: une playlist sauvegardée ne doit pas
+    // dériver de sa copie de compte.
+    await PlaylistSync.pushIfLinked(widget.playlist.id);
+  }
+
+  Future<void> _removeSelected() async {
+    if (_selected.isEmpty) return;
+    // Copie: le retrait relit la liste, et le set est vidé en sortant du mode.
+    final go = Set<int>.of(_selected);
+    _setEditing(false);
+    await _removeEntries(go);
+  }
 
   /// What actually gets QUEUED: every entry that can play, including the ones
   /// whose file is not on this device yet.
@@ -143,7 +183,8 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
     }
     // Un tap qui ÉCRASERAIT la file demande d'abord, comme partout ailleurs;
     // la popup répond `now` sans s'afficher quand rien ne joue.
-    final choice = await showPlayChoiceSheet(context, title: row.displayTitle);
+    final choice =
+        await showPlayChoiceSheet(context, title: row.displayTitle, result: row);
     if (choice == null || !mounted) return;
     if (choice != PlayChoice.now) {
       await globalOnQueueAdd?.call(row, atEnd: choice == PlayChoice.end);
@@ -220,6 +261,23 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
         failed > 0 ? l10n.playlistFetchPartial : l10n.playlistFetchDone);
   }
 
+  /// Les indices, dans [_entries], des lignes que la liste MONTRE.
+  ///
+  /// ⚠️ **Le filtre sert à TROUVER, pas à redéfinir la playlist.** Tout ce qui
+  /// suit raisonne donc sur l'index de la liste COMPLÈTE: le numéro affiché,
+  /// la position de lecture ([_playIndexOf]) et le réordonnancement. Passer
+  /// l'index de la liste filtrée démarrerait un autre morceau — ou pire,
+  /// déplacerait une autre ligne.
+  List<int> get _visibleIdx => [
+        for (var i = 0; i < _entries.length; i++)
+          if (matchesFilterQuery(_query, [
+            _entries[i].track?.displayTitle,
+            _entries[i].track?.artist,
+            _entries[i].track?.metaAlbum,
+          ]))
+            i,
+      ];
+
   /// Index of [entryIndex] within [_queueTracks]. The two lists only drift
   /// apart on an entry that could not be queued at all (missing AND not
   /// restorable) — every other entry is there, downloaded or not.
@@ -246,8 +304,19 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
   }
 
   void _reload() {
-    LocalDb.instance.getPlaylistEntryRefs(widget.playlist.id).then((e) {
-      if (mounted) setState(() { _entries = e; _loading = false; });
+    LocalDb.instance.getPlaylistEntryRefs(widget.playlist.id).then((e) async {
+      final gone = await missingLocalTrackFiles(
+          [for (final x in e) if (x.track != null) x.track!]);
+      if (!mounted) return;
+      setState(() {
+        _entries = e;
+        _elsewhere = gone;
+        _loading = false;
+        // Une entrée retirée ailleurs (autre écran, synchro) ne doit pas rester
+        // « sélectionnée »: le bouton de retrait paraîtrait armé pour rien.
+        final live = {for (final x in e) x.rowId};
+        _selected.removeWhere((id) => !live.contains(id));
+      });
     });
     LocalDb.instance.playlistById(widget.playlist.id).then((p) {
       if (mounted && p != null) setState(() => _live = p);
@@ -268,6 +337,7 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final cs   = Theme.of(context).colorScheme;
+    final visible = _visibleIdx;
     return Scaffold(
       appBar: AppBar(
         title: Text(_playlist.name,
@@ -306,15 +376,18 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
                     // of it — otherwise a long "Play all" label in a declined
                     // language would push it off-centre.
                     child: Row(children: [
-                      FilledButton.icon(
-                        onPressed: (widget.onPlayLocalAlbum == null ||
-                                _queueTracks.isEmpty)
-                            ? null
-                            : () => widget.onPlayLocalAlbum!(
-                                context, _queueTracks),
-                        icon: const Icon(Icons.play_arrow),
-                        label: Text(l10n.commonPlayAll),
-                      ),
+                      // En édition « tout lire » n'a pas sa place: le geste
+                      // en cours porte sur une sélection, pas sur la lecture.
+                      if (!_editing)
+                        FilledButton.icon(
+                          onPressed: (widget.onPlayLocalAlbum == null ||
+                                  _queueTracks.isEmpty)
+                              ? null
+                              : () => widget.onPlayLocalAlbum!(
+                                  context, _queueTracks),
+                          icon: const Icon(Icons.play_arrow),
+                          label: Text(l10n.commonPlayAll),
+                        ),
                       Expanded(
                         child: Column(
                           children: [
@@ -335,23 +408,72 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
                           ],
                         ),
                       ),
-                      // Same menu as the library list (rename, back up,
-                      // publish, …): having to walk back up to the list to
-                      // rename the playlist you are looking at made no sense.
-                      IconButton(
-                        icon: const Icon(Icons.more_horiz),
-                        tooltip: l10n.commonOptions,
-                        onPressed: _options,
-                      ),
+                      if (_editing) ...[
+                        // Même bascule que Stockage et le navigateur local:
+                        // tout ce qui est AFFICHÉ coché ⇒ le bouton
+                        // désélectionne (sans quitter l'édition), sinon il
+                        // complète. Une seule icône pour ce geste dans l'app.
+                        if (visible.isNotEmpty &&
+                            visible.every((i) => _selected.contains(_entries[i].rowId)))
+                          IconButton(
+                            icon: const Icon(Icons.deselect),
+                            tooltip: l10n.pmSelectNone,
+                            onPressed: () => setState(_selected.clear),
+                          )
+                        else if (visible.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.select_all),
+                            tooltip: l10n.storageSelectAll,
+                            onPressed: () => setState(() => _selected
+                                .addAll([for (final i in visible) _entries[i].rowId])),
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: l10n.queueRemoveSelected,
+                          onPressed:
+                              _selected.isEmpty ? null : _removeSelected,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.done),
+                          tooltip: l10n.queueEditDone,
+                          onPressed: () => _setEditing(false),
+                        ),
+                      ] else ...[
+                        IconButton(
+                          icon: const Icon(Icons.checklist),
+                          tooltip: l10n.queueEdit,
+                          onPressed: () => _setEditing(true),
+                        ),
+                        // Same menu as the library list (rename, back up,
+                        // publish, …): having to walk back up to the list to
+                        // rename the playlist you are looking at made no sense.
+                        IconButton(
+                          icon: const Icon(Icons.more_horiz),
+                          tooltip: l10n.commonOptions,
+                          onPressed: _options,
+                        ),
+                      ],
                     ]),
                   ),
+                  // Le filtre n'apparaît qu'au-delà du seuil: en dessous, l'œil
+                  // va plus vite que le clavier.
+                  if (_entries.length > kListFilterThreshold)
+                    ListFilterField(
+                      query: _query,
+                      onQuery: (v) => setState(() => _query = v),
+                    ),
                   Expanded(
                     child: ReorderableListView.builder(
                       buildDefaultDragHandles: false,
-                      itemCount: _entries.length,
+                      itemCount: visible.length,
                       // onReorderItem (vs deprecated onReorder) already gives a
                       // newIndex adjusted for the removed item.
                       onReorderItem: (oldIndex, newIndex) async {
+                        // Inatteignable sous filtre: la poignée disparaît alors
+                        // (voir plus bas), et sans poignée rien ne démarre un
+                        // glissement — `buildDefaultDragHandles` est faux.
+                        // Réordonner une liste filtrée déplacerait une AUTRE
+                        // ligne, les index ne désignant plus la même chose.
                         setState(() {
                           final e = _entries.removeAt(oldIndex);
                           _entries.insert(newIndex, e);
@@ -363,21 +485,42 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
                         // must not drift from its account copy.
                         await PlaylistSync.pushIfLinked(widget.playlist.id);
                       },
-                      itemBuilder: (_, i) {
+                      itemBuilder: (_, vi) {
+                        final i = visible[vi];
                         final e = _entries[i];
                         final t = e.track;
                         final missing = e.isMissing;
-                        return ListTile(
-                          key: ValueKey(e.rowId),
+                        final elsewhere =
+                            t != null && _elsewhere.contains(t.filePath);
+                        final selected = _selected.contains(e.rowId);
+                        final tile = ListTile(
+                          selected: selected,
+                          selectedTileColor:
+                              cs.primary.withValues(alpha: 0.10),
                           leading: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               SizedBox(
+                                // La case à cocher prend la place du numéro:
+                                // elle répond à la même question (« quelle
+                                // ligne est-ce ? ») et élargir la ligne
+                                // décalerait la pochette.
                                 width: 24,
-                                child: Text('${i + 1}',
-                                    textAlign: TextAlign.end,
-                                    style: TextStyle(
-                                        color: cs.onSurfaceVariant)),
+                                child: _editing
+                                    ? Checkbox(
+                                        value: selected,
+                                        visualDensity: VisualDensity.compact,
+                                        materialTapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        onChanged: (v) => setState(() =>
+                                            v == true
+                                                ? _selected.add(e.rowId)
+                                                : _selected.remove(e.rowId)),
+                                      )
+                                    : Text('${i + 1}',
+                                        textAlign: TextAlign.end,
+                                        style: TextStyle(
+                                            color: cs.onSurfaceVariant)),
                               ),
                               const SizedBox(width: 8),
                               SizedBox(
@@ -408,10 +551,15 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
                             ],
                           ),
                           title: Opacity(
-                            opacity: missing ? 0.5 : 1,
+                            opacity: (missing || elsewhere) ? 0.5 : 1,
                             child: ScrollingText(text: e.displayTitle),
                           ),
-                          subtitle: missing
+                          subtitle: elsewhere
+                              ? Text(libraryElsewhereLabel(context),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: cs.onSurfaceVariant))
+                              : missing
                               ? Text(
                                   e.isRestorable
                                       ? l10n.playlistEntryMissingRestorable
@@ -425,49 +573,88 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis)
                                   : null),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline,
-                                    size: 20),
-                                tooltip: l10n.playlistRemoveEntry,
-                                onPressed: () async {
-                                  await LocalDb.instance.removePlaylistEntry(
-                                      widget.playlist.id, e.rowId);
-                                  await PlaylistSync.pushIfLinked(
-                                      widget.playlist.id);
-                                },
-                              ),
-                              // Drag handle: reorder the entry (persists the new
-                              // order to playlist_tracks.position).
-                              ReorderableDragStartListener(
-                                index: i,
-                                child: const Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 4),
-                                  child: Icon(Icons.drag_handle, size: 20),
+                          // Retirer une entrée est un GLISSEMENT (voir le
+                          // Dismissible plus bas) ou la sélection multiple du
+                          // mode édition — plus de bouton par ligne: il
+                          // doublait le geste et volait la largeur du titre.
+                          // Drag handle: reorder the entry (persists the new
+                          // order to playlist_tracks.position).
+                          // Pas de poignée sous filtre: l'index d'un
+                          // glissement serait celui de la liste VISIBLE et
+                          // déplacerait une autre ligne.
+                          trailing: _query.isNotEmpty
+                              ? null
+                              : ReorderableDragStartListener(
+                                  index: vi,
+                                  child: const Padding(
+                                    padding:
+                                        EdgeInsets.symmetric(horizontal: 4),
+                                    child: Icon(Icons.drag_handle, size: 20),
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
                           // Tap = whole playlist queued, positioned here.
-                          onTap: () {
-                            // A missing entry with no catalogue id is the only
-                            // dead end left; a restorable one is queued like
-                            // any other and downloads when its turn comes.
-                            if (missing && !e.isRestorable) {
-                              AppSnack.show(context, l10n.playlistEntryMissing);
-                              return;
-                            }
-                            if (widget.onPlayLocalAlbum == null) {
-                              // No queue owner (shouldn't happen from the
-                              // library): fall back to the single-entry fetch.
-                              if (missing) _playMissing(e);
-                              return;
-                            }
-                            widget.onPlayLocalAlbum!(context, _queueTracks,
-                                startIndex: _playIndexOf(i));
+                          // En édition, le tap SÉLECTIONNE: viser une case de
+                          // 24 px alors que toute la ligne dit « ceci » est un
+                          // geste inutilement précis.
+                          onTap: _editing
+                              ? () => setState(() => selected
+                                  ? _selected.remove(e.rowId)
+                                  : _selected.add(e.rowId))
+                              : () {
+                                  // A missing entry with no catalogue id is the
+                                  // only dead end left; a restorable one is
+                                  // queued like any other and downloads when
+                                  // its turn comes.
+                                  if (elsewhere) {
+                                    AppSnack.show(context,
+                                        libraryElsewhereLabel(context));
+                                    return;
+                                  }
+                                  if (missing && !e.isRestorable) {
+                                    AppSnack.show(
+                                        context, l10n.playlistEntryMissing);
+                                    return;
+                                  }
+                                  if (widget.onPlayLocalAlbum == null) {
+                                    // No queue owner (shouldn't happen from the
+                                    // library): fall back to the single-entry
+                                    // fetch.
+                                    if (missing) _playMissing(e);
+                                    return;
+                                  }
+                                  widget.onPlayLocalAlbum!(
+                                      context, _queueTracks,
+                                      startIndex: _playIndexOf(i));
+                                },
+                        );
+
+                        // Clé sur l'ENTRÉE (rowId), jamais sur la position:
+                        // c'est ce qui permet au réordonnancement et au
+                        // Dismissible de survivre à la renumérotation.
+                        final key = ValueKey(e.rowId);
+                        if (_editing) {
+                          // En édition le glissement se battrait avec la
+                          // sélection pour le même geste.
+                          return KeyedSubtree(key: key, child: tile);
+                        }
+                        return Dismissible(
+                          key: key,
+                          direction: DismissDirection.endToStart,
+                          // Volontairement au-delà de la moitié: une entrée est
+                          // à un revers de doigt de disparaître et il n'y a pas
+                          // d'annulation, donc le geste doit être VOULU.
+                          dismissThresholds: const {
+                            DismissDirection.endToStart: 0.5
                           },
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 20),
+                            color: cs.errorContainer,
+                            child: Icon(Icons.delete_outline,
+                                color: cs.onErrorContainer),
+                          ),
+                          onDismissed: (_) => _removeEntries({e.rowId}),
+                          child: tile,
                         );
                       },
                     ),

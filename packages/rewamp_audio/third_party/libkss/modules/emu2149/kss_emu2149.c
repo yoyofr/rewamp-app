@@ -330,12 +330,38 @@ update_output (PSGKSS * psg)
   }
 }
 
+//YOYOFR: notes par voie pour le viz-notes — Hz dans vgm_last_note (0 = voie
+// silencieuse), meme formule que libvgm/emu2149: f = clk / (16 * periode),
+// avec l'horloge que le coeur utilise vraiment (clk_div la divise par deux).
+// Une voie masquee par le mixeur (tmask = ton coupe: bruit seul, sans hauteur),
+// a volume nul, ou au-dessus de la limite de Nyquist du coeur, ne tient rien.
+static void psgkss_capture_notes(PSGKSS *psg) {
+  if (m_voicesForceOfs < 0) return;
+  uint32_t f_master = psg->clk;
+  if (psg->clk_div) f_master /= 2;
+  for (int i = 0; i < 3; i++) {
+    unsigned note = 0, vol = 0;
+    const uint32_t freq = psg->freq[i];
+    const uint32_t level = (psg->volume[i] & 32) ? psg->voltbl[psg->env_ptr]
+                                                 : psg->voltbl[psg->volume[i] & 31];
+    const int limited = (0 < psg->freq_limit && freq <= psg->freq_limit);
+    if (!(psg->mask & PSGKSS_MASK_CH(i)) && !psg->tmask[i] && freq && level && !limited) {
+      note = f_master / (16 * freq);
+      vol = 1;
+    }
+    vgm_last_note[m_voicesForceOfs + i] = note;
+    vgm_last_vol[m_voicesForceOfs + i] = vol;
+    if (note) vgm_last_instr[m_voicesForceOfs + i] = (unsigned char)(m_voicesForceOfs + i);
+  }
+}
+
 static inline int16_t 
 mix_output(PSGKSS *psg) 
 {
     
     //TODO:  MODIZER changes start / YOYOFR
     int64_t smplIncr=(int64_t)(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_rateratio;
+    psgkss_capture_notes(psg); //YOYOFR
     if (m_voicesForceOfs>=0) {
         int val=0;
         for (int i = 0; i < 3; i++) {

@@ -20,6 +20,15 @@ import 'package:flutter/widgets.dart';
 ///
 /// Only for VERTICAL scroll views under the shell. A horizontal rail has no
 /// bottom to reach, and a modal sheet is not under the inflated MediaQuery.
+///
+/// ⚠️ It goes on the SCROLL VIEW's own `padding`, never on a `Padding` widget
+/// that happens to be one of its CHILDREN. Applied to a child, the chrome's
+/// whole height (mini player + nav bar) is injected in the MIDDLE of the list —
+/// a fat empty band under that row — while the list's real bottom is unchanged.
+/// Worse, a `ListView`/`GridView` whose own padding stays NULL already gets the
+/// room by itself, so the call is redundant on top of being misplaced. Paid on
+/// three screens (playlists, production, engine formats) where the first child
+/// was the search field: the gap showed up between it and the row below.
 EdgeInsets shellInset(BuildContext context, EdgeInsets base) =>
     base.copyWith(bottom: base.bottom + MediaQuery.of(context).padding.bottom);
 

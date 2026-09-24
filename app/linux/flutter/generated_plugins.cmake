@@ -7,7 +7,9 @@ list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_linux
   flutter_secure_storage_linux
   rewamp_audio
+  screen_retriever_linux
   url_launcher_linux
+  window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

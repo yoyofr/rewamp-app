@@ -5,6 +5,10 @@
 #include <math.h>
 #include <stdio.h>
 #include "rewamp_plugin.h"
+
+/* Boucle forcée (rewamp_audio.c) — lus à l'open. */
+extern "C" int g_force_loop_mode;
+extern "C" int g_force_loop_native_veto;
 #include "rewamp_channel_data.h"
 #include "ModizerVoicesData.h"   // generic_mute_mask
 
@@ -21,6 +25,11 @@
 
 #define GME_SAMPLE_RATE 44100
 #define GME_FADE_MS      4000
+/* Crossfade actif (rewamp_datasource.c): on supprime alors le fondu de fin —
+ * fondre une queue déjà fondue double l'atténuation et le recouvrement du
+ * crossfade porterait du silence au lieu de musique. 1 ms et non 0: libgme
+ * traite 0 comme « pas de longueur » et jouerait sans fin. */
+extern "C" double g_crossfade_seconds;
 
 struct RewampDecoder {
     Music_Emu* emu;
@@ -95,6 +104,9 @@ static void gme_param_changed(RewampDecoder* dec, const char* key) {
 }
 
 static RewampDecoder* gme_open_fn(const char* path, RewampAudioFormat* outFormat) {
+    /* Mode 1 (N boucles): pas de compte natif -> veto, le generique
+     * Dart compte les passes. Mode 2: voir le saut de fade plus bas. */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
     if (!path) return NULL;
 
     // Parse optional ?subsong=N suffix appended by the Dart layer for multi-track
@@ -147,8 +159,25 @@ static RewampDecoder* gme_open_fn(const char* path, RewampAudioFormat* outFormat
 
     gme_info_t* info = NULL;
     if (!gme_track_info(emu, &info, subsong) && info) {
-        if (info->play_length > 0)
-            gme_set_fade_msecs(emu, info->play_length, GME_FADE_MS);
+        if (g_force_loop_mode == 2) {
+            /* Repeat-morceau: PAS de fade du tout — l'émulation joue et
+             * boucle d'elle-même au point de boucle de la musique. La
+             * troncature play+fade la coupait et la relance générique
+             * repartait de l'INTRO (même famille que le .ay zxtune). */
+        } else if (info->play_length > 0) {
+            /* Crossfade actif: la région de fondu se joue NON FONDUE — la
+             * musique boucle, donc c'est de la vraie matière — et la fin
+             * reste à play+fade: la durée affichée (catalogue, mesurée AVEC
+             * le fondu) retombe juste, et c'est le producteur qui fond
+             * (crossfade vers la piste suivante, ou fondu de sortie s'il
+             * n'y en a pas). Sans crossfade: le fondu gme historique. */
+            int fade_ms = (info->fade_length > 0) ? info->fade_length
+                                                  : GME_FADE_MS;
+            if (g_crossfade_seconds > 0.0)
+                gme_set_fade_msecs(emu, info->play_length + fade_ms, 1);
+            else
+                gme_set_fade_msecs(emu, info->play_length, fade_ms);
+        }
         // Info panel: everything libgme knows about this track.
         struct { const char* v; const char* label; } kFields[] = {
             { info->system,    "System" },   { info->game,   "Game" },
@@ -215,9 +244,19 @@ static uint64_t gme_length_fn(RewampDecoder* dec) {
     if (gme_track_info(dec->emu, &info, dec->subsong) || !info) return 0;
     int play_ms = info->play_length;
     int fade_ms = (info->fade_length > 0) ? info->fade_length : GME_FADE_MS;
+    /* Sous crossfade la fin est aussi a play+fade (region jouee non fondue)
+     * — la longueur annoncee ne change pas. */
     gme_free_info(info);
     if (play_ms <= 0) return 0;
     return (uint64_t)((double)(play_ms + fade_ms) / 1000.0 * GME_SAMPLE_RATE);
+}
+
+
+/* Décision prise à l'OPEN (le fade gme se pose avant le premier rendu) —
+ * cette fonction n'existe que pour annoncer le support natif (champ non-NULL,
+ * même patron que vgmstream). */
+static void gme_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
+    (void)dec; (void)mode; (void)count;
 }
 
 static void gme_close_fn(RewampDecoder* dec) {
@@ -234,7 +273,7 @@ static const RewampPluginVTable kGmeVTable = {
     gme_seek_fn,
     gme_length_fn,
     gme_close_fn,
-    NULL,               /* configure_loop */
+    gme_configure_loop_fn,
     0,                  /* supportsNativeFadeout */
     "gme",              /* engine_id */
     gme_param_changed,  /* live settings */

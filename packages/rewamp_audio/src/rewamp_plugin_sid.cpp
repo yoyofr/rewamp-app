@@ -22,7 +22,10 @@
 #include <string.h>
 #include <math.h>
 
-#define SID_RENDER_RATE     48000
+/* residfp resamples the ~985 kHz C64 clock to whatever rate we ask (SINC) —
+ * ask for the RING's rate (44100) directly rather than paying a second,
+ * producer-side resample from 48000. No "native" rate to preserve here. */
+#define SID_RENDER_RATE     44100
 // Frames per read call.
 #define SID_FRAMES_PER_CALL 2048
 // Scratch buffer holds stereo int16: 2 samples/frame, plus generous slack
@@ -38,10 +41,10 @@
 // past the allocated buffers.
 #define SID_CHANS_PER_CHIP  4
 
-// Cycles per sample at PAL clock (985248 Hz / 48000 Hz ≈ 20.53).
+// Cycles per sample at PAL clock (985248 Hz / 44100 Hz ≈ 22.34).
 // Deliberately rounded DOWN so play() never returns more samples than the
 // caller's buffer can hold (overshoot would overflow ibuf / out).
-#define SID_CYCLES_PER_SAMPLE 20u
+#define SID_CYCLES_PER_SAMPLE 22u
 
 /* sidplayfp's --autofilter: recommended 6581 filter RANGE by tune author
  * (tables regenerated from upstream by scripts/sync_sidplayfp_filtermaps.sh;

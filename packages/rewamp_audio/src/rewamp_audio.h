@@ -41,6 +41,11 @@ double                     rewamp_get_engine_param(const char* engine,
 REWAMP_EXPORT RewampResult rewamp_load_file(const char* path);
 REWAMP_EXPORT void         rewamp_unload(void);
 
+/* Visualiseurs: « faut-il dessiner cette frame ? » — voir rewamp_viz_idle.h.
+ * Déclaré ICI aussi pour que tout appelant C le voie sans inclure ce header. */
+REWAMP_EXPORT void         rewamp_viz_wake(void);
+REWAMP_EXPORT int          rewamp_viz_should_render(void);
+
 REWAMP_EXPORT RewampResult rewamp_play(void);
 REWAMP_EXPORT RewampResult rewamp_pause(void);
 /* Stops the audio DEVICE while paused (iOS Now Playing shows "playing" as long
@@ -87,6 +92,46 @@ REWAMP_EXPORT void rewamp_set_forced_loop(int mode, int count,
 // for this file, or whether the plugin's native library already handles it.
 REWAMP_EXPORT int rewamp_has_native_loop_support(void);
 
+/* ── Gapless playback ────────────────────────────────────────────────────────
+ * Stage the NEXT queue entry: when the current decoder reaches its end, the
+ * producer thread closes it, opens this path in place and keeps filling the
+ * same ring — the output never stops. The extra parameters are the per-track
+ * snapshot rewamp_set_forced_loop would have carried for a plain load of that
+ * file (they are applied just before its open()). Staging survives until it
+ * is consumed by a handoff, replaced by a newer call, cleared, or superseded
+ * by a manual rewamp_load_file(). Path must exist on disk; a handoff that
+ * cannot happen (open failure, sample-rate/channel mismatch with the current
+ * ring) silently falls back to the plain end-of-track path. */
+REWAMP_EXPORT void rewamp_set_next_file(const char* path, int loopMode,
+                                        int loopCount, int fadeoutEnabled,
+                                        double fadeoutSeconds,
+                                        double baseDurationSeconds);
+REWAMP_EXPORT void rewamp_clear_next_file(void);
+/* Crossfade duration in seconds (0 = plain gapless, the default). When > 0
+ * the producer overlaps the end of each track with the head of the staged
+ * next one (equal-power curves), and the engines' own default end-fadeouts
+ * are suppressed at open() — fading an already-faded tail double-attenuates
+ * and the overlap would carry silence instead of music. Needs a known track
+ * length; a track whose end cannot be predicted plays plain gapless. */
+REWAMP_EXPORT void rewamp_set_crossfade_seconds(double seconds);
+/* End of the CURRENT track, seconds (0 = unknown) — for engines that never
+ * stop by themselves (SID, NSF…): their duration lives in Dart-side catalogues
+ * (HVSC songlengths, UADE songdb), async corrections included. The producer
+ * only CUTS there when a next track is staged (gapless/crossfade); otherwise
+ * Dart's own end-of-duration logic keeps ruling, unchanged. Reset by every
+ * load and handoff — re-post after each track change and duration update. */
+REWAMP_EXPORT void rewamp_set_track_end_seconds(double seconds);
+/* Monotonic count of AUDIBLE track boundaries crossed (gapless handoffs).
+ * Dart polls it each tick; a change means the ear just moved to the staged
+ * track — flip title/metadata and advance the queue WITHOUT reloading. Never
+ * reset; re-sync the last-seen value after every explicit load. */
+REWAMP_EXPORT int64_t rewamp_handoff_serial(void);
+/* Vrai entre le RELAIS gapless et sa PROMOTION: le décodeur décrit déjà la
+ * piste suivante alors que l'oreille est encore dans la précédente. Les
+ * visualiseurs qui lisent du contenu STATIQUE du décodeur (motifs) doivent
+ * geler leur morceau affiché tant que c'est vrai. */
+REWAMP_EXPORT int rewamp_handoff_pending(void);
+
 /* Name of the decoder backend used for the currently loaded file
  * (e.g. "libopenmpt", "miniaudio"), or "" if nothing is loaded. */
 REWAMP_EXPORT const char* rewamp_get_backend_name(void);
@@ -128,12 +173,31 @@ REWAMP_EXPORT int rewamp_probe_subsong_count(const char* path);
  * rewamp_probe_get_title()       : track title, or "" if unavailable.
  * rewamp_probe_get_duration_ms() : duration in milliseconds, or -1 if unknown. */
 REWAMP_EXPORT const char* rewamp_probe_get_title(int idx);
+
+/* Décode un texte lu dans un FICHIER (tag PSF, ligne de M3U…) vers UTF-8, par
+ * la MÊME règle que les tags du moteur (rewamp_text_to_utf8): UTF-8 valide
+ * rendu tel quel, sinon CP932/Shift-JIS — iconv sur Apple, par dlsym ailleurs,
+ * un '?' par glyphe à défaut. Exposée pour que le Dart n'ait PAS sa propre
+ * règle: il en avait trois, toutes fausses sur du japonais (U+FFFD, Latin-1,
+ * fromCharCodes), d'où des rectangles là où le panneau ⓘ montrait des kanji.
+ * [in] est terminé par NUL et doit tenir sur UNE ligne: CP932 s'arrête au
+ * premier octet indécodable, donc un bloc entier perdrait tout ce qui suit.
+ * Rend la longueur écrite dans [out] (sans le NUL). */
+REWAMP_EXPORT int rewamp_decode_text(const char* in, char* out, int out_cap);
 REWAMP_EXPORT int         rewamp_probe_get_duration_ms(int idx);
 
 /* Absolute base of the last probe's subsong indices: 0 for formats whose subsong
  * number is already absolute (NSF/GBS/SID), trk_min for KSS. Add this to a 0-based
  * position to get the absolute subsong index that ?subsong= expects. */
 REWAMP_EXPORT int rewamp_probe_subsong_base(void);
+
+/* Absolute subsong index of the idx-th row of the LAST probe. Dense formats
+ * answer s_probe_base + idx — the old rule, unchanged. It exists for the sparse
+ * ones: a Westwood `.adl` holds sentinel entries BETWEEN its playable tracks
+ * (DUNE19.ADL: 74 table slots, 46 that produce sound, the 6th playable one
+ * sitting at index 10), so the position in the list cannot stand in for the
+ * index `?subsong=` expects. */
+REWAMP_EXPORT int rewamp_probe_subsong_index(int idx);
 
 /* Extract all files from an archive (7z, zip, tar, lha, gz, bz2, xz, rar) into
  * dest_dir (must already exist).  Files are flattened — only basenames are used,
@@ -152,15 +216,19 @@ REWAMP_EXPORT void rewamp_get_waveform(float* leftOut, float* rightOut, int coun
  * Used by the Dart layer to auto-skip a track that has gone silent. */
 REWAMP_EXPORT double rewamp_silent_seconds(void);
 REWAMP_EXPORT void   rewamp_reset_silence(void);
+/* Le décodeur a encore des événements à jouer: la sortie peut être muette
+ * sans que le morceau soit fini (voir rewamp_audio.c). */
+void rewamp_decoder_activity(void);
 
 /* Oscilloscope line thickness multiplier (0.5–3; 1.0 = default). */
 REWAMP_EXPORT void  rewamp_set_viz_line_width(float w);
 REWAMP_EXPORT float rewamp_get_viz_line_width(void);
 
 /* CRT effect levels packed into one int:
- *   bits 0-1 = glow level  (0=off, 1=low, 2=high)
+ *   bits 0-1 = RÉSERVÉS — c'était le halo (« glow »), retiré le 2026-09-15
+ *              (demande utilisateur); l'encodage ne bouge pas pour que les
+ *              deux côtés gardent la même lecture du masque
  *   bits 2-3 = speed level (0=off, 1=low, 2=high) */
-#define REWAMP_CRT_GLOW_LEVEL(f)  ((f) & 3)
 #define REWAMP_CRT_SPEED_LEVEL(f) (((f) >> 2) & 3)
 REWAMP_EXPORT void rewamp_set_crt_flags(int mask);
 REWAMP_EXPORT int  rewamp_get_crt_flags(void);
@@ -280,6 +348,14 @@ REWAMP_EXPORT int     rewamp_voice_count(void);
  * UI (voice scope, notation, synthesized pattern grid) makes any sense. */
 REWAMP_EXPORT int     rewamp_voice_count_raw(void);
 REWAMP_EXPORT int     rewamp_voice_name(int v, char* out, int len);
+REWAMP_EXPORT int     rewamp_instrument_name(int idx, char* out, int len);
+REWAMP_EXPORT int     rewamp_voice_instrument(int v);
+REWAMP_EXPORT int     rewamp_voice_instruments(int32_t* out, int max);
+/* Instruments DATÉS, lus dans la timeline des notes (voir rewamp_notes.c). */
+REWAMP_EXPORT int     rewamp_notes_instruments_window(double fromSec, double toSec,
+                                                      int32_t* out, int max);
+REWAMP_EXPORT int     rewamp_notes_voice_instruments(int32_t* out, int max);
+REWAMP_EXPORT unsigned rewamp_instrument_names_generation(void);
 REWAMP_EXPORT int     rewamp_voice_chip(int v);
 REWAMP_EXPORT int     rewamp_chip_count(void);
 REWAMP_EXPORT int     rewamp_chip_name(int c, char* out, int len);
@@ -331,6 +407,7 @@ REWAMP_EXPORT float rewamp_noteviz_range_lo(void);
 REWAMP_EXPORT float rewamp_noteviz_range_hi(void);
 REWAMP_EXPORT void  rewamp_set_note_palette(int index);  /* 0..4 */
 REWAMP_EXPORT void  rewamp_set_note_style(int style);    /* 0=flat, 1=box */
+REWAMP_EXPORT void  rewamp_set_note_color_mode(int mode); /* 0=voix, 1=instrument */
 
 /* Tracker-pattern visualizer (mode 4). Declared here so the C++ TU gets C
  * linkage (unmangled symbols for the Dart FFI lookup). */
@@ -340,6 +417,11 @@ REWAMP_EXPORT void  rewamp_patternviz_uninit(void);
 REWAMP_EXPORT void  rewamp_patternviz_set_options(int palette, int scrollMode,
                                                   int showVolume, int smoothScroll);
 REWAMP_EXPORT void  rewamp_patternviz_set_xscroll(float px);
+/* Ligne active ÉPINGLÉE sur la barre: le motif défile toujours en continu,
+ * mais la barre affiche la ligne ENTENDUE alignée au pixel (notes, instruments,
+ * volumes, effets) au lieu des deux demi-lignes qui la traversent. Sans effet
+ * en mode « barre mobile ». */
+REWAMP_EXPORT void  rewamp_patternviz_set_pinned_row(int on);
 REWAMP_EXPORT void  rewamp_patternviz_set_layout(float sizeScale, int columnMode);
 REWAMP_EXPORT void  rewamp_patternviz_set_pixel_scale(float dpr);
 /* 1 = opaque palette background (no artwork behind the grid), 0 = blended. */
@@ -355,6 +437,25 @@ REWAMP_EXPORT double rewamp_patternviz_future_seconds(void);
 REWAMP_EXPORT int   rewamp_spectrum_init(int width, int height);
 REWAMP_EXPORT void  rewamp_spectrum_render(void);
 REWAMP_EXPORT void  rewamp_spectrum_uninit(void);
+
+/* Piano visualizer (mode 6): one keyboard per voice (mode 0) or falling bars
+ * onto one keyboard (mode 1). Fed by the look-ahead note timeline, like the
+ * notation. Options: mode, colour by voice (0) / instrument (1), sparkles on
+ * struck keys. Same C-linkage rule as the spectrum above. */
+REWAMP_EXPORT int   rewamp_pianoviz_init(int width, int height);
+REWAMP_EXPORT void  rewamp_pianoviz_render(void);
+REWAMP_EXPORT void  rewamp_pianoviz_uninit(void);
+REWAMP_EXPORT void  rewamp_set_piano_options(int mode, int colorMode, int glow, int light);
+/* Horizontal view in WHITE-KEY units over the whole MIDI range (C-1 = white
+ * key 0, 75 whites in all): [lo, lo+span]. set_view = manual (drag/pinch from
+ * Dart, follows the finger); set_auto = back to the eased auto range. The
+ * getters return the view in force (manual or the eased auto one). */
+REWAMP_EXPORT void  rewamp_pianoviz_set_view(float lo, float span);
+REWAMP_EXPORT void  rewamp_pianoviz_set_auto(void);
+REWAMP_EXPORT int   rewamp_pianoviz_is_manual(void);
+REWAMP_EXPORT float rewamp_pianoviz_view_lo(void);
+REWAMP_EXPORT float rewamp_pianoviz_view_span(void);
+REWAMP_EXPORT double rewamp_pianoviz_future_seconds(void);
 
 /* projectM (Milkdrop) visualizer (mode 3) — renders a full opaque frame; no
  * artwork background. Presets/textures load from <datadir>/projectm/. */
@@ -419,6 +520,7 @@ REWAMP_EXPORT int64_t rewamp_scope_register(int width, int height);
 REWAMP_EXPORT int64_t rewamp_noteviz_register(int width, int height);
 REWAMP_EXPORT int64_t rewamp_patternviz_register(int width, int height);
 REWAMP_EXPORT int64_t rewamp_spectrum_register(int width, int height);
+REWAMP_EXPORT int64_t rewamp_pianoviz_register(int width, int height);
 REWAMP_EXPORT int64_t rewamp_projectm_register(int width, int height);
 REWAMP_EXPORT int     rewamp_viz_resize_register(int width, int height);
 REWAMP_EXPORT void    rewamp_viz_render_and_notify(void);
@@ -426,6 +528,7 @@ REWAMP_EXPORT void    rewamp_scope_render_and_notify(void);
 REWAMP_EXPORT void    rewamp_noteviz_render_and_notify(void);
 REWAMP_EXPORT void    rewamp_patternviz_render_and_notify(void);
 REWAMP_EXPORT void    rewamp_spectrum_render_and_notify(void);
+REWAMP_EXPORT void    rewamp_pianoviz_render_and_notify(void);
 REWAMP_EXPORT void    rewamp_projectm_render_and_notify(void);
 REWAMP_EXPORT void    rewamp_viz_unregister(void);
 
@@ -445,6 +548,17 @@ REWAMP_EXPORT void rewamp_viz_clear_artwork(void);
  * C_VISIBILITY_PRESET hidden: sans REWAMP_EXPORT le symbole EXISTE dans le
  * binaire mais pas dans sa table dynamique, et lookupFunction lève. */
 REWAMP_EXPORT void        rewamp_midi_set_soundfont(const char* path);
+/* 1 = le morceau chargé est un MIDI écrit pour MT-32 que FluidLite joue en
+ * GM faute de ROMs Roland (programmes traduits par la table ScummVM). Posé à
+ * chaque ouverture, y compris à 0. */
+REWAMP_EXPORT int         rewamp_midi_mt32_fallback(void);
+/* MT-32 (mt32emu): dossier des ROMs importées (défaut <datadir>/mt32), jeu
+ * retenu ("" = aucun utilisable — le greffon décline alors les .mid), et
+ * identification d'UN fichier pour l'import ("" = inconnu de mt32emu). */
+REWAMP_EXPORT void        rewamp_mt32_set_rom_dir(const char* path);
+REWAMP_EXPORT const char* rewamp_mt32_rom_status(void);
+REWAMP_EXPORT const char* rewamp_mt32_identify_rom(const char* path);
+REWAMP_EXPORT const char* rewamp_mt32_lcd(void);
 REWAMP_EXPORT int         rewamp_openmpt_active_instruments(uint8_t* out, int maxOut);
 REWAMP_EXPORT const char* rewamp_sid_md5(const char* path);
 

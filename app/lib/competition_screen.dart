@@ -5,6 +5,7 @@ import 'artwork_image.dart';
 import 'l10n.dart';
 import 'production_screen.dart' show globalOnOpenProduction;
 import 'rewamp_db.dart';
+import 'scrolling_text.dart';
 import 'track_options_sheet.dart'
     show showPlayChoiceSheet, PlayChoice, globalOnQueueAdd, globalOnPlayNowSong;
 
@@ -173,7 +174,7 @@ class _CompetitionScreenState extends State<CompetitionScreen> {
           ],
         ),
       ),
-      title: Text(e.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: ScrollingText(text: e.title),
       subtitle: subtitle.isEmpty
           ? null
           : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),

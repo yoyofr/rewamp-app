@@ -32,6 +32,10 @@
 #ifdef REWAMP_WITH_PMD
 
 #include "rewamp_plugin.h"
+
+/* Boucle forcée (rewamp_audio.c) — lus à l'open. */
+extern "C" int g_force_loop_mode;
+extern "C" int g_force_loop_native_veto;
 #include "rewamp_channel_data.h"
 #include "rewamp_assets.h"   // rewamp_get_data_dir() → bundled ym2608_adpcm_rom.bin
 #include "ModizerVoicesData.h"
@@ -164,6 +168,9 @@ static void pmd_apply_voice_layout(int voices) {
 }
 
 static RewampDecoder* pmd_open(const char* path, RewampAudioFormat* outFormat) {
+    /* Mode 1 (N boucles): pas de compte natif -> veto, le generique
+     * Dart compte les passes (voir configure_loop). */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
     if (!path) return NULL;
 
     char cleanPath[4096];
@@ -259,6 +266,21 @@ static uint64_t pmd_length(RewampDecoder* dec) {
     return dec ? dec->totalFrames : 0;
 }
 
+
+/* Boucle FORCÉE (repeat-morceau): le moteur ÉMULÉ boucle DE LUI-MÊME au point
+ * de boucle de la musique — c'est notre troncature à totalFrames (longueur de
+ * catalogue/tag) qui coupait, et la relance générique repartait du DÉBUT, ce
+ * qui s'entend (même famille que le .ay zxtune, « Midnight Resistance »).
+ * Mode 2 (infini): on lève la troncature, l'émulation joue et boucle au bon
+ * endroit. Mode 1 (N passes): pas de compte natif ici → VETO posé à l'open,
+ * le générique Dart compte — comportement inchangé. Filet: un moteur qui
+ * s'arrêterait quand même rend un read() à 0 → rechargement replayCurrent,
+ * exactement le comportement d'avant ce câblage. */
+static void pmd_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (dec != NULL && mode == 2) dec->totalFrames = 0;
+}
+
 static void pmd_close(RewampDecoder* dec) {
     if (!dec) return;
     pmd_stop();
@@ -273,6 +295,7 @@ static const RewampPluginVTable kPmdVTable = {
     pmd_seek,
     pmd_length,
     pmd_close,
+    pmd_configure_loop_fn,
 };
 
 extern "C" const RewampPluginVTable* rewamp_pmd_plugin(void) { return &kPmdVTable; }

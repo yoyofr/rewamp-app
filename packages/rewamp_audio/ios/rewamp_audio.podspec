@@ -44,6 +44,56 @@ Pod::Spec.new do |s|
     search_paths << '$(PODS_TARGET_SRCROOT)/../third_party/libopenmpt'
   end
 
+  # --- libxmp: the module formats libopenmpt cannot load -----------------------
+  # .musx (Archimedes Tracker), .liq/.no (Liquid Tracker), .fnk, .mgt, .stim,
+  # .emod, .mfp, .coco, .muse. Enabled by default; opt out with
+  # REWAMP_WITH_XMP=0. Registered AFTER libopenmpt and scoring one notch below
+  # it, so every format both can read still goes to libopenmpt.
+  #
+  # One TU per source (libxmp's loaders share file-static names), each wrapper
+  # carrying the two build switches and the rename header:
+  #   - LIBXMP_NO_PROWIZARD: third_party/prowizard IS libxmp's ProWizard set,
+  #     already vendored as a standalone converter -- building it twice would
+  #     define pw_* / ptk_table / tun_table twice;
+  #   - LIBXMP_NO_DEPACKERS: rewamp unpacks archives itself, and libxmp's
+  #     depackers duplicate zip/lzma/crc32 symbols from libarchive + liblzma;
+  #   - rewamp_xmp_rename.h prefixes the ~68 globals libxmp exports outside the
+  #     xmp_/libxmp_ namespace (hio_*, the endian read/write helpers, MD5*),
+  #     which ProWizard and uade already define.
+  # The ONLY include dir needed is include/ (common.h reaches "xmp.h" through
+  # the search path); it is scoped per-file to Classes/xmp_cores/* in the app
+  # Podfiles, NOT pod-wide -- libxmp's headers are common.h / mixer.h /
+  # player.h / format.h / loader.h. Everything else resolves relative to the
+  # real source file, which is why the plugin TU and the scope-capture header
+  # reach their headers by relative path.
+  if ENV['REWAMP_WITH_XMP'] != '0'
+    defines << 'REWAMP_WITH_XMP=1'   # registry + subsong dispatch, pod-wide
+
+    prepare_parts << <<-'SH'
+      CLASSES="$(pwd)/Classes"
+      WRAP="$CLASSES/xmp_cores"
+      SRC="$(pwd)/../third_party/libxmp"
+      REL="../../../third_party/libxmp"
+      rm -rf "$WRAP"; mkdir -p "$WRAP"
+      DEFS='#define LIBXMP_STATIC 1
+#define LIBXMP_NO_DEPACKERS 1
+#define LIBXMP_NO_PROWIZARD 1'
+      for f in "$SRC"/src/*.c; do
+        n="$(basename "$f" .c)"
+        printf '%s\n#include "%s/rewamp_xmp_rename.h"\n#include "%s/src/%s.c"\n' \
+          "$DEFS" "$REL" "$REL" "$n" > "$WRAP/core_$n.c"
+      done
+      for f in "$SRC"/src/loaders/*.c; do
+        n="$(basename "$f" .c)"
+        printf '%s\n#include "%s/rewamp_xmp_rename.h"\n#include "%s/src/loaders/%s.c"\n' \
+          "$DEFS" "$REL" "$REL" "$n" > "$WRAP/ld_$n.c"
+      done
+      # Le greffon a SA propre TU: chaque greffon définit struct RewampDecoder,
+      # deux dans la même unité ne compilent pas.
+      printf '#include "../../src/rewamp_plugin_xmp.c"\n' > "$CLASSES/rewamp_xmp_impl.c"
+    SH
+  end
+
   # --- ANGLE (OpenGL ES 3.0 → Metal) for the GL visualizers + projectM -------
   # Static xcframework (device + simulator slices, one welded libangle.a each)
   # prebuilt by scripts/build_angle_ios.sh into Libs/angle/ — same upstream
@@ -77,6 +127,7 @@ Pod::Spec.new do |s|
         printf '#include "../../src/rewamp_notes_render.cpp"\n'
         printf '#include "../../src/rewamp_pattern_render.cpp"\n'
         printf '#include "../../src/rewamp_spectrum_render.cpp"\n'
+        printf '#include "../../src/rewamp_piano_render.cpp"\n'
         printf '#include "../../src/apple/rewamp_viz_texture.h"\n'
         printf '#include "../../src/apple/rewamp_viz_texture.mm"\n'
         printf '#include "../../src/apple/rewamp_viz_plugin.mm"\n'
@@ -579,6 +630,12 @@ Pod::Spec.new do |s|
   # collides with furnace identifiers.
   if ENV['REWAMP_WITH_FURNACE'] != '0'
     defines      << 'REWAMP_WITH_FURNACE=1'
+    # Furnace décompresse lui-même ses modules, et NOTRE probe aussi: un `.dmf`
+    # DefleMask comme un `.fur` sont zlib-compressés, donc leur magie est SOUS
+    # la compression (rewamp_plugin_furnace.cpp, furnace_inflate_magic). Le
+    # binaire n'avait zlib que par les blocs GME/GBSPLAY/HIGHLYEXP — une
+    # dépendance par accident, qui disparaissait avec eux.
+    libraries    << 'z' unless libraries.include?('z')
     defines      << 'HAVE_MOMO=1'
     defines      << 'HAVE_LOCALE=1'
     defines      << 'HAVE_DIRENT_TYPE=1'
@@ -764,6 +821,10 @@ Pod::Spec.new do |s|
   # OPLL emulators are namespaced kss_* in the vendored sources (see patches/libkss).
   if ENV['REWAMP_WITH_KSS'] != '0'
     defines << 'REWAMP_WITH_KSS=1'   # registry gate (rewamp_registry.c, pod-wide)
+    # mus2kss porte un `main()` sous `#ifndef MUS2KSS_LIBRARY` — sans ce define,
+    # un SECOND point d'entrée entre dans le binaire. Même famille que les
+    # outils à main() de libvorbis (barkmel/psytune/tone), exclus à la source.
+    defines << 'MUS2KSS_LIBRARY=1'
 
     prepare_parts << <<-'SH'
       CLASSES="$(pwd)/Classes"
@@ -786,6 +847,9 @@ Pod::Spec.new do |s|
         flat=$(printf '%s' "$rel" | tr '/.' '__')
         printf '#include "%s/%s"\n' "$REL" "$rel" > "$WRAP/${flat}.c"
       done
+      # FAC Soundtracker .MUS → image KSS (embarque FST2.BIN, le replayer FAC
+      # d'origine). Autonome, un seul TU.
+      printf '#include "../../../third_party/mus2kss/mus2kss.c"\n' > "$WRAP/mus2kss.c"
       # plugin glue (C++).
       printf '#include "../../../src/rewamp_plugin_kss.cpp"\n' > "$WRAP/zz_rewamp_kss_plugin.cpp"
     SH
@@ -1555,6 +1619,42 @@ Pod::Spec.new do |s|
         printf '#include "../../../third_party/fluidlite/src/%s.c"\n' "$n" > "$FL_DIR/$n.c"
       done
       printf '#include "../../src/rewamp_plugin_midi.c"\n' > "$CLASSES/rewamp_midi_plugin_impl.c"
+      # tml.h implementation (one per binary, shared with the MT-32 plugin).
+      printf '#include "../../src/rewamp_tml.c"\n' > "$CLASSES/rewamp_tml_impl.c"
+    SH
+  end
+
+  # --- MT-32: Roland MT-32 / CM-32L emulation for .mid (munt mt32emu, LGPL) --
+  # Enabled by default; opt out with REWAMP_WITH_MT32=0. Second MIDI engine next
+  # to FluidLite, same tml.h sequencer (its implementation TU rewamp_tml.c is
+  # emitted here once, whichever of the two is on). ROMs are the user's
+  # (<datadir>/mt32), never bundled. Only third_party/mt32emu goes pod-wide —
+  # the plugin includes <mt32emu/mt32emu.h> and the core's generic header names
+  # (File.h, Types.h, Tables.h) live one level down, reached by quote-includes
+  # relative to each source, so no per-file scoping is needed.
+  if ENV['REWAMP_WITH_MT32'] != '0'
+    defines << 'REWAMP_WITH_MT32=1'
+    defines << 'MT32EMU_WITH_INTERNAL_RESAMPLER=1'
+    defines << 'MT32EMU_WITH_STD_SNPRINTF=1'
+    search_paths  << '$(PODS_TARGET_SRCROOT)/../third_party/mt32emu'
+    search_paths  << '$(PODS_TARGET_SRCROOT)/../third_party/tml'
+
+    prepare_parts << <<-'SH'
+      CLASSES="$(pwd)/Classes"
+      WRAP="$CLASSES/mt32_cores"
+      rm -rf "$WRAP"; mkdir -p "$WRAP"
+      for n in Analog BReverbModel Display File FileStream LA32FloatWaveGenerator \
+               LA32Ramp LA32WaveGenerator MidiStreamParser Part Partial PartialManager \
+               Poly ROMInfo Synth Tables TVA TVF TVP SampleRateConverter; do
+        printf '#include "../../../third_party/mt32emu/mt32emu/%s.cpp"\n' "$n" > "$WRAP/${n}.cpp"
+      done
+      printf '#include "../../../third_party/mt32emu/mt32emu/sha1/sha1.cpp"\n' > "$WRAP/sha1.cpp"
+      printf '#include "../../../third_party/mt32emu/mt32emu/srchelper/InternalResampler.cpp"\n' > "$WRAP/InternalResampler.cpp"
+      for n in FIRResampler IIR2xResampler LinearResampler ResamplerModel SincResampler; do
+        printf '#include "../../../third_party/mt32emu/mt32emu/srchelper/srctools/src/%s.cpp"\n' "$n" > "$WRAP/srctools_${n}.cpp"
+      done
+      printf '#include "../../../src/rewamp_plugin_mt32.cpp"\n' > "$WRAP/zz_rewamp_mt32_plugin.cpp"
+      [ -f "$CLASSES/rewamp_tml_impl.c" ] || printf '#include "../../src/rewamp_tml.c"\n' > "$CLASSES/rewamp_tml_impl.c"
     SH
   end
 

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Lanceur de l'AppImage.
+#
+# ⚠️ Il ne pose NI LD_LIBRARY_PATH NI aucune variable de bibliothèque, et c'est
+# volontaire: le binaire porte déjà `$ORIGIN/lib` dans son RPATH, donc il trouve
+# ce qu'on lui a embarqué tout seul. Poser LD_LIBRARY_PATH ferait chercher NOS
+# bibliothèques à tout ce que le processus charge ensuite — y compris le GTK du
+# système — ce qui est exactement le conflit que la règle de partage de
+# build_appimage.sh existe pour éviter.
+#
+# Pas de GDK_BACKEND non plus: forcer X11 rend les visualiseurs GL NOIRS (GTK3
+# y donne un contexte GLX, et leurs images passent par EGLImage) — voir
+# app/linux/runner/main.cc.
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/rewamp/rewamp" "$@"

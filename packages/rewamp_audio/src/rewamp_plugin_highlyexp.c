@@ -8,7 +8,12 @@
 #ifdef REWAMP_WITH_HIGHLYEXP
 
 #include "rewamp_plugin.h"
+
+/* Boucle forcée (rewamp_audio.c) — lus à l'open. */
+extern int g_force_loop_mode;
+extern int g_force_loop_native_veto;
 #include "rewamp_channel_data.h"
+#include "rewamp_psf_fade.h"   /* fondu de fin décrit par le tag `fade` */
 #include "ModizerVoicesData.h"
 #include "ModizerConstants.h"
 
@@ -46,6 +51,7 @@ struct RewampDecoder {
     int      sampleRate;
     int      voiceCount;
     uint64_t totalFrames;   /* from tags (length + fade), 0 if unknown */
+    uint64_t fadeFrames;    /* rampe finale (tag `fade`), 0 = aucune */
     uint64_t framePos;      /* current emulator output position (frames) */
     int      finished;
     char     path[4096];    /* clean path, for reload-based backward seek */
@@ -92,6 +98,10 @@ struct he_info_state {
     int tag_length_ms;
     int tag_fade_ms;
     unsigned refresh;
+    /* Tags du panneau ⓘ — jamais publiés jusqu'au 2026-09-05: seuls
+     * length/fade étaient lus. Shift-JIS → UTF-8 par rewamp_psf_tag_copy. */
+    char title[256], artist[256], game[256], year[64], copyright[256],
+         comment[512], psfby[128];
 };
 
 /* Parse "m:ss.xxx" / "ss.xxx" style time into milliseconds. */
@@ -122,6 +132,13 @@ static int he_info_meta(void *ctx, const char *name, const char *value) {
     if      (strcasecmp(name, "length") == 0)   st->tag_length_ms = parse_time_ms(value);
     else if (strcasecmp(name, "fade") == 0)     st->tag_fade_ms   = parse_time_ms(value);
     else if (strcasecmp(name, "_refresh") == 0) st->refresh       = (unsigned)atoi(value);
+    else if (strcasecmp(name, "title")     == 0) rewamp_psf_tag_copy(st->title,     sizeof(st->title),     value);
+    else if (strcasecmp(name, "artist")    == 0) rewamp_psf_tag_copy(st->artist,    sizeof(st->artist),    value);
+    else if (strcasecmp(name, "game")      == 0) rewamp_psf_tag_copy(st->game,      sizeof(st->game),      value);
+    else if (strcasecmp(name, "year")      == 0) rewamp_psf_tag_copy(st->year,      sizeof(st->year),      value);
+    else if (strcasecmp(name, "copyright") == 0) rewamp_psf_tag_copy(st->copyright, sizeof(st->copyright), value);
+    else if (strcasecmp(name, "comment")   == 0) rewamp_psf_tag_copy(st->comment,   sizeof(st->comment),   value);
+    else if (strcasecmp(name, "psfby")     == 0) rewamp_psf_tag_copy(st->psfby,     sizeof(st->psfby),     value);
     return 0;
 }
 
@@ -237,6 +254,9 @@ static int he_build_core(RewampDecoder *dec) {
 /* ── open ───────────────────────────────────────────────────────────────────── */
 
 static RewampDecoder* he_open(const char *path, RewampAudioFormat *outFormat) {
+    /* Mode 1 (N boucles): pas de compte natif -> veto, le generique
+     * Dart compte les passes (voir configure_loop ci-dessous). */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
     char cleanPath[4096];
     strncpy(cleanPath, path, sizeof(cleanPath) - 1);
     cleanPath[sizeof(cleanPath) - 1] = '\0';
@@ -264,6 +284,9 @@ static RewampDecoder* he_open(const char *path, RewampAudioFormat *outFormat) {
     int len_ms = info.tag_length_ms + info.tag_fade_ms;
     dec->totalFrames = (len_ms > 0)
         ? (uint64_t)((double)len_ms / 1000.0 * dec->sampleRate) : 0;
+    dec->fadeFrames = rewamp_psf_fade_frames(info.tag_fade_ms,
+                                             (uint32_t)dec->sampleRate,
+                                             dec->totalFrames);
 
     /* Voice / oscilloscope setup. */
     rewamp_channel_data_reset(dec->voiceCount);
@@ -282,6 +305,14 @@ static RewampDecoder* he_open(const char *path, RewampAudioFormat *outFormat) {
         rewamp_voices_add_chip("SPU", 0, dec->voiceCount);
     }
 
+    /* Panneau ⓘ, même forme que rewamp_plugin_gsf.cpp (la référence PSF). */
+    if (info.title[0])     rewamp_track_message_append("Title: %s\n",     info.title);
+    if (info.artist[0])    rewamp_track_message_append("Artist: %s\n",    info.artist);
+    if (info.game[0])      rewamp_track_message_append("Game: %s\n",      info.game);
+    if (info.year[0])      rewamp_track_message_append("Year: %s\n",      info.year);
+    if (info.copyright[0]) rewamp_track_message_append("Copyright: %s\n", info.copyright);
+    if (info.psfby[0])     rewamp_track_message_append("PSF by: %s\n",    info.psfby);
+    if (info.comment[0])   rewamp_track_message_append("Comment: %s\n",   info.comment);
     if (outFormat) {
         outFormat->channels   = HE_STEREO;
         outFormat->sampleRate = (uint32_t)dec->sampleRate;
@@ -305,6 +336,7 @@ static uint64_t he_read(RewampDecoder *dec, float *out, uint64_t frameCount) {
     }
 
     static int16_t tmp[HE_BATCH_FRAMES * HE_STEREO];
+    const uint64_t fadeBase = dec->framePos;
     uint64_t written = 0;
     while (written < frameCount) {
         uint32_t want = HE_BATCH_FRAMES;
@@ -323,6 +355,8 @@ static uint64_t he_read(RewampDecoder *dec, float *out, uint64_t frameCount) {
             dst[i] = tmp[i] / 32768.0f;
         written += howmany;
     }
+    rewamp_psf_fade_apply(out, written, HE_STEREO, fadeBase,
+                          dec->totalFrames, dec->fadeFrames);
     dec->framePos += written;
     return written;
 }
@@ -368,6 +402,24 @@ static uint64_t he_length(RewampDecoder *dec) {
 
 /* ── close ──────────────────────────────────────────────────────────────────── */
 
+
+/* Boucle FORCÉE (repeat-morceau): le moteur ÉMULÉ boucle DE LUI-MÊME au point
+ * de boucle de la musique — c'est notre troncature à totalFrames (longueur de
+ * catalogue/tag) qui coupait, et la relance générique repartait du DÉBUT, ce
+ * qui s'entend (même famille que le .ay zxtune, « Midnight Resistance »).
+ * Mode 2 (infini): on lève la troncature, l'émulation joue et boucle au bon
+ * endroit. Mode 1 (N passes): pas de compte natif ici → VETO posé à l'open,
+ * le générique Dart compte — comportement inchangé. Filet: un moteur qui
+ * s'arrêterait quand même rend un read() à 0 → rechargement replayCurrent,
+ * exactement le comportement d'avant ce câblage. */
+static void he_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (dec == NULL) return;
+    if (mode == 2) dec->totalFrames = 0;
+    /* Toute boucle forcée retire le fondu natif: voir rewamp_psf_fade.h. */
+    if (mode != 0) dec->fadeFrames = 0;
+}
+
 static void he_close(RewampDecoder *dec) {
     if (!dec) return;
     if (dec->psf2fs) psf2fs_delete(dec->psf2fs);
@@ -400,7 +452,7 @@ static const RewampPluginVTable kHeVTable = {
     he_seek,
     he_length,
     he_close,
-    NULL,              /* configure_loop */
+    he_configure_loop_fn,
     0,                 /* supportsNativeFadeout */
     "highlyexp",       /* engine_id */
     he_param_changed,  /* live settings */

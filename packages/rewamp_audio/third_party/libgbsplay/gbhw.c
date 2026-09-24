@@ -116,6 +116,7 @@ void gbhw_init_struct(struct gbhw *gbhw) {
 
 	gbhw->filter_constant = FILTER_CONST_DMG;
 	gbhw->filter_enabled = 1;
+	gbhw->capture_voices = 1;   /* YOYOFR/rewamp — voir gbhw.h */
 	gbhw->cap_factor = 0x10000;
 
 	gbhw->update_level = 0;
@@ -716,7 +717,7 @@ void gbhw_flush_buffer(struct gbhw *gbhw)
     
     //YOYOFR
     /* integrate buffer and write into per-channel ring buffers */
-    for (int ii=0;ii<4;ii++) {
+    for (int ii=0; gbhw->capture_voices && ii<4; ii++) {
         if (!m_voice_buff[ii] || !m_voice_buff_accumul_temp[ii]) continue;
         l_smpl = gbhw->soundbuf->lvl_ch[ii];
         l_cap = gbhw->soundbuf->cap_ch[ii];
@@ -747,7 +748,10 @@ void gbhw_flush_buffer(struct gbhw *gbhw)
 	memmove(gbhw->impbuf->data32, gbhw->impbuf->data32+(2*gbhw->soundbuf->samples), 8*overlap);
     
     //YOYOFR
-    for (int ii=0;ii<4;ii++) {
+    for (int ii=0; gbhw->capture_voices && ii<4; ii++) {
+        /* La garde NULL manquait ici alors que la boucle ci-dessus l'a: un
+         * tampon d'accumulation non alloué faisait un memmove depuis NULL. */
+        if (!m_voice_buff_accumul_temp[ii]) continue;
         memmove(m_voice_buff_accumul_temp[ii], m_voice_buff_accumul_temp[ii]+(gbhw->soundbuf->samples), 4*overlap);
         memset(m_voice_buff_accumul_temp[ii] + overlap, 0, gbhw->impbuf->bytes/2 - 4*overlap);
     }
@@ -846,9 +850,10 @@ static void gb_sound_update_level(struct gbhw *gbhw)
 	}
     
     //TODO:  MODIZER changes start / YOYOFR
-    if (gbs_seek_needed==-1) {
+    if (gbhw->capture_voices && gbs_seek_needed==-1) {
         long val=0;
         for (int i=0;i<4;i++) {
+            if (!m_voice_buff_accumul_temp[i]) continue;
             if (gbhw->ch[i].leftgate || gbhw->ch[i].rightgate ) val=(gbhw->ch[i].lvl);
             if (gbhw->ch[i].last_lvl!=val) {
                 gb_change_level_mdz(gbhw,val-gbhw->ch[i].last_lvl,m_voice_buff_accumul_temp[i]);

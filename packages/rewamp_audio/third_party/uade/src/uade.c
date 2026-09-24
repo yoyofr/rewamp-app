@@ -1232,7 +1232,45 @@ void uadecore_reset(void)
 		  goto skiptonextsong;
 	  }
 
+	  /*
+	   * REWAMP: the 68k gets the module's BASENAME, not its host path.
+	   *
+	   * An eagleplayer that loads companions from a directory builds the
+	   * path itself, in a FIXED Amiga-side buffer we do not control (no
+	   * source: the data/players entries are 68k binaries). SonixMusicDriver's is 128
+	   * bytes, and it appends "/Instruments/<sample>" to whatever it was
+	   * handed. Our download tree spends 114 of those on
+	   * ".../online/modland/<uuid>" alone: 114 + "/Instruments/" = 127, so
+	   * the sample name was truncated to NOTHING and uadecore was asked for
+	   * the DIRECTORY -- "File (.../Instruments/) is a directory" in the
+	   * log, an empty file back, and a silent tune. The same album copied
+	   * to a short path played fine, which is what pinned the length: an
+	   * 80-character directory left 34 bytes for the name and worked.
+	   *
+	   * A basename costs ~15 bytes instead of 130 and cannot overflow
+	   * anything. It is safe because every file the 68k then asks for comes
+	   * back through uade_find_amiga_file(), whose in-process fast path
+	   * already resolves a RELATIVE name against `moduledir` -- and
+	   * `moduledir` is derived on the FRONTEND side from
+	   * `state->song.info.modulefname`, which keeps the full host path.
+	   * Shortening what the Amiga sees therefore loses nothing.
+	   *
+	   * ⚠️ Upstream's non-in-process path resolves a relative name against
+	   * the process CWD ("./"), not the module dir, so this shortcut is
+	   * only correct under UADE_IN_PROCESS -- which is how we always build
+	   * (iOS forbids fork). Guarded accordingly.
+	   */
+#ifdef UADE_IN_PROCESS
+	  {
+		  const char *_rw_base = strrchr(song.modulename, '/');
+		  _rw_base = _rw_base ? _rw_base + 1 : song.modulename;
+		  if (_rw_base[0] == '\0')
+			  _rw_base = song.modulename;
+		  strlcpy((char *) get_real_address(MODULE_NAME_ADDR), _rw_base, 1024);
+	  }
+#else
 	  strlcpy((char *) get_real_address(MODULE_NAME_ADDR), song.modulename, 1024);
+#endif
 	  uade_put_long(SCORE_MODULE_NAME_ADDR, MODULE_NAME_ADDR);
   } else {
 	  if (!valid_address(MODULE_NAME_ADDR, strlen(song.playername) + 1)) {

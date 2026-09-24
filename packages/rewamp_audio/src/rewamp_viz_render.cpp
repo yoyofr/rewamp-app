@@ -180,6 +180,16 @@ static uint8_t* g_art_pending = nullptr;
 static int      g_art_pending_w = 0;
 static int      g_art_pending_h = 0;
 static volatile int g_art_dirty = 0;
+/* Y A-T-IL une pochette ? — distinct de son OPACITÉ.
+ *
+ * ⚠️ « Effacer la pochette » et « régler son opacité » sont deux choses, et les
+ * confondre a un symptôme retors: `clear_artwork` se contentait de poser
+ * l'opacité à 0, mais la TEXTURE GL gardait ses pixels. N'importe quel réglage
+ * touché ensuite rappelle `set_artwork_opacity` avec la valeur de
+ * l'utilisateur — un pincement dans la vue motifs, par exemple — et la
+ * pochette du morceau PRÉCÉDENT reparaissait. Le rendu se gate donc sur CE
+ * drapeau, et l'opacité redevient ce qu'elle est: une préférence. */
+static volatile int g_art_have  = 0;
 // On Android the GL renderer runs on its own thread (sv_thread_main) while Dart
 // calls rewamp_viz_set_artwork/clear_artwork from the platform thread — so the
 // pending buffer + its dims are touched concurrently. Without this lock the
@@ -307,7 +317,8 @@ static void art_upload_if_dirty(void)
 
 static void art_render(int vw, int vh)
 {
-    if (!g_art_prog || !g_art_tex || g_art_opacity <= 0.001f || g_art_tw < 1 || g_art_th < 1) return;
+    if (!g_art_have || !g_art_prog || !g_art_tex ||
+        g_art_opacity <= 0.001f || g_art_tw < 1 || g_art_th < 1) return;
     glUseProgram(g_art_prog);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, g_art_tex);
@@ -362,6 +373,7 @@ REWAMP_EXPORT void rewamp_viz_set_artwork(const uint8_t* rgba, int w, int h, flo
             memcpy(g_art_pending, rgba, sz);
             g_art_pending_w = w;
             g_art_pending_h = h;
+            g_art_have = 1;
         }
     }
     g_art_dirty = 1;
@@ -375,7 +387,11 @@ REWAMP_EXPORT void rewamp_viz_set_artwork_opacity(float opacity)
 REWAMP_EXPORT void rewamp_viz_clear_artwork(void)
 {
     std::lock_guard<std::mutex> lk(g_art_mtx);
-    g_art_opacity = 0.0f;
+    /* PAS `g_art_opacity = 0` — c'est une préférence de l'utilisateur, et un
+     * `set_artwork_opacity` ultérieur (n'importe quel réglage touché) la
+     * rétablirait en ressortant la texture encore chargée. C'est le drapeau
+     * « il y a une pochette » qui tombe. */
+    g_art_have = 0;
     if (g_art_pending) { free(g_art_pending); g_art_pending = nullptr; }
     g_art_dirty = 0;
 }
@@ -438,9 +454,13 @@ REWAMP_EXPORT int rewamp_viz_init(int width, int height)
     return 0;
 }
 
-// Draws one channel's trace (ribbon) with optional CRT glow + beam-speed alpha.
+// Draws one channel's trace (ribbon) with the optional beam-speed alpha.
+//
+// ⚠️ Le HALO (« glow ») a été RETIRÉ le 2026-09-15 (demande utilisateur): deux
+// passes larges et additives sous la trace, une par niveau. Les bits 0-1 de
+// `rewamp_set_crt_flags` restent réservés — l'encodage ne bouge pas.
 static void draw_trace(const float* pts, float r, float g, float b,
-                       int glowLvl, int speedLvl, float thick, int W, int H)
+                       int speedLvl, float thick, int W, int H)
 {
     const GLsizei ribbonBytes = (GLsizei)(sizeof(GLfloat) * VIZ_SAMPLES * 4);
 
@@ -453,26 +473,6 @@ static void draw_trace(const float* pts, float r, float g, float b,
     } else if (g_alphaLoc >= 0) {
         glDisableVertexAttribArray(g_alphaLoc);
         glVertexAttrib1f(g_alphaLoc, 1.0f);
-    }
-
-    if (glowLvl > 0) {
-        // Additive halo passes; high level = wider + brighter.
-        const float w1 = glowLvl == 2 ? 6.0f : 4.0f;
-        const float w2 = glowLvl == 2 ? 3.0f : 2.0f;
-        const float a1 = glowLvl == 2 ? 0.28f : 0.18f;
-        const float a2 = glowLvl == 2 ? 0.42f : 0.30f;
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-        build_ribbon(pts, VIZ_SAMPLES, thick * w1, W, H, g_ribbon);
-        glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
-        glBufferData(GL_ARRAY_BUFFER, ribbonBytes, g_ribbon, GL_DYNAMIC_DRAW) /* orphan: tiler-safe */;
-        glUniform4f(g_colorLoc, r, g, b, a1);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, VIZ_SAMPLES * 2);
-
-        build_ribbon(pts, VIZ_SAMPLES, thick * w2, W, H, g_ribbon);
-        glBufferData(GL_ARRAY_BUFFER, ribbonBytes, g_ribbon, GL_DYNAMIC_DRAW) /* orphan: tiler-safe */;
-        glUniform4f(g_colorLoc, r, g, b, a2);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, VIZ_SAMPLES * 2);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
 
     // Core trace.
@@ -519,9 +519,7 @@ REWAMP_EXPORT void rewamp_viz_render(void)
         g_verts[VIZ_SAMPLES * 2 + i * 2 + 1] = g_right[trig + i];
     }
 
-    const int flags    = rewamp_get_crt_flags();
-    const int glowLvl  = REWAMP_CRT_GLOW_LEVEL(flags);
-    const int speedLvl = REWAMP_CRT_SPEED_LEVEL(flags);
+    const int speedLvl = REWAMP_CRT_SPEED_LEVEL(rewamp_get_crt_flags());
     const int W = rewamp_gl_width();
     const int H = rewamp_gl_height();
 
@@ -544,8 +542,8 @@ REWAMP_EXPORT void rewamp_viz_render(void)
                                               : rewamp_stereo_mono_color();
     const float* cr = rewamp_stereo_bicolor() ? rewamp_stereo_right_color()
                                               : rewamp_stereo_mono_color();
-    draw_trace(g_verts,                   cl[0], cl[1], cl[2], glowLvl, speedLvl, thick, W, H);
-    draw_trace(g_verts + VIZ_SAMPLES * 2, cr[0], cr[1], cr[2], glowLvl, speedLvl, thick, W, H);
+    draw_trace(g_verts,                   cl[0], cl[1], cl[2], speedLvl, thick, W, H);
+    draw_trace(g_verts + VIZ_SAMPLES * 2, cr[0], cr[1], cr[2], speedLvl, thick, W, H);
 
     glBindVertexArray(0);
 #ifdef __ANDROID__

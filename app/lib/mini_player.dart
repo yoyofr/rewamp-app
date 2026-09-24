@@ -2,7 +2,10 @@ import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 import 'glass_chrome.dart';
 import 'l10n.dart';
+import 'mini_window.dart';
+import 'mini_window_player.dart';
 import 'player_controller.dart';
+import 'transport_log.dart';
 import 'artwork_image.dart';
 import 'artwork_palette.dart';
 import 'scrolling_text.dart';
@@ -79,6 +82,13 @@ class _MiniPlayerState extends State<MiniPlayer> {
     if (vx.abs() < _kSkipVelocity && _dragTravel.abs() < _kSkipDistance) return;
     // Swipe LEFT (negative) = the next track comes in from the right.
     final wantNext = (vx != 0 ? vx : -_dragTravel) < 0;
+    // ⚠️ Le geste couvre TOUTE la bande du mini-lecteur, boutons compris: un
+    // appui qui dérape de quelques pixels peut finir ici plutôt que sur pause.
+    // C'est précisément ce que le journal doit pouvoir distinguer.
+    logTransport(wantNext ? 'suivant' : 'précédent',
+        source: 'glissement mini-lecteur',
+        detail: 'v=${vx.toStringAsFixed(0)} px/s '
+            'dist=${_dragTravel.toStringAsFixed(0)} px');
     if (wantNext) {
       if (ctrl.canGoNext) ctrl.goNext();
     } else {
@@ -252,23 +262,16 @@ class _MiniPlayerBar extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TweenAnimationBuilder<double>(
-              tween: Tween<double>(end: progress),
-              duration: const Duration(milliseconds: 230),
-              curve: Curves.linear,
-              builder: (_, v, __) => LinearProgressIndicator(
-                value: v,
-                minHeight: 2,
-                backgroundColor: cs.surfaceContainerHighest,
-              ),
-            ),
             InkWell(
               onTap: onTap,
               child: Padding(
                 // Dalle plus basse: la vignette et les marges verticales sont
                 // ce qui donnait sa hauteur (44 + 2×8 + 2 px de progression).
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                //
+                // 4 px et non 5: la barre de progression vit maintenant DANS le
+                // bloc pochette+titre et le rend 3 px plus haut. Voir le budget
+                // de hauteur plus bas.
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                 child: Row(
                   children: [
                     // TRANSPORT D'ABORD, à position FIXE.
@@ -352,14 +355,26 @@ class _MiniPlayerBar extends StatelessWidget {
                                   ? Icons.pause
                                   : Icons.play_arrow,
                             ),
-                            onPressed: controller.togglePlay,
+                            onPressed: () {
+                              logTransport(
+                                  controller.isPlaying ? 'pause' : 'lecture',
+                                  source: 'bouton mini-lecteur',
+                                  detail: 'jouait=${controller.isPlaying}');
+                              controller.togglePlay();
+                            },
                           ),
                           IconButton(
                             key: const ValueKey('mp-next'),
                             iconSize: _kSkipIconSize,
                             icon: const Icon(Icons.fast_forward),
-                            onPressed:
-                                controller.canGoNext ? controller.goNext : null,
+                            onPressed: controller.canGoNext
+                                ? () {
+                                    logTransport('suivant',
+                                        source: 'bouton mini-lecteur',
+                                        detail: 'jouait=${controller.isPlaying}');
+                                    controller.goNext();
+                                  }
+                                : null,
                           ),
                           if (isSidebar)
                             LoopButton(
@@ -372,34 +387,90 @@ class _MiniPlayerBar extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    ArtworkImage(
-                      url: controller.artworkUrl,
-                      artist: controller.currentArtist,
-                      album: controller.currentAlbum,
-                      localFilePath: controller.filePath,
-                      targetDir: controller.artworkTargetDir,
-                      size: 38,
-                      borderRadius: BorderRadius.circular(6),
-                      // Pre-warm the palette cache while the track plays in the
-                      // bar, so the full player's tinted background is ready the
-                      // moment the sheet opens (even on first play).
-                      onImageResolved: ArtworkPalette.dominantColor,
-                      // No placeholder override: themed per-platform fallback —
-                      // but it needs the SIGNALS to pick a platform. Without
-                      // them it fell back to the path's extension alone, so the
-                      // bar showed the generic mark while the player right above
-                      // it showed the Amiga one for the same track.
-                      platformName: controller.currentPlatformName,
-                      formatHint: controller.currentFormatExt,
-                    ),
-                    const SizedBox(width: 12),
+                    // ── Pochette + titre + progression, en COLONNE ──────────
+                    //
+                    // La barre est alignée sur la POCHETTE et le TITRE, pas sur
+                    // la dalle: elle commence au bord gauche de la vignette et
+                    // s'arrête où le titre s'arrête, sans courir sous le
+                    // transport ni sous le bouton de queue. C'est la seule
+                    // façon d'y arriver sans mesurer la largeur du transport —
+                    // qui varie (les bascules shuffle/loop n'existent qu'en
+                    // barre latérale).
                     Expanded(
-                      child: _TitleBlock(controller: controller),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(children: [
+                            ArtworkImage(
+                              url: controller.artworkUrl,
+                              // Ce qui JOUE ne fait pas la queue des vignettes:
+                              // lancer un album depuis une grille de
+                              // collection laissait la barre sur la pochette
+                              // précédente le temps que la file d'hôte se
+                              // vide. Voir ArtworkImage.priority.
+                              priority: true,
+                              artist: controller.currentArtist,
+                              album: controller.currentAlbum,
+                              localFilePath: controller.filePath,
+                              targetDir: controller.artworkTargetDir,
+                              size: 38,
+                              borderRadius: BorderRadius.circular(6),
+                              // Pre-warm the palette cache while the track plays in the
+                              // bar, so the full player's tinted background is ready the
+                              // moment the sheet opens (even on first play).
+                              onImageResolved: ArtworkPalette.dominantColor,
+                              // No placeholder override: themed per-platform fallback —
+                              // but it needs the SIGNALS to pick a platform. Without
+                              // them it fell back to the path's extension alone, so the
+                              // bar showed the generic mark while the player right above
+                              // it showed the Amiga one for the same track.
+                              platformName: controller.currentPlatformName,
+                              formatHint: controller.currentFormatExt,
+                              engine: controller.audio.backendName,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _TitleBlock(controller: controller),
+                            ),
+                          ]),
+                          // ⚠️ BUDGET DE HAUTEUR: la dalle est posée dans un
+                          // `Positioned(height: _kMiniPlayerHeight)` de 52 px —
+                          // une constante dont dépend aussi la géométrie du vol
+                          // de pochette à l'ouverture du lecteur. Ce bloc vaut
+                          // 38 (vignette) + 2 + 3 = 43, et la marge verticale
+                          // est passée de 5 à 4: 4 + 43 + 4 = 51, sous la
+                          // borne. Ajouter ici sans reprendre là ferait
+                          // déborder.
+                          const SizedBox(height: 2),
+                          TweenAnimationBuilder<double>(
+                            tween: Tween<double>(end: progress),
+                            duration: const Duration(milliseconds: 230),
+                            curve: Curves.linear,
+                            builder: (_, v, __) => LinearProgressIndicator(
+                              value: v,
+                              minHeight: 3,
+                              borderRadius: BorderRadius.circular(2),
+                              color: cs.primary,
+                              // Sur le verre, le fond par défaut disparaît
+                              // selon ce qui passe derrière: un voile tiré de
+                              // `onSurface` tient dans les deux thèmes.
+                              backgroundColor:
+                                  cs.onSurface.withValues(alpha: 0.22),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     // La QUEUE est seule au bord droit, détachée du transport:
                     // elle n'est pas une commande de lecture (elle ouvre un
                     // panneau), et c'est le seul bouton dont la place doit
                     // suivre le bord de la barre, pas le groupe de transport.
+                    // Bureau: bascule en mini lecteur — « depuis l'écran
+                    // principal », sans avoir à ouvrir le lecteur d'abord.
+                    if (isSidebar && MiniWindow.instance.available)
+                      const MiniWindowButton(
+                          key: ValueKey('mp-miniwin'), iconSize: 20),
                     if (isSidebar && hasQueue)
                       IconButton(
                         padding: const EdgeInsets.symmetric(horizontal: 2),

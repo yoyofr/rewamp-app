@@ -55,11 +55,50 @@
 #define PV_MAXCH      64
 #define PV_MAX_ORDERS 2048
 
-/* Sliding tessellation window. Visible rows ≈ 34 (size tracks height), so a
- * ~3-screen window re-tessellates only every ~30 rows of playback. */
-#define PV_WIN_ROWS   144
-#define PV_WIN_EDGE   24         /* re-center when cursor is this close to an edge */
-#define PV_MAX_QUADS  (PV_WIN_ROWS * PV_MAXCH * 12 + 4096)
+/* Fenêtre de tessellation glissante, en LIGNES.
+ *
+ * ⚠️ Elle doit couvrir l'ÉCRAN plus une marge de chaque côté, et « l'écran »
+ * se compte en lignes: à ×1 il en tient ~34, mais la taille de police est
+ * CONTINUE et descend à ×0.15 — 200 lignes et plus sur un grand écran. Une
+ * fenêtre fixe de 144 devenait alors PLUS PETITE que la vue: le haut et le
+ * bas n'étaient pas tessellés, et le motif apparaissait PAR BLOCS au
+ * défilement (chaque re-centrage remplissait d'un coup ce qui manquait).
+ * D'où [PV_WIN_ROWS_MIN] comme plancher et une fenêtre calculée par frame
+ * (g_pv_win_rows), bornée par ce que le tampon peut tenir. */
+#define PV_WIN_ROWS_MIN 144
+/* Marge MINIMALE, en lignes, entre le curseur et le bord de la fenêtre avant
+ * de re-centrer. ⚠️ Ce n'est qu'un plancher: le seuil réel doit couvrir la
+ * DEMI-VUE (voir g_pv_win_edge), parce que le bas de l'écran montre le futur
+ * et sort de la fenêtre bien avant le curseur. */
+#define PV_WIN_EDGE   24
+#define PV_WIN_ROWS_MAX 1200
+/* Le tampon de tessellation est alloué À LA DEMANDE (pv_ensure_verts), pas à
+ * une taille fixe: son besoin est le produit `lignes × canaux`, et le figer
+ * était un compromis faux des deux côtés — trop petit pour un module à 32
+ * voies en police minuscule (la vue ne tenait pas dans la fenêtre, d'où des
+ * lignes vides qui se remplissaient d'un coup), trop grand pour les 4 voies
+ * d'un .mod. Plafond DUR: au-delà la fenêtre rétrécit, et c'est assumé — à ce
+ * point l'écran porte des dizaines de milliers de glyphes.
+ * 196608 quads ≈ 37 Mo, jamais alloué hors cas extrême. */
+#define PV_QUADS_HARD_MAX 196608
+/* Quads qu'une cellule peut pousser au pire (note 3 + instr 2 + vol 2 + fx 5). */
+/* Quads par cellule, pour DIMENSIONNER: une MOYENNE réaliste (note 3 +
+ * instrument 2 + volume 2 + effet ~5), pas le pire cas absolu (16, atteint
+ * seulement par un format à code d'effet de 4 lettres ET paramètre de 4
+ * chiffres). Le pire cas ferait doubler la mémoire pour un module qui ne
+ * l'utilise jamais. Sous-estimer ne plante pas — les pushes se coupent à
+ * `maxv` — mais TRONQUE la tessellation en silence, ce qui se lit comme des
+ * lignes vides: d'où la détection de saturation qui rétrécit la fenêtre au
+ * tour suivant (g_pv_win_shrink). */
+#define PV_QUADS_PER_CELL 12
+static int g_pv_win_rows = PV_WIN_ROWS_MIN;
+/* Seuil de re-centrage, recalculé avec la fenêtre. */
+static int g_pv_win_edge = PV_WIN_EDGE;
+/* Capacité RÉELLEMENT allouée de g_pv_verts, en quads. */
+static int g_pv_quads_cap = 0;
+/* Facteur de réduction de la fenêtre après une tessellation SATURÉE (le
+ * dimensionnement moyen s'est révélé optimiste pour ce morceau). En 1/16e. */
+static int g_pv_win_shrink = 16;
 #define PV_VFLOATS    8          /* x,y (window-local px), u,v (atlas; u<0 = solid), r,g,b,a */
 #define PV_DYN_QUADS  3072       /* per-frame layer: highlight + VU meters + header
                                     + gutter (worst: 64ch segmented = 64×20 blocks) */
@@ -94,6 +133,24 @@ typedef struct {
                                bottom of the screen (they grow upward from it) */
     int      forceFixedBar; /* the style PINS the bar centered — the moving-bar
                                option is a no-op for it (and hidden in the UI) */
+    /* Le style ne montre QUE le motif courant, quel que soit le mode de
+     * défilement: les motifs voisins ne sont pas dessinés (même court-circuit
+     * que `g_pv_opt_scroll == 1`, qui est le mode « barre mobile »). Pour un
+     * morceau qui se sert des motifs comme d'un écran, ce qui déborde du motif
+     * courant n'est pas du contexte, c'est une autre image.
+     * ⚠️ NOUVEAU CHAMP EN FIN de structure: les palettes sont initialisées PAR
+     * POSITION, l'insérer au milieu décalerait silencieusement les six autres. */
+    int      onlyCurrentOrder;
+    /* Le style impose le défilement par LIGNES ENTIÈRES: pas d'interpolation
+     * sous-ligne, quel que soit le réglage. Une image faite de motifs ne se
+     * lit qu'alignée sur sa grille. NOUVEAU CHAMP EN FIN, comme le précédent. */
+    int      forceNoSmooth;
+    /* Interligne SERRÉ: la ligne est rapprochée de ce facteur (0 = 1.0, pas de
+     * resserrement) SANS toucher à la taille des glyphes — c'est l'espace qui
+     * se réduit, pas le texte. Tient parce que la fonte garde de l'air sous la
+     * ligne de base (la grille n'écrit ni g, ni j, ni p: notes, hexa, points),
+     * donc ~15 % de recouvrement ne se voit pas. NOUVEAU CHAMP EN FIN. */
+    float    rowTighten;
 } PvPalette;
 
 static const PvPalette g_pv_palettes[] = {
@@ -140,6 +197,19 @@ static const PvPalette g_pv_palettes[] = {
       0x66701460,0x14283048,0xFF3A5AC0, 1.0f, 0, 0,
       PV_VOL_SOLID, 0xFF3FD23F, {0,0,0}, 0, 0, 5.0f,
       0, 0, 0 },
+    /* 6 Visualiser — les couleurs de Rewamp MOINS la grille: séparateur de
+     * colonne et bande de mesure à ALPHA NUL. Pour les morceaux qui se servent
+     * des motifs comme d'un écran (art ASCII, animations de colonnes), où tout
+     * repère régulier découpe le dessin. Les deux champs restent PRÉSENTS et
+     * transparents plutôt que retirés: le rendu les dessine sans condition, et
+     * « alpha 0 » est la façon dont un style dit « pas celui-ci ». */
+    { 0xFF120A11,0xFF1C1019,0xFFB4BCC8,0xFF6A6A6A,0xFF9AA4B0,
+      0xFFE8F0FF,0xFF3A3A3A,0xFF5FC9F8,0xFFA8E063,0xFFf2bad4, 0,
+      0xF0EAF0FF,0x00000000,0x00000000, 1.0f, 0xFF120A11, 0,
+      PV_VOL_SOLID, 0xFFA8E063, {0,0,0}, 0, 0, 5.0f,
+      0, 0, /* barre FIXE */ 1,
+      /* motif COURANT seulement */ 1, /* pas de sous-ligne */ 1,
+      /* interligne serré */ 0.85f },
 };
 #define PV_PAL_COUNT ((int)(sizeof(g_pv_palettes)/sizeof(g_pv_palettes[0])))
 #define PV_PAL_FT2   3   /* uses the authentic FastTracker 2 bitmap font (font1) */
@@ -149,8 +219,21 @@ static volatile int   g_pv_opt_palette = 0;
 static volatile int   g_pv_opt_scroll  = 0;   /* 0 = fixed bar, 1 = moving bar */
 static volatile int   g_pv_opt_vu      = 0;   /* per-channel volume meters */
 static volatile int   g_pv_opt_smooth  = 1;   /* sub-row interpolated scroll */
+/* Ligne active ÉPINGLÉE sur la barre: le motif continue de défiler en continu,
+ * mais la barre centrale devient un AFFICHEUR de la ligne qu'on entend —
+ * notes, instruments, volumes, effets — posé au pixel près au lieu de glisser.
+ * En défilement fluide la bande de la barre montre deux demi-lignes, ce qui la
+ * rend illisible précisément là où on regarde. Sans effet en mode « barre
+ * mobile » (la barre y est déjà alignée sur une ligne).
+ *
+ * ⚠️ Conséquence assumée: la ligne active est alors visible DEUX fois pendant
+ * qu'elle traverse — épinglée dans la barre, et à sa vraie position dans le
+ * motif qui défile. C'est inhérent au fait de vouloir les deux à la fois (un
+ * défilement continu ET un afficheur stable); la retirer du motif y creuserait
+ * un trou qui remonte, ce qui se lit plus mal. */
+static volatile int   g_pv_opt_pinrow  = 0;
 static volatile float g_pv_opt_xscroll = 0;   /* horizontal scroll, logical rows-px */
-static volatile float g_pv_opt_size    = 1.0f;/* user zoom (x1 / x1.5 / x2 …) */
+static volatile float g_pv_opt_size    = 1.0f;/* user zoom (x0.25 … x2) */
 /* Device pixel ratio of the surface. The glyph size is a FIXED number of
  * logical px (see PV_BASE_ROW_PX) times this — so the font stays the same
  * on-screen size regardless of the window/viewport size, and matches across
@@ -176,9 +259,19 @@ REWAMP_EXPORT void rewamp_patternviz_set_options(int palette, int scrollMode, in
 }
 REWAMP_EXPORT void rewamp_patternviz_set_xscroll(float px) { g_pv_opt_xscroll = px; }
 
-/* User zoom (0.5..4) and column visibility (0 all / 1 note+instr / 2 note). */
+/* Voir g_pv_opt_pinrow. Pas de re-tessellation: le mode ne change que l'ORDRE
+ * de dessin et ajoute un tirage du même intervalle de sommets. */
+REWAMP_EXPORT void rewamp_patternviz_set_pinned_row(int on) {
+    g_pv_opt_pinrow = on ? 1 : 0;
+}
+
+/* User zoom (0.15..4) and column visibility (0 all / 1 note+instr / 2 note).
+ * Le plancher est 0.15 et non 0.5: le réglage Dart est CONTINU et descend
+ * jusqu'à ×0.15 (une ligne de 2,6 px sur les 17 de base) pour montrer
+ * beaucoup de canaux d'un coup — un clamp plus haut ferait un réglage qui NE
+ * FAIT RIEN, en silence, sur tout le bas de sa plage. */
 REWAMP_EXPORT void rewamp_patternviz_set_layout(float sizeScale, int columnMode) {
-    if (sizeScale < 0.5f) sizeScale = 0.5f;
+    if (sizeScale < 0.15f) sizeScale = 0.15f;
     if (sizeScale > 4.0f) sizeScale = 4.0f;
     g_pv_opt_size = sizeScale;
     if (columnMode < 0) columnMode = 0;
@@ -224,7 +317,23 @@ static GLint    g_pv_uOff = -1, g_pv_uView = -1, g_pv_uTex = -1;
 static GLint    g_pv_uOvr = -1, g_pv_uOvrY = -1;
 
 /* ── tessellation state ──────────────────────────────────────────────────── */
-static float*   g_pv_verts   = NULL;   /* PV_MAX_QUADS * 6 * PV_VFLOATS, lazy */
+static float*   g_pv_verts   = NULL;   /* g_pv_quads_cap quads, alloué à la demande */
+
+/* Garantit que le tampon de tessellation tient `rows × nch` cellules (voir
+ * PV_QUADS_HARD_MAX). Rend le nombre de VERTS utilisable, 0 si l'allocation
+ * échoue — l'ancien tampon reste alors valide et intact. */
+static int pv_ensure_verts(int rows, int nch) {
+    int need = rows * (nch > 0 ? nch : 1) * PV_QUADS_PER_CELL + 4096;
+    if (need > PV_QUADS_HARD_MAX) need = PV_QUADS_HARD_MAX;
+    if (need > g_pv_quads_cap || !g_pv_verts) {
+        float* nb = (float*)realloc(
+            g_pv_verts, (size_t)need * 6 * PV_VFLOATS * sizeof(float));
+        if (!nb) return g_pv_verts ? g_pv_quads_cap * 6 : 0;
+        g_pv_verts = nb;
+        g_pv_quads_cap = need;
+    }
+    return g_pv_quads_cap * 6;
+}
 static float*   g_pv_dverts  = NULL;   /* PV_DYN_QUADS * 6 * PV_VFLOATS, lazy */
 static RewampPatternCell* g_pv_cells = NULL;
 static int      g_pv_cells_cap = 0;
@@ -239,8 +348,25 @@ static int      g_pv_nch_data = 0;     /* real channel stride of pattern_get dat
 static int      g_pv_first_g = 0;      /* window start, GLOBAL row index */
 static int      g_pv_nrows   = 0;      /* rows tessellated */
 static int      g_pv_bg_verts = 0;     /* [0,bg) bands+separators, [bg,all) cell glyphs */
+/* Sommet de DÉBUT des glyphes de chaque ligne de la fenêtre, + une sentinelle
+ * finale: la ligne i occupe [g_pv_row_v[i], g_pv_row_v[i+1]). Rempli par les
+ * deux tessellations (tracker et synthétique), toutes deux ordonnées PAR
+ * LIGNE. Écrit AVANT tout `continue`, donc une ligne sautée note simplement le
+ * même index que la suivante et rend un intervalle vide.
+ *
+ * Sert à re-tirer la ligne active à une position ÉPINGLÉE sans la ré-émettre:
+ * ce sont exactement les mêmes glyphes, avec un `uOff` différent. */
+static int      g_pv_row_v[PV_WIN_ROWS_MAX + 1];
 static int      g_pv_all_verts = 0;
 static int      g_pv_tess_order = -1;  /* moving mode: order the window belongs to */
+/* Époque de morceau que la fenêtre tessellée décrit. Sans elle, franchir une
+ * frontière gapless ne déclenchait AUCUN des critères habituels — la génération
+ * ne bouge plus (c'était justement son rôle avant), l'ordre courant peut être le
+ * même (deux morceaux commencent à l'ordre 0) — et le renderer gardait la
+ * fenêtre du morceau PRÉCÉDENT: son `gcur` valant quelques lignes contre un
+ * `g_pv_first_g` de plusieurs milliers, tout le motif se dessinait hors écran.
+ * Vu comme un motif VIDE, en-têtes de colonnes et barre seuls. */
+static int64_t  g_pv_tess_handoff = -1;
 
 /* Per-order prefix sums (fixed mode's global row timeline). */
 static int g_pv_pre[PV_MAX_ORDERS + 1];
@@ -532,9 +658,29 @@ static void pv_compute_metrics(int H) {
     float zoom = g_pv_opt_size; if (zoom <= 0.0f) zoom = 1.0f;
     float dpr  = g_pv_opt_pixscale; if (dpr <= 0.0f) dpr = 1.0f;
     float rowH = PV_BASE_ROW_PX * dpr * zoom * (ft2 ? 0.95f : 1.0f);
-    if (rowH < (float)m.fontH) rowH = (float)m.fontH;   /* never sub-pixel a glyph */
+    /* Plancher ABSOLU, plus la hauteur de cellule de la police.
+     * ⚠️ Le plancher `m.fontH` (16 px pour la police par défaut, soit ~×0.94
+     * de la ligne de base) rendait TOUTES les tailles réduites identiques:
+     * ×0.75, ×0.5 et ×0.25 tombaient sur la même valeur et le réglage ne
+     * faisait rien, en silence. Il datait de l'atlas BITMAP, où descendre
+     * sous la cellule voulait dire sous-échantillonner une image 1 bit; la
+     * police est cuite depuis un TTF à la taille d'AFFICHAGE juste en
+     * dessous, donc une petite ligne est rastérisée petite, pas réduite.
+     * 2 px = le plancher de ×0.15, la plus petite taille que le réglage
+     * Dart propose (17 px de base × 0.15 = 2,6 px à DPR 1). */
+    if (rowH < 2.0f) rowH = 2.0f;
+    /* Interligne serré (voir PvPalette::rowTighten): la LIGNE se resserre,
+     * le GLYPHE garde sa taille — noteS reste dérivé de la hauteur PLEINE.
+     * Les rapprocher tous les deux reviendrait à baisser le zoom, ce qui est
+     * déjà un réglage; ce qu'un style veut ici, c'est de la densité verticale
+     * à lisibilité constante. */
+    const float rowFull = rowH;
+    if (pal->rowTighten > 0.0f) {
+        rowH *= pal->rowTighten;
+        if (rowH < 2.0f) rowH = 2.0f;
+    }
     m.rowH  = rowH;
-    m.noteS = rowH / (float)m.fontH;
+    m.noteS = rowFull / (float)m.fontH;
     m.subS  = ft2 ? m.noteS * 0.78f : m.noteS;   /* FT2: slightly smaller sub-fields */
     m.numS  = m.noteS * 1.28f;                   /* channel numbers ≥20% bigger */
 
@@ -546,7 +692,10 @@ static void pv_compute_metrics(int H) {
      * every field is a ≤1:1 downscale. Render thread only; only on a size change. */
     {
         int wantH = (int)(m.rowH * 1.28f + 0.5f);
-        if (wantH < 12)  wantH = 12;
+        /* 8 = la cellule minimale que pv_bake_ttf accepte. Un plancher plus
+         * haut (12) forçait un atlas plus GROS que l'affichage aux tailles
+         * réduites — le downscale que ce rebake existe pour éviter. */
+        if (wantH < 8)   wantH = 8;
         if (wantH > 220) wantH = 220;
         if (ft2) {
             if (wantH != g_ft2_baked_h) {
@@ -600,6 +749,70 @@ static void pv_compute_metrics(int H) {
 
 /* ── window tessellation ─────────────────────────────────────────────────── */
 
+/* Repli d'une cellule sans note, en mode colonnes réduites: écrit dans la
+ * ZONE DE LA NOTE la première information que le mode courant n'affiche plus,
+ * avec sa couleur. Rend `nv` inchangé quand il n'y a rien à montrer (la note
+ * vide se dessine alors normalement).
+ *
+ * Ordre de priorité — celui de la lecture d'un tracker: instrument (ce qui
+ * joue), volume (à quel niveau), effet (ce qui bouge). En mode 1 l'instrument
+ * a déjà sa colonne, il est donc sauté.
+ *
+ * Le texte est tronqué à ce qui tient dans la largeur d'une note; un champ qui
+ * ne tiendrait pas du tout (fonte très grande, cellule très étroite) n'est pas
+ * dessiné plutôt que débordé sur la colonne voisine. */
+static int pv_push_fallback_field(float* v, int nv, int maxv,
+                                  const PvMetrics* m,
+                                  const RewampPatternCell* c,
+                                  float cx, float y,
+                                  const PvPalette* pal, float dim) {
+    const int maxChars = (m->subW > 0.0f)
+        ? (int)((3.0f * m->noteW) / m->subW) : 0;
+    if (maxChars <= 0) return nv;
+
+    char txt[24];
+    unsigned col = 0;
+    int n = 0;
+
+    if (m->colMode >= 2 && g_pv_instr_digits > 0 && c->instrument >= 0) {
+        pv_hexn(c->instrument, g_pv_instr_digits, txt);
+        col = pal->instrument;
+    } else if (g_pv_vol_chars > 0 && (c->vol[0] || c->volume >= 0)) {
+        if (c->vol[0]) {
+            int k = 0;
+            for (; k < REWAMP_PATTERN_VOL_CHARS - 1 && c->vol[k]; k++)
+                txt[k] = c->vol[k];
+            txt[k] = 0;
+        } else {
+            pv_hexn(c->volume, g_pv_vol_chars, txt);
+        }
+        col = pal->volume;
+    } else if (c->num_fx > 0 && c->fx[0][0]) {
+        /* Commande PUIS paramètre, dans un seul champ: c'est le couple qui a
+         * un sens (« A0F »), et le tronquer garde au moins la commande. */
+        int k = 0;
+        for (; k < REWAMP_PATTERN_FX_CHARS && c->fx[0][k]; k++) txt[k] = c->fx[0][k];
+        if (c->fxval[0] >= 0 && k < (int)sizeof(txt) - PV_MAX_FIELD_DIGITS - 1) {
+            char h[PV_MAX_FIELD_DIGITS + 1];
+            pv_hexn(c->fxval[0], g_pv_fxval_digits, h);
+            for (int j = 0; h[j]; j++) txt[k++] = h[j];
+        }
+        txt[k] = 0;
+        col = pal->fx;
+    } else {
+        return nv;
+    }
+
+    for (n = 0; txt[n]; n++) {}
+    if (n > maxChars) txt[maxChars] = 0;
+    if (!txt[0]) return nv;
+
+    float cr, cg, cb, ca;
+    pv_color(col, dim, &cr, &cg, &cb, &ca);
+    return pv_push_text(v, nv, maxv, txt, cx + m->xNote, y + m->subYoff,
+                        m->subS, m->fontH, cr, cg, cb, ca);
+}
+
 /* Push the cell glyphs of one row. cx = cell left px, y = row top px. */
 static int pv_push_cell(float* v, int nv, int maxv, const PvMetrics* m,
                         const RewampPatternCell* c, float cx, float y,
@@ -607,11 +820,37 @@ static int pv_push_cell(float* v, int nv, int maxv, const PvMetrics* m,
     float cr, cg, cb, ca;
     char txt[16];   /* widest: 4-char effect code + 4-digit param + '+' + NUL */
 
+    /* Colonnes MASQUÉES + note vide ⇒ la place de la note sert de REPLI: on y
+     * met la première information que ce mode n'affiche plus (instrument, puis
+     * volume, puis effet), dans SA couleur. Une cellule « vide » d'un mode
+     * réduit ne l'est presque jamais vraiment — elle porte un volume ou un
+     * effet que le mode a masqués — et trois points à la place ne disaient
+     * rien. La note, elle, garde toujours la priorité: c'est le repli qui
+     * cède, jamais l'inverse.
+     *
+     * Rendu dans la fonte des SOUS-champs (subS), tronqué à ce qui tient dans
+     * la largeur d'une note (3 glyphes de note): la cellule ne s'élargit pas,
+     * sinon le mode réduit ne réduirait plus rien. */
+    if (c->note == REWAMP_NOTE_EMPTY && m->colMode >= 1) {
+        int nv2 = pv_push_fallback_field(v, nv, maxv, m, c, cx, y, pal, dim);
+        if (nv2 != nv) {
+            nv = nv2;
+            if (m->colMode >= 2) return nv;
+            /* Mode « note + instrument »: le repli a pris la place de la note,
+             * l'instrument garde la sienne. On saute donc le dessin de la note
+             * et on reprend au champ suivant. */
+            goto after_note;
+        }
+    }
+
+    {
     char nt[4]; pv_note_text(c->note, nt);
     pv_color(c->note == REWAMP_NOTE_EMPTY ? pal->noteEmpty : pal->note,
              dim, &cr, &cg, &cb, &ca);
     nv = pv_push_text(v, nv, maxv, nt, cx + m->xNote, y, m->noteS, m->fontH, cr, cg, cb, ca);
+    }
     if (m->colMode >= 2) return nv;   /* note only */
+after_note:;
 
     const float sy = y + m->subYoff;
     if (g_pv_instr_digits > 0) {
@@ -705,13 +944,10 @@ static int pv_tessellate(int firstG, int curOrder) {
     const float cellW = m->cellW;
     const float rowW  = gutW + nch * cellW;
     const float sepS  = m->noteS;
-    const int   maxv  = PV_MAX_QUADS * 6;
 
-    if (!g_pv_verts) {
-        g_pv_verts = (float*)malloc((size_t)PV_MAX_QUADS * 6 * PV_VFLOATS * sizeof(float));
-        if (!g_pv_verts) return 0;
-    }
-    int nRows = PV_WIN_ROWS;
+    const int maxv = pv_ensure_verts(g_pv_win_rows, nch);
+    if (maxv <= 0) return 0;
+    int nRows = g_pv_win_rows;
     if (firstG < 0) firstG = 0;
     if (firstG + nRows > g_pv_total_rows) nRows = g_pv_total_rows - firstG;
     if (nRows <= 0) return 0;
@@ -742,7 +978,10 @@ static int pv_tessellate(int firstG, int curOrder) {
     for (int i = 0; i < nRows; i++) {
         int o, r;
         if (!pv_locate(firstG + i, &o, &r)) continue;
-        if (g_pv_opt_scroll == 1 && o != curOrder) continue;   /* moving: own pattern only */
+        /* « barre mobile » ou style qui l'impose: on ne dessine que le motif
+         * courant (voir PvPalette::onlyCurrentOrder). */
+        if ((g_pv_opt_scroll == 1 || pal->onlyCurrentOrder) && o != curOrder)
+            continue;
         if (r % 4 == 0) {
             float y = i * rowH;
             nv = pv_push_solid(v, nv, maxv, 0, y, rowW, y + rowH, pal->beatBg, 1.0f);
@@ -758,9 +997,11 @@ static int pv_tessellate(int firstG, int curOrder) {
     /* Cell glyphs, row-major. Pattern cells are fetched lazily per order. */
     int loadedOrder = -1, loadedRows = 0, haveCells = 0;
     for (int i = 0; i < nRows; i++) {
+        if (i <= PV_WIN_ROWS_MAX) g_pv_row_v[i] = nv;
         int o, r;
         if (!pv_locate(firstG + i, &o, &r)) continue;
-        if (g_pv_opt_scroll == 1 && o != curOrder) continue;
+        if ((g_pv_opt_scroll == 1 || pal->onlyCurrentOrder) && o != curOrder)
+            continue;
         if (o != loadedOrder) {
             loadedOrder = o;
             loadedRows  = g_pv_pre[o + 1] - g_pv_pre[o];
@@ -775,6 +1016,18 @@ static int pv_tessellate(int firstG, int curOrder) {
         for (int ch = 0; ch < nch; ch++)
             nv = pv_push_cell(v, nv, maxv, m, &g_pv_cells[r * nchData + ch],
                               gutW + ch * cellW, y, pal, dim);
+    }
+    { int sent = nRows <= PV_WIN_ROWS_MAX ? nRows : PV_WIN_ROWS_MAX;
+      g_pv_row_v[sent] = nv; }
+
+    /* Tampon SATURÉ: des glyphes ont été coupés en silence et se liraient
+     * comme des lignes vides. On rétrécit la fenêtre pour le tour suivant
+     * plutôt que de laisser le trou (moins de contexte vaut mieux qu'un motif
+     * troué), et le facteur PERSISTE — sinon la fenêtre repousserait à la
+     * taille saturée à chaque re-centrage. */
+    if (nv >= maxv - 6 && g_pv_win_shrink > 4) {
+        g_pv_win_shrink -= 2;
+        g_pv_have = 0;
     }
 
     glBindBuffer(GL_ARRAY_BUFFER, g_pv_vbo);
@@ -825,12 +1078,18 @@ REWAMP_EXPORT double rewamp_patternviz_future_seconds(void) {
     const int H = rewamp_gl_height();
     if (H <= 0) return 0.0;
     const int ft2 = (g_pv_opt_palette == PV_PAL_FT2);
+    const PvPalette* pal = &g_pv_palettes[g_pv_opt_palette];
     float zoom = g_pv_opt_size;     if (zoom <= 0.0f) zoom = 1.0f;
     float dpr  = g_pv_opt_pixscale; if (dpr  <= 0.0f) dpr  = 1.0f;
     /* Same expression as pv_compute_metrics — keep the two in step. */
     float rowH = PV_BASE_ROW_PX * dpr * zoom * (ft2 ? 0.95f : 1.0f);
-    const int fontH = ft2 ? PV_FT2_FONT_H : PV_FONT_H;
-    if (rowH < (float)fontH) rowH = (float)fontH;
+    if (rowH < 2.0f) rowH = 2.0f;   /* MÊME plancher que pv_compute_metrics */
+    /* …et le MÊME resserrement: plus de lignes tiennent à l'écran, donc plus
+     * de futur est demandé au décodeur. */
+    if (pal->rowTighten > 0.0f) {
+        rowH *= pal->rowTighten;
+        if (rowH < 2.0f) rowH = 2.0f;
+    }
     /* Synth mode always centres the play bar, so half the surface is future. */
     const double futureRows = ((double)H / (double)rowH) * 0.5;
     return futureRows / PV_SYN_ROWS_PER_S;
@@ -850,12 +1109,7 @@ static int pv_tessellate_synth(int firstG, int nRows, int vc, double sr) {
     const float cellW = m->cellW;
     const float rowW  = gutW + nch * cellW;
     const float sepS  = m->noteS;
-    const int   maxv  = PV_MAX_QUADS * 6;
 
-    if (!g_pv_verts) {
-        g_pv_verts = (float*)malloc((size_t)PV_MAX_QUADS * 6 * PV_VFLOATS * sizeof(float));
-        if (!g_pv_verts) return 0;
-    }
     if (!g_pv_syn_hz) {
         g_pv_syn_hz    = (float*)  malloc((size_t)PV_SYN_COLS * PV_MAXCH * sizeof(float));
         g_pv_syn_vol   = (uint8_t*)malloc((size_t)PV_SYN_COLS * PV_MAXCH);
@@ -865,6 +1119,8 @@ static int pv_tessellate_synth(int firstG, int nRows, int vc, double sr) {
     }
     if (firstG < 0) firstG = 0;
     if (nRows <= 0) return 0;
+    const int maxv = pv_ensure_verts(nRows, nch);
+    if (maxv <= 0) return 0;
 
     const double rowSamples = sr / PV_SYN_ROWS_PER_S;
     const int ncols = rewamp_notes_collect(
@@ -906,6 +1162,7 @@ static int pv_tessellate_synth(int firstG, int nRows, int vc, double sr) {
     for (int ch = 0; ch < nch; ch++) { active[ch] = 0; prevVol[ch] = 0; heldBin[ch] = 0; heldInstr[ch] = -1; }
     int col = 0;
     for (int i = 0; i < nRows; i++) {
+        if (i <= PV_WIN_ROWS_MAX) g_pv_row_v[i] = nv;   /* voir g_pv_row_v */
         const int   g = firstG + i;
         const float y = i * rowH;
         const int64_t rowEnd = (int64_t)((g + 1) * rowSamples);
@@ -980,6 +1237,19 @@ static int pv_tessellate_synth(int firstG, int nRows, int vc, double sr) {
              * fx widths zeroed in the synth branch of the render), which buys
              * back ~3 characters of cell width per channel. */
         }
+    }
+
+    { int sent = nRows <= PV_WIN_ROWS_MAX ? nRows : PV_WIN_ROWS_MAX;
+      g_pv_row_v[sent] = nv; }
+
+    /* Tampon SATURÉ: des glyphes ont été coupés en silence et se liraient
+     * comme des lignes vides. On rétrécit la fenêtre pour le tour suivant
+     * plutôt que de laisser le trou (moins de contexte vaut mieux qu'un motif
+     * troué), et le facteur PERSISTE — sinon la fenêtre repousserait à la
+     * taille saturée à chaque re-centrage. */
+    if (nv >= maxv - 6 && g_pv_win_shrink > 4) {
+        g_pv_win_shrink -= 2;
+        g_pv_have = 0;
     }
 
     glBindBuffer(GL_ARRAY_BUFFER, g_pv_vbo);
@@ -1274,14 +1544,57 @@ REWAMP_EXPORT void rewamp_patternviz_render(void) {
 
     int order = -1, row = -1;
     unsigned songGen = rewamp_pattern_song_generation();
-    const int supported = rewamp_pattern_supported();
+    /* ── FRONTIÈRE GAPLESS EN ATTENTE ────────────────────────────────────────
+     * Le relais échange le décodeur des SECONDES avant que l'oreille n'arrive à
+     * la frontière — d'autant plus que c'est CE viz qui réclame l'avance
+     * (`rewamp_patternviz_future_seconds` demande une demi-hauteur d'écran de
+     * futur). Pendant cette fenêtre, tout le contenu STATIQUE
+     * (`rewamp_pattern_supported`, `_order`, `_num_rows`, `_get`) décrit déjà le
+     * morceau SUIVANT, alors que le curseur entendu, lui, est encore dans le
+     * précédent.
+     *
+     * On gèle donc le morceau AFFICHÉ jusqu'à ce que l'oreille franchisse:
+     * pas de relecture de la table d'ordres, pas de re-tessellation, et le
+     * drapeau « c'est un vrai tracker » reste celui du morceau qu'on regarde.
+     * Les captures du curseur, elles, portent les deux morceaux (voir l'époque
+     * dans rewamp_pattern.c), donc le motif continue de défiler jusqu'à sa
+     * dernière ligne. Sans ce gel, le motif s'arrêtait avant la fin. */
+    /* Frontière gapless en attente: le décodeur décrit déjà la piste SUIVANTE
+     * alors que l'oreille est encore dans la précédente. On gèle donc tout ce
+     * qui vient du contenu STATIQUE du décodeur — le drapeau « vrai tracker »,
+     * la table d'ordres, la tessellation — jusqu'à la promotion.
+     *
+     * ⚠️ L'état vient de la SOURCE DE DONNÉES, pas de l'époque du curseur de
+     * motifs: celle-ci n'est mise à jour que par une lecture de ce curseur, et
+     * la grille synthétisée n'en fait aucune (UADE n'expose pas de motifs). Le
+     * gel serait alors resté armé pour toujours et le visualiseur n'aurait plus
+     * jamais pu revenir à une vraie grille de motifs. L'époque, elle, garde son
+     * rôle DANS la réserve: empêcher la fraction sous-ligne de franchir une
+     * frontière. */
+    static int g_pv_supported_shown = 0;
+    const int boundaryPending = rewamp_handoff_pending();
+    const int supported = boundaryPending ? g_pv_supported_shown
+                                          : rewamp_pattern_supported();
+    if (!boundaryPending) g_pv_supported_shown = supported;
+    /* Ce qui identifie le morceau AFFICHÉ: le compteur de relais ne bouge qu'à
+     * la promotion, c'est-à-dire à l'instant précis où le morceau qu'on entend
+     * change. Sans lui, franchir une frontière ne déclenchait AUCUN critère de
+     * re-tessellation (la génération ne bouge plus, et deux morceaux commencent
+     * souvent à l'ordre 0): le renderer gardait la fenêtre du précédent et
+     * dessinait tout hors écran — motif VIDE, en-têtes et barre seuls. */
+    const int64_t handoffSerial = rewamp_handoff_serial();
     int synth = 0, synVc = 0, gcur = -1;
     double synSr = 44100.0;
     float pv_frac = 0.0f;   /* sub-row progress [0,1) for smooth scrolling */
 
     if (supported) {
         int haveCursor = rewamp_pattern_cursor_frac(&order, &row, &pv_frac);
-        if (!pv_refresh_orders() || !haveCursor ||
+        /* ⚠️ `pv_refresh_orders()` interroge le décodeur VIVANT: sous frontière
+         * en attente il rendrait la table du morceau suivant et le motif
+         * sauterait d'un coup. La table en cache est celle qu'on joue. */
+        const int ordersOk = boundaryPending ? (g_pv_norders > 0)
+                                             : pv_refresh_orders();
+        if (!ordersOk || !haveCursor ||
             order < 0 || order >= g_pv_norders) {
 #ifdef __ANDROID__
             rewamp_gl_force_opaque();
@@ -1345,13 +1658,63 @@ REWAMP_EXPORT void rewamp_patternviz_render(void) {
     if (xOff < (float)W - rowW) xOff = (float)W - rowW;
     if (xOff > 0) xOff = 0;
 
+    /* Taille de la fenêtre de tessellation, en LIGNES: elle doit couvrir la vue
+     * plus une marge des DEUX côtés, sinon le motif apparaît par blocs (voir
+     * PV_WIN_ROWS_MIN). Recalculée par frame — la hauteur de ligne dépend d'un
+     * réglage continu — et bornée par ce que le tampon peut tenir avec le
+     * nombre de canaux du morceau. Un changement RÉTRÉCIT aussi la fenêtre:
+     * revenir à une grande police ne doit pas garder une fenêtre géante. */
+    {
+        const int visible = (rowH > 0.0f)
+            ? (int)(((float)H - headerH) / rowH) + 1 : 0;
+        /* La fenêtre tessellée doit contenir DEUX vues plus des marges: elle
+         * est centrée sur le curseur au moment du re-centrage, et le bas de
+         * l'écran regarde une demi-vue plus loin. */
+        int want = 2 * visible + 4 * PV_WIN_EDGE;
+        if (want < PV_WIN_ROWS_MIN) want = PV_WIN_ROWS_MIN;
+        if (want > PV_WIN_ROWS_MAX) want = PV_WIN_ROWS_MAX;
+        const int perRow = (g_pv_nch > 0 ? g_pv_nch : 1) * PV_QUADS_PER_CELL;
+        int budget = (PV_QUADS_HARD_MAX - 4096) / perRow;
+        if (budget < 8) budget = 8;      /* dégénéré: mieux vaut peu que rien */
+        if (want > budget) want = budget;
+        want = want * g_pv_win_shrink / 16;
+        /* ⚠️ Le rétrécissement anti-saturation ne doit JAMAIS descendre sous
+         * ce qui couvre la vue: il créerait précisément le trou qu'il existe
+         * pour éviter. Il n'économise donc que le CONTEXTE au-delà de l'écran.
+         * En dessous de ce plancher on est dans le cas extrême assumé
+         * (beaucoup de voies × police minuscule), borné par le budget. */
+        int floorRows = visible + 2 * PV_WIN_EDGE;
+        if (floorRows > budget) floorRows = budget;
+        if (want < floorRows) want = floorRows;
+        if (want < 16) want = 16;
+        /* ⚠️ Le SEUIL de re-centrage doit couvrir la DEMI-VUE, pas une
+         * constante: le bas de l'écran montre le futur et sort de la fenêtre
+         * une demi-vue AVANT que le curseur n'en approche. Avec un seuil fixe
+         * de 24 lignes et une police minuscule (300 lignes visibles), la
+         * moitié basse était vide pendant ~130 lignes puis se remplissait d'un
+         * coup au re-centrage — le motif « qui apparaît par blocs ». */
+        int edge = visible / 2 + PV_WIN_EDGE;
+        /* …mais jamais au point de re-tesseler à chaque frame: le curseur est
+         * au centre après un re-centrage, il doit rester à l'intérieur. */
+        if (edge > want / 2 - 8) edge = want / 2 - 8;
+        if (edge < 4) edge = 4;
+        if (want != g_pv_win_rows || edge != g_pv_win_edge) {
+            g_pv_win_rows = want;
+            g_pv_win_edge = edge;
+            g_pv_have = 0;               /* la fenêtre a changé: re-tesseler */
+        }
+    }
+
     /* (Re-)tessellate when the song/options/size changed or the cursor neared
      * the window edge (only where more rows exist beyond it — the ends of the
      * song clamp). Everything else is a cached static draw. Synth mode
      * re-tessellates on every row advance (8 Hz, a few-thousand quads) — also
      * how freshly-decoded look-ahead rows appear. */
     static int g_pv_tess_synth = 0;
-    int stale = !g_pv_have
+    /* Une re-tessellation sous frontière en attente lirait les motifs du
+     * morceau SUIVANT: on garde la fenêtre déjà bâtie jusqu'à la promotion. */
+    int stale = !boundaryPending && (!g_pv_have
+        || g_pv_tess_handoff != handoffSerial
         || g_pv_gen != rewamp_gl_generation()
         || songGen != g_pv_song_gen
         || g_pv_tess_pal != g_pv_opt_palette
@@ -1363,15 +1726,19 @@ REWAMP_EXPORT void rewamp_patternviz_render(void) {
          * order current at tessellation time — crossing into the next pattern
          * must re-bake so the focus follows. synth: tess_order carries the
          * anchor row instead → re-bake per row. */
-        || g_pv_tess_order != (synth ? gcur : order);
+        || g_pv_tess_order != (synth ? gcur : order));
+    /* Même raison que pour `stale`: le bord de fenêtre ne doit pas déclencher
+     * une lecture des motifs du morceau suivant. La queue tient dans la fenêtre
+     * déjà bâtie (elle couvre deux vues), et de toute façon la fin d'un morceau
+     * borne le curseur. */
     int nearEdge = 0;
-    if (!stale && !synth) {
+    if (!stale && !synth && !boundaryPending) {
         if (gcur < g_pv_first_g || gcur >= g_pv_first_g + g_pv_nrows)
             nearEdge = 1;                                   /* seek jumped out */
         else {
-            if (gcur < g_pv_first_g + PV_WIN_EDGE && g_pv_first_g > 0)
+            if (gcur < g_pv_first_g + g_pv_win_edge && g_pv_first_g > 0)
                 nearEdge = 1;
-            if (gcur >= g_pv_first_g + g_pv_nrows - PV_WIN_EDGE &&
+            if (gcur >= g_pv_first_g + g_pv_nrows - g_pv_win_edge &&
                 g_pv_first_g + g_pv_nrows < g_pv_total_rows)
                 nearEdge = 1;
         }
@@ -1381,7 +1748,8 @@ REWAMP_EXPORT void rewamp_patternviz_render(void) {
             int err = rewamp_patternviz_init(W, H);
             if (err != 0) { rewamp_gl_flush(); return; }
         }
-        g_pv_song_gen = songGen;
+        g_pv_song_gen   = songGen;
+        g_pv_tess_handoff = handoffSerial;
         int tessOk;
         if (synth) {
             int visible = (int)(((float)H - headerH) / rowH); if (visible < 1) visible = 1;
@@ -1390,7 +1758,7 @@ REWAMP_EXPORT void rewamp_patternviz_render(void) {
             tessOk = pv_tessellate_synth(first, nRows, synVc, synSr);
             g_pv_tess_order = gcur;
         } else {
-            int first = gcur - PV_WIN_ROWS / 2;
+            int first = gcur - g_pv_win_rows / 2;
             if (first < 0) first = 0;
             tessOk = pv_tessellate(first, order);
         }
@@ -1404,7 +1772,10 @@ REWAMP_EXPORT void rewamp_patternviz_render(void) {
         }
     }
 
-    if (!g_pv_opt_smooth) pv_frac = 0.0f;   /* toggle off → snap per row */
+    /* Réglage coupé OU style qui l'impose (Visualiser): on colle aux lignes
+     * entières. Le forcer ICI et pas seulement côté Dart garde le rendu juste
+     * même si l'option arrive d'ailleurs (binaire plus ancien, harnais). */
+    if (!g_pv_opt_smooth || pal->forceNoSmooth) pv_frac = 0.0f;
 
     /* Vertical placement (screen px of the current row's top edge). Synth mode
      * has no patterns to page-anchor → always the centered fixed bar. */
@@ -1440,6 +1811,29 @@ REWAMP_EXPORT void rewamp_patternviz_render(void) {
      * in the moving-bar case the frac in barY above cancels it (static page). */
     const float yOff = barY - ((float)(gcur - g_pv_first_g) + pv_frac) * rowH;
 
+    /* ── Ligne active ÉPINGLÉE (g_pv_opt_pinrow) ─────────────────────────────
+     * La barre cesse d'être une bande qu'on traverse pour devenir un AFFICHEUR
+     * de la ligne entendue. Le motif, lui, continue de défiler en continu.
+     *
+     * Rien n'est ré-émis: la ligne active est DÉJÀ tessellée dans le tampon
+     * statique, à la position locale `k * rowH`. La re-tirer avec un `uOff`
+     * décalé de `+pv_frac * rowH` la pose pile sur la barre — mêmes glyphes,
+     * même fonte, un seul `glDrawArrays` de plus. C'est à ça que sert
+     * `g_pv_row_v`.
+     *
+     * Sans effet en mode « barre mobile »: la barre y suit déjà une ligne
+     * entière, il n'y a rien à épingler. */
+    const int pinned = g_pv_opt_pinrow && !moving && g_pv_have
+                    && gcur >= g_pv_first_g
+                    && (gcur - g_pv_first_g) < g_pv_nrows
+                    && (gcur - g_pv_first_g) < PV_WIN_ROWS_MAX;
+    const float pinOffY = yOff + pv_frac * rowH;
+    /* La barre doit MASQUER complètement les deux demi-lignes qui la
+     * traversent, sinon leur fantôme (5 % dans le cas normal) se lit par-dessus
+     * l'afficheur. Opaque uniquement dans ce mode: ailleurs la légère
+     * transparence laisse voir le fond et c'est voulu. */
+    const unsigned pv_barColUse = pinned ? (pv_barRGB | 0xFF000000u) : pv_barCol;
+
     glUseProgram(g_pv_prog);
     glUniform2f(g_pv_uView, (float)W, (float)H);
     glUniform1i(g_pv_uTex, 0);
@@ -1467,7 +1861,7 @@ REWAMP_EXPORT void rewamp_patternviz_render(void) {
      * opaque bar (no pulse — that strobed when scrolling fast); the current row's
      * glyphs are recoloured to a DARK inverse in step 3, so the row reads as
      * inverse-video (dark text on the bright bar) as it crosses. */
-    if (g_pv_dverts) {
+    if (g_pv_dverts && !pinned) {
         /* Left edge: owned by the gutter slice redrawn in step 6, which masks
          * this one there. Right edge: the end of the last column. */
         dn = pv_push_bar(g_pv_dverts, 0, dmax,
@@ -1490,6 +1884,32 @@ REWAMP_EXPORT void rewamp_patternviz_render(void) {
     if (g_pv_all_verts > g_pv_bg_verts)
         glDrawArrays(GL_TRIANGLES, g_pv_bg_verts, g_pv_all_verts - g_pv_bg_verts);
     glUniform4f(g_pv_uOvr, 0, 0, 0, 0);
+
+    /* 3b) mode épinglé: la barre PAR-DESSUS le motif qui défile (elle masque
+     * les deux demi-lignes de la bande), puis la ligne entendue re-tirée
+     * dessus, alignée au pixel. Voir `pinned` plus haut. */
+    if (pinned) {
+        if (g_pv_dverts) {
+            dn = pv_push_bar(g_pv_dverts, 0, dmax,
+                             xOff, barY, xOff + rowW, barY + rowH,
+                             pv_barColUse, pv_bevel, pal->barBevel,
+                             /*leftEdge*/0, /*rightEdge*/1);
+            pv_flush_dynamic(dn);
+        }
+        glBindVertexArray(g_pv_vao);
+        glUniform2f(g_pv_uOff, xOff, pinOffY);
+        {
+            float orr, org, orb, ora;
+            pv_color(pv_ovrCol, 1.0f, &orr, &org, &orb, &ora);
+            glUniform4f(g_pv_uOvr, orr, org, orb, 1.0f);
+            glUniform2f(g_pv_uOvrY, barY, barY + rowH);
+        }
+        const int k  = gcur - g_pv_first_g;
+        const int v0 = g_pv_row_v[k], v1 = g_pv_row_v[k + 1];
+        if (v1 > v0) glDrawArrays(GL_TRIANGLES, v0, v1 - v0);
+        glUniform4f(g_pv_uOvr, 0, 0, 0, 0);
+        glUniform2f(g_pv_uOff, xOff, yOff);   /* les étapes suivantes défilent */
+    }
 
     /* 4) live per-channel VU meters (over the grid, like the Dart layer) — a
      * bar centered in each column, level from the consumer-side channel volume
@@ -1675,13 +2095,25 @@ REWAMP_EXPORT void rewamp_patternviz_render(void) {
             if (beat) dn = pv_push_solid(g_pv_dverts, dn, dmax, 0, y, gutW, y + rowH,
                                          pal->beatBg, 1.0f);
             const int isCur = (g == gcur);
+            /* Mode épinglé: la barre de la gouttière et son numéro sont posés
+             * APRÈS la boucle, pour masquer les numéros qui défilent au lieu
+             * d'être masqués par eux (les quads sont dessinés dans l'ordre où
+             * ils sont poussés). */
+            if (pinned) {
+                char t2[3]; pv_hex2(r, t2);
+                dn = pv_push_text(g_pv_dverts, dn, dmax, t2, rownumX, y,
+                                  m->noteS, m->fontH,
+                                  beat ? br2 : nr, beat ? bg2 : ng,
+                                  beat ? bb2 : nb, beat ? ba2 : na);
+                continue;
+            }
             /* The gutter is drawn LAST and masks the main current-row bar over
              * its area, so it must redraw the highlight at the SAME place as that
              * bar — barY (fixed center in the smooth-scroll case), not the row's
              * scrolled position y, or the gutter slice of the bar drifts while
              * the rest stays put. */
             if (isCur) dn = pv_push_bar(g_pv_dverts, dn, dmax, 0, barY, gutW, barY + rowH,
-                                        pv_barCol, pv_bevel, pal->barBevel,
+                                        pv_barColUse, pv_bevel, pal->barBevel,
                                         /*leftEdge*/1, /*rightEdge*/0);
             /* ...and recolour the row NUMBER that is physically AT the bar band
              * (this row's center falls inside it), NOT g==gcur whose glyph sits
@@ -1698,6 +2130,24 @@ REWAMP_EXPORT void rewamp_patternviz_render(void) {
             else                  { tr = nr;    tg = ng;    tb = nb;    ta = na; }
             dn = pv_push_text(g_pv_dverts, dn, dmax, txt, rownumX, y, m->noteS, m->fontH,
                               tr, tg, tb, ta);
+        }
+        /* Mode épinglé: la tranche de gouttière de la barre, puis le numéro de
+         * la ligne ENTENDUE, tous deux au même endroit que l'afficheur — donc
+         * en DERNIER, par-dessus les numéros qui défilent. Le numéro suit la
+         * même règle que les colonnes: c'est `gcur`, jamais la ligne qui se
+         * trouve physiquement dans la bande. */
+        if (pinned) {
+            dn = pv_push_bar(g_pv_dverts, dn, dmax, 0, barY, gutW, barY + rowH,
+                             pv_barColUse, pv_bevel, pal->barBevel,
+                             /*leftEdge*/1, /*rightEdge*/0);
+            int ro = order, rr = -1;
+            if (synth) rr = gcur & 0xFF;
+            else if (!pv_locate(gcur, &ro, &rr)) rr = -1;
+            if (rr >= 0) {
+                char t2[3]; pv_hex2(rr, t2);
+                dn = pv_push_text(g_pv_dverts, dn, dmax, t2, rownumX, barY,
+                                  m->noteS, m->fontH, cur_r, cur_g, cur_b, cur_a);
+            }
         }
         /* gutter separator (fixed, full height) */
         dn = pv_push_separator(g_pv_dverts, dn, dmax, pal, gutW, 0, (float)H, m->noteS, m->noteS);

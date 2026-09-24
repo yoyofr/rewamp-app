@@ -203,6 +203,26 @@ update_output (SCCKSS * scc)
 
 }
 
+//YOYOFR: notes par voie pour le viz-notes — Hz dans vgm_last_note (0 = voie
+// silencieuse). Le compteur avance de base_incr/(freq+1) par echantillon et une
+// onde fait 32 pas, donc f = clk / (32 * (freq + 1)) — ce que libvgm/k051649
+// ecrit mclock*2/32/(freq+1) avec son horloge deja divisee par deux. Comme lui,
+// une periode < 9 est une voie arretee.
+static void scckss_capture_notes(SCCKSS *scc) {
+  if (m_voicesForceOfs < 0) return;
+  for (int i = 0; i < 5; i++) {
+    unsigned note = 0, vol = 0;
+    const uint32_t freq = scc->freq[i];
+    if ((scc->ch_enable & (1 << i)) && !(scc->mask & SCCKSS_MASK_CH(i)) && scc->volume[i] && freq > 8) {
+      note = scc->clk / (32 * (freq + 1));
+      vol = 1;
+    }
+    vgm_last_note[m_voicesForceOfs + i] = note;
+    vgm_last_vol[m_voicesForceOfs + i] = vol;
+    if (note) vgm_last_instr[m_voicesForceOfs + i] = (unsigned char)(m_voicesForceOfs + i);
+  }
+}
+
 static inline int16_t 
 mix_output(SCCKSS * scc) {
     scc->out=0;
@@ -213,6 +233,7 @@ mix_output(SCCKSS * scc) {
     
         
     int64_t smplIncr=(int64_t)(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_rateratio;
+    scckss_capture_notes(scc); //YOYOFR
     if (m_voicesForceOfs>=0) {
         int val=0;
         for (int i = 0; i < 5; i++) {

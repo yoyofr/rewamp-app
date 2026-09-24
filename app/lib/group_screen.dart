@@ -481,7 +481,7 @@ class _GroupScreenState extends State<GroupScreen>
     // The counts come from a materialized view and can trail the live listings
     // by a couple of units — once a list is loaded, its own total_count wins.
     final n = loaded >= 0 ? loaded : badge;
-    return n > 0 ? l10n.searchTabWithCount(base, n) : base;
+    return n > 0 ? l10n.searchTabWithCount(base, '$n') : base;
   }
 
   Widget _tabView(_GroupTab t) {
@@ -743,14 +743,14 @@ class _GroupList extends StatelessWidget {
           if (g.memberCount > 0) l10n.groupMembersCount(g.memberCount),
           if (g.songCount > 0) l10n.searchSongsCount(g.songCount),
           if (g.productionCount > 0)
-            l10n.searchTabWithCount(l10n.tabProductions, g.productionCount),
+            l10n.searchTabWithCount(l10n.tabProductions, '${g.productionCount}'),
         ];
         return ListTile(
           leading: const CircleAvatar(child: Icon(Icons.groups)),
           title: Row(children: [
             Flexible(
-              child:
-                  Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              // shrinkWrap: l'icône vidéo suit le nom dans cette Row.
+              child: ScrollingText(text: g.name, shrinkWrap: true),
             ),
             if (g.videoCount > 0) ...[
               const SizedBox(width: 4),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'client_info.dart';
 import 'l10n.dart';
 import 'user_settings.dart';
+import 'app_theme.dart';
 
 /// First-run carousel: the beta warning, then a short tour of what the app does.
 ///
@@ -31,13 +32,10 @@ class Onboarding {
   /// The carousel floats over a black87 scrim, so its palette is FORCED dark
   /// whatever the app theme is: under the light theme every label came out
   /// dark-on-black, i.e. unreadable. Same seed as the app theme (main.dart).
-  static final ThemeData _overlayTheme = ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: Colors.deepPurple,
-      brightness: Brightness.dark,
-    ),
-  );
+  static final ThemeData _overlayTheme = rewampThemeData(ColorScheme.fromSeed(
+    seedColor: Colors.deepPurple,
+    brightness: Brightness.dark,
+  ));
 
   static Future<void> _push(BuildContext context) =>
       Navigator.of(context, rootNavigator: true).push(

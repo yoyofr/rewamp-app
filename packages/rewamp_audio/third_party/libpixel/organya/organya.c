@@ -518,6 +518,64 @@ static int load_org(const char *fn, char **buf)
 	}
 //	fclose(fp);
 
+	/* REWAMP — un `loop_end` très au-delà de la dernière note fait boucler
+	 * dans le VIDE.
+	 *
+	 * `loop_end` borne la région de boucle, mais rien n'oblige un fichier à la
+	 * remplir. Mesuré sur modland `Ama/org/obj0028-2.org`: la musique s'arrête
+	 * au step 444, `loop_end` vaut 4080 — 107 s de musique puis **14 minutes de
+	 * silence** avant de reboucler, et `org_getlength()` annonce 16:19. Vu de
+	 * l'utilisateur, « le morceau ne boucle pas » (il boucle, mais bien après
+	 * qu'on ait cessé d'écouter), et seul le détecteur de silence le relançait.
+	 * Même famille que le V2M, dont `lengthMs()` rend la fin de la SÉQUENCE et
+	 * non celle de la musique.
+	 *
+	 * On ramène donc la région à la MESURE qui suit la dernière note. Aligner
+	 * sur la mesure (`steps` × `beats`) et non sur la note elle-même est ce qui
+	 * rend la règle sûre: le voisin `obj0030-1.org` finit au step 888 pour un
+	 * `loop_end` de 896, soit une queue de 8 steps parfaitement légitime — la
+	 * dernière note résonne, la mesure se termine — et l'alignement la REND
+	 * telle quelle (ceil(888/16)*16 = 896, inchangé).
+	 *
+	 * Garde-fou supplémentaire: on n'agit qu'au-delà de QUATRE mesures de
+	 * silence terminal. Une queue de une à trois mesures peut être voulue; 227
+	 * mesures ne le sont pas. La règle ne peut que RÉDUIRE la région, jamais
+	 * l'étendre, et ne touche pas un fichier sans notes (`last` reste 0). */
+	{
+		/* Marge pour la QUEUE des percussions. `notes[].len` ne la décrit pas:
+		 * au rendu (voir la condition `i >= CHANNELS/2` de get_samples), un
+		 * canal de percussion IGNORE `playing.len` et joue jusqu'au bout de son
+		 * échantillon. Le plus long est RIDE01 — 53382 samples à 22050 Hz, soit
+		 * 2,42 s — donc un coup posé au dernier step résonne bien après la
+		 * durée notée. Les canaux mélodiques, eux, s'arrêtent au plus une
+		 * période d'onde après `len` (~6 ms): négligeable.
+		 * 2500 ms couvre le pire cas avec un peu d'air. */
+		const unsigned int tail_ms = 2500;
+		unsigned int last = 0, bar = (unsigned int)org.steps * org.beats;
+		int i, j;
+		for(i = 0; i < CHANNELS; i++)
+			for(j = 0; j < org.chan[i].num_notes; j++) {
+				unsigned int end = org.chan[i].notes[j].position
+				                 + org.chan[i].notes[j].len;
+				if(end > last) last = end;
+			}
+		/* Tout en NON SIGNÉ: `loop_start`/`loop_end` le sont (voir org_t), et
+		 * mélanger les signes ici retournerait la comparaison sur un fichier
+		 * aux bornes aberrantes. */
+		if(bar > 0 && last > 0 && org.tempo > 0 && org.loop_end > last) {
+			/* La queue d'abord, l'alignement ENSUITE — arrondir à la mesure ne
+			 * garantit rien par lui-même: une dernière note finissant pile sur
+			 * une barre donnerait une marge NULLE. */
+			unsigned int tail    = (tail_ms + org.tempo - 1) / org.tempo;
+			unsigned int aligned = ((last + tail + bar - 1) / bar) * bar;
+			/* Ne JAMAIS étendre la région: si la marge dépasse ce que le
+			 * fichier prévoyait, on le laisse tel quel. */
+			if(aligned > org.loop_start && aligned < org.loop_end &&
+			   org.loop_end - aligned >= 4 * bar)
+				org.loop_end = aligned;
+		}
+	}
+
 	org.loaded = 1;
 	clear_sound();
 	set_step(0);

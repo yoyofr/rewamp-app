@@ -4,7 +4,7 @@ publish_to: 'none'
 # The part after "+" is the build number. TestFlight and the Play Console both
 # refuse an upload whose build number is not strictly greater than the last one
 # they accepted — bump it on EVERY upload, even when 0.1.0 does not move.
-version: 0.4.0+8
+version: 0.6.1+13
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -20,7 +20,7 @@ dependencies:
     path: ../packages/rewamp_audio
   ffi: ^2.1.0                    # Pointer<Int8> for zero-alloc channel buf reads
   file_selector: ^1.1.0
-  file_picker: ^10.3.1            # Android only: keeps the real file name.
+  file_picker: ^12.1.2            # Android only: keeps the real file name.
                                  # file_selector_android rewrites the extension
                                  # from the MIME type ("axe.rsn" → "axe.bin"),
                                  # which breaks extension-based format routing.
@@ -30,35 +30,47 @@ dependencies:
   sqflite_common_ffi: ^2.3.4   # desktop (macOS / Linux / Windows)
   path: ^1.9.0                  # path.join() for DB file location
   shared_preferences: ^2.5.5
-  archive: ^3.6.1                # ZIP extraction for album downloads + user-data backup
-  share_plus: ^10.1.4            # share sheet for exporting the data backup
+  archive: ^4.2.0                # ZIP extraction for album downloads + user-data backup
+  share_plus: ^13.3.0            # share sheet for exporting the data backup
   crypto: ^3.0.3                 # sha256 check for downloaded assets (soundfonts)
   audio_service: ^0.18.15        # system media session (lock screen / artwork / remote)
                                  # iOS+Android+macOS; playback stays in the C engine
-  audio_session: ^0.1.21         # audio_service dep; explicit for session config
-  permission_handler: ^11.3.1    # Android 13+ POST_NOTIFICATIONS for media controls
-  flutter_secure_storage: ^9.2.4 # account UUID lives in the Keychain (iOS/macOS)
+  audio_session: ^0.2.4         # audio_service dep; explicit for session config
+  permission_handler: ^12.0.3    # Android 13+ POST_NOTIFICATIONS for media controls
+  flutter_secure_storage: ^10.3.1 # account UUID lives in the Keychain (iOS/macOS)
                                  # / EncryptedSharedPreferences (Android): it IS
                                  # the account (bearer token), never in the clear
   url_launcher: ^6.3.2           # credits&licenses: open a project page in the
                                  # platform browser (was: copy to clipboard)
-  package_info_plus: ^8.0.0      # app version+build for report_song diagnostics
-  device_info_plus: ^11.0.0      # OS version + device model for report_song
+  package_info_plus: ^10.2.1      # app version+build for report_song diagnostics
+  device_info_plus: ^13.2.0      # OS version + device model for report_song
   # EXPÉRIMENTAL (branche feat/liquid-glass-chrome): chrome « liquid glass »
   # sur le mini-lecteur + la barre de navigation. MIT, pur Dart + shaders.
   webview_flutter: ^4.10.0       # demozoo production videos (YouTube/Vimeo embed,
                                  # fullscreen in-app player); iOS+Android+macOS
   webview_flutter_android: ^4.0.0   # direct import: gesture-free media playback
   webview_flutter_wkwebview: ^3.15.0 # direct import: creation params (autoplay)
+  # ⚠️ ÉPINGLÉ en 0.7.x, pas un oubli de montée. La 0.8.x décide d'appliquer
+  # le Kotlin Gradle Plugin sur la seule VERSION MAJEURE d'AGP
+  # (`if (agpMajor < 9)`), alors que ce qui compte est `android.builtInKotlin`
+  # — que le template Flutter pose à FALSE dans android/gradle.properties.
+  # Sur AGP 9 + builtInKotlin=false, elle saute donc KGP en croyant qu'AGP le
+  # fournit, et son bloc `kotlin { }` ne référence plus rien:
+  # « Could not find method kotlin() ». À relever quand on migrera pour de bon
+  # vers le Kotlin intégré (retirer KGP de settings.gradle.kts ET du module
+  # app: AGP 9 échoue durement si kotlin-android est appliqué en même temps).
   desktop_drop: ^0.7.1
-  liquid_glass_easy: ^3.4.0
+  liquid_glass_easy: ^4.2.0
+  window_manager: ^0.5.2
+  audio_service_mpris: ^0.2.1
+  dbus: ^0.7.15
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   integration_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^6.0.0
 
 # Branding: soleil synthwave magenta #F0388F sur fond Night #160A1E.
 # Icons/splash are already generated into the platform Runner projects.
@@ -115,6 +127,7 @@ flutter:
     - shaders/splash_fx_vectorballs.frag
     - shaders/splash_fx_starfield.frag
     - shaders/splash_fx_laser.frag
+    - shaders/splash_fx_rotozoom.frag
   assets:
     # Internal data for playback libraries (copied to the app data dir at
     # startup, then loaded natively via rewamp_set_data_dir). C64 ROMs are

@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 
 import 'app_snack.dart';
@@ -7,20 +8,115 @@ import 'hover_grow.dart';
 import 'local_db.dart';
 import 'l10n.dart';
 import 'library_playlists_screen.dart' show OnFileReady;
+import 'library_presence.dart';
 import 'library_toolbar.dart';
+import 'local_badge.dart';
+import 'local_open.dart' show tracksForLocalPath;
+import 'player_controller.dart' show PlayerController;
+import 'rewamp_db.dart' show OnPlayAlbum, OnPlayLocalAlbum, SearchResult;
 import 'scrolling_text.dart';
 import 'shell_insets.dart';
 import 'sync_service.dart';
+import 'package:path/path.dart' as p;
+import 'package:rewamp_audio/rewamp_audio.dart' show RewampAudio;
 import 'track_options_sheet.dart'
-    show showPlayChoiceSheet, PlayChoice, globalOnLocalQueueAdd;
+    show showPlayChoiceSheet, PlayChoice, globalOnLocalQueueAdd,
+        globalOnAlbumQueueAdd;
 import 'user_settings.dart';
 import 'view_mode_picker.dart';
+
+/// Joue — ou enfile — une entrée de bibliothèque qui vise le FICHIER ENTIER
+/// (aucun suffixe `?subsong=`, la convention du conteneur), en dépliant
+/// TOUTES ses sous-chansons. Rend `true` quand elle a pris la main.
+///
+/// Partagée par les deux écrans qui lancent une entrée de bibliothèque —
+/// « Ajoutés récemment » et l'onglet Morceaux. L'onglet n'avait AUCUNE
+/// gestion du conteneur et jouait la ligne que la base avait sous la main,
+/// c'est-à-dire une seule piste; en écrire une seconde copie ici l'aurait fait
+/// diverger de la première à la prochaine correction.
+///
+/// Deux chemins, et le discriminant est l'identité de CATALOGUE:
+/// - **local** (`onlineId` nul): le routeur de l'ouverture locale, qui connaît
+///   la règle « M3U voisin d'abord » et les titres que donne le fichier;
+/// - **catalogue**: un `SearchResult` conteneur, déplié par
+///   `expandContainerAlbum`, qui préserve l'identité `<uuid>#i` de chaque
+///   sous-chanson. Un `SearchResult` synthétique irait sinon chercher un
+///   `songId` qui n'est qu'un chemin.
+Future<bool> playWholeFileLibraryEntry(
+  BuildContext context, {
+  required LibraryItem item,
+  required TrackRecord track,
+  required String base,
+  required PlayChoice choice,
+  OnPlayAlbum? onPlayAlbum,
+  OnPlayLocalAlbum? onPlayLocalAlbum,
+}) async {
+  if (track.onlineId == null) {
+    final ctrl = PlayerController.current;
+    final rows = ctrl == null
+        ? const <TrackRecord>[]
+        : await tracksForLocalPath(track.filePath, controller: ctrl);
+    if (!context.mounted) return true;
+    if (rows.length > 1) {
+      if (choice == PlayChoice.now) {
+        await onPlayLocalAlbum?.call(context, rows);
+      } else {
+        await globalOnLocalQueueAdd?.call(rows,
+            atEnd: choice == PlayChoice.end);
+      }
+      return true;
+    }
+    return false;
+  }
+  if (onPlayAlbum == null) return false;
+  int count = 1;
+  try {
+    count = RewampAudio().probeSubsongCount(track.filePath);
+  } catch (_) {}
+  if (count <= 1) return false;
+  final container = SearchResult(
+    songId:       track.onlineId ?? base,
+    collection:   item.collectionSlug ?? '',
+    title:        item.name,
+    filename:     item.filename ?? p.basename(track.filePath),
+    album:        track.metaAlbum,
+    albumId:      track.albumId ?? item.albumId,
+    formatExt:    item.formatExt ?? track.formatExt ?? '',
+    downloadUrl:  item.downloadUrl,
+    fileSize:     0,
+    year:         null,
+    totalCount:   0,
+    artistNames:  track.artist != null ? [track.artist!] : const [],
+    platform:     item.platformName,
+    artworkUrl:   item.artworkUrl,
+    subsongCount: count,
+    localPath:    track.filePath,
+  );
+  if (!context.mounted) return true;
+  if (choice != PlayChoice.now) {
+    // En file: `_onAlbumQueueAdd` déplie les sous-chansons du conteneur
+    // exactement comme `_startAlbumQueue` sur le chemin de lecture.
+    await globalOnAlbumQueueAdd?.call([container],
+        atEnd: choice == PlayChoice.end, silent: false);
+  } else {
+    await onPlayAlbum(context, [container]);
+  }
+  return true;
+}
 
 class LibraryTracksScreen extends StatefulWidget {
   final OnFileReady? onPlayTrack;
   final void Function(BuildContext ctx, LibraryItem item)? onDownloadTrack;
+  /// Lance une file de pistes LOCALES — ce que devient un fichier CONTENEUR
+  /// importé (une entrée sans suffixe `?subsong=`), déplié en toutes ses
+  /// sous-chansons.
+  final OnPlayLocalAlbum? onPlayLocalAlbum;
+  /// Lance une file de pistes de CATALOGUE — ce que devient un conteneur
+  /// (`.sid`, `.nsf`…) déplié en toutes ses sous-chansons.
+  final OnPlayAlbum? onPlayAlbum;
 
-  const LibraryTracksScreen({super.key, this.onPlayTrack, this.onDownloadTrack});
+  const LibraryTracksScreen({super.key, this.onPlayTrack, this.onDownloadTrack,
+      this.onPlayLocalAlbum, this.onPlayAlbum});
 
   @override
   State<LibraryTracksScreen> createState() => _LibraryTracksScreenState();
@@ -28,6 +124,14 @@ class LibraryTracksScreen extends StatefulWidget {
 
 class _LibraryTracksScreenState extends State<LibraryTracksScreen> {
   List<LibraryItem> _items = [];
+  /// Entrées LOCALES dont le fichier n'est pas sur cet appareil. Une telle
+  /// entrée est légitime — elle vit sur un autre appareil du même compte et le
+  /// pull la pose exprès pour qu'elle se relie à sa copie — mais elle n'est
+  /// pas jouable ICI, et l'afficher comme une piste locale ordinaire envoyait
+  /// l'utilisateur chercher « où est passé mon fichier ». Calculé au
+  /// chargement (un stat par entrée), jamais dans le build.
+  Set<String> _missing = const {};
+  bool _onAnotherDevice(LibraryItem it) => _missing.contains(it.refId);
   bool _loading = true;
   String _query = '';
   LibrarySort _sort = LibrarySortLabel.fromPref(
@@ -49,7 +153,10 @@ class _LibraryTracksScreenState extends State<LibraryTracksScreen> {
   }
 
   void _reload() {
-    LocalDb.instance.getLibraryItems(type: 'track').then((items) {
+    LocalDb.instance.getLibraryItems(type: 'track').then((items) async {
+      final missing = await missingLocalLibraryRefs(items);
+      if (!mounted) return;
+      _missing = missing;
       if (mounted) setState(() { _items = items; _loading = false; });
     });
   }
@@ -109,8 +216,19 @@ class _LibraryTracksScreenState extends State<LibraryTracksScreen> {
     // It answers `now` without showing itself when there is nothing to insert
     // relative to.
     final choice = await showPlayChoiceSheet(context,
-        title: exactRow?.displayTitle ?? item.name, subtitle: item.artist);
+        title: exactRow?.displayTitle ?? item.name, subtitle: item.artist,
+        track: exactRow);
     if (choice == null || !mounted) return;
+    // Entrée de CONTENEUR (aucun suffixe `?subsong=`): toutes ses
+    // sous-chansons, comme depuis « Ajoutés récemment ».
+    if (sub == null &&
+        await playWholeFileLibraryEntry(context,
+            item: item, track: track, base: base, choice: choice,
+            onPlayAlbum: widget.onPlayAlbum,
+            onPlayLocalAlbum: widget.onPlayLocalAlbum)) {
+      return;
+    }
+    if (!mounted) return;
     if (choice != PlayChoice.now) {
       final queueLocal = globalOnLocalQueueAdd;
       if (queueLocal == null) return;
@@ -222,7 +340,10 @@ class _LibraryTracksScreenState extends State<LibraryTracksScreen> {
           onDismissed: (_) => _remove(item),
           child: _TrackTile(
             item: item, cs: cs,
-            onPlay: () => _play(item),
+            elsewhere: _onAnotherDevice(item),
+            // Pas de lecture pour un fichier qui n'est pas là — la ligne le
+            // DIT, plutôt que d'échouer au tap; le retrait reste possible.
+            onPlay: _onAnotherDevice(item) ? null : () => _play(item),
             onRemove: () => _remove(item),
           ),
         );
@@ -244,7 +365,8 @@ class _LibraryTracksScreenState extends State<LibraryTracksScreen> {
       itemCount: items.length,
       itemBuilder: (_, i) => _TrackCard(
         item: items[i], cs: cs,
-        onPlay: () => _play(items[i]),
+        elsewhere: _onAnotherDevice(items[i]),
+        onPlay: _onAnotherDevice(items[i]) ? null : () => _play(items[i]),
         onRemove: () => _remove(items[i]),
       ),
     );
@@ -276,17 +398,25 @@ class _TrackTile extends StatelessWidget {
   final ColorScheme   cs;
   final VoidCallback? onPlay;
   final VoidCallback  onRemove;
+  /// Le fichier vit sur un autre appareil du compte: grisée, non jouable.
+  final bool          elsewhere;
 
   const _TrackTile({
     required this.item,
     required this.cs,
     required this.onRemove,
     this.onPlay,
+    this.elsewhere = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final sub = [
+      if (elsewhere) libraryElsewhereLabel(context),
+      trackSubtitle(item),
+    ].where((t) => t.isNotEmpty).join(' · ');
     return ListTile(
+      enabled: !elsewhere,
       // La MÊME vignette que la grille de cet écran (RailArtwork), donc le
       // placeholder thématisé par plateforme au lieu d'une pastille de texte.
       // Un `placeholder:` explicite ÉCRASE celui d'origine — c'est ce qui
@@ -294,17 +424,20 @@ class _TrackTile extends StatelessWidget {
       // pochette de plateforme en grille, à un bouton d'écart. Même correctif
       // que song_tile.dart: retirer le placeholder et passer les deux indices
       // dont ArtworkImage a besoin pour choisir le bon.
-      leading: RailArtwork(
-        url:          item.artworkUrl,
-        artist:       item.artist,
-        album:        item.album,
-        formatHint:   item.formatExt ?? item.filename,
-        platformName: item.platformName,
-        size:         40,
+      leading: LocalBadgedArtwork(
+        show: item.isLocal,
+        child: RailArtwork(
+          url:          item.artworkUrl,
+          artist:       item.artist,
+          album:        item.album,
+          formatHint:   item.formatExt ?? item.filename,
+          platformName: item.platformName,
+          size:         40,
+        ),
       ),
       title: ScrollingText(text: item.name),
       subtitle: Text(
-        trackSubtitle(item),
+        sub,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(color: cs.onSurfaceVariant),
@@ -320,24 +453,32 @@ class _TrackTile extends StatelessWidget {
 }
 
 class _TrackCard extends StatelessWidget {
-  final LibraryItem  item;
-  final ColorScheme  cs;
-  final VoidCallback onPlay;
-  final VoidCallback onRemove;
+  final LibraryItem   item;
+  final ColorScheme   cs;
+  final VoidCallback? onPlay;
+  final VoidCallback  onRemove;
+  /// Voir _TrackTile.elsewhere.
+  final bool          elsewhere;
 
   const _TrackCard({
     required this.item,
     required this.cs,
     required this.onPlay,
     required this.onRemove,
+    this.elsewhere = false,
   });
 
   @override
   Widget build(BuildContext context) {
     // La MÊME seconde ligne qu'en liste: la grille montrait le titre OU
     // l'artiste, jamais l'album.
-    final second = trackSubtitle(item);
-    return HoverGrow(child: GestureDetector(
+    final second = [
+      if (elsewhere) libraryElsewhereLabel(context),
+      trackSubtitle(item),
+    ].where((t) => t.isNotEmpty).join(' · ');
+    return HoverGrow(child: Opacity(
+      opacity: elsewhere ? 0.45 : 1.0,
+      child: GestureDetector(
       onTap: onPlay,
       onLongPress: () =>
           showLibraryItemMenu(context, title: item.name, onRemove: onRemove),
@@ -361,6 +502,8 @@ class _TrackCard extends StatelessWidget {
                       color: kFavoriteColor,
                       shadows: [Shadow(color: Colors.black87, blurRadius: 6)]),
                 ),
+              if (item.isLocal)
+                const Positioned(bottom: 4, left: 4, child: LocalBadge()),
             ]),
           ),
           const SizedBox(height: 4),
@@ -384,6 +527,6 @@ class _TrackCard extends StatelessWidget {
           ),
         ],
       ),
-    ));
+    )));
   }
 }

@@ -103,10 +103,11 @@ class AppDelegate: FlutterAppDelegate {
       guard let self = self else { result(nil); return }
       switch call.method {
       case "track":
-        let args   = call.arguments as? [String: Any]
-        let title  = args?["title"]  as? String ?? ""
-        let artist = args?["artist"] as? String ?? ""
-        self.postTrackNotification(title: title, artist: artist)
+        let args    = call.arguments as? [String: Any]
+        let title   = args?["title"]   as? String ?? ""
+        let artist  = args?["artist"]  as? String ?? ""
+        let artwork = args?["artwork"] as? String ?? ""
+        self.postTrackNotification(title: title, artist: artist, artworkPath: artwork)
         result(nil)
       default:
         result(FlutterMethodNotImplemented)
@@ -114,12 +115,31 @@ class AppDelegate: FlutterAppDelegate {
     }
   }
 
-  private func postTrackNotification(title: String, artist: String) {
+  private func postTrackNotification(title: String, artist: String, artworkPath: String) {
     let center = UNUserNotificationCenter.current()
     let post = {
       let content = UNMutableNotificationContent()
       content.title = title
       if !artist.isEmpty { content.body = artist }
+      // Pochette (ou placeholder par plateforme) résolue côté Dart.
+      // ⚠️ UNNotificationAttachment DÉPLACE le fichier dans son magasin —
+      // attacher l'original consommerait la pochette du cache. Copie
+      // temporaire d'abord; le système possède ensuite la copie.
+      if !artworkPath.isEmpty, FileManager.default.fileExists(atPath: artworkPath) {
+        let ext = (artworkPath as NSString).pathExtension.isEmpty
+          ? "png" : (artworkPath as NSString).pathExtension
+        let tmp = FileManager.default.temporaryDirectory
+          .appendingPathComponent("rewamp-notif-\(UUID().uuidString).\(ext)")
+        do {
+          try FileManager.default.copyItem(
+            at: URL(fileURLWithPath: artworkPath), to: tmp)
+          let att = try UNNotificationAttachment(
+            identifier: "artwork", url: tmp, options: nil)
+          content.attachments = [att]
+        } catch {
+          // Sans image plutôt que sans notification.
+        }
+      }
       let req = UNNotificationRequest(
         identifier: "rewamp.nowplaying", content: content, trigger: nil)
       center.removeDeliveredNotifications(withIdentifiers: ["rewamp.nowplaying"])

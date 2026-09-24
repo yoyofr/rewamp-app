@@ -130,6 +130,17 @@ String _renderReason(BuildContext context, String key,
       final dt = birthdayDate();
       return dt.isNotEmpty ? dt : l10n.featuredBirthdayWeekArtist(str(p['artist']));
     // ── section headers ──────────────────────────────────────────────────────
+    // « Nouveautés du catalogue » (mig serveur 258). Trois libellés STATIQUES,
+    // sans paramètre — mais rendus ICI quand même, comme tout le reste: le
+    // serveur envoie bien sa propre traduction, et s'en servir ferait dépendre
+    // la langue de l'app de celle que le serveur a choisie. C'est la règle du
+    // rail depuis le début (voir l'en-tête de ce fichier).
+    case 'additions.card':
+      return l10n.featuredAdditionsCard;
+    case 'additions.playlist':
+      return l10n.featuredAdditionsPlaylist;
+    case 'additions.header':
+      return l10n.featuredAdditionsHeader;
     case 'month.header':
       return l10n.featuredMonthHeader(monthName(num_(p['month'])));
     case 'anniversary.header':

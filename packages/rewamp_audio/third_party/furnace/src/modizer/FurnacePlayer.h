@@ -178,6 +178,17 @@ public:
   bool selectSong(int index);
 
   /**
+   * Name of subsong [index] WITHOUT selecting it.
+   *
+   * REWAMP: `getInfo().subsongName` ne parle que de la sous-chanson COURANTE,
+   * donc lister les noms imposait un `selectSong()` par entrée — qui appelle
+   * `changeSongP()` ET `play()`, alors qu'on ne veut qu'une chaîne. Le nom est
+   * lisible tel quel dans `song.subsong[index]->name`.
+   * @return le nom, ou une chaîne vide si l'index est hors bornes.
+   */
+  std::string getSubsongName(int index) const;
+
+  /**
    * Render audio into a signed 16-bit stereo interleaved buffer.
    * Call this repeatedly from your audio thread/callback.
    * @param buffer      Output buffer (left, right, left, right, ...).

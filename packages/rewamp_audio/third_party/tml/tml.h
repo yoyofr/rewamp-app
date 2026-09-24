@@ -1,4 +1,13 @@
 /* TinyMidiLoader - v0.7 - Minimalistic midi parsing library - https://github.com/schellingb/TinySoundFont
+   ALTERED for rewamp (2026-09): two changes.
+   1. System Exclusive messages are KEPT (tml_load_filename_ex / tml_sysex_get) instead of
+      being skipped — the MT-32 engine needs the Roland sysex that loads custom timbres.
+      Loading through the original tml_load* entry points is unchanged.
+   2. A RIFF/RMID wrapper is SKIPPED (tml_skip_rmid_wrapper, both stdio loaders). Upstream
+      requires 'MThd' at offset 0, so an .mid that is really a RIFF container — Tyrian's
+      soundtrack, and most Windows-era rips — failed to load with no usable diagnosis: the
+      probe recognised RIFF....RMID and scored it, then the open refused it and the file
+      played on nothing at all.
                                      no warranty implied; use at your own risk
    Do this:
       #define TML_IMPLEMENTATION
@@ -52,7 +61,9 @@ extern "C" {
 // Channel message type
 enum TMLMessageType
 {
-	TML_NOTE_OFF = 0x80, TML_NOTE_ON = 0x90, TML_KEY_PRESSURE = 0xA0, TML_CONTROL_CHANGE = 0xB0, TML_PROGRAM_CHANGE = 0xC0, TML_CHANNEL_PRESSURE = 0xD0, TML_PITCH_BEND = 0xE0, TML_SET_TEMPO = 0x51
+	TML_NOTE_OFF = 0x80, TML_NOTE_ON = 0x90, TML_KEY_PRESSURE = 0xA0, TML_CONTROL_CHANGE = 0xB0, TML_PROGRAM_CHANGE = 0xC0, TML_CHANNEL_PRESSURE = 0xD0, TML_PITCH_BEND = 0xE0, TML_SET_TEMPO = 0x51,
+	// rewamp: a kept System Exclusive message (see tml_load_filename_ex); `sysex` indexes the store
+	TML_SYSEX_MESSAGE = 0xF0
 };
 
 // Midi controller numbers
@@ -98,6 +109,8 @@ typedef struct tml_message
 
 		struct { union { char key, control, program, channel_pressure; }; union { char velocity, key_pressure, control_value; }; };
 		struct { unsigned short pitch_bend; };
+		// rewamp: index into the tml_sysex_store for TML_SYSEX messages (type 0xF0)
+		struct { unsigned short sysex; };
 
 		#ifdef _MSC_VER
 		#pragma warning( pop )
@@ -123,6 +136,20 @@ TMLDEF tml_message* tml_load_filename(const char* filename);
 
 // Load a MIDI file from a block of memory
 TMLDEF tml_message* tml_load_memory(const void* buffer, int size);
+
+// rewamp: same loaders, but System Exclusive messages are kept as TML_SYSEX (0xF0)
+// messages whose `sysex` field indexes an opaque store returned through out_sysex
+// (free it with tml_sysex_free, separately from tml_free). Each entry is a complete
+// framed message (F0 ... F7) for a status-F0 event, raw bytes for an F7 escape.
+struct tml_sysex_store;
+struct tml_stream; // defined below
+#ifndef TML_NO_STDIO
+TMLDEF tml_message* tml_load_filename_ex(const char* filename, struct tml_sysex_store** out_sysex);
+#endif
+TMLDEF tml_message* tml_load_ex(struct tml_stream* stream, struct tml_sysex_store** out_sysex);
+TMLDEF const unsigned char* tml_sysex_get(const struct tml_sysex_store* store, unsigned int index, unsigned int* out_len);
+TMLDEF unsigned int tml_sysex_count(const struct tml_sysex_store* store);
+TMLDEF void tml_sysex_free(struct tml_sysex_store* store);
 
 // Get infos about this loaded MIDI file, returns the note count
 // NULL can be passed for any output value pointer if not needed.
@@ -207,6 +234,33 @@ extern "C" {
 
 #ifndef TML_NO_STDIO
 static int tml_stream_stdio_read(FILE* f, void* ptr, unsigned int size) { return (int)fread(ptr, 1, size, f); }
+/* rewamp: a .mid may be a RIFF container ("RIFF" <size> "RMID" then chunks,
+ * the Standard MIDI File living in the 'data' one). Upstream tml wants MThd
+ * at offset 0, so position the stream on the SMF and let the parser run as
+ * usual. Leaves a plain SMF untouched (rewinds to 0), and gives up quietly on
+ * a wrapper with no 'data' chunk — the parser then reports the invalid header
+ * exactly as before. */
+static void tml_skip_rmid_wrapper(FILE* f)
+{
+	unsigned char hdr[12], chunk[8];
+	unsigned int size;
+	if (fread(hdr, 1, 12, f) != 12) { fseek(f, 0, SEEK_SET); return; }
+	if (hdr[0] != 'R' || hdr[1] != 'I' || hdr[2] != 'F' || hdr[3] != 'F' ||
+	    hdr[8] != 'R' || hdr[9] != 'M' || hdr[10] != 'I' || hdr[11] != 'D') {
+		fseek(f, 0, SEEK_SET);
+		return;
+	}
+	for (;;) {
+		if (fread(chunk, 1, 8, f) != 8) { fseek(f, 0, SEEK_SET); return; }
+		size = (unsigned int)chunk[4] | ((unsigned int)chunk[5] << 8) |
+		       ((unsigned int)chunk[6] << 16) | ((unsigned int)chunk[7] << 24);
+		if (chunk[0] == 'd' && chunk[1] == 'a' && chunk[2] == 't' && chunk[3] == 'a')
+			return;                       /* stream now sits on the SMF */
+		if (size & 1) size++;             /* RIFF chunks are word-aligned */
+		if (fseek(f, (long)size, SEEK_CUR) != 0) { fseek(f, 0, SEEK_SET); return; }
+	}
+}
+
 TMLDEF tml_message* tml_load_filename(const char* filename)
 {
 	struct tml_message* res;
@@ -217,6 +271,7 @@ TMLDEF tml_message* tml_load_filename(const char* filename)
 	FILE* f = fopen(filename, "rb");
 	#endif
 	if (!f) { TML_ERROR("File not found"); return 0; }
+	tml_skip_rmid_wrapper(f);
 	stream.data = f;
 	res = tml_load(&stream);
 	fclose(f);
@@ -248,10 +303,45 @@ struct tml_tempomsg
 	tml_message* next;
 };
 
+// rewamp: sysex payloads, appended to one growing blob + (offset,len) table
+struct tml_sysex_store
+{
+	unsigned char* data; unsigned int size, cap;
+	unsigned int *offs, *lens; unsigned int count, ecap;
+};
+
+static int tml_sysex_append(struct tml_sysex_store* sx, unsigned char status, const unsigned char* data, unsigned int len)
+{
+	unsigned int need = len + (status == 0xF0 ? 1u : 0u);
+	if (sx->count >= 0xFFFF) return -1;
+	if (sx->size + need > sx->cap) { unsigned int nc = sx->cap ? sx->cap : 4096; while (nc < sx->size + need) nc *= 2; unsigned char* nd = (unsigned char*)TML_REALLOC(sx->data, nc); if (!nd) return -1; sx->data = nd; sx->cap = nc; }
+	if (sx->count >= sx->ecap) { unsigned int ne = sx->ecap ? sx->ecap * 2 : 64; unsigned int* no = (unsigned int*)TML_REALLOC(sx->offs, ne * sizeof(unsigned int)); if (!no) return -1; sx->offs = no; unsigned int* nl = (unsigned int*)TML_REALLOC(sx->lens, ne * sizeof(unsigned int)); if (!nl) return -1; sx->lens = nl; sx->ecap = ne; }
+	sx->offs[sx->count] = sx->size; sx->lens[sx->count] = need;
+	if (status == 0xF0) sx->data[sx->size++] = 0xF0;
+	if (len) { TML_MEMCPY(sx->data + sx->size, data, len); sx->size += len; }
+	return (int)sx->count++;
+}
+
+TMLDEF const unsigned char* tml_sysex_get(const struct tml_sysex_store* store, unsigned int index, unsigned int* out_len)
+{
+	if (!store || index >= store->count) { if (out_len) *out_len = 0; return TML_NULL; }
+	if (out_len) *out_len = store->lens[index];
+	return store->data + store->offs[index];
+}
+
+TMLDEF unsigned int tml_sysex_count(const struct tml_sysex_store* store) { return store ? store->count : 0u; }
+
+TMLDEF void tml_sysex_free(struct tml_sysex_store* store)
+{
+	if (!store) return;
+	TML_FREE(store->data); TML_FREE(store->offs); TML_FREE(store->lens); TML_FREE(store);
+}
+
 struct tml_parser
 {
 	unsigned char *buf, *buf_end; 
 	int last_status, message_array_size, message_count;
+	struct tml_sysex_store* sysex; // rewamp: NULL = skip sysex (original behaviour)
 };
 
 enum TMLSystemType
@@ -309,10 +399,16 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 	//check what message we have
 	if ((status == TML_SYSEX) || (status == TML_EOX)) //sysex
 	{
-		//sysex messages are not handled
-		p->buf += tml_readvariablelength(p);
-		if (p->buf > p->buf_end) { TML_WARN("Unexpected end of file"); p->buf = p->buf_end; return -1; }
+		// rewamp: kept when the caller asked for them (tml_load_ex), skipped otherwise
+		int len = tml_readvariablelength(p);
+		if (len < 0 || p->buf + len > p->buf_end) { TML_WARN("Unexpected end of file"); p->buf = p->buf_end; return -1; }
 		evt->type = 0;
+		if (p->sysex)
+		{
+			int idx = tml_sysex_append(p->sysex, (unsigned char)status, p->buf, (unsigned int)len);
+			if (idx >= 0) { evt->type = TML_SYSEX_MESSAGE; evt->channel = 0; evt->sysex = (unsigned short)idx; }
+		}
+		p->buf += len;
 	}
 	else if (status == 0xFF) //meta events
 	{
@@ -383,20 +479,41 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 
 TMLDEF tml_message* tml_load(struct tml_stream* stream)
 {
+	return tml_load_ex(stream, TML_NULL);
+}
+
+#ifndef TML_NO_STDIO
+TMLDEF tml_message* tml_load_filename_ex(const char* filename, struct tml_sysex_store** out_sysex)
+{
+	struct tml_message* res;
+	struct tml_stream stream = { TML_NULL, (int(*)(void*,void*,unsigned int))&tml_stream_stdio_read };
+	FILE* f = fopen(filename, "rb");
+	if (!f) { if (out_sysex) *out_sysex = TML_NULL; TML_ERROR("File not found"); return 0; }
+	tml_skip_rmid_wrapper(f);
+	stream.data = f;
+	res = tml_load_ex(&stream, out_sysex);
+	fclose(f);
+	return res;
+}
+#endif
+
+TMLDEF tml_message* tml_load_ex(struct tml_stream* stream, struct tml_sysex_store** out_sysex)
+{
 	int num_tracks, division, trackbufsize = 0;
 	unsigned char midi_header[14], *trackbuf = TML_NULL;
 	struct tml_message* messages = TML_NULL;
 	struct tml_track *tracks, *t, *tracksEnd;
-	struct tml_parser p = { TML_NULL, TML_NULL, 0, 0, 0 };
+	struct tml_parser p = { TML_NULL, TML_NULL, 0, 0, 0, TML_NULL };
+	if (out_sysex) { *out_sysex = TML_NULL; p.sysex = (struct tml_sysex_store*)TML_MALLOC(sizeof(struct tml_sysex_store)); if (p.sysex) { p.sysex->data = TML_NULL; p.sysex->size = p.sysex->cap = 0; p.sysex->offs = p.sysex->lens = TML_NULL; p.sysex->count = p.sysex->ecap = 0; } }
 
 	// Parse MIDI header
-	if (stream->read(stream->data, midi_header, 14) != 14) { TML_ERROR("Unexpected end of file"); return messages; }
+	if (stream->read(stream->data, midi_header, 14) != 14) { TML_ERROR("Unexpected end of file"); tml_sysex_free(p.sysex); return messages; }
 	if (midi_header[0] != 'M' || midi_header[1] != 'T' || midi_header[2] != 'h' || midi_header[3] != 'd' ||
-	    midi_header[7] != 6   || midi_header[9] >  2) { TML_ERROR("Doesn't look like a MIDI file: invalid MThd header"); return messages; }
-	if (midi_header[12] & 0x80) { TML_ERROR("File uses unsupported SMPTE timing"); return messages; }
+	    midi_header[7] != 6   || midi_header[9] >  2) { TML_ERROR("Doesn't look like a MIDI file: invalid MThd header"); tml_sysex_free(p.sysex); return messages; }
+	if (midi_header[12] & 0x80) { TML_ERROR("File uses unsupported SMPTE timing"); tml_sysex_free(p.sysex); return messages; }
 	num_tracks = (int)(midi_header[10] << 8) | midi_header[11];
 	division = (int)(midi_header[12] << 8) | midi_header[13]; //division is ticks per beat (quarter-note)
-	if (num_tracks <= 0 && division <= 0) { TML_ERROR("Doesn't look like a MIDI file: invalid track or division values"); return messages; }
+	if (num_tracks <= 0 && division <= 0) { TML_ERROR("Doesn't look like a MIDI file: invalid track or division values"); tml_sysex_free(p.sysex); return messages; }
 
 	// Allocate temporary tracks array for parsing
 	tracks = (struct tml_track*)TML_MALLOC(sizeof(struct tml_track) * num_tracks);
@@ -480,6 +597,7 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 		messages = TML_NULL;
 	}
 
+	if (p.sysex) { if (messages && out_sysex) *out_sysex = p.sysex; else tml_sysex_free(p.sysex); }
 	return messages;
 }
 

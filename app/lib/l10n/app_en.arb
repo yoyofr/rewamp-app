@@ -2,6 +2,13 @@
   "@@locale": "en",
   "navHome": "Home",
   "navSearch": "Search",
+  "navLocal": "Local",
+  "settingsTabsOrderTitle": "Tab order",
+  "settingsTabsOrderSubtitle": "Drag to reorder. The first four appear in the bottom bar; the rest live under “More”.",
+  "settingsTabsInBar": "In the bar",
+  "settingsTabsInMore": "Under “More”",
+  "settingsLaunchTab": "Tab at launch",
+  "settingsLaunchTabSubtitle": "Which tab the app opens on",
   "navLibrary": "Library",
   "noFileSelected": "No file selected",
   "openFile": "Open file",
@@ -17,6 +24,24 @@
     }
   },
   "playbackFileGone": "File no longer on the server: {file}",
+  "playbackTrackNotInArchive": "{file} is not in the album's archive — the rip lists it but does not ship it.",
+  "@playbackTrackNotInArchive": {
+    "description": "Shown when an album's tracklist names a file the archive does not contain (joshw rips list vocal .mp3 tracks they do not ship). {file} is that entry's name.",
+    "placeholders": {
+      "file": {
+        "type": "String"
+      }
+    }
+  },
+  "playbackSourceTimeout": "{host} did not respond. Check your connection, then try again.",
+  "@playbackSourceTimeout": {
+    "description": "Shown when a download source does not answer in time. {host} is the origin server's hostname — naming it is the useful fact (modland is not mirrored, so every Amiga module depends on that one host).",
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
   "@playbackFileGone": {
     "placeholders": {
       "file": {
@@ -68,17 +93,22 @@
   "sortAZ": "A–Z",
   "recentlyPlayed": "Recently played",
   "noRecentTracks": "No recently played tracks",
-  "openLocalFile": "Open local file",
   "playerSourceLocal": "local",
-  "browseFiles": "Browse files",
+  "homePlayFiles": "Play files",
+  "homePlayFolder": "Play a folder",
+  "homeSectionsOrderTitle": "Section order",
+  "homeSectionsOrderSubtitle": "Drag to arrange the Home screen the way you like.",
+  "homeSectionsOrderReset": "Default order",
+  "homeSectionsOrderSettings": "Home section order",
   "countTotal": "{loaded} / {total} results",
   "@countTotal": {
+    "description": "total est une CHAINE et non un int: search_artists peut rendre un PLANCHER (truncated), affiche alors « 4403+ ». Interpolation brute, aucun NumberFormat n'est perdu.",
     "placeholders": {
       "loaded": {
         "type": "int"
       },
       "total": {
-        "type": "int"
+        "type": "String"
       }
     }
   },
@@ -349,6 +379,18 @@
   },
   "searchYearFilterNote": "Filtering by year excludes undated songs.",
   "searchMinRating": "Rating ≥",
+  "searchPodium": "Podium",
+  "@searchPodium": {
+    "description": "Facet chip (next to Format / Platform): keep only songs/albums that placed 1st-3rd in a demoscene competition. May be followed by a count in parentheses."
+  },
+  "searchPodiumAny": "Any podium",
+  "@searchPodiumAny": {
+    "description": "Podium picker option: any placing (1st, 2nd or 3rd). Its count is the sum of the three ranks."
+  },
+  "searchPodiumUnavailable": "The podium filter is not available on the server yet",
+  "@searchPodiumUnavailable": {
+    "description": "Snack when the server does not support the podium filter yet; the filter is then cleared."
+  },
   "searchRatingValue": "★ {value}",
   "@searchRatingValue": {
     "placeholders": {
@@ -399,12 +441,13 @@
   "searchSurpriseTooltip": "A random song",
   "searchTabWithCount": "{label} ({count})",
   "@searchTabWithCount": {
+    "description": "count est une CHAINE: le total d'un onglet peut etre un PLANCHER (search_artists truncated), affiche alors « 4403+ ».",
     "placeholders": {
       "label": {
         "type": "String"
       },
       "count": {
-        "type": "int"
+        "type": "String"
       }
     }
   },
@@ -447,10 +490,11 @@
   "searchNoMatch": "No match",
   "searchNoPlaylist": "No playlists",
   "engineDescOpenmpt": "Tracker modules (MOD/XM/S3M/IT/…)",
+  "engineDescXmp": "Modules libopenmpt cannot read (.musx, .liq, .fnk…)",
   "engineDescVgm": "VGM/S98/GYM/DRO — sound chips, per-channel scope",
   "engineDescGme": "NES/GB/SNES/PC-Engine/AY/HES/KSS/SAP + RSN archives",
   "engineDescNsfplay": "NES NSF/NSFe — per-channel voices",
-  "engineDescGbsplay": "Game Boy GBS",
+  "engineDescGbsplay": "Game Boy GBS/GBR",
   "engineDescSidplayfp": "Commodore 64 SID (reSIDfp engine)",
   "engineDescNez": "PC-Engine HES + Sega SGC (SN76489/YM2413)",
   "engineDescKss": "MSX chiptunes (KSS/MGS/BGM/MPK/MBM/OPX)",
@@ -720,6 +764,7 @@
   },
   "subsongReadTracksFailed": "Unable to read the tracks",
   "subsongTrackNumber": "Track {number}",
+  "subsongDefaultTrack": "Default track",
   "@subsongTrackNumber": {
     "placeholders": {
       "number": {
@@ -783,6 +828,10 @@
   "libraryRemovedTrack": "Track removed from your library",
   "libraryRemovedAlbum": "Album removed from your library",
   "libraryRemovedArtist": "Artist removed from your library",
+  "libraryImportBeforeAddTitle": "Import first?",
+  "libraryImportBeforeAddBody": "This file is playing from a temporary location the system can clear. Import it into your local library so the entry survives?",
+  "libraryImportBeforeAddArchiveBody": "This track comes from an archive opened into a temporary cache. The whole archive will be imported into your local library, companion files included.",
+  "libraryAddNeedsCatalogueId": "Cannot add this track: its catalogue id is unknown on this device.",
   "songTilePlayFailed": "Playback failed: {message}",
   "@songTilePlayFailed": {
     "placeholders": {
@@ -857,9 +906,11 @@
   "vizSpectrum": "Spectrum",
   "vizVoices": "Voices",
   "vizNotes": "Notes",
+  "vizPiano": "Piano",
   "vizPatterns": "Patterns",
   "patternScrollMode": "Scroll mode",
   "patternSmoothScroll": "Smooth scrolling",
+  "patternPinnedRow": "Pinned playing row",
   "patternVolumeBars": "Volume bars",
   "patternColorScheme": "Color scheme",
   "patternSize": "Size",
@@ -893,7 +944,7 @@
       }
     }
   },
-  "enginesLicenseFormats": "{license} · {count, plural, =1{1 format} other{{count} formats}}",
+  "enginesLicenseFormats": "{license} · {count, plural, one{{count} format} other{{count} formats}}",
   "@enginesLicenseFormats": {
     "placeholders": {
       "license": {
@@ -973,6 +1024,7 @@
   "playerViewAlbum": "View album",
   "playerViewArtist": "View artist",
   "playerAddToPlaylist": "Add to playlist",
+  "playerEngineSettings": "Engine settings",
   "queueAddToPlaylist": "Add queue to a playlist",
   "playerMoreOptions": "More options",
   "playerClose": "Close",
@@ -1273,7 +1325,6 @@
   },
   "playlistDeleteFolderBody": "Its contents move up one level.",
   "playlistEmpty": "Empty playlist",
-  "playlistRemoveEntry": "Remove from playlist",
   "trackOptionsAddToLibrary": "Add to library",
   "trackOptionsRemoveFromLibrary": "Remove from library",
   "trackOptionsAddedToLibrary": "Track added to the library",
@@ -1458,7 +1509,6 @@
   "settingsVoiceNamesTitle": "Voice names",
   "settingsVoiceNamesSubtitle": "Show each voice's name inside its frame",
   "settingsLineThickness": "Line thickness",
-  "settingsColors": "Colors",
   "settingsScopeVoiceColor": "Voice oscilloscope",
   "settingsStereoColors": "Stereo: colors",
   "settingsStereoMono": "Mono",
@@ -1466,13 +1516,22 @@
   "settingsStereoMonoColor": "Stereo (mono)",
   "settingsStereoLeftColor": "Stereo left",
   "settingsStereoRightColor": "Stereo right",
-  "settingsNotation": "Notation (notes)",
   "settingsNotePalette": "Color palette",
   "settingsNoteBoxStyle": "Block style",
   "settingsNoteStyleFlat": "Flat",
   "settingsNoteStyleBox": "Box",
-  "settingsCrtEffects": "CRT effects",
-  "settingsCrtGlow": "Glow",
+  "settingsVizAll": "All visualizers",
+  "settingsVizScopes": "Oscilloscopes (stereo and per-voice)",
+  "settingsVizFrameRate": "Frame rate",
+  "settingsVizFrameRateScreen": "Screen",
+  "settingsValueFps": "{value} fps",
+  "@settingsValueFps": {
+    "placeholders": {
+      "value": {
+        "type": "int"
+      }
+    }
+  },
   "settingsCrtSpeed": "Intensity / speed",
   "settingsArtworkOpacity": "Background artwork opacity",
   "settingsProjectMTitle": "projectM settings",
@@ -1486,6 +1545,129 @@
     "description": "Settings toggle: desktop notification on track change"
   },
   "settingsSilenceDetection": "Silence detection",
+  "settingsCrossfade": "Crossfade",
+  "localActionPlay": "Play files or a folder",
+  "localActionImport": "Import files or a folder",
+  "@localActionPlay": {
+    "description": "Onglet Local: ouvre la feuille de lecture (fichier ou dossier). VERBE et non un nom - c est une action de liste, pas un titre de rubrique."
+  },
+  "@localActionImport": {
+    "description": "Onglet Local: ouvre la feuille d import (fichiers ou dossier)."
+  },
+  "localOpsImporting": "Importing {name}…",
+  "@localOpsImporting": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "localOpsImportingSelection": "Importing the selected files…",
+  "localOpsDeleting": "Deleting {name}…",
+  "@localOpsDeleting": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "localOpsPhaseCopying": "copying",
+  "localOpsPhaseExtracting": "extracting",
+  "localOpsPhaseRegistering": "adding to library",
+  "localOpsPhaseDeleting": "removing files",
+  "localImportFiles": "Import files",
+  "storageLocalImports": "Local imports",
+  "settingsVgmJapaneseTags": "Japanese tags (GD3)",
+  "settingsVgmJapaneseTagsHelp": "Prefer the Japanese title/game/artist fields of VGM tags when present.",
+  "localImportFolder": "Import a folder",
+  "localLibraryTitle": "On this device",
+  "libraryOnAnotherDevice": "On another device",
+  "@libraryOnAnotherDevice": {
+    "description": "Library row whose local file lives on another device of the same account: shown greyed, not playable here."
+  },
+  "localLibraryEmpty": "No local imports yet. Use “Import files” or “Import a folder” from Home.",
+  "queueLimitReached": "Queue limited to the first {count} tracks",
+  "localDeleteTrackConfirm": "Delete “{name}”? The file and its companion files (artwork…) will be removed.",
+  "@localDeleteTrackConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "localDeleteFolderConfirm": "{count, plural, one{Delete folder “{name}” and its {count} track?} other{Delete folder “{name}” and its {count} tracks?}}",
+  "@localDeleteFolderConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@queueLimitReached": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "localImportDone": "{count} track(s) imported to library",
+  "localImportDoneAlbums": "{tracks} track(s) imported — {albums} album(s)",
+  "@localImportDoneAlbums": {
+    "placeholders": {
+      "tracks": {
+        "type": "int"
+      },
+      "albums": {
+        "type": "int"
+      }
+    }
+  },
+  "@localImportDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "localImportFailed": "Import failed: {error}",
+  "@localImportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsCrossfadeHelp": "Blends the end of each track into the start of the next. At 0, playback is still gapless.",
+  "settingsMinSubsongSection": "Short subsongs",
+  "settingsMinSubsongTitle": "Minimum length",
+  "settingsMinSubsongHelp": "Subsongs shorter than this stay out of the list and the queue — a game file often holds more sound effects than music. At 0 nothing is dropped; a length the decoder cannot tell is never treated as short.",
+  "localNewFolder": "New folder",
+  "localFolderName": "Folder name",
+  "localRename": "Rename",
+  "localMoveTo": "Move to…",
+  "localMove": "Move",
+  "localMoveNothing": "Nothing moved",
+  "localNameInvalid": "Invalid name",
+  "localNameTaken": "That name is already taken",
+  "localMoveIntoItself": "A folder cannot be moved into itself",
+  "localManageFailed": "Operation failed",
+  "subsongSkippedShort": "Not queued: under {seconds} s (Settings → Playback)",
+  "@subsongSkippedShort": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsQueuePrefetchSection": "Queue downloads",
+  "settingsQueuePrefetchTitle": "Download the whole queue",
+  "settingsQueuePrefetchSubtitle": "One file at a time; the next missing track starts as soon as the previous one lands. Off: only the next track is fetched.",
+  "settingsCdRipDeclickSection": "CD rips",
+  "settingsCdRipDeclickTitle": "Remove clicks at track start",
+  "settingsCdRipDeclickSubtitle": "Bad CD rips (mp3, ape, ogg, flac…) often open on a few corrupt samples. They are repaired until 200 ms of real music has played; the filter then steps aside.",
   "settingsSilenceSkipTitle": "Skip to the next track on silence",
   "settingsSilenceSkipSubtitle": "Moves on automatically when the output stays silent",
   "settingsSilenceDelay": "Silence delay",
@@ -1506,6 +1688,7 @@
   "settingsDecodersHelp": "Some formats can be played by several engines. Pick which one to use by default — every other format is routed automatically.",
   "settingsDecoderAmigaTrackers": "Amiga trackers (mod, med, okt…)",
   "settingsEngineOpenmptSubtitle": "Trackers — MOD, XM, S3M, IT…",
+  "settingsEngineXmpSubtitle": "Modules libopenmpt cannot read — .musx, .liq, .fnk…",
   "settingsEngineGmeSubtitle": "SPC, VGM(gme), KSS, AY… — EQ, stereo",
   "settingsEngineNsfSubtitle": "NES / NSF — quality, filters, per-chip options",
   "settingsEngineGbsSubtitle": "Game Boy / GBS — high-pass filter",
@@ -1517,11 +1700,15 @@
   "settingsEngineHeSubtitle": "PSF / PS1-PS2 — SPU, reverb",
   "settingsEngineVgmSubtitle": "VGM / S98 / DRO — YM2612, OPL3, QSound cores…",
   "settingsMasterVolume": "Master volume",
+  "settingsAmplification": "Amplification",
   "settingsAmigaFilter": "Amiga filter",
   "settingsInterpolation": "Interpolation",
   "settingsPolyphony": "Polyphony",
   "settingsReverb": "Reverb",
   "settingsChorus": "Chorus",
+  "playbackMt32NoRoms": "This MIDI was written for a Roland MT-32. Without its ROMs it plays on the SoundFont, with instruments mapped to General MIDI — import the ROMs in Settings › Engines › Munt for the real thing.",
+  "settingsMidiMt32ToGm": "Adapt MT-32 files",
+  "settingsMidiMt32ToGmSubtitle": "A MIDI written for a Roland MT-32 numbers its programs in the MT-32's own list: mapped to their closest General MIDI equivalent, it plays with plausible instruments instead of random ones.",
   "settingsInterpNone": "None",
   "settingsInterpLinear": "Linear",
   "settingsInterpCubic": "Cubic",
@@ -1736,6 +1923,84 @@
       }
     }
   },
+  "storageTitle": "Storage",
+  "storageSubtitle": "What the app keeps on disk, with deletion",
+  "storageDownloads": "Downloads",
+  "storageArtworkCache": "Artwork cache",
+  "storageSoundfonts": "SoundFonts",
+  "storagePresets": "Visualizer presets",
+  "storageOpenedFiles": "Opened files",
+  "storageOpenedEmpty": "Files opened from outside the app (share, “Open with”, the file picker on mobile) are copied here.",
+  "storageInUse": "in a playlist or library",
+  "storageDeleteAll": "Delete all",
+  "storageClear": "Clear",
+  "storageDeleteSelection": "Delete selection",
+  "storageSelectAll": "Select all",
+  "storageFilterHint": "Filter by name",
+  "storageNoMatch": "No file matches this filter.",
+  "storageSelectedCount": "{count, plural, one{{count} selected} other{{count} selected}}",
+  "@storageSelectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "storageDeleteSelectionBody": "{count, plural, one{Delete {count} file?} other{Delete {count} files?}}",
+  "@storageDeleteSelectionBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "storageDeleteSelectionInUseBody": "{count, plural, other{Delete {count} files? {inUse} of them are used by a playlist or the library — those entries will lose their file.}}",
+  "@storageDeleteSelectionInUseBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "inUse": {
+        "type": "int"
+      }
+    }
+  },
+  "storageDownloadsClearBody": "Delete every downloaded file and its library rows? Favourites and playlists keep their entries, but the files will need downloading again.",
+  "storageSoundfontsClearBody": "Delete every SoundFont, imported ones included? Catalogue SoundFonts re-download on demand; imported files are lost.",
+  "storagePresetsClearBody": "Delete downloaded preset packs and imported presets? Bundled presets are kept; packs re-download on demand, imported files are lost.",
+  "storageOpenedDeleteAllTitle": "Delete opened files",
+  "storageInUseDeleteTitle": "File in use",
+  "storageInUseDeleteBody": "A playlist or the library still points at this file. Deleting it will leave those entries without their file.",
+  "storageCategoryStat": "{count, plural, one{{count} file — {size}} other{{count} files — {size}}}",
+  "@storageCategoryStat": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "storageDownloadsSubtitle": "{count, plural, one{{count} file — {size} · managed from albums and tracks} other{{count} files — {size} · managed from albums and tracks}}",
+  "@storageDownloadsSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "storageOpenedDeleteAllBody": "{count, plural, =1{Delete {count} file? Files used by a playlist or the library are kept.} other{Delete {count} files? Files used by a playlist or the library are kept.}}",
+  "@storageOpenedDeleteAllBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "settingsResetStats": "Reset the statistics",
   "settingsResetStatsSubtitle": "Removes the listening history and the play counters",
   "settingsClearStatsTitle": "Reset the statistics?",
@@ -1744,10 +2009,32 @@
   "settingsResetDatabase": "Reset the database",
   "settingsResetDatabaseSubtitle": "Deletes everything: history, favorites, playlists, cache",
   "settingsResetDbTitle": "Reset the database?",
+  "settingsCleanLocalTitle": "Clean up unplayable local entries",
+  "cleanStageScan": "Scanning entries…",
+  "cleanStageSync": "Syncing with your account…",
+  "cleanStagePurge": "Removing from your account…",
+  "cleanStageDelete": "Removing locally…",
+  "settingsCleanLocalBody": "Library entries naming a file that is no longer on this device. They are removed from your account too, so they disappear from your other devices.",
+  "settingsCleanLocalDone": "{count, plural, =0{Nothing to clean up} one{{count} entry removed} other{{count} entries removed}}",
+  "@settingsCleanLocalDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "settingsResetDbBody": "This will permanently delete:\n• the whole listening history\n• every counter\n• every favorite\n• every playlist\n• all cached metadata\n\nYour audio files are not deleted.",
   "settingsDbReset": "Database reset",
   "settingsDeleteDownloads": "Delete the downloads",
   "settingsDeleteDownloadsSubtitle": "Deletes every file in the online folder (tracks, artwork)",
+  "settingsCleanAll": "Clean the local database and cache",
+  "settingsCleanAllSubtitle": "Removes entries whose file is gone, library entries pointing at files kept on another device, and the artwork & metadata cache",
+  "settingsCleanAllConfirmBody": "Library entries pointing at files kept on another device are also removed from your account, so from your other devices. Artwork and metadata are re-downloaded on next play.",
+  "settingsDataAdvanced": "Advanced",
+  "settingsDataAdvancedSubtitle": "Each cleanup step on its own, the cache, and the resets",
+  "settingsDataGroupDb": "Database",
+  "settingsDataGroupCache": "Cache",
+  "settingsDataGroupReset": "Reset",
   "settingsDeleteDownloadsTitle": "Delete the downloads?",
   "settingsDeleteDownloadsBody": "This will permanently delete every downloaded file (tracks, albums, artwork) from the online folder.\n\nThe database entries will stay but will point at files that no longer exist.",
   "settingsDownloadsDeleted": "Downloads deleted",
@@ -1855,6 +2142,7 @@
   "accountErrorTooMany": "Too many requests, try again in a few minutes",
   "accountErrorInvalidCode": "Wrong or expired code",
   "accountErrorCodeLength": "The code has 6 digits",
+  "albumOfflinePartial": "Offline — showing what is already on this device",
   "accountErrorNetwork": "Connection failed, try again",
   "accountMergeTitle": "Merge this library?",
   "accountMergeBody": "This device's favourites and history will be added to the {email} account. This cannot be undone.",
@@ -1989,6 +2277,7 @@
   "patternOpaqueBg": "Opaque background",
   "patternOpaqueBgSubtitle": "Hides the cover art behind the grid",
   "commonSave": "Save",
+  "commonImport": "Import",
   "accountDisplayName": "Public name",
   "accountDisplayNameNotSet": "Not set — required to publish a playlist",
   "accountDisplayNameHint": "The name you want to be credited under.",
@@ -2046,46 +2335,47 @@
   "settingsSpectrumModeBeam": "Beam",
   "settingsSpectrumModeLine": "Line",
   "settingsSpectrumModeRing": "Ring",
+  "settingsPianoMode": "Piano look",
+  "settingsPianoModeRoll": "Keyboards",
+  "settingsPianoModeFalling": "Falling notes",
+  "settingsPianoColor": "Colors",
+  "settingsPianoColorVoice": "By voice",
+  "settingsPianoColorInstrument": "By instrument",
+  "settingsPianoGlow": "Glow on struck keys",
+  "settingsPianoLighting": "Light and shadows on the keys",
+  "settingsPianoVoiceNames": "Voice names",
+  "featuredAdditionsHeader": "New in the catalogue",
+  "@featuredAdditionsHeader": {
+    "description": "Featured rail: header of the new-in-the-catalogue section"
+  },
+  "featuredAdditionsCard": "Just added",
+  "@featuredAdditionsCard": {
+    "description": "Featured rail: label of a freshly added album card"
+  },
+  "featuredAdditionsPlaylist": "The freshly added tunes",
+  "@featuredAdditionsPlaylist": {
+    "description": "Featured rail: label of the freshly-added-tunes playlist"
+  },
   "releaseNotesTitle": "What's new",
-  "releaseNotesV4Downloads": "Downloads: a long one can be cancelled while it runs, and an album archive is no longer fetched several times over.",
-  "@releaseNotesV4Downloads": {
-    "description": "Beta 4 release note bullet"
+  "releaseNotesV7Cpu": "The app no longer works away in the background when nothing is playing: far less processor and battery.",
+  "@releaseNotesV7Cpu": {
+    "description": "Release note: no background CPU use when idle"
   },
-  "releaseNotesV4Queue": "Queue: a button to empty it, with a confirmation — it also stops what is playing.",
-  "@releaseNotesV4Queue": {
-    "description": "Beta 4 release note bullet"
+  "releaseNotesV7VizIdle": "Visualizers stand still while playback is stopped, and are capped at 60 frames per second (adjustable).",
+  "@releaseNotesV7VizIdle": {
+    "description": "Release note: visualizers idle when stopped, frame-rate cap"
   },
-  "releaseNotesV4DropFiles": "Files dropped on the window: choose play now, next or at the end; artwork and companion files are left out, and a playlist shipped inside an archive is honoured (real track names, no dead slots).",
-  "@releaseNotesV4DropFiles": {
-    "description": "Beta 4 release note bullet"
+  "releaseNotesV7Subsongs": "Fixed: on PC Engine, Master System and Atari ST (.sndh), some tracks started the song next to the right one.",
+  "@releaseNotesV7Subsongs": {
+    "description": "Release note: fix, wrong song started in some multi-song files"
   },
-  "releaseNotesV4Soundfont": "MIDI: import your own SoundFont from the device, alongside the ones offered by the server.",
-  "@releaseNotesV4Soundfont": {
-    "description": "Beta 4 release note bullet"
+  "releaseNotesV7Piano": "The Piano visualizer stayed empty on PC Engine music.",
+  "@releaseNotesV7Piano": {
+    "description": "Release note: piano visualizer empty on PC Engine music"
   },
-  "releaseNotesV4Formats": "Wwise, FSB and OGL game streams play at last (custom Vorbis).",
-  "@releaseNotesV4Formats": {
-    "description": "Beta 4 release note bullet"
-  },
-  "releaseNotesV4Chips": "Six more sound chips, a choice of emulation core per chip (SameBoy for Game Boy), and correct pitch on sampled chips.",
-  "@releaseNotesV4Chips": {
-    "description": "Beta 4 release note bullet"
-  },
-  "releaseNotesV4Zx": "ZX Spectrum: .vt2 tunes play, and note and pattern views now cover the whole ZX family.",
-  "@releaseNotesV4Zx": {
-    "description": "Beta 4 release note bullet"
-  },
-  "releaseNotesV4Loop": "Repeat one really loops the tune instead of reloading it, and the time counter no longer freezes on an endless loop.",
-  "@releaseNotesV4Loop": {
-    "description": "Beta 4 release note bullet"
-  },
-  "releaseNotesV4Info": "The ⓘ panel lists the files a tune actually opened — companions and libraries included.",
-  "@releaseNotesV4Info": {
-    "description": "Beta 4 release note bullet"
-  },
-  "releaseNotesV4Linux": "Linux desktop build.",
-  "@releaseNotesV4Linux": {
-    "description": "Beta 4 release note bullet"
+  "releaseNotesV7Database": "A database left broken by an update now repairs itself, instead of making the library unreachable.",
+  "@releaseNotesV7Database": {
+    "description": "Release note: damaged database repairs itself"
   },
   "releaseNotesDataReset": "Local data was reset for this beta. Your library and playlists rebuild from your account; downloads start over.",
   "releaseNotesDismiss": "Continue",
@@ -2097,15 +2387,19 @@
   "pmSlowPresetDropped": "“{name}” is too heavy for this device and was set aside.",
   "@pmSlowPresetDropped": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "pmSlowDeviceTitle": "This device is too slow",
   "pmSlowDeviceOff": "The visualiser was turned off: this device cannot keep up with Milkdrop presets.",
-  "settingsPmSlowPresets": "{count, plural, =1{1 preset set aside} other{{count} presets set aside}}",
+  "settingsPmSlowPresets": "{count, plural, one{{count} preset set aside} other{{count} presets set aside}}",
   "@settingsPmSlowPresets": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "settingsPmSlowPresetsSubtitle": "Too slow on this device. Playback skips them.",
@@ -2239,5 +2533,176 @@
         "type": "int"
       }
     }
+  },
+  "browseCharts": "Charts",
+  "chartsGlobal": "Global",
+  "chartsByCollection": "By collection",
+  "chartsTopSongs": "Top songs",
+  "chartsTopAlbums": "Top albums",
+  "chartsRewampSection": "Top rewamp",
+  "chartsPublishedSection": "Published charts",
+  "chartsUpdated": "Updated {date}",
+  "@chartsUpdated": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "chartsSource": "Source",
+  "settingsMidiSynth": "MIDI synthesizer",
+  "@settingsMidiSynth": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "settingsMidiSynthAuto": "Automatic (MT-32 when the file asks for it)",
+  "@settingsMidiSynthAuto": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "settingsMidiSynthSoundfont": "SoundFont (FluidLite)",
+  "@settingsMidiSynthSoundfont": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "settingsMidiSynthMt32": "Roland MT-32 (emulation)",
+  "@settingsMidiSynthMt32": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "settingsMt32Section": "Roland MT-32 emulation",
+  "@settingsMt32Section": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "settingsMt32RomsTitle": "MT-32 ROMs",
+  "@settingsMt32RomsTitle": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "settingsMt32RomsMissing": "No usable ROM set — import the control and PCM ROMs of an MT-32 or CM-32L",
+  "@settingsMt32RomsMissing": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "settingsMt32RomsActive": "Active set: {set}",
+  "@settingsMt32RomsActive": {
+    "description": "Settings: MT-32 ROM set in use",
+    "placeholders": {
+      "set": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsMt32Import": "Import ROM files…",
+  "@settingsMt32Import": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "settingsMt32ImportSubtitle": "Control + PCM ROM (.rom/.bin), MAME split halves accepted. ROMs are not distributed with the app.",
+  "@settingsMt32ImportSubtitle": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "settingsMt32ImportRejected": "{name} is not a known MT-32 / CM-32L ROM",
+  "@settingsMt32ImportRejected": {
+    "description": "Settings: an imported file mt32emu does not recognise",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsMt32ImportDone": "{count, plural, one{{count} ROM file imported} other{{count} ROM files imported}}",
+  "@settingsMt32ImportDone": {
+    "description": "Settings: MT-32 ROM import result",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsMt32Model": "Model",
+  "@settingsMt32Model": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "settingsMt32ModelAuto": "Automatic (CM-32L if available)",
+  "@settingsMt32ModelAuto": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "settingsMt32Reverb": "Reverb",
+  "@settingsMt32Reverb": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "engineDescMt32": "Roland MT-32 / CM-32L emulation for MIDI (.mid/.midi/.kar/.rmi)",
+  "@engineDescMt32": {
+    "description": "Settings: MIDI synth choice / Roland MT-32 emulation"
+  },
+  "miniWindowEnter": "Mini player",
+  "@miniWindowEnter": {
+    "description": "Tooltip: shrink the desktop window into a mini player"
+  },
+  "miniWindowExit": "Back to the main window",
+  "@miniWindowExit": {
+    "description": "Tooltip (mini player): go back to the main window"
+  },
+  "miniWindowIdle": "Nothing playing",
+  "@miniWindowIdle": {
+    "description": "Mini player title when no track is loaded"
+  },
+  "settingsAlwaysOnTopTitle": "Always on top",
+  "@settingsAlwaysOnTopTitle": {
+    "description": "Settings toggle / mini player pin tooltip: keep the window above all others"
+  },
+  "settingsAlwaysOnTopSubtitle": "Keep the window above all others — main window and mini player alike",
+  "@settingsAlwaysOnTopSubtitle": {
+    "description": "Settings: explains the always-on-top toggle"
+  },
+  "windowAlwaysOnTopOn": "Always on top: on",
+  "@windowAlwaysOnTopOn": {
+    "description": "Mini player pin tooltip when always-on-top is active"
+  },
+  "miniWindowCoverFill": "Zoom cover to fill",
+  "@miniWindowCoverFill": {
+    "description": "Mini player cover tooltip: click zooms the cover to fill its box"
+  },
+  "miniWindowCoverFit": "Show whole cover",
+  "@miniWindowCoverFit": {
+    "description": "Mini player cover tooltip: click shows the whole cover (aspect fit)"
+  },
+  "releaseNotesV7Mt32": "New Roland MT-32 engine for game MIDI music, with your own ROMs. Without ROMs, a MIDI written for the MT-32 is adapted to General MIDI.",
+  "@releaseNotesV7Mt32": {
+    "description": "Release note: new Roland MT-32 engine for game MIDI files"
+  },
+  "releaseNotesV7Xmp": "Ten rare module formats now play (Archimedes Tracker .musx, .liq, .fnk…).",
+  "@releaseNotesV7Xmp": {
+    "description": "Release note: ten rare module formats now playable"
+  },
+  "releaseNotesV7AmigaAdlib": "Westwood AdLib music (.adl) plays all of its tracks, and BP SoundMon V1 is recognised on Amiga.",
+  "@releaseNotesV7AmigaAdlib": {
+    "description": "Release note: Westwood AdLib .adl subsongs + BP SoundMon V1"
+  },
+  "releaseNotesV7MiniPlayer": "Mac: a mini player, compact or with the visualizer, and an “Always on top” option.",
+  "@releaseNotesV7MiniPlayer": {
+    "description": "Release note: desktop mini player + always on top"
+  },
+  "releaseNotesV7Instruments": "Oscilloscope, notes and piano can name and colour each instrument, not just each voice.",
+  "@releaseNotesV7Instruments": {
+    "description": "Release note: visualizers can name and colour instruments"
+  },
+  "releaseNotesV7Podium": "Search: filter the tunes that placed 1st, 2nd or 3rd in a demoscene competition.",
+  "@releaseNotesV7Podium": {
+    "description": "Release note: search filter for competition winners"
+  },
+  "releaseNotesV7ShortSubsongs": "Subsongs that are too short (game sound effects) are left out of “Play all” — threshold in Settings → Playback.",
+  "@releaseNotesV7ShortSubsongs": {
+    "description": "Release note: too-short subsongs left out of Play all"
+  },
+  "releaseNotesV7LocalFolders": "Your imports: drop a whole folder (archives unpacked), and create, rename or move folders.",
+  "@releaseNotesV7LocalFolders": {
+    "description": "Release note: importing and organising local folders"
+  },
+  "releaseNotesV7Midi": "MIDI: drums no longer play as a piano, and the volume no longer clips.",
+  "@releaseNotesV7Midi": {
+    "description": "Release note: MIDI drum and volume fixes"
+  },
+  "releaseNotesV7ProjectM": "projectM: presets no longer repeat from one launch to the next, and a preset is no longer set aside by mistake after a pause.",
+  "@releaseNotesV7ProjectM": {
+    "description": "Release note: projectM preset randomness and false slow-device verdict"
+  },
+  "libraryFileMissing": "File missing",
+  "@libraryFileMissing": {
+    "description": "Library row: the file is not on this device and the account is anonymous, so it is nowhere — shown instead of 'On another device'"
   }
 }

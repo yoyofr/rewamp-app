@@ -323,6 +323,33 @@ lha_check_header_format(const void *h)
 				return (0);
 			if (p[H_LEVEL_OFFSET] <= 3 && p[H_ATTR_OFFSET] == 0x20)
 				return (0);
+			/* REWAMP: dans un en-tête de niveau 1 écrit par LhA
+			 * pour AMIGA, l'octet d'attribut porte les bits de
+			 * PROTECTION AmigaDOS — pas le 0x20 « fixe MS-DOS »
+			 * de la spec, qui n'a aucun sens sur cette machine.
+			 * libarchive refusait donc le FICHIER ENTIER
+			 * (« Unrecognized archive format ») alors que
+			 * l'en-tête est valide par ailleurs: somme de contrôle
+			 * juste, et l'outil `lha` d'origine le lit. Toute
+			 * UnExoticA est en LhA Amiga.
+			 *
+			 * ⚠️ La valeur VARIE d'une entrée à l'autre, donc on
+			 * ne peut pas se contenter d'accepter 0x00: mesuré sur
+			 * `Chambers_of_Shaolin.lha`, 13 entrées à 0x00 et
+			 * `sog.thalion_intro` à 0x04. N'accepter que 0x00
+			 * lisait les 9 premières entrées puis s'arrêtait sur
+			 * « Bad LHa file » — un album tronqué, ce qui est pire
+			 * qu'un refus franc.
+			 *
+			 * Élargissement borné au NIVEAU 1: les niveaux 2 et 3
+			 * fixent bien 0x20 et ne sont pas produits par LhA
+			 * Amiga. Les cinq octets de méthode (« -lh0- »…
+			 * « -lh7- », « -lhd- ») restent exigés juste au-dessus
+			 * — c'est ce qui garde le pari sûr, cette fonction
+			 * servant AUSSI à retrouver l'en-tête suivant, où un
+			 * faux positif désynchroniserait la lecture. */
+			if (p[H_LEVEL_OFFSET] == 1)
+				return (0);
 		}
 		if (p[H_METHOD_OFFSET+2] == 'z') {
 			/* LArc extensions: -lzs-,-lz4- and -lz5- */

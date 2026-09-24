@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart' as fp;
+import 'picker_memory.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
@@ -11,6 +11,9 @@ import 'l10n.dart';
 import 'local_db.dart';
 import 'preset_manager.dart';
 import 'user_settings.dart';
+import 'cancel_field.dart';
+import 'scrolling_text.dart';
+import 'local_open.dart';
 import 'rewamp_db.dart'
     show
         PresetFolderEntry,
@@ -203,7 +206,7 @@ class _PresetRow extends StatelessWidget {
         size: 20,
         color: downloaded ? Theme.of(context).colorScheme.primary : null,
       ),
-      title: Text(preset.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: ScrollingText(text: preset.name),
       subtitle: preset.author == null || preset.author!.isEmpty
           ? null
           : Text(preset.author!, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -517,6 +520,10 @@ class _BrowseTabState extends State<_BrowseTab> {
   String _folder = '';
   String _query = '';
   Timer? _debounce;
+  /// Le champ n'avait pas de contrôleur (le texte ne servait que via
+  /// `onChanged`); la croix d'annulation doit pouvoir EFFACER ce qui est
+  /// affiché, ce qui en demande un.
+  final _searchCtrl = TextEditingController();
 
   // Accumulated rows across pages. A folder like Cream of the Crop's
   // "Drawing/Explosions" holds 304 presets: a single request would silently
@@ -593,6 +600,7 @@ class _BrowseTabState extends State<_BrowseTab> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -669,19 +677,28 @@ class _BrowseTabState extends State<_BrowseTab> {
                   _reload();
                 },
               );
-              final search = TextField(
-                decoration: InputDecoration(
-                  isDense: true,
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  hintText: l10n.pmSearchPresets,
-                ),
-                onChanged: (v) {
+              final search = CancelField(
+                controller: _searchCtrl,
+                onCleared: (_) {
                   _debounce?.cancel();
-                  _debounce = Timer(const Duration(milliseconds: 350), () {
-                    _query = v.trim();
-                    _reload();
-                  });
+                  _query = '';
+                  _reload();
                 },
+                builder: (_) => TextField(
+                  controller: _searchCtrl,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    hintText: l10n.pmSearchPresets,
+                  ),
+                  onChanged: (v) {
+                    _debounce?.cancel();
+                    _debounce = Timer(const Duration(milliseconds: 350), () {
+                      _query = v.trim();
+                      _reload();
+                    });
+                  },
+                ),
               );
               if (c.maxWidth < 520) {
                 return Column(
@@ -945,26 +962,32 @@ class _PlaylistsTabState extends State<_PlaylistsTab> {
   Future<void> _importFromPicker(
       BuildContext context, AppLocalizations l10n) async {
     List<String> paths;
-    if (Platform.isAndroid) {
-      // NOT file_selector here: its Android implementation renames the cached
+    if (pickerUsesFilePicker) {
+      // NOT file_selector here (voir pickerUsesFilePicker: sur iOS un groupe
+      // d'extensions fait LEVER file_selector, donc le bouton ne faisait rien): its Android implementation renames the cached
       // copy after the resolved MIME type, and a `.milk` resolves to
       // octet-stream — the file would arrive as "preset.bin" and be dropped by
       // the extension check. file_picker keeps the real display name. Same
       // reason the home screen's picker branches (see its comment); an
       // extension filter is useless there anyway, Android filters on MIME.
-      final res = await fp.FilePicker.platform
-          .pickFiles(type: fp.FileType.any, allowMultiple: true);
+      final res = await fp.FilePicker.pickFiles(type: fp.FileType.any);
       paths = [
-        for (final f in res?.files ?? const <fp.PlatformFile>[])
+        for (final f in res)
           if (f.path != null) f.path!,
       ];
     } else {
       const group = XTypeGroup(label: 'Milkdrop', extensions: ['milk']);
-      final files = await openFiles(acceptedTypeGroups: const [group]);
+      final files = await openFiles(
+          acceptedTypeGroups: const [group],
+          initialDirectory: await PickerMemory.startDir(PickerSlot.presets));
       paths = [for (final f in files) f.path];
+      if (paths.isNotEmpty) await PickerMemory.rememberFile(PickerSlot.presets, paths.first);
     }
     if (paths.isEmpty) return;
     final n = await PresetManager.instance.importMilkFiles(paths);
+    for (final p in paths) {
+      await consumeInboxCopy(p);
+    }
     if (context.mounted) AppSnack.show(context, l10n.pmImported(n));
   }
 }

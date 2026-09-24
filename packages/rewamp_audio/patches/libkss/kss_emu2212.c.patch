@@ -1,5 +1,5 @@
---- third_party/libkss/upstream/modules/emu2212/kss_emu2212.c	2026-07-06 09:48:52
-+++ third_party/libkss/modules/emu2212/kss_emu2212.c	2026-07-06 13:34:24
+--- third_party/libkss/upstream/modules/emu2212/kss_emu2212.c	2026-07-09 18:43:32
++++ third_party/libkss/modules/emu2212/kss_emu2212.c	2026-09-05 09:35:13
 @@ -3,22 +3,22 @@
    emu2212.c -- S.C.C. emulator by Mitsutaka Okazaki 2001-2016
  
@@ -154,9 +154,30 @@
          scc->ch_out[i] += (scc->volume[i] * scc->wave[i][scc->phase[i]]) & 0xfff0;
      }
  
-@@ -199,13 +204,38 @@
+@@ -198,14 +203,60 @@
+ 
  }
  
++//YOYOFR: notes par voie pour le viz-notes — Hz dans vgm_last_note (0 = voie
++// silencieuse). Le compteur avance de base_incr/(freq+1) par echantillon et une
++// onde fait 32 pas, donc f = clk / (32 * (freq + 1)) — ce que libvgm/k051649
++// ecrit mclock*2/32/(freq+1) avec son horloge deja divisee par deux. Comme lui,
++// une periode < 9 est une voie arretee.
++static void scckss_capture_notes(SCCKSS *scc) {
++  if (m_voicesForceOfs < 0) return;
++  for (int i = 0; i < 5; i++) {
++    unsigned note = 0, vol = 0;
++    const uint32_t freq = scc->freq[i];
++    if ((scc->ch_enable & (1 << i)) && !(scc->mask & SCCKSS_MASK_CH(i)) && scc->volume[i] && freq > 8) {
++      note = scc->clk / (32 * (freq + 1));
++      vol = 1;
++    }
++    vgm_last_note[m_voicesForceOfs + i] = note;
++    vgm_last_vol[m_voicesForceOfs + i] = vol;
++    if (note) vgm_last_instr[m_voicesForceOfs + i] = (unsigned char)(m_voicesForceOfs + i);
++  }
++}
++
  static inline int16_t 
 -mix_output(SCC * scc) {
 -  scc->out = scc->ch_out[0] + scc->ch_out[1] + scc->ch_out[2] + scc->ch_out[3] + scc->ch_out[4];
@@ -169,6 +190,7 @@
 +    
 +        
 +    int64_t smplIncr=(int64_t)(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_rateratio;
++    scckss_capture_notes(scc); //YOYOFR
 +    if (m_voicesForceOfs>=0) {
 +        int val=0;
 +        for (int i = 0; i < 5; i++) {
@@ -196,7 +218,7 @@
  {
    if (!scc->quality) {
      update_output(scc);
-@@ -223,7 +253,7 @@
+@@ -223,7 +274,7 @@
  }
  
  uint32_t
@@ -205,7 +227,7 @@
  {
    if (adr < 0xA0)
      return scc->wave[adr >> 5][adr & 0x1f];
-@@ -234,7 +264,7 @@
+@@ -234,7 +285,7 @@
  }
  
  void
@@ -214,7 +236,7 @@
  {
    int ch;
    uint32_t freq;
-@@ -307,100 +337,100 @@
+@@ -307,100 +358,100 @@
  }
  
  static inline void
@@ -342,7 +364,7 @@
      return (scc->base_adr>>8)&0x20;
    
    if( adr < scc->base_adr ) return 0;
-@@ -415,10 +445,10 @@
+@@ -415,10 +466,10 @@
  
    switch (scc->type) 
    {
@@ -355,7 +377,7 @@
      if(!scc->mode)
        return read_standard (scc, adr);
      else 
-@@ -432,11 +462,11 @@
+@@ -432,11 +483,11 @@
  }
  
  void
@@ -369,7 +391,7 @@
    {
      scc->base_adr = 0x9000 | ((val&0x20)<<8);
      return;
-@@ -452,7 +482,7 @@
+@@ -452,7 +503,7 @@
        scc->mode = 0;
        scc->active = 1;
      }
@@ -378,7 +400,7 @@
      {
        scc->mode = 1;
        scc->active = 1;
-@@ -469,10 +499,10 @@
+@@ -469,10 +520,10 @@
  
    switch (scc->type) 
    {
@@ -391,7 +413,7 @@
      if(scc->mode)
        write_enhanced (scc, adr, val);
      else 
-@@ -485,7 +515,7 @@
+@@ -485,7 +536,7 @@
  }
  
  void

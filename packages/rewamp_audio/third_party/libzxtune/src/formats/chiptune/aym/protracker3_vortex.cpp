@@ -568,7 +568,17 @@ namespace ProTracker3
       OrnamentObject(const SectionHeader& header, Binary::InputStream& src)
         : Index(header.GetIndex())
       {
-        Require(Math::InRange<uint_t>(Index, 0, MAX_ORNAMENTS_COUNT - 1));
+        //REWAMP: an ornament index past the format's capacity is IGNORED, not
+        //fatal. A cell names its ornament with ONE DottedNibble (0-F), so a
+        //section numbered 16 or above can never be referenced by any pattern —
+        //dropping it is lossless BY CONSTRUCTION, where rejecting the whole
+        //file loses the music. Real writers emit them: Vortex Tracker II dumps
+        //31 ornament slots to match its 31 sample slots, all of the extra ones
+        //empty ("L0"). Measured on "AceMan - UZURPATOR.vt2" (VortexTrackerII=1,
+        //ornaments 1..31, the last 16 empty), which failed to open entirely.
+        //The body is still CONSUMED below — the stream must advance whether we
+        //keep the ornament or not, or the next section header lands mid-list.
+        Require(Index < 256);
         Dbg("Parse ornament %1%", Index);
         const LoopedList<int_t> llist(src.ReadString());
         Require(src.ReadString().empty());
@@ -1232,7 +1242,12 @@ namespace ProTracker3
           if (const SectionHeader ornHdr = OrnamentObject::ParseHeader(line))
           {
             const OrnamentObject orn(ornHdr, Source);
-            Target.SetOrnament(orn.GetIndex(), orn);
+            //REWAMP: see OrnamentObject's ctor — an unreferenceable index is
+            //parsed (to advance the stream) and then dropped.
+            if (orn.GetIndex() < MAX_ORNAMENTS_COUNT)
+            {
+              Target.SetOrnament(orn.GetIndex(), orn);
+            }
           }
           else if (const SectionHeader samHdr = SampleObject::ParseHeader(line))
           {

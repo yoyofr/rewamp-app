@@ -6,6 +6,7 @@
 #include "../../src/rewamp_notes_render.cpp"
 #include "../../src/rewamp_pattern_render.cpp"
 #include "../../src/rewamp_spectrum_render.cpp"
+#include "../../src/rewamp_piano_render.cpp"
 #include "../../src/apple/rewamp_viz_texture.h"
 #include "../../src/apple/rewamp_viz_texture.mm"
 #include "../../src/apple/rewamp_viz_plugin.mm"

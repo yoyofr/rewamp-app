@@ -15,6 +15,29 @@ class AppLocalizationsRu extends AppLocalizations {
   String get navSearch => 'Поиск';
 
   @override
+  String get navLocal => 'Локальное';
+
+  @override
+  String get settingsTabsOrderTitle => 'Порядок вкладок';
+
+  @override
+  String get settingsTabsOrderSubtitle =>
+      'Перетаскивайте для сортировки. Первые четыре — в нижней панели, остальные в «Ещё».';
+
+  @override
+  String get settingsTabsInBar => 'В панели';
+
+  @override
+  String get settingsTabsInMore => 'В «Ещё»';
+
+  @override
+  String get settingsLaunchTab => 'Вкладка при запуске';
+
+  @override
+  String get settingsLaunchTabSubtitle =>
+      'С какой вкладки открывается приложение';
+
+  @override
   String get navLibrary => 'Медиатека';
 
   @override
@@ -42,6 +65,16 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String playbackFileGone(String file) {
     return 'Файла больше нет на сервере: $file';
+  }
+
+  @override
+  String playbackTrackNotInArchive(String file) {
+    return '$file нет в архиве альбома — рип указывает файл, но не содержит его.';
+  }
+
+  @override
+  String playbackSourceTimeout(String host) {
+    return '$host не ответил. Проверьте соединение и повторите попытку.';
   }
 
   @override
@@ -131,16 +164,29 @@ class AppLocalizationsRu extends AppLocalizations {
   String get noRecentTracks => 'Нет недавно прослушанных треков';
 
   @override
-  String get openLocalFile => 'Открыть локальный файл';
-
-  @override
   String get playerSourceLocal => 'локально';
 
   @override
-  String get browseFiles => 'Обзор файлов';
+  String get homePlayFiles => 'Воспроизвести файлы';
 
   @override
-  String countTotal(int loaded, int total) {
+  String get homePlayFolder => 'Воспроизвести папку';
+
+  @override
+  String get homeSectionsOrderTitle => 'Порядок разделов';
+
+  @override
+  String get homeSectionsOrderSubtitle =>
+      'Перетаскивайте, чтобы расположить главный экран по своему вкусу.';
+
+  @override
+  String get homeSectionsOrderReset => 'Порядок по умолчанию';
+
+  @override
+  String get homeSectionsOrderSettings => 'Порядок разделов главного экрана';
+
+  @override
+  String countTotal(int loaded, String total) {
     return 'Результатов: $loaded / $total';
   }
 
@@ -565,6 +611,16 @@ class AppLocalizationsRu extends AppLocalizations {
   String get searchMinRating => 'Оценка ≥';
 
   @override
+  String get searchPodium => 'Призёры';
+
+  @override
+  String get searchPodiumAny => 'Любое призовое место';
+
+  @override
+  String get searchPodiumUnavailable =>
+      'Фильтр призёров пока недоступен на сервере';
+
+  @override
   String searchRatingValue(String value) {
     return '★ $value';
   }
@@ -645,7 +701,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get searchSurpriseTooltip => 'Случайная песня';
 
   @override
-  String searchTabWithCount(String label, int count) {
+  String searchTabWithCount(String label, String count) {
     return '$label ($count)';
   }
 
@@ -707,6 +763,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get engineDescOpenmpt => 'Модули tracker (MOD/XM/S3M/IT/…)';
 
   @override
+  String get engineDescXmp =>
+      'Модули, которые libopenmpt не читает (.musx, .liq, .fnk…)';
+
+  @override
   String get engineDescVgm =>
       'VGM/S98/GYM/DRO — звуковые чипы, осциллограф по каналам';
 
@@ -718,7 +778,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get engineDescNsfplay => 'NES NSF/NSFe — голоса по каналам';
 
   @override
-  String get engineDescGbsplay => 'Game Boy GBS';
+  String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
   String get engineDescSidplayfp => 'Commodore 64 SID (движок reSIDfp)';
@@ -1095,6 +1155,9 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String get subsongDefaultTrack => 'Трек по умолчанию';
+
+  @override
   String subsongCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -1186,6 +1249,21 @@ class AppLocalizationsRu extends AppLocalizations {
   String get libraryRemovedArtist => 'Исполнитель удалён из медиатеки';
 
   @override
+  String get libraryImportBeforeAddTitle => 'Сначала импортировать?';
+
+  @override
+  String get libraryImportBeforeAddBody =>
+      'Этот файл воспроизводится из временного места, которое система может очистить. Импортировать его в локальную библиотеку, чтобы запись сохранилась?';
+
+  @override
+  String get libraryImportBeforeAddArchiveBody =>
+      'Этот трек взят из архива, распакованного во временный кэш. Весь архив будет импортирован в локальную библиотеку вместе со вспомогательными файлами.';
+
+  @override
+  String get libraryAddNeedsCatalogueId =>
+      'Не удалось добавить трек: его идентификатор в каталоге неизвестен на этом устройстве.';
+
+  @override
   String songTilePlayFailed(String message) {
     return 'Не удалось воспроизвести: $message';
   }
@@ -1261,6 +1339,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get vizNotes => 'Ноты';
 
   @override
+  String get vizPiano => 'Пианино';
+
+  @override
   String get vizPatterns => 'Паттерны';
 
   @override
@@ -1268,6 +1349,9 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get patternSmoothScroll => 'Плавная прокрутка';
+
+  @override
+  String get patternPinnedRow => 'Закреплённая активная строка';
 
   @override
   String get patternVolumeBars => 'Полосы громкости';
@@ -1426,6 +1510,9 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get playerAddToPlaylist => 'Добавить в плейлист';
+
+  @override
+  String get playerEngineSettings => 'Настройки движка';
 
   @override
   String get queueAddToPlaylist => 'Добавить очередь в плейлист';
@@ -1966,9 +2053,6 @@ class AppLocalizationsRu extends AppLocalizations {
   String get playlistEmpty => 'Пустой плейлист';
 
   @override
-  String get playlistRemoveEntry => 'Удалить из плейлиста';
-
-  @override
   String get trackOptionsAddToLibrary => 'Добавить в медиатеку';
 
   @override
@@ -2342,9 +2426,6 @@ class AppLocalizationsRu extends AppLocalizations {
   String get settingsLineThickness => 'Толщина линии';
 
   @override
-  String get settingsColors => 'Цвета';
-
-  @override
   String get settingsScopeVoiceColor => 'Осциллограф голосов';
 
   @override
@@ -2366,9 +2447,6 @@ class AppLocalizationsRu extends AppLocalizations {
   String get settingsStereoRightColor => 'Стерео справа';
 
   @override
-  String get settingsNotation => 'Нотация (ноты)';
-
-  @override
   String get settingsNotePalette => 'Цветовая палитра';
 
   @override
@@ -2381,10 +2459,21 @@ class AppLocalizationsRu extends AppLocalizations {
   String get settingsNoteStyleBox => 'Box';
 
   @override
-  String get settingsCrtEffects => 'Эффекты CRT';
+  String get settingsVizAll => 'Все визуализации';
 
   @override
-  String get settingsCrtGlow => 'Свечение (glow)';
+  String get settingsVizScopes => 'Осциллографы (стерео и по голосам)';
+
+  @override
+  String get settingsVizFrameRate => 'Частота кадров';
+
+  @override
+  String get settingsVizFrameRateScreen => 'Экран';
+
+  @override
+  String settingsValueFps(int value) {
+    return '$value кадр/с';
+  }
 
   @override
   String get settingsCrtSpeed => 'Интенсивность / скорость';
@@ -2407,6 +2496,173 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get settingsSilenceDetection => 'Определение тишины';
+
+  @override
+  String get settingsCrossfade => 'Кроссфейд';
+
+  @override
+  String get localActionPlay => 'Воспроизвести файлы или папку';
+
+  @override
+  String get localActionImport => 'Импортировать файлы или папку';
+
+  @override
+  String localOpsImporting(String name) {
+    return 'Импорт $name…';
+  }
+
+  @override
+  String get localOpsImportingSelection => 'Импорт выбранных файлов…';
+
+  @override
+  String localOpsDeleting(String name) {
+    return 'Удаление $name…';
+  }
+
+  @override
+  String get localOpsPhaseCopying => 'копирование';
+
+  @override
+  String get localOpsPhaseExtracting => 'распаковка';
+
+  @override
+  String get localOpsPhaseRegistering => 'добавление в библиотеку';
+
+  @override
+  String get localOpsPhaseDeleting => 'удаление файлов';
+
+  @override
+  String get localImportFiles => 'Импорт файлов';
+
+  @override
+  String get storageLocalImports => 'Локальные импорты';
+
+  @override
+  String get settingsVgmJapaneseTags => 'Японские теги (GD3)';
+
+  @override
+  String get settingsVgmJapaneseTagsHelp =>
+      'Предпочитать японские поля (название, игра, исполнитель) тегов VGM, когда они есть.';
+
+  @override
+  String get localImportFolder => 'Импорт папки';
+
+  @override
+  String get localLibraryTitle => 'На этом устройстве';
+
+  @override
+  String get libraryOnAnotherDevice => 'На другом устройстве';
+
+  @override
+  String get localLibraryEmpty =>
+      'Локальных импортов пока нет. Используйте «Импорт файлов» или «Импорт папки» на главном экране.';
+
+  @override
+  String queueLimitReached(int count) {
+    return 'Очередь ограничена первыми $count треками';
+  }
+
+  @override
+  String localDeleteTrackConfirm(String name) {
+    return 'Удалить «$name»? Файл и сопутствующие файлы (обложка…) будут удалены.';
+  }
+
+  @override
+  String localDeleteFolderConfirm(String name, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Удалить папку «$name» и её $count трека?',
+      many: 'Удалить папку «$name» и её $count треков?',
+      few: 'Удалить папку «$name» и её $count трека?',
+      one: 'Удалить папку «$name» и её $count трек?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String localImportDone(int count) {
+    return 'В библиотеку импортировано: $count';
+  }
+
+  @override
+  String localImportDoneAlbums(int tracks, int albums) {
+    return 'Импортировано треков: $tracks — альбомов: $albums';
+  }
+
+  @override
+  String localImportFailed(String error) {
+    return 'Ошибка импорта: $error';
+  }
+
+  @override
+  String get settingsCrossfadeHelp =>
+      'Плавно сводит конец каждого трека с началом следующего. При 0 воспроизведение остаётся без пауз.';
+
+  @override
+  String get settingsMinSubsongSection => 'Слишком короткие подпесни';
+
+  @override
+  String get settingsMinSubsongTitle => 'Минимальная длительность';
+
+  @override
+  String get settingsMinSubsongHelp =>
+      'Более короткие подпесни не попадают ни в список, ни в очередь — в игровом файле часто больше звуковых эффектов, чем музыки. При 0 ничего не отбрасывается; неизвестная длительность никогда не считается короткой.';
+
+  @override
+  String get localNewFolder => 'Новая папка';
+
+  @override
+  String get localFolderName => 'Имя папки';
+
+  @override
+  String get localRename => 'Переименовать';
+
+  @override
+  String get localMoveTo => 'Переместить в…';
+
+  @override
+  String get localMove => 'Переместить';
+
+  @override
+  String get localMoveNothing => 'Ничего не перемещено';
+
+  @override
+  String get localNameInvalid => 'Недопустимое имя';
+
+  @override
+  String get localNameTaken => 'Это имя уже занято';
+
+  @override
+  String get localMoveIntoItself => 'Папку нельзя переместить в саму себя';
+
+  @override
+  String get localManageFailed => 'Не удалось выполнить операцию';
+
+  @override
+  String subsongSkippedShort(int seconds) {
+    return 'Не ставится в очередь: меньше $seconds с (Настройки → Воспроизведение)';
+  }
+
+  @override
+  String get settingsQueuePrefetchSection => 'Загрузка очереди';
+
+  @override
+  String get settingsQueuePrefetchTitle => 'Загружать всю очередь';
+
+  @override
+  String get settingsQueuePrefetchSubtitle =>
+      'По одному файлу; следующий недостающий трек начинается, как только загрузится предыдущий. Выкл.: только следующий трек.';
+
+  @override
+  String get settingsCdRipDeclickSection => 'CD-рипы';
+
+  @override
+  String get settingsCdRipDeclickTitle => 'Убирать щелчки в начале трека';
+
+  @override
+  String get settingsCdRipDeclickSubtitle =>
+      'Плохие CD-рипы (mp3, ape, ogg, flac…) часто начинаются с нескольких повреждённых сэмплов. Они исправляются, пока не прозвучит 200 мс настоящей музыки; затем фильтр отключается.';
 
   @override
   String get settingsSilenceSkipTitle =>
@@ -2476,6 +2732,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get settingsEngineOpenmptSubtitle => 'Трекеры — MOD, XM, S3M, IT…';
 
   @override
+  String get settingsEngineXmpSubtitle =>
+      'Модули, которые libopenmpt не читает — .musx, .liq, .fnk…';
+
+  @override
   String get settingsEngineGmeSubtitle =>
       'SPC, VGM(gme), KSS, AY… — эквалайзер, стерео';
 
@@ -2517,6 +2777,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get settingsMasterVolume => 'Общая громкость';
 
   @override
+  String get settingsAmplification => 'Усиление';
+
+  @override
   String get settingsAmigaFilter => 'Фильтр Amiga';
 
   @override
@@ -2530,6 +2793,17 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get settingsChorus => 'Хорус';
+
+  @override
+  String get playbackMt32NoRoms =>
+      'Этот MIDI написан для Roland MT-32. Без его ПЗУ он звучит через SoundFont, с инструментами, переведёнными в General MIDI — импортируйте ПЗУ в «Настройки › Движки › Munt».';
+
+  @override
+  String get settingsMidiMt32ToGm => 'Адаптировать файлы MT-32';
+
+  @override
+  String get settingsMidiMt32ToGmSubtitle =>
+      'MIDI, написанный для Roland MT-32, нумерует программы по списку MT-32: переведённые в ближайший инструмент General MIDI, они звучат правдоподобно, а не случайно.';
 
   @override
   String get settingsInterpNone => 'Нет';
@@ -3010,6 +3284,154 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String get storageTitle => 'Хранилище';
+
+  @override
+  String get storageSubtitle => 'Что приложение хранит на диске, с удалением';
+
+  @override
+  String get storageDownloads => 'Загрузки';
+
+  @override
+  String get storageArtworkCache => 'Кэш обложек';
+
+  @override
+  String get storageSoundfonts => 'SoundFont-банки';
+
+  @override
+  String get storagePresets => 'Пресеты визуализатора';
+
+  @override
+  String get storageOpenedFiles => 'Открытые файлы';
+
+  @override
+  String get storageOpenedEmpty =>
+      'Файлы, открытые извне (поделиться, «Открыть в», выбор файла на телефоне), копируются сюда.';
+
+  @override
+  String get storageInUse => 'в плейлисте или библиотеке';
+
+  @override
+  String get storageDeleteAll => 'Удалить все';
+
+  @override
+  String get storageClear => 'Очистить';
+
+  @override
+  String get storageDeleteSelection => 'Удалить выбранное';
+
+  @override
+  String get storageSelectAll => 'Выбрать все';
+
+  @override
+  String get storageFilterHint => 'Фильтр по имени';
+
+  @override
+  String get storageNoMatch => 'Нет файлов, соответствующих фильтру.';
+
+  @override
+  String storageSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Выбрано $count',
+      many: 'Выбрано $count',
+      few: 'Выбрано $count',
+      one: 'Выбран $count',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Удалить $count файла?',
+      many: 'Удалить $count файлов?',
+      few: 'Удалить $count файла?',
+      one: 'Удалить $count файл?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionInUseBody(int count, int inUse) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Удалить $count файлов? Из них $inUse используются плейлистом или библиотекой — эти записи останутся без файла.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get storageDownloadsClearBody =>
+      'Удалить все скачанные файлы и их строки библиотеки? Избранное и плейлисты сохранят записи, но файлы придётся скачать заново.';
+
+  @override
+  String get storageSoundfontsClearBody =>
+      'Удалить все SoundFont, включая импортированные? Каталожные скачаются заново; импортированные будут потеряны.';
+
+  @override
+  String get storagePresetsClearBody =>
+      'Удалить скачанные пакеты пресетов и импортированные пресеты? Встроенные останутся; пакеты скачаются заново, импортированные будут потеряны.';
+
+  @override
+  String get storageOpenedDeleteAllTitle => 'Удалить открытые файлы';
+
+  @override
+  String get storageInUseDeleteTitle => 'Файл используется';
+
+  @override
+  String get storageInUseDeleteBody =>
+      'Плейлист или библиотека всё ещё ссылаются на этот файл. После удаления эти записи останутся без файла.';
+
+  @override
+  String storageCategoryStat(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count файла — $size',
+      many: '$count файлов — $size',
+      few: '$count файла — $size',
+      one: '$count файл — $size',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDownloadsSubtitle(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count файла — $size · управление из альбомов и треков',
+      many: '$count файлов — $size · управление из альбомов и треков',
+      few: '$count файла — $size · управление из альбомов и треков',
+      one: '$count файл — $size · управление из альбомов и треков',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageOpenedDeleteAllBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Удалить $count файла? Файлы, используемые плейлистом или библиотекой, сохраняются.',
+      many:
+          'Удалить $count файлов? Файлы, используемые плейлистом или библиотекой, сохраняются.',
+      few:
+          'Удалить $count файла? Файлы, используемые плейлистом или библиотекой, сохраняются.',
+      one:
+          'Удалить $count файл? Файлы, используемые плейлистом или библиотекой, сохраняются.',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetStats => 'Сбросить статистику';
 
   @override
@@ -3037,6 +3459,40 @@ class AppLocalizationsRu extends AppLocalizations {
   String get settingsResetDbTitle => 'Сбросить базу данных?';
 
   @override
+  String get settingsCleanLocalTitle =>
+      'Очистить неиграбельные локальные записи';
+
+  @override
+  String get cleanStageScan => 'Проверка записей…';
+
+  @override
+  String get cleanStageSync => 'Синхронизация с аккаунтом…';
+
+  @override
+  String get cleanStagePurge => 'Удаление из аккаунта…';
+
+  @override
+  String get cleanStageDelete => 'Удаление локально…';
+
+  @override
+  String get settingsCleanLocalBody =>
+      'Записи библиотеки, указывающие на файл, которого больше нет на этом устройстве. Они удаляются и из аккаунта, а значит с других устройств.';
+
+  @override
+  String settingsCleanLocalDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Удалено $count записи',
+      many: 'Удалено $count записей',
+      few: 'Удалено $count записи',
+      one: 'Удалена $count запись',
+      zero: 'Нечего очищать',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetDbBody =>
       'Будет безвозвратно удалено:\n• вся история прослушиваний\n• все счётчики\n• всё избранное\n• все плейлисты\n• все метаданные из кеша\n\nВаши аудиофайлы не удаляются.';
 
@@ -3049,6 +3505,33 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get settingsDeleteDownloadsSubtitle =>
       'Удаляет все файлы из папки online (треки, обложки)';
+
+  @override
+  String get settingsCleanAll => 'Очистить локальную базу и кэш';
+
+  @override
+  String get settingsCleanAllSubtitle =>
+      'Удаляет записи без файла, записи библиотеки, указывающие на файлы на другом устройстве, и очищает кэш обложек и метаданных';
+
+  @override
+  String get settingsCleanAllConfirmBody =>
+      'Записи библиотеки, указывающие на файлы на другом устройстве, будут удалены и из аккаунта, то есть с других ваших устройств. Обложки и метаданные загрузятся заново при следующем воспроизведении.';
+
+  @override
+  String get settingsDataAdvanced => 'Дополнительно';
+
+  @override
+  String get settingsDataAdvancedSubtitle =>
+      'Каждый шаг очистки отдельно, кэш и сбросы';
+
+  @override
+  String get settingsDataGroupDb => 'База данных';
+
+  @override
+  String get settingsDataGroupCache => 'Кэш';
+
+  @override
+  String get settingsDataGroupReset => 'Сброс';
 
   @override
   String get settingsDeleteDownloadsTitle => 'Удалить загрузки?';
@@ -3305,6 +3788,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get accountErrorCodeLength => 'В коде 6 цифр';
 
   @override
+  String get albumOfflinePartial =>
+      'Нет сети — показано то, что уже есть на устройстве';
+
+  @override
   String get accountErrorNetwork => 'Не удалось подключиться, попробуйте снова';
 
   @override
@@ -3546,6 +4033,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get commonSave => 'Сохранить';
 
   @override
+  String get commonImport => 'Импортировать';
+
+  @override
   String get accountDisplayName => 'Публичное имя';
 
   @override
@@ -3671,46 +4161,63 @@ class AppLocalizationsRu extends AppLocalizations {
   String get settingsSpectrumModeRing => 'Кольцо';
 
   @override
+  String get settingsPianoMode => 'Вид пианино';
+
+  @override
+  String get settingsPianoModeRoll => 'Клавиатуры';
+
+  @override
+  String get settingsPianoModeFalling => 'Падающие ноты';
+
+  @override
+  String get settingsPianoColor => 'Цвета';
+
+  @override
+  String get settingsPianoColorVoice => 'По голосу';
+
+  @override
+  String get settingsPianoColorInstrument => 'По инструменту';
+
+  @override
+  String get settingsPianoGlow => 'Свечение нажатых клавиш';
+
+  @override
+  String get settingsPianoLighting => 'Свет и тени на клавишах';
+
+  @override
+  String get settingsPianoVoiceNames => 'Названия голосов';
+
+  @override
+  String get featuredAdditionsHeader => 'Новинки каталога';
+
+  @override
+  String get featuredAdditionsCard => 'Только что добавлено';
+
+  @override
+  String get featuredAdditionsPlaylist => 'Только что добавленные треки';
+
+  @override
   String get releaseNotesTitle => 'Что нового';
 
   @override
-  String get releaseNotesV4Downloads =>
-      'Загрузки: длинную можно отменить на ходу, а архив альбома больше не скачивается по нескольку раз.';
+  String get releaseNotesV7Cpu =>
+      'Приложение больше не работает в фоне, когда ничего не играет: гораздо меньше нагрузки на процессор и батарею.';
 
   @override
-  String get releaseNotesV4Queue =>
-      'Очередь: кнопка её очистки с подтверждением — она также останавливает воспроизведение.';
+  String get releaseNotesV7VizIdle =>
+      'Визуализации замирают, пока воспроизведение остановлено, и ограничены 60 кадрами в секунду (настраивается).';
 
   @override
-  String get releaseNotesV4DropFiles =>
-      'Файлы, брошенные в окно: воспроизвести сейчас, следующим или в конце; обложки и вспомогательные файлы отбрасываются, а список из архива учитывается (настоящие названия, без пустых треков).';
+  String get releaseNotesV7Subsongs =>
+      'Исправлено: на PC Engine, Master System и Atari ST (.sndh) некоторые треки запускали соседнюю песню.';
 
   @override
-  String get releaseNotesV4Soundfont =>
-      'MIDI: импорт собственного SoundFont с устройства, рядом с серверными.';
+  String get releaseNotesV7Piano =>
+      'Визуализация «Пианино» оставалась пустой на музыке PC Engine.';
 
   @override
-  String get releaseNotesV4Formats =>
-      'Игровые потоки Wwise, FSB и OGL наконец звучат (собственный Vorbis).';
-
-  @override
-  String get releaseNotesV4Chips =>
-      'Ещё шесть звуковых чипов, выбор ядра эмуляции для чипа (SameBoy для Game Boy) и верная высота тона у сэмплерных чипов.';
-
-  @override
-  String get releaseNotesV4Zx =>
-      'ZX Spectrum: файлы .vt2 играют, а виды нот и паттернов охватывают всё семейство ZX.';
-
-  @override
-  String get releaseNotesV4Loop =>
-      'Повтор трека действительно зацикливает вместо перезагрузки, и счётчик больше не замирает при бесконечном повторе.';
-
-  @override
-  String get releaseNotesV4Info =>
-      'Панель ⓘ перечисляет файлы, которые трек действительно открыл, — вместе со спутниками и библиотеками.';
-
-  @override
-  String get releaseNotesV4Linux => 'Сборка для Linux.';
+  String get releaseNotesV7Database =>
+      'База данных, повреждённая обновлением, теперь восстанавливается сама, а не делает библиотеку недоступной.';
 
   @override
   String get releaseNotesDataReset =>
@@ -3754,7 +4261,7 @@ class AppLocalizationsRu extends AppLocalizations {
       other: '$count пресетов исключено',
       many: '$count пресетов исключено',
       few: '$count пресета исключены',
-      one: '1 пресет исключён',
+      one: '$count пресет исключён',
     );
     return '$_temp0';
   }
@@ -4017,4 +4524,167 @@ class AppLocalizationsRu extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get browseCharts => 'Чарты';
+
+  @override
+  String get chartsGlobal => 'Глобальные';
+
+  @override
+  String get chartsByCollection => 'По коллекциям';
+
+  @override
+  String get chartsTopSongs => 'Топ треков';
+
+  @override
+  String get chartsTopAlbums => 'Топ альбомов';
+
+  @override
+  String get chartsRewampSection => 'Top rewamp';
+
+  @override
+  String get chartsPublishedSection => 'Опубликованные чарты';
+
+  @override
+  String chartsUpdated(String date) {
+    return 'Обновлено $date';
+  }
+
+  @override
+  String get chartsSource => 'Источник';
+
+  @override
+  String get settingsMidiSynth => 'MIDI-синтезатор';
+
+  @override
+  String get settingsMidiSynthAuto =>
+      'Автоматически (MT-32, если файл этого требует)';
+
+  @override
+  String get settingsMidiSynthSoundfont => 'SoundFont (FluidLite)';
+
+  @override
+  String get settingsMidiSynthMt32 => 'Roland MT-32 (эмуляция)';
+
+  @override
+  String get settingsMt32Section => 'Эмуляция Roland MT-32';
+
+  @override
+  String get settingsMt32RomsTitle => 'ROM MT-32';
+
+  @override
+  String get settingsMt32RomsMissing =>
+      'Нет пригодного набора ROM — импортируйте управляющий и PCM ROM от MT-32 или CM-32L';
+
+  @override
+  String settingsMt32RomsActive(String set) {
+    return 'Активный набор: $set';
+  }
+
+  @override
+  String get settingsMt32Import => 'Импортировать файлы ROM…';
+
+  @override
+  String get settingsMt32ImportSubtitle =>
+      'Управляющий ROM + PCM ROM (.rom/.bin), половины MAME принимаются. ROM не поставляются с приложением.';
+
+  @override
+  String settingsMt32ImportRejected(String name) {
+    return '$name — не известный ROM MT-32 / CM-32L';
+  }
+
+  @override
+  String settingsMt32ImportDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Импортировано $count файла ROM',
+      many: 'Импортировано $count файлов ROM',
+      few: 'Импортировано $count файла ROM',
+      one: 'Импортирован $count файл ROM',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsMt32Model => 'Модель';
+
+  @override
+  String get settingsMt32ModelAuto => 'Автоматически (CM-32L, если доступен)';
+
+  @override
+  String get settingsMt32Reverb => 'Реверберация';
+
+  @override
+  String get engineDescMt32 =>
+      'Эмуляция Roland MT-32 / CM-32L для MIDI (.mid/.midi/.kar/.rmi)';
+
+  @override
+  String get miniWindowEnter => 'Мини-плеер';
+
+  @override
+  String get miniWindowExit => 'Вернуться в главное окно';
+
+  @override
+  String get miniWindowIdle => 'Ничего не играет';
+
+  @override
+  String get settingsAlwaysOnTopTitle => 'Поверх всех окон';
+
+  @override
+  String get settingsAlwaysOnTopSubtitle =>
+      'Держит окно поверх остальных — и главное окно, и мини-плеер';
+
+  @override
+  String get windowAlwaysOnTopOn => 'Поверх всех окон: включено';
+
+  @override
+  String get miniWindowCoverFill => 'Увеличить обложку до заполнения';
+
+  @override
+  String get miniWindowCoverFit => 'Показать обложку целиком';
+
+  @override
+  String get releaseNotesV7Mt32 =>
+      'Новый движок Roland MT-32 для игровой MIDI-музыки — с вашими собственными ПЗУ. Без ПЗУ MIDI, написанный для MT-32, адаптируется под General MIDI.';
+
+  @override
+  String get releaseNotesV7Xmp =>
+      'Теперь воспроизводятся десять редких форматов модулей (Archimedes Tracker .musx, .liq, .fnk…).';
+
+  @override
+  String get releaseNotesV7AmigaAdlib =>
+      'Музыка AdLib от Westwood (.adl) воспроизводит все свои треки, а BP SoundMon V1 распознаётся на Amiga.';
+
+  @override
+  String get releaseNotesV7MiniPlayer =>
+      'Mac: мини-плеер, компактный или с визуализацией, и параметр «Поверх всех окон».';
+
+  @override
+  String get releaseNotesV7Instruments =>
+      'Осциллограф, ноты и пианино могут называть и раскрашивать каждый инструмент, а не только каждый голос.';
+
+  @override
+  String get releaseNotesV7Podium =>
+      'Поиск: фильтр композиций, занявших 1-е, 2-е или 3-е место на конкурсе демосцены.';
+
+  @override
+  String get releaseNotesV7ShortSubsongs =>
+      'Слишком короткие подпесни (звуковые эффекты игр) не попадают в «Воспроизвести всё» — порог в разделе «Настройки → Воспроизведение».';
+
+  @override
+  String get releaseNotesV7LocalFolders =>
+      'Ваши импорты: перетащите целую папку (архивы распаковываются), а также создавайте, переименовывайте и перемещайте папки.';
+
+  @override
+  String get releaseNotesV7Midi =>
+      'MIDI: ударные больше не звучат как пианино, а громкость больше не перегружается.';
+
+  @override
+  String get releaseNotesV7ProjectM =>
+      'projectM: пресеты больше не повторяются от запуска к запуску, и после паузы пресет больше не отбраковывается по ошибке.';
+
+  @override
+  String get libraryFileMissing => 'Файл отсутствует';
 }

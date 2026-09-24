@@ -9,6 +9,7 @@
 //   X = time (center = now), Y = pitch (auto-calibrated per track), color = voice.
 
 #include "rewamp_notes.h"
+#include "ModizerVoicesData.h"   // generic_mute_mask: une voix coupée ne se dessine pas
 #include "rewamp_gl.h"   // rewamp_gl_ensure / rewamp_gl_generation
 #include "rewamp_gl_orientation.h"   // REWAMP_GL_Y_FLIPPED — macOS only, NOT all Apple
 #include <time.h>
@@ -134,6 +135,21 @@ REWAMP_EXPORT void rewamp_set_note_palette(int i) {
 
 REWAMP_EXPORT void rewamp_set_note_style(int s) { g_style = s ? 1 : 0; }
 
+/* Ce que la couleur d'une boîte DÉSIGNE: 0 = la voix, 1 = l'instrument.
+ * Même réglage que le piano (rewamp_pianoviz_set_options), même règle de
+ * repli: sans instrument connu, c'est la voix qui colore. */
+static int g_nv_color = 0;
+REWAMP_EXPORT void rewamp_set_note_color_mode(int m) { g_nv_color = m ? 1 : 0; }
+
+/* Une voix COUPÉE ne se dessine pas — décidé au RENDU, pas à la capture: le
+ * masque est lu tel qu'il est maintenant, donc le geste se voit tout de suite,
+ * là où la capture (en avance de 200 ms à 2 s sur l'oreille) le montrerait
+ * avec le retard du tampon. Même règle que l'oscilloscope par voix, qui trace
+ * une ligne plate (rewamp_channel_data.c: channel_muted). */
+static int nv_voice_muted(int v) {
+    return (v >= 0 && v < 64) && ((generic_mute_mask >> v) & 1);
+}
+
 static void nv_voice_color(int v, float* r, float* g, float* b) {
     unsigned int hex = g_palettes[g_palette][v % NV_PAL_SIZE];
     float rr = ((hex >> 16) & 0xFF) / 255.0f;
@@ -153,6 +169,21 @@ static void nv_voice_color(int v, float* r, float* g, float* b) {
         default: break;
     }
     *r = rr; *g = gg; *b = bb;
+}
+
+/* Couleur d'une note selon le mode: par VOIX, ou par INSTRUMENT — l'index de
+ * la timeline (ce que le tracker/pilote rapporte, 0 sur les puces qui n'en
+ * ont pas). Au-delà des 16 teintes la teinte est décalée de 5 entrées par
+ * palier de luminosité, sinon n et n+16 ne diffèrent que par la clarté.
+ * Copie assumée de pk_note_color: les deux visualiseurs doivent donner la
+ * MÊME couleur au même instrument. */
+static void nv_note_color(int voice, int instr, float* r, float* g, float* b) {
+    int idx = voice;
+    if (g_nv_color && instr > 0) {
+        const int tier = (instr / NV_PAL_SIZE) % 3;
+        idx = (instr + 5 * tier) % NV_PAL_SIZE + tier * NV_PAL_SIZE;
+    }
+    nv_voice_color(idx, r, g, b);
 }
 
 /* ── Vertical range: auto-calibrated (default) or manual (drag/pinch) ──────
@@ -328,6 +359,7 @@ REWAMP_EXPORT void rewamp_noteviz_render(void) {
     float omin = 1e9f, omax = -1e9f;
     for (int c = 0; c < n; c++)
         for (int v = 0; v < vc; v++) {
+            if (nv_voice_muted(v)) continue;
             float val = g_nv_hz[c * vc + v];
             if (val < 1.0f) continue;
             float l = log2f(val);
@@ -373,6 +405,7 @@ REWAMP_EXPORT void rewamp_noteviz_render(void) {
     // 1) Collect one merged box per note run, across all voices.
     int nbox = 0;
     for (int v = 0; v < vc && nbox < NV_MAXBOXES; v++) {
+        if (nv_voice_muted(v)) continue;
         float vr, vg, vb; nv_voice_color(v, &vr, &vg, &vb);
         for (int c = 0; c < n && nbox < NV_MAXBOXES; ) {
             float val = g_nv_hz[c * vc + v];
@@ -399,6 +432,9 @@ REWAMP_EXPORT void rewamp_noteviz_render(void) {
             // Box end snaps to the NEXT capture column's position (the capture
             // grid) so adjacent boxes share an exact boundary → stable, no
             // junction flicker. Last column falls back to +one step.
+            /* Par instrument: la couleur appartient au RUN (une voix change
+             * d'instrument en cours de morceau), pas à la voix. */
+            if (g_nv_color) nv_note_color(v, g_nv_instr[cs * vc + v], &vr, &vg, &vb);
             double runStart = (double)g_nv_pos[cs];
             double runEnd   = (ce + 1 < n)
                 ? (double)g_nv_pos[ce + 1]

@@ -14,6 +14,7 @@
 
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'font_fallback.dart';
 import 'package:flutter/material.dart';
 
 enum SoundPlatform {
@@ -97,7 +98,7 @@ const Map<String, SoundPlatform> _extMap = {
   'spc': SoundPlatform.snes, 'rsn': SoundPlatform.snes,
   'snsf': SoundPlatform.snes, 'minisnsf': SoundPlatform.snes,
   // Game Boy
-  'gbs': SoundPlatform.gameboy,
+  'gbs': SoundPlatform.gameboy, 'gbr': SoundPlatform.gameboy,
   // Game Boy Advance
   'gsf': SoundPlatform.gba, 'minigsf': SoundPlatform.gba,
   // Nintendo DS
@@ -254,12 +255,40 @@ String platformAssetForPlatform(SoundPlatform p) =>
 String platformAssetForPath(String? path) =>
     platformAssetForPlatform(platformForPath(path));
 
+/// Extensions qu'un SEUL nom ne suffit pas à situer, résolues par le MOTEUR qui
+/// a réellement ouvert le fichier (`audio.backendName`, le nom de la vtable).
+///
+/// `.mus` est le cas d'école: le format MUS du C64 (libsidplayfp) et celui de
+/// FAC Soundtracker sur MSX (libkss) partagent l'extension. La table
+/// d'extensions ne pouvait donc en satisfaire qu'un — un morceau MSX sortait
+/// avec le placeholder C64.
+///
+/// Volontairement RÉDUITE aux ambiguïtés constatées: le moteur n'est pas une
+/// carte des plateformes (un même moteur en couvre plusieurs — libgme va de la
+/// NES au SPC), il ne sert qu'à départager.
+const Map<String, Map<String, SoundPlatform>> _ambiguousExtByEngine = {
+  'mus': {
+    'kss':           SoundPlatform.msx,
+    'libsidplayfp':  SoundPlatform.c64,
+  },
+};
+
 /// Placeholder asset choosing the best available signal: the server's platform
-/// NAME first (authoritative), the file/extension hint only as a fallback.
+/// NAME first (authoritative), then the ENGINE that opened the file for the
+/// handful of shared extensions, the file/extension hint only as a fallback.
 /// Needed because a container extension (.lha/.lzh/.zip/.7z) carries no origin.
-String platformAssetFor({String? platformName, String? pathOrExt}) {
+String platformAssetFor({String? platformName, String? pathOrExt,
+    String? engine}) {
   final byName = platformForName(platformName);
   if (byName != SoundPlatform.rewamp) return platformAssetForPlatform(byName);
+
+  if (engine != null && engine.isNotEmpty && pathOrExt != null) {
+    final dot = pathOrExt.lastIndexOf('.');
+    final ext = (dot >= 0 ? pathOrExt.substring(dot + 1) : pathOrExt)
+        .toLowerCase();
+    final byEngine = _ambiguousExtByEngine[ext]?[engine];
+    if (byEngine != null) return platformAssetForPlatform(byEngine);
+  }
   return platformAssetForPath(pathOrExt);
 }
 
@@ -324,14 +353,14 @@ void paintPlatformArtwork(Canvas canvas, Size size, SoundPlatform p,
   final tp = TextPainter(
     text: TextSpan(
       text: pal.label.toUpperCase(),
-      style: TextStyle(
+      style: withCjkFallback(TextStyle(
         color: Color(pal.accent),
         fontFamily: fontFamily,
         fontSize: (h * 0.072).clamp(12.0, 56.0),
         fontWeight: FontWeight.w800,
         letterSpacing: w * 0.005,
         height: 1.0,
-      ),
+      )),
     ),
     textAlign: TextAlign.center,
     textDirection: TextDirection.ltr,

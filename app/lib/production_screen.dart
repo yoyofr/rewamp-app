@@ -10,7 +10,8 @@ import 'player_controller.dart';
 import 'rewamp_db.dart';
 import 'track_options_sheet.dart';
 import 'video_screen.dart';
-import 'shell_insets.dart';
+import 'scrolling_text.dart';
+import 'cancel_field.dart';
 
 /// Opens the production screen from anywhere (chips live in sheets that never
 /// got navigation callbacks threaded through). Set once by AppShell so the
@@ -134,7 +135,7 @@ class _ProductionScreenState extends State<ProductionScreen> {
       children: [
         _header(context),
         Padding(
-          padding: shellInset(context, const EdgeInsets.fromLTRB(16, 12, 16, 4)),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Align(
             alignment: Alignment.centerLeft,
             child: FilledButton.icon(
@@ -241,12 +242,29 @@ class _ProductionScreenState extends State<ProductionScreen> {
                                         color: cs.onSurfaceVariant)),
                               ),
                             ),
-                      title: Text(r.displayTitle,
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: subtitle.isEmpty
-                          ? null
-                          : Text(subtitle,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                      title: ScrollingText(text: r.displayTitle),
+                      // Les morceaux d'une PRODUCTION peuvent venir de
+                      // plusieurs collections (une démo ripée par modland ET
+                      // sceneorg): même règle que SongTile — la collection dit
+                      // d'où vient la ligne, sur sa propre ligne, en petit.
+                      isThreeLine: r.collection.isNotEmpty,
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (subtitle.isNotEmpty)
+                            Text(subtitle,
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                          if (r.collection.isNotEmpty)
+                            Text(
+                              RewampDb.collectionLabel(r.collection),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 10, color: cs.onSurfaceVariant),
+                            ),
+                        ],
+                      ),
                       trailing: IconButton(
                         icon: const Icon(Icons.more_vert, size: 20),
                         padding: EdgeInsets.zero,
@@ -552,16 +570,20 @@ class _ProductionsBrowseScreenState extends State<ProductionsBrowseScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: TextField(
+            child: CancelField(
               controller: _filterCtrl,
-              decoration: InputDecoration(
-                hintText: l10n.browseFilterFacet(
-                    l10n.tabProductions.toLowerCase()),
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                border: const OutlineInputBorder(),
+              onCleared: _onFilterChanged,
+              builder: (_) => TextField(
+                controller: _filterCtrl,
+                decoration: InputDecoration(
+                  hintText: l10n.browseFilterFacet(
+                      l10n.tabProductions.toLowerCase()),
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: _onFilterChanged,
               ),
-              onChanged: _onFilterChanged,
             ),
           ),
           Align(

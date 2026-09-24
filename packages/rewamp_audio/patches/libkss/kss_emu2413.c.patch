@@ -1,5 +1,5 @@
---- third_party/libkss/upstream/modules/emu2413/kss_emu2413.c	2026-07-06 09:48:52
-+++ third_party/libkss/modules/emu2413/kss_emu2413.c	2026-07-06 13:34:24
+--- third_party/libkss/upstream/modules/emu2413/kss_emu2413.c	2026-07-09 18:43:32
++++ third_party/libkss/modules/emu2413/kss_emu2413.c	2026-09-05 09:34:32
 @@ -10,12 +10,17 @@
   * - [VRC7 presets](https://siliconpr0n.org/archive/doku.php?id=vendor:yamaha:opl2#opll_vrc7_patch_format) by Nuke.YKT
   * - YMF281B presets by Chabin
@@ -431,16 +431,45 @@
  
    uint32_t phase;
  
-@@ -984,7 +989,7 @@
+@@ -984,7 +989,36 @@
  #define _MO(x) (-(x) >> 1)
  #define _RO(x) (x)
  
 -static void update_output(OPLL *opll) {
++//YOYOFR: notes par voie pour le viz-notes — Hz dans vgm_last_note (0 = voie
++// silencieuse), meme convention que libvgm/emu2413. La cle se lit dans
++// slot_key_status (le meme bit que le sequenceur d'enveloppe), et une voie dont
++// l'enveloppe est arrivee a EG_MUTE ne tient pas de note. Canaux 6-8 remplaces
++// par les percussions en mode rythme; 9-13 = BD HH SD TOM CYM, note arbitraire
++// (A3) tant que la cle est posee — une percussion n'a pas de hauteur.
++static void opllkss_capture_notes(OPLLKSS *opll) {
++  if (m_voicesForceOfs < 0) return;
++  for (int i = 0; i < 9; i++) {
++    unsigned note = 0, vol = 0;
++    const int fm = (i < 6) || !opll->rhythm_mode;
++    const OPLLKSS_SLOT *car = CAR(opll, i);
++    if (fm && car->fnum && BIT(opll->slot_key_status, (i << 1) | 1) && car->eg_out < EG_MUTE) {
++      note = (unsigned)(((uint64_t)car->fnum << car->blk) * opll->clk / 72 / (1 << 19));
++      vol = 1;
++    }
++    vgm_last_note[m_voicesForceOfs + i] = note;
++    vgm_last_vol[m_voicesForceOfs + i] = vol;
++    if (note) vgm_last_instr[m_voicesForceOfs + i] = (unsigned char)opll->patch_number[i];
++  }
++  static const int rslot[5] = { SLOT_BD2, SLOT_HH, SLOT_SD, SLOT_TOM, SLOT_CYM };
++  for (int k = 0; k < 5; k++) {
++    const OPLLKSS_SLOT *s = &opll->slot[rslot[k]];
++    const int on = opll->rhythm_mode && BIT(opll->slot_key_status, rslot[k]) && s->eg_out < EG_MUTE;
++    vgm_last_note[m_voicesForceOfs + 9 + k] = on ? 220 : 0;
++    vgm_last_vol[m_voicesForceOfs + 9 + k] = on ? 1 : 0;
++  }
++}
++
 +static void update_output(OPLLKSS *opll) {
    int16_t *out;
    int i;
  
-@@ -996,18 +1001,18 @@
+@@ -996,18 +1030,18 @@
  
    /* CH1-6 */
    for (i = 0; i < 6; i++) {
@@ -462,7 +491,7 @@
        out[9] = _RO(calc_slot_car(opll, 6, calc_slot_mod(opll, 6)));
      }
    }
-@@ -1015,14 +1020,14 @@
+@@ -1015,14 +1049,14 @@
  
    /* CH8 */
    if (!opll->rhythm_mode) {
@@ -480,7 +509,7 @@
        out[11] = _RO(calc_slot_snare(opll));
      }
    }
-@@ -1030,47 +1035,99 @@
+@@ -1030,47 +1064,101 @@
  
    /* CH9 */
    if (!opll->rhythm_mode) {
@@ -524,6 +553,7 @@
 +    
 +    //TODO:  MODIZER changes start / YOYOFR
 +    int64_t smplIncr=(int64_t)(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_rateratio;
++    opllkss_capture_notes(opll); //YOYOFR
 +    if (m_voicesForceOfs>=0) {
 +        int val=0;
 +        for (int i = 0; i < 14; i++) {
@@ -573,6 +603,7 @@
 +    
 +    //TODO:  MODIZER changes start / YOYOFR
 +    int64_t smplIncr=(int64_t)(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_rateratio;
++    opllkss_capture_notes(opll); //YOYOFR
 +    if (m_voicesForceOfs>=0) {
 +        int val=0;
 +        for (int i = 0; i < 14; i++) {
@@ -593,7 +624,7 @@
  }
  
  /***********************************************************
-@@ -1079,20 +1136,20 @@
+@@ -1079,20 +1167,20 @@
  
  ***********************************************************/
  
@@ -618,7 +649,7 @@
  
    opll->clk = clk;
    opll->rate = rate;
-@@ -1101,21 +1158,21 @@
+@@ -1101,21 +1189,21 @@
    opll->mix_out[0] = 0;
    opll->mix_out[1] = 0;
  
@@ -646,7 +677,7 @@
    const double f_out = opll->rate;
    const double f_inp = opll->clk / 72.0;
  
-@@ -1124,20 +1181,20 @@
+@@ -1124,20 +1212,20 @@
    opll->inp_step = f_out;
  
    if (opll->conv) {
@@ -671,7 +702,7 @@
    int i;
  
    if (!opll)
-@@ -1165,7 +1222,7 @@
+@@ -1165,7 +1253,7 @@
    }
  
    for (i = 0; i < 0x40; i++)
@@ -680,7 +711,7 @@
  
    for (i = 0; i < 15; i++) {
      opll->pan[i] = 3;
-@@ -1177,7 +1234,7 @@
+@@ -1177,7 +1265,7 @@
    }
  }
  
@@ -689,7 +720,7 @@
    int i;
  
    if (opll == NULL)
-@@ -1192,16 +1249,16 @@
+@@ -1192,16 +1280,16 @@
    }
  }
  
@@ -710,7 +741,7 @@
    int ch, i;
  
    if (reg >= 0x40)
-@@ -1375,21 +1432,21 @@
+@@ -1375,21 +1463,21 @@
    }
  }
  
@@ -737,7 +768,7 @@
    patch[0].AM = (dump[0] >> 7) & 1;
    patch[1].AM = (dump[1] >> 7) & 1;
    patch[0].PM = (dump[0] >> 6) & 1;
-@@ -1418,21 +1475,21 @@
+@@ -1418,21 +1506,21 @@
    patch[1].RR = (dump[7]) & 15;
  }
  
@@ -767,7 +798,7 @@
    dump[0] = (uint8_t)((patch[0].AM << 7) + (patch[0].PM << 6) + (patch[0].EG << 5) + (patch[0].KR << 4) + patch[0].ML);
    dump[1] = (uint8_t)((patch[1].AM << 7) + (patch[1].PM << 6) + (patch[1].EG << 5) + (patch[1].KR << 4) + patch[1].ML);
    dump[2] = (uint8_t)((patch[0].KL << 6) + patch[0].TL);
-@@ -1443,17 +1500,17 @@
+@@ -1443,17 +1531,17 @@
    dump[7] = (uint8_t)((patch[1].SL << 4) + patch[1].RR);
  }
  
@@ -790,7 +821,7 @@
    while (opll->out_step > opll->out_time) {
      opll->out_time += opll->inp_step;
      update_output(opll);
-@@ -1461,12 +1518,12 @@
+@@ -1461,12 +1549,12 @@
    }
    opll->out_time -= opll->out_step;
    if (opll->conv) {
@@ -805,7 +836,7 @@
    while (opll->out_step > opll->out_time) {
      opll->out_time += opll->inp_step;
      update_output(opll);
-@@ -1474,15 +1531,15 @@
+@@ -1474,15 +1562,15 @@
    }
    opll->out_time -= opll->out_step;
    if (opll->conv) {
@@ -824,7 +855,7 @@
    uint32_t ret;
  
    if (opll) {
-@@ -1493,7 +1550,7 @@
+@@ -1493,7 +1581,7 @@
      return 0;
  }
  

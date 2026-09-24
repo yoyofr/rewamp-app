@@ -18,6 +18,10 @@
 #ifdef REWAMP_WITH_ORGANYA
 
 #include "rewamp_plugin.h"
+
+/* Boucle forcée (rewamp_audio.c) — lus à l'open. */
+extern "C" int g_force_loop_mode;
+extern "C" int g_force_loop_native_veto;
 #include "rewamp_channel_data.h"
 #include "ModizerVoicesData.h"
 
@@ -78,7 +82,13 @@ static RewampDecoder* org_open_impl(const char* path, RewampAudioFormat* outForm
     if (got != (size_t)size) { free(buf); return NULL; }
 
     org_init();
-    org_setLoopNb(ORG_LOOPS);
+    /* Repeat-morceau: org_setLoopNb(-1) => maxstep = 0 = INFINI — le coeur
+     * Organya reboucle sa région (loop_start..loop_end) lui-même, au bon
+     * endroit. Mode 1 (N passes): veto, le générique Dart compte des passes
+     * ENTIÈRES (le compte natif d'Organya compte des tours de RÉGION, une
+     * autre unité). Sinon: le défaut historique. */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
+    org_setLoopNb(g_force_loop_mode == 2 ? -1 : ORG_LOOPS);
     // org_play consumes (memcpy-copies internally, via load_org's memread)
     // the buffer while parsing — safe to free right after.
     int failed = org_play(cleanPath, buf);
@@ -96,7 +106,11 @@ static RewampDecoder* org_open_impl(const char* path, RewampAudioFormat* outForm
     rewamp_voices_add_chip("Organya", 0, ORG_VOICES);
 
     int lengthMs = org_getlength();
-    if (lengthMs > 0) dec->totalFrames = (uint64_t)lengthMs * ORG_RATE / 1000;
+    /* En infini, org_getlength() est vide de sens (sa formule multiplie par
+     * maxstep-1, soit -1): pas de troncature, l'affichage suit la machinerie
+     * infinie de Dart. */
+    if (g_force_loop_mode != 2 && lengthMs > 0)
+        dec->totalFrames = (uint64_t)lengthMs * ORG_RATE / 1000;
 
     const char* base = strrchr(cleanPath, '/');
     rewamp_track_message_append("Title: %s\n", base ? base + 1 : cleanPath);
@@ -146,6 +160,14 @@ static uint64_t org_length_impl(RewampDecoder* dec) {
     return dec ? dec->totalFrames : 0;
 }
 
+
+/* Décision prise à l'OPEN (le coeur lit maxstep avant le premier rendu) —
+ * champ non-NULL pour annoncer le support natif, même patron que gme. */
+static void org_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (dec != NULL && mode == 2) dec->totalFrames = 0;
+}
+
 static void org_close_impl(RewampDecoder* dec) {
     if (!dec) return;
     unload_org();
@@ -160,6 +182,7 @@ static const RewampPluginVTable kOrgVTable = {
     org_seek_impl,
     org_length_impl,
     org_close_impl,
+    org_configure_loop_fn,
 };
 
 extern "C" const RewampPluginVTable* rewamp_organya_plugin(void) { return &kOrgVTable; }

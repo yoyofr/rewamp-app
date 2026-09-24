@@ -40,7 +40,8 @@ void main() {
     await db.execute('''CREATE TABLE tracks (
       id TEXT PRIMARY KEY, title TEXT, artist TEXT, meta_album TEXT,
       album_id TEXT, online_id TEXT, file_path TEXT, entry_path TEXT,
-      subsong_idx INTEGER, artwork_url TEXT, platform_name TEXT,
+      subsong_idx INTEGER, subsong_count INTEGER, artwork_url TEXT,
+      platform_name TEXT,
       format_ext TEXT, last_played_at INTEGER, is_favorite INTEGER DEFAULT 0,
       in_library INTEGER DEFAULT 0)''');
     await db.execute('''CREATE TABLE recent_albums (

@@ -6,8 +6,6 @@ import 'app_snack.dart';
 import 'favorite_color.dart';
 import 'hover_grow.dart';
 import 'local_badge.dart';
-import 'package:path/path.dart' as p;
-import 'package:rewamp_audio/rewamp_audio.dart' show RewampAudio;
 import 'artwork_image.dart';
 import 'local_db.dart';
 import 'rewamp_db.dart'
@@ -17,6 +15,7 @@ import 'track_options_sheet.dart'
     show showPlayChoiceSheet, PlayChoice, globalOnAlbumQueueAdd,
          globalOnLocalQueueAdd;
 import 'l10n.dart';
+import 'library_presence.dart';
 import 'library_playlists_screen.dart';
 import 'library_artists_screen.dart';
 import 'library_albums_screen.dart';
@@ -55,11 +54,19 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> {
   List<LibraryItem> _recent = [];
+  /// Entrées locales dont le fichier n'est pas ICI — voir library_presence.
+  Set<String> _missing = const {};
   int _playlistCount  = 0;
   int _artistCount    = 0;
   int _albumCount     = 0;
   int _trackCount     = 0;
   bool _loading       = true;
+  /// ⚠️ Une erreur ICI laissait l'écran sur son indicateur POUR TOUJOURS: rien
+  /// n'attrapait, donc `_loading` ne repassait jamais à faux et l'utilisateur
+  /// n'avait aucun texte à rapporter (« l'onglet charge sans fin », beta 5
+  /// Android). Un écran qui échoue doit le DIRE, avec le message, et offrir de
+  /// réessayer — le diagnostic vient de là.
+  String? _error;
 
   @override
   void initState() {
@@ -77,6 +84,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void _onDbChanged() => _load();
 
   Future<void> _load() async {
+    try {
+      await _loadInner();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _error = '$e'; _loading = false; });
+    }
+  }
+
+  Future<void> _loadInner() async {
     final all = await LocalDb.instance.getLibraryItems();
     // The user's OWN playlists live in the `playlists` table, not in
     // `library_items` (which only holds what was SAVED from the server), so
@@ -84,9 +100,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
     // to someone holding a dozen playlists. The tile must count what the
     // screen behind it lists: local playlists + saved server ones + Favoris.
     final mine = await LocalDb.instance.getPlaylistsFiltered();
+    final missing = await missingLocalLibraryRefs(all);
     if (!mounted) return;
     setState(() {
+      _error         = null;
       _recent        = all;
+      _missing       = missing;
       _playlistCount =
           mine.length + all.where((i) => i.type == 'playlist').length;
       _artistCount   = all.where((i) => i.type == 'artist').length;
@@ -109,8 +128,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
       onNavigateAlbum: widget.onNavigateAlbum));
 
   void _pushTracks() => _push(LibraryTracksScreen(
-      onPlayTrack:     widget.onPlayTrack,
-      onDownloadTrack: widget.onDownloadTrack));
+      onPlayTrack:      widget.onPlayTrack,
+      onDownloadTrack:  widget.onDownloadTrack,
+      onPlayLocalAlbum: widget.onPlayLocalAlbum,
+      onPlayAlbum:      widget.onPlayAlbum));
 
   void _push(Widget screen) {
     Navigator.push<void>(
@@ -124,7 +145,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.navLibrary)),
-      body: _loading
+      body: _error != null
+          ? _ErrorRetry(message: _error!, onRetry: () {
+              setState(() { _error = null; _loading = true; });
+              _load();
+            })
+          : _loading
           ? const Center(child: CircularProgressIndicator())
           : CustomScrollView(
               slivers: [
@@ -193,6 +219,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         (ctx, i) => _RecentCard(
                           item: _recent[i],
                           cs:   cs,
+                          elsewhere: _missing.contains(_recent[i].refId),
                           onTap: () => _onRecentTap(_recent[i]),
                         ),
                         childCount: _recent.length,
@@ -226,6 +253,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   void _onRecentTap(LibraryItem item) {
+    if (_missing.contains(item.refId)) {
+      AppSnack.show(context, libraryElsewhereLabel(context));
+      return;
+    }
     switch (item.type) {
       case 'album':
         _albumChoice(item);
@@ -256,9 +287,31 @@ class _LibraryScreenState extends State<LibraryScreen> {
           albumId:    item.albumId);
       return;
     }
-    // Resolve the track list server-side: by album ID when known (homonym
-    // albums share a name), else by name. Both play paths downstream
-    // (_startAlbumQueue / _onAlbumQueueAdd) reuse files already on disk.
+    // ⚠️ **La base LOCALE d'abord.** Un album de bibliothèque n'a pas
+    // forcément d'identité de catalogue — un album IMPORTÉ n'en a aucune — et
+    // le repli « chercher par NOM sur le serveur » lui trouvait alors un
+    // homonyme, sans le moindre rapport: on lançait la lecture d'un autre
+    // album. Un nom n'est pas une identité (deux « Final Fantasy VI »), et
+    // c'est encore plus vrai entre un import local et le catalogue.
+    //
+    // Interroger le disque d'abord répare aussi un cas moins visible: un album
+    // du catalogue entièrement téléchargé n'a plus besoin du réseau pour être
+    // relancé.
+    final localTracks = await LocalDb.instance
+        .tracksForAlbum(albumId: item.albumId, albumName: item.name);
+    if (!mounted) return;
+    if (localTracks.isNotEmpty && widget.onPlayLocalAlbum != null) {
+      if (choice == PlayChoice.now) {
+        await widget.onPlayLocalAlbum!(context, localTracks);
+      } else {
+        await globalOnLocalQueueAdd?.call(localTracks,
+            atEnd: choice == PlayChoice.end);
+      }
+      return;
+    }
+
+    // Sinon seulement, le catalogue: par ID quand on le connaît (les homonymes
+    // partagent un nom), par nom en dernier recours.
     List<SearchResult> songs = const [];
     try {
       songs = (item.albumId != null && item.albumId!.isNotEmpty)
@@ -286,8 +339,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   /// Track card: same popup, then the existing play path or a queue insert.
   Future<void> _trackChoice(LibraryItem item) async {
+    // La LIGNE, pas seulement son libellé: sans elle la feuille n'a rien à
+    // interroger et n'offre que les trois choix de lecture. Un fichier
+    // multi-sous-chansons ouvert depuis « Ajoutés récemment » ne proposait donc
+    // pas « Voir les sous-chansons » — alors que la même entrée, atteinte
+    // depuis l'onglet « Morceaux », la proposait: cette liste-là passe déjà une
+    // ligne. Le résolveur est le même des deux côtés.
+    final resolved = await _resolveLibraryRow(item);
+    if (!mounted) return;
     final choice = await showPlayChoiceSheet(context,
-        title: item.name, subtitle: item.artist);
+        title: item.name, subtitle: item.artist, track: resolved.track);
     if (choice == null || !mounted) return;
     await _playLibraryTrack(item, choice: choice);
   }
@@ -311,15 +372,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
     ));
   }
 
-  Future<void> _playLibraryTrack(LibraryItem item,
-      {PlayChoice choice = PlayChoice.now}) async {
+  /// Résout l'entrée de bibliothèque en LIGNE de piste.
+  ///
+  /// Extrait pour n'exister qu'UNE fois: la feuille de choix en a besoin (pour
+  /// proposer « Voir les sous-chansons », qui exige le chemin du fichier et le
+  /// compte) et la lecture aussi. Deux copies de cette résolution divergeraient
+  /// — elle connaît DEUX formes d'identité, et « tout site qui n'en cherche
+  /// qu'une casse quelque chose ».
+  ///
+  /// Rend aussi `sub` (la sous-chanson demandée) et `qi` (négatif quand
+  /// l'entrée vise le CONTENEUR, sans suffixe), dont la lecture a besoin.
+  /// `exact` est la ligne de LA sous-chanson demandée, `track` un repli quand
+  /// elle n'a jamais été jouée (le fichier est là, la ligne pas encore). Les
+  /// deux sont rendus: l'appelant force l'index demandé et n'affiche un titre
+  /// que si la ligne exacte existe.
+  Future<({TrackRecord? track, TrackRecord? exact, String base, int sub,
+      int qi})> _resolveLibraryRow(LibraryItem item) async {
     // refId may carry a "?subsong=N" suffix for a single-file multi-subsong
     // container (see playerLibraryRefId) — split it off and resolve the exact
     // subsong from the file's already-downloaded tracks.
-    final ref  = item.refId;
-    final (base, parsedSub) = splitLibraryRefId(ref);
-    final qi   = parsedSub == null ? -1 : 0; // <0 = container-level entry (no suffix)
-    final sub  = parsedSub ?? 0;
+    final (base, parsedSub) = splitLibraryRefId(item.refId);
+    final qi  = parsedSub == null ? -1 : 0; // <0 = container-level entry
+    final sub = parsedSub ?? 0;
 
     // getTrackByOnlineId returns ONE arbitrary row (LIMIT 1 — e.g. the other
     // favourited subsong): refine to the requested subsong whenever the found
@@ -342,8 +416,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
       anyRow ??= all.firstOrNull;
     }
     // Playable when the file is on disk, even if THIS subsong has no DB row
-    // yet (never played) — we then force the requested index below.
-    final track = exact ?? anyRow;
+    // yet (never played) — the caller then forces the requested index.
+    return (track: exact ?? anyRow, exact: exact, base: base,
+            sub: sub, qi: qi);
+  }
+
+  Future<void> _playLibraryTrack(LibraryItem item,
+      {PlayChoice choice = PlayChoice.now}) async {
+    final resolved = await _resolveLibraryRow(item);
+    final sub   = resolved.sub;
+    final qi    = resolved.qi;
+    final track = resolved.track;
+    final exact = resolved.exact;
+    final base  = resolved.base;
     // Resolve on-disk presence BEFORE the mounted check — awaiting after it
     // would make the check meaningless for the context uses below.
     final onDisk = track != null && await File(track.filePath).exists();
@@ -356,44 +441,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
       }
       return;
     }
-    // A container-level library entry (no "?subsong=" suffix) whose file holds
-    // several subsongs plays them ALL, not just the first — matching how it was
-    // added ("le song complet"). Single-subsong entries fall through to the
-    // normal single-track play below.
-    if (qi < 0 && widget.onPlayAlbum != null) {
-      int count = 1;
-      try { count = RewampAudio().probeSubsongCount(track.filePath); } catch (_) {}
-      if (count > 1) {
-        final container = SearchResult(
-          songId:       track.onlineId ?? base,
-          collection:   item.collectionSlug ?? '',
-          title:        item.name,
-          filename:     item.filename ?? p.basename(track.filePath),
-          album:        track.metaAlbum,
-          albumId:      track.albumId ?? item.albumId,
-          formatExt:    item.formatExt ?? track.formatExt ?? '',
-          downloadUrl:  item.downloadUrl,
-          fileSize:     0,
-          year:         null,
-          totalCount:   0,
-          artistNames:  track.artist != null ? [track.artist!] : const [],
-          platform:     item.platformName,
-          artworkUrl:   item.artworkUrl,
-          subsongCount: count,
-          localPath:    track.filePath,
-        );
-        if (!mounted) return;
-        if (choice != PlayChoice.now) {
-          // Queue mode: _onAlbumQueueAdd expands the container's subsongs
-          // exactly like _startAlbumQueue does on the play path.
-          await globalOnAlbumQueueAdd?.call([container],
-              atEnd: choice == PlayChoice.end, silent: false);
-        } else {
-          await widget.onPlayAlbum!(context, [container]);
-        }
-        return;
-      }
+    // Entrée de CONTENEUR (aucun suffixe `?subsong=`): le fichier joue TOUTES
+    // ses sous-chansons, comme il a été ajouté (« le song complet »). Les
+    // entrées à une seule sous-chanson tombent dans la lecture simple.
+    // Partagé avec l'onglet Morceaux — voir playWholeFileLibraryEntry.
+    if (qi < 0 &&
+        await playWholeFileLibraryEntry(context,
+            item: item, track: track, base: base, choice: choice,
+            onPlayAlbum: widget.onPlayAlbum,
+            onPlayLocalAlbum: widget.onPlayLocalAlbum)) {
+      return;
     }
+    if (!mounted) return;
     if (choice != PlayChoice.now) {
       final queueLocal = globalOnLocalQueueAdd;
       if (queueLocal == null) return;
@@ -487,16 +546,25 @@ class _RecentCard extends StatelessWidget {
   final LibraryItem   item;
   final ColorScheme   cs;
   final VoidCallback? onTap;
+  /// Sur un autre appareil (library_presence): grisée, la deuxième ligne le dit.
+  final bool          elsewhere;
 
-  const _RecentCard({required this.item, required this.cs, this.onTap});
+  const _RecentCard(
+      {required this.item, required this.cs, this.onTap,
+      this.elsewhere = false});
 
   @override
   Widget build(BuildContext context) {
     final isAlbum    = item.type == 'album';
     final isPlaylist = item.type == 'playlist';
+    final second     = elsewhere
+        ? libraryElsewhereLabel(context)
+        : _secondLine(item);
     return HoverGrow(child: GestureDetector(
       onTap: onTap,
-      child: Column(
+      child: Opacity(
+        opacity: elsewhere ? 0.45 : 1.0,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // CARRÉE, comme sur l'accueil: le rail y donne une taille fixe à
@@ -600,10 +668,10 @@ class _RecentCard extends StatelessWidget {
                 // jw_psf, `.nsf` multi-subsongs). La deuxième ligne porte donc
                 // le titre de la piste quand il apporte quelque chose, et
                 // l'artiste sinon.
-                if (_secondLine(item) != null)
+                if (second != null)
                   Flexible(
                     child: Text(
-                      _secondLine(item)!,
+                      second,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -615,6 +683,40 @@ class _RecentCard extends StatelessWidget {
           ),
         ],
       ),
+      ),
     ));
+  }
+}
+
+/// L'état d'échec partagé par les écrans dont TOUT le contenu vient de la base:
+/// le message exact (c'est lui qu'on demande à un testeur) et un bouton pour
+/// refaire l'essai.
+class _ErrorRetry extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  const _ErrorRetry({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, color: cs.error, size: 32),
+            const SizedBox(height: 12),
+            Text(l10n.searchError(message),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: cs.onSurfaceVariant)),
+            const SizedBox(height: 16),
+            FilledButton.tonal(
+                onPressed: onRetry, child: Text(l10n.commonRetry)),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -8,6 +8,7 @@ import 'local_db.dart';
 import 'playlist_sync.dart';
 import 'rewamp_db.dart' show Playlist, RewampDb, RewampRpcException;
 import 'user_settings.dart';
+import 'scrolling_text.dart';
 
 /// Everything the "…" menu of a USER playlist can do — rename, move, back up,
 /// publish, delete — in one place.
@@ -355,7 +356,7 @@ Future<String?> promptName(BuildContext context, String title,
       },
     );
 
-/// Shared confirm dialog (Cancel / <confirm>). Returns true if confirmed.
+/// Shared confirm dialog (Cancel / `<confirm>`). Returns true if confirmed.
 Future<bool> confirm(BuildContext context, String title, String body,
     {String? confirmLabel}) async {
   final l10n = context.l10n;
@@ -422,7 +423,7 @@ Future<({String? id})?> pickFolder(
               contentPadding:
                   EdgeInsets.only(left: 16.0 + depth * 20, right: 16),
               leading: const Icon(Icons.folder_outlined),
-              title: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              title: ScrollingText(text: f.name),
               enabled: currentId != f.id,
               onTap: () => Navigator.pop(ctx, (id: f.id)),
             ),

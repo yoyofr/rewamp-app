@@ -4,13 +4,16 @@ import 'artwork_image.dart';
 import 'library_toolbar.dart';
 import 'local_db.dart';
 import 'l10n.dart';
+import 'library_presence.dart';
+import 'app_snack.dart';
 import 'playlist_options.dart';
 import 'sync_service.dart';
 import 'rewamp_db.dart'
     show OnPlayAlbum, OnPlayLocalAlbum, Playlist, RewampDb, SearchResult;
 import 'browse_screen.dart' show PlaylistTracksScreen;
 import 'local_playlist_screen.dart';
-import 'shell_insets.dart';
+import 'scrolling_text.dart';
+import 'cancel_field.dart';
 
 typedef OnFileReady = void Function(
   String path,
@@ -543,25 +546,21 @@ class _LibraryPlaylistsScreenState extends State<LibraryPlaylistsScreen> {
           : ListView(
               children: [
                 Padding(
-                  padding: shellInset(context, const EdgeInsets.fromLTRB(16, 8, 16, 4)),
-                  child: TextField(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: CancelField(
                     controller: _searchCtrl,
-                    decoration: InputDecoration(
-                      hintText: l10n.playlistSearchHint,
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      suffixIcon: _searching
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: () {
-                                _searchCtrl.clear();
-                                _load();
-                              })
-                          : null,
-                      isDense: true,
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10)),
+                    onCleared: (_) => _load(),
+                    builder: (_) => TextField(
+                      controller: _searchCtrl,
+                      decoration: InputDecoration(
+                        hintText: l10n.playlistSearchHint,
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        isDense: true,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onChanged: (_) => _load(),
                     ),
-                    onChanged: (_) => _load(),
                   ),
                 ),
                 // While dragging inside a folder, a banner to drop the playlist
@@ -622,8 +621,7 @@ class _LibraryPlaylistsScreenState extends State<LibraryPlaylistsScreen> {
                           : Colors.transparent,
                       child: ListTile(
                         leading: const Icon(Icons.folder_outlined),
-                        title: Text(f.name,
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        title: ScrollingText(text: f.name),
                         trailing: IconButton(
                           icon: const Icon(Icons.more_vert),
                           tooltip: l10n.navMore,
@@ -645,8 +643,7 @@ class _LibraryPlaylistsScreenState extends State<LibraryPlaylistsScreen> {
                             color: cs.primary, size: 20),
                       ),
                     ),
-                    title: Text(p.name,
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    title: ScrollingText(text: p.name),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
@@ -694,8 +691,7 @@ class _LibraryPlaylistsScreenState extends State<LibraryPlaylistsScreen> {
                               color: cs.primary, size: 20),
                         ),
                       ),
-                      title: Text(p.name,
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      title: ScrollingText(text: p.name),
                       // A saved server playlist is read-only (no rename/delete/
                       // reorder) — the server icon + message keeps it distinct
                       // from an editable local playlist.
@@ -765,7 +761,25 @@ class _FavoritesPlaylistScreen extends StatefulWidget {
 
 class _FavoritesPlaylistScreenState extends State<_FavoritesPlaylistScreen> {
   List<TrackRecord> _tracks = [];
+  /// Fichiers locaux absents d'ICI — voir library_presence.
+  Set<String> _missing = const {};
   bool _loading = true;
+  String _query = '';
+
+  /// Les indices, dans [_tracks], des entrées que la liste MONTRE.
+  ///
+  /// ⚠️ **Le filtre sert à TROUVER, pas à redéfinir la file.** La lecture porte
+  /// donc toujours sur la playlist ENTIÈRE — c'est son ordre qui fait sens —
+  /// et l'index de la ligne tapée doit être RAMENÉ à celui de la liste
+  /// complète. Passer l'index de la liste filtrée démarrerait un autre
+  /// morceau, et l'erreur serait silencieuse: la file part, simplement pas au
+  /// bon endroit.
+  List<int> get _visibleIdx => [
+        for (var i = 0; i < _tracks.length; i++)
+          if (matchesFilterQuery(_query,
+              [_tracks[i].displayTitle, _tracks[i].artist, _tracks[i].metaAlbum]))
+            i,
+      ];
 
   @override
   void initState() {
@@ -784,8 +798,11 @@ class _FavoritesPlaylistScreenState extends State<_FavoritesPlaylistScreen> {
     LocalDb.instance
         .getFavorites(
             probeSubsongCount: (fp) => RewampAudio().probeSubsongCount(fp))
-        .then((t) {
-      if (mounted) setState(() { _tracks = t; _loading = false; });
+        .then((t) async {
+      final missing = await missingLocalTrackFiles(t);
+      if (mounted) {
+        setState(() { _tracks = t; _missing = missing; _loading = false; });
+      }
       _enrichTitles(t);
     });
   }
@@ -896,12 +913,23 @@ class _FavoritesPlaylistScreenState extends State<_FavoritesPlaylistScreen> {
           : _tracks.isEmpty
               ? Center(child: Text(l10n.libraryEmpty,
                   style: TextStyle(color: cs.outline)))
-              : Column(children: [
+              : Builder(builder: (context) {
+                final visible = _visibleIdx;
+                return Column(children: [
+                  // Le filtre n'apparaît qu'au-delà du seuil: en dessous, l'œil
+                  // va plus vite que le clavier.
+                  if (_tracks.length > kListFilterThreshold)
+                    ListFilterField(
+                      query: _query,
+                      onQuery: (v) => setState(() => _query = v),
+                    ),
                   // Header: play the whole playlist + entry count.
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                     child: Row(children: [
                       FilledButton.icon(
+                        // La playlist ENTIÈRE, filtre ou pas: le bouton dit
+                        // « tout lire ».
                         onPressed: widget.onPlayLocalAlbum == null
                             ? null
                             : () => widget.onPlayLocalAlbum!(
@@ -916,11 +944,20 @@ class _FavoritesPlaylistScreenState extends State<_FavoritesPlaylistScreen> {
                       ),
                     ]),
                   ),
+                  if (visible.isEmpty)
+                    Expanded(
+                      child: Center(child: Text(l10n.searchNoResults,
+                          style: TextStyle(color: cs.outline))),
+                    )
+                  else
                   Expanded(child: ListView.builder(
-                  itemCount: _tracks.length,
+                  itemCount: visible.length,
                   itemBuilder: (_, i) {
-                    final t = _tracks[i];
+                    final idx = visible[i];
+                    final t = _tracks[idx];
+                    final elsewhere = _missing.contains(t.filePath);
                     return ListTile(
+                      enabled: !elsewhere,
                       leading: SizedBox(
                         width: 40, height: 40,
                         child: ArtworkImage(
@@ -932,18 +969,25 @@ class _FavoritesPlaylistScreenState extends State<_FavoritesPlaylistScreen> {
                               Icon(Icons.music_note, color: cs.primary),
                         ),
                       ),
-                      title: Text(t.displayTitle,
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: t.artist != null
-                          ? Text(t.artist!,
+                      title: ScrollingText(text: t.displayTitle),
+                      subtitle: elsewhere
+                          ? Text(libraryElsewhereLabel(context),
                               maxLines: 1, overflow: TextOverflow.ellipsis)
-                          : null,
+                          : t.artist != null
+                              ? Text(t.artist!,
+                                  maxLines: 1, overflow: TextOverflow.ellipsis)
+                              : null,
                       // Tapping an entry starts the WHOLE playlist as a
                       // queue, positioned on the tapped entry.
                       onTap: () {
+                        if (elsewhere) {
+                          AppSnack.show(
+                              context, libraryElsewhereLabel(context));
+                          return;
+                        }
                         if (widget.onPlayLocalAlbum != null) {
                           widget.onPlayLocalAlbum!(context, List.of(_tracks),
-                              startIndex: i);
+                              startIndex: idx);
                         } else if (widget.onPlayTrack != null) {
                           widget.onPlayTrack!(
                             t.filePath,
@@ -962,7 +1006,8 @@ class _FavoritesPlaylistScreenState extends State<_FavoritesPlaylistScreen> {
                     );
                   },
                 )),
-              ]),
+                ]);
+              }),
     );
   }
 }

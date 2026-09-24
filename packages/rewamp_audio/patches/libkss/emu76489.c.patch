@@ -1,5 +1,5 @@
---- third_party/libkss/upstream/modules/emu76489/emu76489.c	2026-07-06 09:48:52
-+++ third_party/libkss/modules/emu76489/emu76489.c	2026-07-06 13:34:41
+--- third_party/libkss/upstream/modules/emu76489/emu76489.c	2026-07-09 18:43:32
++++ third_party/libkss/modules/emu76489/emu76489.c	2026-09-10 00:23:40
 @@ -20,6 +20,11 @@
  #include <string.h>
  #include "emu76489.h"
@@ -12,12 +12,56 @@
  static uint32_t voltbl[16] = {
    0xff, 0xcb, 0xa1, 0x80, 0x65, 0x50, 0x40, 0x33, 0x28, 0x20, 0x19, 0x14, 0x10, 0x0c, 0x0a, 0x00
  };
-@@ -227,7 +232,32 @@
+@@ -224,10 +229,76 @@
+ 
+ }
+ 
++//YOYOFR: notes par voie pour le viz-notes / viz-piano / viz-pattern (dont la
++// grille SYNTHÉTISÉE est bâtie DEPUIS les notes) — Hz dans vgm_last_note, 0 =
++// voie silencieuse. C'était le SEUL des cinq coeurs libkss sans capture de
++// notes: un .kss SG-1000/GG/SMS n'avait que ses voies d'oscilloscope.
++// SN76489: `count[i]` avance de clk/16 par pas et bascule `edge` tous les
++// freq[i], donc une PÉRIODE vaut 2*freq[i] pas => f = clk / (32 * freq[i]),
++// la même formule que le coeur sn76496 de libvgm.
++// Gate: freq <= 1 fige `edge` à 1 (niveau continu, aucune hauteur), voltbl[15]
++// vaut 0 (volume nul), et `mute[i]` est la coupure interne du coeur. La coupure
++// UTILISATEUR (generic_mute_mask) n'a rien à faire ici: elle est lue au RENDU.
++// La voie 3 est le BRUIT — aucune hauteur — d'où une note ARBITRAIRE comme les
++// percussions de l'OPLL (kss_emu2413.c); lui inventer une fréquence ferait
++// dessiner au piano une mélodie qui n'existe pas.
++// ⚠️ La note est RÉÉCRITE à chaque appel, le 0 compris: une capture qui n'écrit
++// que « si ça sonne » laisse la dernière note figée pour toujours (même piège
++// que la capture SPC de libgme et celle du HuC6280).
++static void sngkss_capture_notes (SNG * sng)
++{
++  int i;
++  int noise_on;
++  if (m_voicesForceOfs < 0) return;
++  for (i = 0; i < 3; i++)
++  {
++    unsigned int note = 0, vol = 0;
++    const uint32_t freq = sng->freq[i];
++    if (!sng->mute[i] && freq > 1 && voltbl[sng->volume[i] & 15])
++    {
++      note = sng->clk / (32 * freq);
++      vol = 1;
++    }
++    vgm_last_note[m_voicesForceOfs + i] = note;
++    vgm_last_vol[m_voicesForceOfs + i] = vol;
++    if (note) vgm_last_instr[m_voicesForceOfs + i] = (unsigned char) (m_voicesForceOfs + i);
++  }
++  noise_on = voltbl[sng->noise_volume & 15] != 0;
++  vgm_last_note[m_voicesForceOfs + 3] = noise_on ? 220 : 0;
++  vgm_last_vol[m_voicesForceOfs + 3] = noise_on ? 1 : 0;
++  if (noise_on) vgm_last_instr[m_voicesForceOfs + 3] = (unsigned char) (m_voicesForceOfs + 3);
++}
++
  static inline int16_t
  mix_output (SNG * sng) 
  {
 -  sng->out = sng->ch_out[0] + sng->ch_out[1] + sng->ch_out[2] + sng->ch_out[3];
 +    //TODO:  MODIZER changes start / YOYOFR
++    sngkss_capture_notes(sng); //YOYOFR
 +    sng->out=0;
 +    for (int i=0;i<4;i++)
 +        if (!(generic_mute_mask&((int64_t)1<<(m_voicesForceOfs+i)))) sng->out += sng->ch_out[i];
@@ -46,8 +90,11 @@
    return (int16_t) sng->out;
  }
  
-@@ -258,22 +288,41 @@
+@@ -256,24 +327,44 @@
+ {
+   int i;
  
++  sngkss_capture_notes(sng); //YOYOFR
    out[0] = out[1] = 0;
    if((sng->stereo>>4)&0x08) {
 -    out[0] += sng->ch_out[3];

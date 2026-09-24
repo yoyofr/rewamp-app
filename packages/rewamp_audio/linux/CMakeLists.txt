@@ -7,6 +7,30 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/rewamp.cmake")
 
 add_library(${PLUGIN_NAME} SHARED ${REWAMP_CORE_SOURCES})
 
+# ⚠️ RUNPATH: ces bibliothèques partent dans le bundle avec le RUNPATH de
+# l'arbre de BUILD, et on ne le corrige PAS ici — voir scripts/appimage/.
+#
+# Le gabarit Flutter installe les greffons par `install(FILES ...)` et non
+# `install(TARGETS ...)`: CMake ne réécrit donc jamais leur RUNPATH. Seul
+# l'exécutable reçoit `$ORIGIN/lib`. Et un `DT_RUNPATH` ne s'HÉRITE PAS: pour
+# résoudre les dépendances de `librewamp_audio.so`, l'éditeur de liens dynamique
+# lit le RUNPATH de CETTE bibliothèque, pas celui de l'exécutable.
+#
+# Mesuré le 2026-09-21: l'AppImage tournait en chargeant `libavcodec.so.61`
+# depuis `…/app/build/appimage/ffmpeg/lib`, un chemin qui n'existe sur aucune
+# autre machine.
+#
+# ⚠️ Tenté et ANNULÉ: `BUILD_WITH_INSTALL_RPATH` + `INSTALL_RPATH "$ORIGIN"`.
+# Ça retire le RPATH de build DÈS la construction, donc l'édition de liens du
+# greffon ne trouve plus les dépendances TRANSITIVES de librewamp_audio.so
+# (« libswresample.so.5 … not found (try using -rpath or -rpath-link) ») — et
+# ça ne réglerait de toute façon que NOS deux cibles, pas les sept greffons
+# tiers qui ont exactement le même RUNPATH de build.
+#
+# La relocalisation est donc faite là où elle est vraiment exigée, en UNE passe
+# sur toutes les bibliothèques: `patchelf --set-rpath '$ORIGIN'` dans
+# scripts/appimage/build_appimage.sh, avec un contrôle qui ÉCHOUE si un RUNPATH
+# sort de $ORIGIN.
 set_target_properties(${PLUGIN_NAME} PROPERTIES
   CXX_VISIBILITY_PRESET hidden
   C_VISIBILITY_PRESET hidden

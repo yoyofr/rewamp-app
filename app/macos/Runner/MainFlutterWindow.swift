@@ -4,6 +4,13 @@ import FlutterMacOS
 class MainFlutterWindow: NSWindow {
   private var fsChannel: FlutterMethodChannel?
 
+  // « Toujours au premier plan » dans le menu Fenêtre. Le RÉGLAGE Dart fait
+  // foi: un clic ne change RIEN ici, il demande à Dart de basculer le réglage,
+  // et c'est Dart qui renvoie la coche (et le libellé traduit). Deux états à
+  // tenir synchrones sinon — la coche du menu et l'interrupteur de Réglages.
+  private var menuChannel: FlutterMethodChannel?
+  private var onTopItem: NSMenuItem?
+
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
@@ -36,6 +43,25 @@ class MainFlutterWindow: NSWindow {
       }
     }
     self.fsChannel = ch
+
+    // Canal À PART: `rewamp/window` a déjà un handler côté Dart (plein écran,
+    // player_screen), et un canal n'en porte qu'UN — le partager ferait
+    // écraser l'un par l'autre selon l'ordre de montage.
+    let mch = FlutterMethodChannel(
+      name: "rewamp/window_menu",
+      binaryMessenger: flutterViewController.engine.binaryMessenger)
+    mch.setMethodCallHandler { [weak self] call, result in
+      if call.method == "setAlwaysOnTop",
+         let args = call.arguments as? [String: Any] {
+        if let title = args["title"] as? String { self?.onTopItem?.title = title }
+        if let on = args["checked"] as? Bool { self?.onTopItem?.state = on ? .on : .off }
+        result(nil)
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    self.menuChannel = mch
+    installAlwaysOnTopMenuItem()
     NotificationCenter.default.addObserver(
       self, selector: #selector(fsChanged),
       name: NSWindow.didEnterFullScreenNotification, object: self)
@@ -60,6 +86,25 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
+  }
+
+  private func installAlwaysOnTopMenuItem() {
+    // Le menu « Fenêtre » du MainMenu.xib; à défaut, celui que AppKit connaît.
+    guard let menu = NSApp.windowsMenu
+      ?? NSApp.mainMenu?.items.last(where: { $0.submenu != nil })?.submenu
+    else { return }
+    let item = NSMenuItem(
+      title: "Always on Top", action: #selector(toggleAlwaysOnTop), keyEquivalent: "")
+    item.target = self
+    // En tête du menu, avant Réduire/Zoom: AppKit ajoute la liste des fenêtres
+    // en QUEUE, un élément posé à la fin se retrouverait noyé dedans.
+    menu.insertItem(item, at: 0)
+    menu.insertItem(NSMenuItem.separator(), at: 1)
+    onTopItem = item
+  }
+
+  @objc private func toggleAlwaysOnTop() {
+    menuChannel?.invokeMethod("toggleAlwaysOnTop", arguments: nil)
   }
 
   @objc private func fsChanged() {

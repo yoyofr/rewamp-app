@@ -21,9 +21,9 @@ without regenerating turns the suite red.)
 See [LICENSING.md](LICENSING.md) for how these licences combine,
 and for the two that constrain what may be redistributed.
 
-## Playback engines (40)
+## Playback engines (42)
 
-1235 file extensions across all of them.
+1247 file extensions across all of them.
 
 | Engine | Licence | Authors | Role |
 | --- | --- | --- | --- |
@@ -36,7 +36,7 @@ and for the two that constrain what may be redistributed.
 | [FMP (98fmplayer)](https://github.com/myon98/98fmplayer) | BSD-2-Clause (98fmplayer) | あぼ (Abo) ; 98fmplayer : myon98 | PC-98 FMP — OPNA + PPZ8 (.opi/.ovi/.ozi) |
 | [Furnace (DivEngine)](https://github.com/tildearrow/furnace) | GPL-2.0 | tildearrow | Chiptunes multi-puces .fur / FamiTracker .ftm |
 | [Game Music Emu (libgme)](https://github.com/libgme/game-music-emu) | LGPL-2.1 | Shay Green (blargg), Michael Pyne | NES/GB/SNES/PC-Engine/AY/HES/KSS/SAP + archives RSN |
-| [gbsplay (libgbsplay)](https://github.com/mmitch/gbsplay) | GPL-1.0+ | Christian Garbs, Maximilian Rehkopf | Game Boy GBS |
+| [gbsplay (libgbsplay)](https://github.com/mmitch/gbsplay) | GPL-1.0+ | Christian Garbs, Maximilian Rehkopf | Game Boy GBS/GBR |
 | [Highly Experimental](https://github.com/kode54/Highly_Experimental) | aucune licence explicite (Neill Corlett) | Neill Corlett ; Chris Moeller (kode54) | PlayStation PSF/PSF2 |
 | [HighlyQuixotic](https://github.com/kode54/Highly_Quixotic) | aucune licence explicite (Neill Corlett) | Neill Corlett ; Chris Moeller (kode54) | Capcom QSound .qsf — Z80 + puce QSound |
 | [highlytheoritical](https://github.com/kode54/Highly_Theoretical) | aucune licence explicite ; m68k Musashi non commercial | Neill Corlett ; Chris Moeller (kode54) | Saturn .ssf / Dreamcast .dsf — 68000/ARM7 + SCSP |
@@ -48,9 +48,11 @@ and for the two that constrain what may be redistributed.
 | [libpt3 (ayumi)](https://github.com/true-grue/ayumi) | ayumi MIT ; libpt3 sans licence explicite | Peter Sovietov (ayumi) | ZX Spectrum .pt3 — vrai synthé AY-3-8910/YM2149 |
 | [libsidplayfp](https://github.com/libsidplayfp/libsidplayfp) | GPL-2.0 | Leandro Nini ; reSIDfp : Dag Lem, Antti Lankila | Commodore 64 SID (moteur reSIDfp) |
 | [libvgm](https://github.com/ValleyBell/libvgm) | GPL-2.0 | ValleyBell | VGM/S98/GYM/DRO — puces sonores, scope par canal |
+| [libxmp](https://github.com/libxmp/libxmp) | MIT | Claudio Matsuoka, Hipolito Carraro Jr | Modules que libopenmpt ne lit pas (.musx, .liq, .fnk…) |
 | [mdxplay](https://github.com/gzaffin/mdxmini) | GPL-2.0+ | mdxmini : Giuseppe Zaffin (gzaffin) | Sharp X68000 — .mdx (+ échantillons .pdx) |
 | [miniaudio](https://miniaud.io/) | MIT-0 / domaine public | David Reid | PCM/MP3/FLAC/OGG — décodeur de repli |
 | [Monkey's Audio (MACLib)](https://monkeysaudio.com/) | propriétaire (source dispo) | Matthew T. Ashland | Lossless .ape |
+| [munt mt32emu](https://github.com/munt/munt) | LGPL-2.1 | Dean Beeler, Jerome Fisher, Sergey V. Mikayev | Émulation Roland MT-32 / CM-32L pour le MIDI (.mid/.midi/.kar/.rmi) |
 | [NEZplug++](https://bitbucket.org/wothke/webnez/src/master/) | PDS (domaine public) | Mamiya ; portage webNEZ : Jürgen Wothke | PC-Engine HES + Sega SGC (SN76489/YM2413) |
 | [NSFPlay (libnsfplay)](https://github.com/bbbradsmith/nsfplay) | réutilisation libre, sans licence formelle | Brad Smith, Brezza | NES NSF/NSFe — voix par canal |
 | [Organya](https://www.wothke.ch/) | WTFPL | Daisuke Amaya (Pixel) ; portage webPixel : Jürgen Wothke | Cave Story .org — moteur natif de Pixel |
@@ -68,7 +70,7 @@ and for the two that constrain what may be redistributed.
 | [vio2sf (Cog / melonDS)](https://github.com/losnoco/Cog) | GPL-3.0 | Chris Moeller (kode54) ; melonDS : Arisotura | Nintendo DS .2sf/.mini2sf |
 | [ZXTune](https://zxtune.bitbucket.io/) | GPL-3.0 | Vitamin/CAIG | ZX Spectrum / AY (.ay/.vtx/.pt3/.stc/…) + .chp |
 
-## Bundled components (18)
+## Bundled components (20)
 
 Everything the binary redistributes that is not a decoder:
 archive handling, the visualizer, fonts, shaders, data sets.
@@ -77,6 +79,7 @@ archive handling, the visualizer, fonts, shaders, data sets.
 | --- | --- | --- |
 | [ANGLE](https://chromium.googlesource.com/angle/angle) | BSD-3-Clause | Google |
 | [Audio visualizer (Shadertoy)](https://www.shadertoy.com/view/ttfGzH) | CC BY 3.0 | Jan Mróz (jaszunio15) |
+| [FAC Soundtracker (FST2.BIN + mus2kss)](https://www.msx.org/wiki/FAC_Soundtracker) | Replayer © FAC, tous droits réservés | FAC ; conversion : NYYRIKKI |
 | [FFmpeg (ffmpeg-kit)](https://ffmpeg.org/) | LGPL-3.0 | FFmpeg team |
 | [ft2-clone (police FastTracker 2)](https://github.com/8bitbubsy/ft2-clone) | BSD-3-Clause | Olav Sørensen |
 | [JetBrains Mono (police par défaut)](https://www.jetbrains.com/lp/mono/) | SIL OFL 1.1 | The JetBrains Mono Project Authors |
@@ -89,6 +92,7 @@ archive handling, the visualizer, fonts, shaders, data sets.
 | [Milkwave (motifs de transition)](https://github.com/IkeC/Milkwave) | BSD-3-Clause | Milkwave (fork de BeatDrop) |
 | [projectM](https://github.com/projectM-visualizer/projectm) | LGPL-2.1 | projectM team |
 | [ProWizard (libxmp)](https://xmp.sourceforge.net/) | MIT | Claudio Matsuoka ; ProWizard : Sylvain 'Asle' Chipaux |
+| [ScummVM (table MT-32 → General MIDI)](https://github.com/scummvm/scummvm) | GPL-2.0-or-later | ScummVM team |
 | [stb_truetype (rastérisation)](https://github.com/nothings/stb) | domaine public / MIT | Sean Barrett |
 | [UnRAR](https://www.rarlab.com/license.htm) | licence UnRAR (décompression uniquement) | Alexander Roshal |
 | [unscii-16 (police bitmap)](http://viznut.fi/unscii/) | domaine public / CC0 | Viznut |

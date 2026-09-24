@@ -5,6 +5,7 @@
 [submodule "packages/rewamp_audio/third_party/vgmstream"]
 	path = packages/rewamp_audio/third_party/vgmstream
 	url = https://github.com/vgmstream/vgmstream
+	ignore = dirty
 [submodule "packages/rewamp_audio/third_party/libvgm/libvgm"]
 	path = packages/rewamp_audio/third_party/libvgm/libvgm
 	url = https://github.com/ValleyBell/libvgm.git

@@ -1,12 +1,20 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:file_picker/file_picker.dart' as fp;
+import 'picker_memory.dart';
 import 'package:share_plus/share_plus.dart';
+import 'home_sections.dart';
+import 'shell_tabs.dart';
 import 'l10n.dart';
+import 'mini_window.dart';
+import 'release_notes.dart'
+    show kReleaseNotesLabel, showReleaseNotes;
 import 'account_screen.dart';
 import 'app_snack.dart';
 import 'backup_service.dart';
@@ -14,6 +22,8 @@ import 'onboarding.dart';
 import 'pattern_scope_widget.dart' show PatternPalette;
 import 'preset_screen.dart';
 import 'screen_wakelock.dart';
+import 'data_reset.dart' show runLocalCleanup;
+import 'sync_service.dart';
 import 'user_settings.dart';
 import 'client_info.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -21,9 +31,88 @@ import 'package:url_launcher/url_launcher.dart';
 import 'engines.dart';
 import 'engine_formats_screen.dart';
 import 'soundfont_manager.dart';
+import 'mt32_rom_manager.dart';
+import 'mt32_settings.dart';
 import 'local_db.dart';
 import 'artwork_image.dart';
 import 'rewamp_db.dart';
+import 'local_open.dart';
+import 'storage_screen.dart';
+
+/// Page de réglages d'un MOTEUR, ouvrable sans passer par l'écran Réglages —
+/// le raccourci « Réglages du moteur » du menu « … » du lecteur.
+///
+/// La clé est le SLUG que le moteur publie (`audio.backendName`), pas le
+/// libellé affiché: c'est la seule chose que le lecteur connaisse du décodeur
+/// qui joue. Tous les moteurs n'ont pas de page — un slug absent d'ici veut
+/// dire « rien à régler », et l'action ne s'affiche simplement pas.
+class EngineSettingsPage {
+  final String title;
+  final List<Widget> Function(BuildContext) children;
+  const EngineSettingsPage(this.title, this.children);
+}
+
+/// Slug de moteur → sa page. Voir [EngineSettingsPage]; les libellés sont
+/// ceux des tuiles de la section « Moteurs » (le nom de la BIBLIOTHÈQUE, pas
+/// de la console: une même bibliothèque couvre plusieurs formats).
+const Map<String, EngineSettingsPage> kEngineSettingsPages = {
+  'libopenmpt':   EngineSettingsPage('libopenmpt', SettingsScreen.omptChildren),
+  'libxmp':       EngineSettingsPage('libxmp', SettingsScreen.xmpChildren),
+  'libgme':       EngineSettingsPage('libgme', SettingsScreen.gmeChildren),
+  'nsfplay':      EngineSettingsPage('nsfplay', SettingsScreen.nsfChildren),
+  'gbsplay':      EngineSettingsPage('gbsplay', SettingsScreen.gbsChildren),
+  'fluidlite':    EngineSettingsPage('FluidLite', SettingsScreen.midiChildren),
+  'mt32':         EngineSettingsPage('Munt (mt32emu)', SettingsScreen.mt32Children),
+  'gsf':          EngineSettingsPage('libgsf (VBA)', SettingsScreen.gsfChildren),
+  'uade':         EngineSettingsPage('UADE', SettingsScreen.uadeChildren),
+  'libsidplayfp': EngineSettingsPage('libsidplayfp', SettingsScreen.sidChildren),
+  'adplug':       EngineSettingsPage('AdPlug', SettingsScreen.adplugChildren),
+  'highlyexp':    EngineSettingsPage(
+      'Highly Experimental', SettingsScreen.heChildren),
+  'libvgm':       EngineSettingsPage('libvgm', SettingsScreen.vgmChildren),
+};
+
+/// L'ordre d'affichage des moteurs dans Réglages: par NOM, insensible à la
+/// casse.
+///
+/// La casse compte ici pour de vrai: comparer les chaînes telles quelles range
+/// toutes les majuscules avant toutes les minuscules (`AdPlug`, `FluidLite`,
+/// `UADE`, PUIS `gbsplay`, `libgme`…), ce qui donne deux alphabets au lieu
+/// d'un et met `UADE` loin de `libvgm`. Ce n'est pas ce qu'on lit dans une
+/// liste.
+int compareEngineNames(String a, String b) =>
+    a.toLowerCase().compareTo(b.toLowerCase());
+
+/// L'écran de réglages du moteur [slug], ou null si ce moteur n'a rien à
+/// régler. Rendu comme WIDGET et non poussé: c'est l'APPELANT qui décide où —
+/// et ce choix se voit, puisqu'un push sur le navigateur RACINE recouvre la
+/// coquille, mini-lecteur compris (voir `pushEngineSettings`).
+Widget? engineSettingsScreen(String slug) {
+  final page = kEngineSettingsPages[slug];
+  if (page == null) return null;
+  return _SettingsSectionScreen(
+    title: page.title,
+    settings: UserSettings.instance,
+    childrenBuilder: page.children,
+  );
+}
+
+/// Pousse la page de réglages du moteur [slug] sur [nav]. Ne fait rien si ce
+/// moteur n'a pas de page (l'appelant teste `kEngineSettingsPages.containsKey`).
+///
+/// Prend un NavigatorState et non un BuildContext: l'appelant du lecteur ferme
+/// sa feuille juste avant, donc son context est déjà démonté au moment du push.
+///
+/// ⚠️ Le navigateur qu'on lui donne DÉCIDE de ce qu'on voit: sur le navigateur
+/// RACINE la page recouvre toute la coquille — mini-lecteur et barre de
+/// navigation compris. Depuis le lecteur, passer par l'onglet courant
+/// (`_pushOnTab`) est ce qu'il faut: la page s'ouvre AVEC le mini-lecteur, et
+/// la promesse de retour ramène au lecteur plein écran en la refermant.
+void pushEngineSettings(NavigatorState nav, String slug) {
+  final screen = engineSettingsScreen(slug);
+  if (screen == null) return;
+  nav.push(MaterialPageRoute(builder: (_) => screen));
+}
 
 class SettingsScreen extends StatefulWidget {
   /// Called after the play history has been successfully cleared, so the
@@ -46,12 +135,45 @@ class SettingsScreen extends StatefulWidget {
     this.onOnlineLibraryDeleting,
   });
 
+  // Les contenus de page moteur, exposés pour [kEngineSettingsPages] — ils
+  // sont statiques et ne lisent que UserSettings.instance, donc ouvrables
+  // hors de cet écran.
+  static List<Widget> omptChildren(BuildContext c) =>
+      _SettingsScreenState._omptChildren(c);
+  static List<Widget> xmpChildren(BuildContext c) =>
+      _SettingsScreenState._xmpChildren(c);
+  static List<Widget> gmeChildren(BuildContext c) =>
+      _SettingsScreenState._gmeChildren(c);
+  static List<Widget> nsfChildren(BuildContext c) =>
+      _SettingsScreenState._nsfChildren(c);
+  static List<Widget> gbsChildren(BuildContext c) =>
+      _SettingsScreenState._gbsChildren(c);
+  static List<Widget> midiChildren(BuildContext c) =>
+      _SettingsScreenState._midiChildren(c);
+  static List<Widget> mt32Children(BuildContext c) =>
+      _SettingsScreenState._mt32Children(c);
+  static List<Widget> gsfChildren(BuildContext c) =>
+      _SettingsScreenState._gsfChildren(c);
+  static List<Widget> uadeChildren(BuildContext c) =>
+      _SettingsScreenState._uadeChildren(c);
+  static List<Widget> sidChildren(BuildContext c) =>
+      _SettingsScreenState._sidChildren(c);
+  static List<Widget> adplugChildren(BuildContext c) =>
+      _SettingsScreenState._adplugChildren(c);
+  static List<Widget> heChildren(BuildContext c) =>
+      _SettingsScreenState._heChildren(c);
+  static List<Widget> vgmChildren(BuildContext c) =>
+      _SettingsScreenState._vgmChildren(c);
+
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _settings = UserSettings.instance;
+  // STATIQUE: les builders de page moteur sont statiques (voir
+  // engineSettingsSlugs) pour qu'un raccourci puisse les ouvrir sans passer
+  // par l'écran Réglages; ils lisent tous ce singleton.
+  static final _settings = UserSettings.instance;
 
   @override
   void initState() {
@@ -80,8 +202,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final tmp = await getTemporaryDirectory();
       final f = File(p.join(tmp.path, filename));
       await f.writeAsBytes(bytes, flush: true);
-      await Share.shareXFiles([XFile(f.path)],
-          subject: filename, sharePositionOrigin: origin);
+      await SharePlus.instance.share(ShareParams(
+          files: [XFile(f.path)],
+          subject: filename,
+          sharePositionOrigin: origin));
     } catch (_) {
       AppSnack.showOn(messenger, l10n.settingsBackupExportFailed,
           isError: true);
@@ -93,17 +217,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     // Pick the .rewampbackup (file_picker keeps the real name on Android).
     String? path;
-    if (Platform.isAndroid) {
-      final res = await fp.FilePicker.platform.pickFiles(type: fp.FileType.any);
-      path = res?.files.single.path;
+    if (pickerUsesFilePicker) {   // voir pickerUsesFilePicker
+      // `pickFile` (singulier) est la porte du choix UNIQUE en file_picker 12:
+      // `pickFiles` sélectionne désormais plusieurs fichiers PAR DÉFAUT.
+      final res = await fp.FilePicker.pickFile(type: fp.FileType.any);
+      path = res?.path;
     } else {
-      final xf = await openFile(acceptedTypeGroups: const [
+      final xf = await openFile(
+          initialDirectory: await PickerMemory.startDir(PickerSlot.backup),
+          acceptedTypeGroups: const [
         XTypeGroup(
           label: 'Rewamp',
           extensions: [BackupService.backupExtension, 'zip'],
         ),
       ]);
       path = xf?.path;
+      await PickerMemory.rememberFile(PickerSlot.backup, path);
     }
     if (path == null || !context.mounted) return;
 
@@ -128,6 +257,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final bytes = await File(path).readAsBytes();
+      // La copie d'iOS dans notre Inbox est à nous une fois lue — voir
+      // consumeInboxCopy. Un .rewampbackup peut peser lourd.
+      await consumeInboxCopy(path);
       await BackupService.restoreBackup(bytes);
       if (!context.mounted) return;
       await showDialog<void>(
@@ -239,6 +371,135 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await LocalDb.instance.clearMetadataCache();
     if (!context.mounted) return;
     AppSnack.showOn(messenger, l10n.settingsCacheCleared(removed));
+  }
+
+  /// Retire les entrées de bibliothèque qui nomment un fichier local absent.
+  /// Confirmation obligatoire: la purge touche AUSSI le compte, donc les
+  /// autres appareils — c'est irréversible et il faut le dire avant.
+  Future<void> _cleanMissingLocalEntries(BuildContext context) async {
+    final l10n = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.settingsCleanLocalTitle),
+        content: Text(l10n.settingsCleanLocalBody),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.settingsCancel)),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.commonDelete)),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final n = await _purgeMissingWithBarrier(context, navigator);
+    AppSnack.showOn(messenger, l10n.settingsCleanLocalDone(n));
+  }
+
+  /// La purge des entrées injouables sous sa barrière d'étapes (scan → sync →
+  /// purge → delete). Partagée par l'entrée « Avancé » et par le nettoyage
+  /// groupé; ne demande PAS de confirmation, c'est à l'appelant de l'avoir
+  /// obtenue — la purge touche le COMPTE.
+  Future<int> _purgeMissingWithBarrier(
+          BuildContext context, NavigatorState navigator) =>
+      _withCleanBarrier(context, navigator,
+          (stage) => SyncService.purgeMissingLocalLibraryEntries(onStage: stage));
+
+  /// Le nettoyage GROUPÉ sous la même barrière. Null si le contexte est parti.
+  Future<({int orphans, int missing, int artwork})?> _cleanWithBarrier(
+          BuildContext context, NavigatorState navigator) =>
+      _withCleanBarrier(context, navigator,
+          (stage) => runLocalCleanup(onStage: stage));
+
+  /// La barrière d'étapes partagée: elle MONTRE l'étape en cours, et c'est tout
+  /// son intérêt — une barrière muette rend « long » indistinguable de
+  /// « bloqué », ce qui a déjà été rapporté comme une boucle infinie.
+  Future<T> _withCleanBarrier<T>(BuildContext context, NavigatorState navigator,
+      Future<T> Function(void Function(String) onStage) body) async {
+    // Le nettoyage demande une passe de synchro COMPLÈTE (hydrater les clés du
+    // compte) et peut donc durer: mesuré sur un vrai profil, la passe sans
+    // curseur applique plus de mille lignes une à une. Barrière non annulable
+    // (interrompre laisserait la moitié des entrées purgées côté compte et
+    // l'autre non) — mais elle DIT ce qu'elle fait: une barrière muette rend
+    // « long » indistinguable de « bloqué », et c'est ce qui a été rapporté.
+    final stage = ValueNotifier<String>('scan');
+    unawaited(showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        content: Row(children: [
+          const SizedBox(
+              width: 20, height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: ValueListenableBuilder<String>(
+              valueListenable: stage,
+              builder: (c, v, _) => Text(switch (v) {
+                'sync'   => c.l10n.cleanStageSync,
+                'purge'  => c.l10n.cleanStagePurge,
+                'delete' => c.l10n.cleanStageDelete,
+                _        => c.l10n.cleanStageScan,
+              }),
+            ),
+          ),
+        ]),
+      ),
+    ));
+    try {
+      return await body((s) => stage.value = s);
+    } finally {
+      navigator.pop();   // ferme la barrière, même en cas d'échec
+      stage.dispose();
+    }
+  }
+
+  /// « Nettoyer la base locale et le cache »: les TROIS gestes d'un coup —
+  /// entrées orphelines, entrées de bibliothèque injouables ici, cache des
+  /// pochettes et métadonnées. Une seule confirmation (la purge touche le
+  /// compte) et un seul message de fin, qui juxtapose les trois bilans déjà
+  /// traduits plutôt que d'en inventer un quatrième.
+  Future<void> _cleanDatabaseAndCache(BuildContext context) async {
+    final l10n = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.settingsCleanAll),
+        content: Text(l10n.settingsCleanAllConfirmBody),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.settingsCancel)),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.commonDelete)),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    // La séquence elle-même vit dans data_reset.dart, partagée avec le
+    // nettoyage automatique du premier lancement d'une build: deux copies
+    // finiraient par ne plus nettoyer la même chose. Ici on n'ajoute que la
+    // barrière d'étapes et le bilan.
+    final res = await _cleanWithBarrier(context, navigator);
+    if (res == null) return;
+    widget.onHistoryCleared?.call(); // refresh « écoutés récemment »
+    AppSnack.showOn(
+        messenger,
+        [
+          res.orphans > 0
+              ? l10n.settingsOrphansRemoved(res.orphans)
+              : l10n.settingsDbClean,
+          l10n.settingsCleanLocalDone(res.missing),
+          l10n.settingsCacheCleared(res.artwork),
+        ].join(' · '),
+        duration: const Duration(seconds: 6));
   }
 
   Future<void> _confirmResetDatabase(BuildContext context) async {
@@ -371,7 +632,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     return [
       _sectionResetButton('general'),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsTheme,
         resetKey: 'themeMode',
         child: SegmentedButton<ThemeMode>(
@@ -396,6 +657,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onSelectionChanged: (s) => _settings.themeMode = s.first,
         ),
       ),
+      // Bureau seulement. Vaut pour la fenêtre principale ET le mini lecteur
+      // (c'est la même fenêtre); MiniWindow écoute le réglage et pose le natif.
+      if (MiniWindow.instance.available && MiniWindow.alwaysOnTopSupported)
+        SwitchListTile(
+          secondary: const _ResetDot('windowAlwaysOnTop'),
+          title: Text(l10n.settingsAlwaysOnTopTitle),
+          subtitle: Text(l10n.settingsAlwaysOnTopSubtitle),
+          value: _settings.windowAlwaysOnTop,
+          onChanged: (v) => _settings.windowAlwaysOnTop = v,
+        ),
       SwitchListTile(
         secondary: const _ResetDot('artworkTintedPlayer'),
         title: Text(l10n.settingsArtworkTintTitle),
@@ -410,7 +681,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
         value: _settings.glassEffect,
         onChanged: (v) => _settings.glassEffect = v,
       ),
+      ListTile(
+        leading: const Icon(Icons.swap_vert),
+        title: Text(l10n.homeSectionsOrderSettings),
+        subtitle: Text(l10n.homeSectionsOrderSubtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => openHomeSectionsOrder(context),
+      ),
+      // L'onglet d'ouverture. Une LISTE et non un menu déroulant: sept entrées
+      // avec leur icône se lisent mieux, et un déroulant Material devient
+      // scrollable dès qu'il déborde — sa première cellule perd alors ~8 px de
+      // zone tactile (voir settings_long_picker_test).
+      ListTile(
+        leading: const Icon(Icons.flag_outlined),
+        title: Text(l10n.settingsLaunchTab),
+        subtitle: Text(_settings.launchTab.label(l10n)),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _pickLaunchTab(context),
+      ),
+      // Réservé au TÉLÉPHONE: le rail de bureau montre tous les onglets, il
+      // n'a ni barre à quatre places ni « Plus » à ranger.
+      if (Platform.isAndroid || Platform.isIOS)
+        ListTile(
+          leading: const Icon(Icons.reorder),
+          title: Text(l10n.settingsTabsOrderTitle),
+          subtitle: Text(l10n.settingsTabsOrderSubtitle),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => openShellTabsOrder(context),
+        ),
     ];
+  }
+
+  /// Choix de l'onglet de lancement. Le bouton de remise à zéro est DANS la
+  /// liste (« Accueil » est le défaut, et le dire évite un troisième geste).
+  Future<void> _pickLaunchTab(BuildContext context) async {
+    final l10n = context.l10n;
+    final chosen = await showDialog<ShellTab>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(l10n.settingsLaunchTab),
+        children: [
+          for (final t in kShellTabsDefault)
+            ListTile(
+              leading: Icon(t.icon),
+              title: Text(t.label(l10n)),
+              subtitle: t == ShellTab.home ? Text(l10n.settingsDefault) : null,
+              trailing: _settings.launchTab == t
+                  ? const Icon(Icons.check)
+                  : null,
+              selected: _settings.launchTab == t,
+              onTap: () => Navigator.pop(ctx, t),
+            ),
+        ],
+      ),
+    );
+    if (chosen != null) setState(() => _settings.launchTab = chosen);
   }
 
   List<Widget> _visualisationChildren(BuildContext context) {
@@ -419,6 +744,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final cs        = Theme.of(context).colorScheme;
     return [
       _sectionResetButton('visualisation'),
+      // Ce qui vaut pour TOUS les visualiseurs. Les sections qui suivent portent le
+      // NOM du visualiseur auquel elles s'appliquent — celui des boutons du
+      // sélecteur, pour qu'un réglage se retrouve là où on l'a vu agir.
+      _SubHeader(label: l10n.settingsVizAll, cs: cs, textTheme: textTheme),
+
       SwitchListTile(
         secondary: const _ResetDot('showVisualizer'),
         title: Text(l10n.settingsStartInVizTitle),
@@ -437,20 +767,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
           value: _settings.vizKeepAwake,
           onChanged: (v) => _settings.vizKeepAwake = v,
         ),
-      SwitchListTile(
-        secondary: const _ResetDot('vizVoiceGrid'),
-        title: Text(l10n.settingsVoiceGridTitle),
-        subtitle: Text(l10n.settingsVoiceGridSubtitle),
-        value: _settings.vizVoiceGrid,
-        onChanged: (v) => _settings.vizVoiceGrid = v,
+      SettingRow(
+        label: l10n.settingsVizFrameRate,
+        resetKey: 'vizMaxFps',
+        child: DropdownButton<int>(
+          value: _settings.vizMaxFps,
+          isDense: true,
+          items: [
+            DropdownMenuItem(value: 30, child: Text(l10n.settingsValueFps(30))),
+            DropdownMenuItem(value: 60, child: Text(l10n.settingsValueFps(60))),
+            DropdownMenuItem(value: 0, child: Text(l10n.settingsVizFrameRateScreen)),
+          ],
+          onChanged: (v) { if (v != null) _settings.vizMaxFps = v; },
+        ),
       ),
-      SwitchListTile(
-        secondary: const _ResetDot('vizVoiceNames'),
-        title: Text(l10n.settingsVoiceNamesTitle),
-        subtitle: Text(l10n.settingsVoiceNamesSubtitle),
-        value: _settings.vizVoiceNames,
-        onChanged: (v) => _settings.vizVoiceNames = v,
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: Text(l10n.settingsArtworkOpacity),
+            subtitle: Text(l10n.settingsValuePercent(
+                (_settings.vizArtworkOpacity * 100).round())),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  l10n.settingsValuePercent(
+                      (_settings.vizArtworkOpacity * 100).round()),
+                  style: textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+                const _ResetDot('vizArtworkOpacity'),
+              ],
+            ),
+          ),
+          Slider(
+            value: _settings.vizArtworkOpacity,
+            min: 0, max: 1,
+            divisions: 20,
+            onChanged: (v) => _settings.vizArtworkOpacity = v,
+          ),
+        ],
       ),
+      // Partagé par les DEUX oscilloscopes (stéréo et par voies): même tracé, même
+      // épaisseur de trait, même modulation d'intensité le long de la trace.
+      _SubHeader(label: l10n.settingsVizScopes, cs: cs, textTheme: textTheme),
+
       _SliderRow(
         label: l10n.settingsLineThickness,
         resetKey: 'vizLineThickness',
@@ -461,14 +822,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         format: (v) => l10n.settingsValueTimes(v.toStringAsFixed(1)),
         onChanged: (v) => _settings.vizLineThickness = v,
       ),
-      _SubHeader(label: l10n.settingsColors, cs: cs, textTheme: textTheme),
-      _ColorTile(
-        resetKey: 'scopeColor',
-        label: l10n.settingsScopeVoiceColor,
-        color: _settings.scopeColor,
-        onPicked: (v) => _settings.scopeColor = v,
+      SettingRow(
+        label: l10n.settingsCrtSpeed,
+        resetKey: 'crtSpeedLevel',
+        child: _CrtLevelSelector(
+          level: _settings.crtSpeedLevel,
+          onChanged: (v) => _settings.crtSpeedLevel = v,
+        ),
       ),
-      _SettingRow(
+      _SubHeader(label: l10n.vizStereo, cs: cs, textTheme: textTheme),
+
+      SettingRow(
         label: l10n.settingsStereoColors,
         resetKey: 'stereoBicolor',
         child: SegmentedButton<bool>(
@@ -505,7 +869,156 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ],
       // The spectrum normally borrows the colors above; the second palette
       // ignores them and colors each bar by its frequency instead.
-      _SettingRow(
+      _SubHeader(label: l10n.vizVoices, cs: cs, textTheme: textTheme),
+
+      SwitchListTile(
+        secondary: const _ResetDot('vizVoiceGrid'),
+        title: Text(l10n.settingsVoiceGridTitle),
+        subtitle: Text(l10n.settingsVoiceGridSubtitle),
+        value: _settings.vizVoiceGrid,
+        onChanged: (v) => _settings.vizVoiceGrid = v,
+      ),
+      SwitchListTile(
+        secondary: const _ResetDot('vizVoiceNames'),
+        title: Text(l10n.settingsVoiceNamesTitle),
+        subtitle: Text(l10n.settingsVoiceNamesSubtitle),
+        value: _settings.vizVoiceNames,
+        onChanged: (v) => _settings.vizVoiceNames = v,
+      ),
+      SettingRow(
+        // Le libellé de la ligne dit de quoi on choisit la SOURCE (les noms
+        // de voies), pas « Couleurs »: ici rien ne change de couleur.
+        label: l10n.settingsVoiceNamesTitle,
+        resetKey: 'vizVoiceNameSource',
+        child: SegmentedButton<int>(
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          segments: [
+            ButtonSegment(value: 0, label: Text(l10n.settingsPianoColorVoice)),
+            ButtonSegment(value: 1, label: Text(l10n.settingsPianoColorInstrument)),
+          ],
+          selected: {_settings.vizVoiceNameSource},
+          showSelectedIcon: false,
+          onSelectionChanged: (sel) => _settings.vizVoiceNameSource = sel.first,
+        ),
+      ),
+      _ColorTile(
+        resetKey: 'scopeColor',
+        label: l10n.settingsScopeVoiceColor,
+        color: _settings.scopeColor,
+        onPicked: (v) => _settings.scopeColor = v,
+      ),
+      _SubHeader(label: l10n.vizNotes, cs: cs, textTheme: textTheme),
+
+      SettingRow(
+        label: l10n.settingsNotePalette,
+        resetKey: 'notePalette',
+        // The swatch lives inside each item — the closed button shows the
+        // selected item, so the palette appears exactly once either way.
+        child: DropdownButton<int>(
+          value: _settings.notePalette,
+          isDense: true,
+          items: [
+            for (int i = 0; i < UserSettings.notePaletteNames.length; i++)
+              DropdownMenuItem(
+                value: i,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _PaletteSwatch(palette: i),
+                    const SizedBox(width: 8),
+                    Text(UserSettings.notePaletteNames[i]),
+                  ],
+                ),
+              ),
+          ],
+          onChanged: (v) { if (v != null) _settings.notePalette = v; },
+        ),
+      ),
+      SettingRow(
+        label: l10n.settingsNoteBoxStyle,
+        resetKey: 'noteBoxStyle',
+        child: SegmentedButton<bool>(
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          segments: [
+            ButtonSegment(value: false, label: Text(l10n.settingsNoteStyleFlat)),
+            ButtonSegment(value: true,  label: Text(l10n.settingsNoteStyleBox)),
+          ],
+          selected: {_settings.noteBoxStyle},
+          showSelectedIcon: false,
+          onSelectionChanged: (s) => _settings.noteBoxStyle = s.first,
+        ),
+      ),
+      SettingRow(
+        label: l10n.settingsPianoColor,
+        resetKey: 'noteColorMode',
+        child: SegmentedButton<int>(
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          segments: [
+            ButtonSegment(value: 0, label: Text(l10n.settingsPianoColorVoice)),
+            ButtonSegment(value: 1, label: Text(l10n.settingsPianoColorInstrument)),
+          ],
+          selected: {_settings.noteColorMode},
+          showSelectedIcon: false,
+          onSelectionChanged: (sel) => _settings.noteColorMode = sel.first,
+        ),
+      ),
+      _SubHeader(label: l10n.vizPiano, cs: cs, textTheme: textTheme),
+
+      SettingRow(
+        label: l10n.settingsPianoMode,
+        resetKey: 'pianoMode',
+        child: SegmentedButton<int>(
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          segments: [
+            ButtonSegment(value: 0, label: Text(l10n.settingsPianoModeRoll)),
+            ButtonSegment(value: 1, label: Text(l10n.settingsPianoModeFalling)),
+          ],
+          selected: {_settings.pianoMode},
+          showSelectedIcon: false,
+          onSelectionChanged: (s) => _settings.pianoMode = s.first,
+        ),
+      ),
+      SettingRow(
+        label: l10n.settingsPianoColor,
+        resetKey: 'pianoColorMode',
+        child: SegmentedButton<int>(
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          segments: [
+            ButtonSegment(value: 0, label: Text(l10n.settingsPianoColorVoice)),
+            ButtonSegment(value: 1, label: Text(l10n.settingsPianoColorInstrument)),
+          ],
+          selected: {_settings.pianoColorMode},
+          showSelectedIcon: false,
+          onSelectionChanged: (s) => _settings.pianoColorMode = s.first,
+        ),
+      ),
+      SettingRow(
+        label: l10n.settingsPianoGlow,
+        resetKey: 'pianoGlow',
+        child: Switch(
+          value: _settings.pianoGlow,
+          onChanged: (v) => _settings.pianoGlow = v,
+        ),
+      ),
+      SettingRow(
+        label: l10n.settingsPianoLighting,
+        resetKey: 'pianoLighting',
+        child: Switch(
+          value: _settings.pianoLighting,
+          onChanged: (v) => _settings.pianoLighting = v,
+        ),
+      ),
+      SettingRow(
+        label: l10n.settingsPianoVoiceNames,
+        resetKey: 'pianoVoiceNames',
+        child: Switch(
+          value: _settings.pianoVoiceNames,
+          onChanged: (v) => _settings.pianoVoiceNames = v,
+        ),
+      ),
+      _SubHeader(label: l10n.vizSpectrum, cs: cs, textTheme: textTheme),
+
+      SettingRow(
         label: l10n.settingsSpectrumMode,
         resetKey: 'spectrumPalette',
         // Scrollable: five labelled segments ("Standard Coloré Faisceau Ligne
@@ -533,91 +1046,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         ),
       ),
-      _SubHeader(label: l10n.settingsNotation, cs: cs, textTheme: textTheme),
-      _SettingRow(
-        label: l10n.settingsNotePalette,
-        resetKey: 'notePalette',
-        // The swatch lives inside each item — the closed button shows the
-        // selected item, so the palette appears exactly once either way.
-        child: DropdownButton<int>(
-          value: _settings.notePalette,
-          isDense: true,
-          items: [
-            for (int i = 0; i < UserSettings.notePaletteNames.length; i++)
-              DropdownMenuItem(
-                value: i,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _PaletteSwatch(palette: i),
-                    const SizedBox(width: 8),
-                    Text(UserSettings.notePaletteNames[i]),
-                  ],
-                ),
-              ),
-          ],
-          onChanged: (v) { if (v != null) _settings.notePalette = v; },
-        ),
-      ),
-      _SettingRow(
-        label: l10n.settingsNoteBoxStyle,
-        resetKey: 'noteBoxStyle',
-        child: SegmentedButton<bool>(
-          style: const ButtonStyle(visualDensity: VisualDensity.compact),
-          segments: [
-            ButtonSegment(value: false, label: Text(l10n.settingsNoteStyleFlat)),
-            ButtonSegment(value: true,  label: Text(l10n.settingsNoteStyleBox)),
-          ],
-          selected: {_settings.noteBoxStyle},
-          showSelectedIcon: false,
-          onSelectionChanged: (s) => _settings.noteBoxStyle = s.first,
-        ),
-      ),
-      _SubHeader(label: l10n.settingsCrtEffects, cs: cs, textTheme: textTheme),
-      _SettingRow(
-        label: l10n.settingsCrtGlow,
-        resetKey: 'crtGlowLevel',
-        child: _CrtLevelSelector(
-          level: _settings.crtGlowLevel,
-          onChanged: (v) => _settings.crtGlowLevel = v,
-        ),
-      ),
-      _SettingRow(
-        label: l10n.settingsCrtSpeed,
-        resetKey: 'crtSpeedLevel',
-        child: _CrtLevelSelector(
-          level: _settings.crtSpeedLevel,
-          onChanged: (v) => _settings.crtSpeedLevel = v,
-        ),
-      ),
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            title: Text(l10n.settingsArtworkOpacity),
-            subtitle: Text(l10n.settingsValuePercent(
-                (_settings.vizArtworkOpacity * 100).round())),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  l10n.settingsValuePercent(
-                      (_settings.vizArtworkOpacity * 100).round()),
-                  style: textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                ),
-                const _ResetDot('vizArtworkOpacity'),
-              ],
-            ),
-          ),
-          Slider(
-            value: _settings.vizArtworkOpacity,
-            min: 0, max: 1,
-            divisions: 20,
-            onChanged: (v) => _settings.vizArtworkOpacity = v,
-          ),
-        ],
-      ),
       _SubHeader(label: l10n.vizPatterns, cs: cs, textTheme: textTheme),
+
       ListTile(
         leading: const Icon(Icons.grid_on),
         title: Text(l10n.settingsPatternTitle),
@@ -628,6 +1058,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
       _SubHeader(label: 'projectM', cs: cs, textTheme: textTheme),
+
       ListTile(
         leading: const Icon(Icons.auto_awesome),
         title: Text(l10n.settingsProjectMTitle),
@@ -647,8 +1078,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return [
       _sectionResetButton('playback'),
       // Desktop only: mobile already carries the track in its media
-      // notification; the channel lives in the mac AppDelegate.
-      if (Platform.isMacOS)
+      // notification. macOS: AppDelegate channel; Linux: D-Bus
+      // (linux_notifications.dart). Désactivé par défaut partout.
+      if (Platform.isMacOS || Platform.isLinux)
         SwitchListTile(
           secondary: const _ResetDot('notifyTrackChange'),
           title: Text(l10n.settingsNotifyTrackTitle),
@@ -656,6 +1088,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
           value: _settings.notifyTrackChange,
           onChanged: (v) => _settings.notifyTrackChange = v,
         ),
+      _SubHeader(
+          label: l10n.settingsCrossfade, cs: cs, textTheme: textTheme),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Text(
+          l10n.settingsCrossfadeHelp,
+          style: textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+        ),
+      ),
+      _SliderRow(
+        label: l10n.settingsCrossfade,
+        resetKey: 'crossfadeSecs',
+        value: _settings.crossfadeSeconds,
+        min: 0,
+        max: 8,
+        divisions: 8, // pas de 1 s — le libellé affiche des secondes entières
+        format: (v) => v <= 0
+            ? l10n.settingsOff
+            : l10n.settingsValueSeconds(v.round()),
+        onChanged: (v) => _settings.crossfadeSeconds = v,
+      ),
+      const Divider(height: 24, indent: 16, endIndent: 16),
+      _SubHeader(
+          label: l10n.settingsQueuePrefetchSection, cs: cs, textTheme: textTheme),
+      SwitchListTile(
+        secondary: const _ResetDot('queuePrefetchAll'),
+        title: Text(l10n.settingsQueuePrefetchTitle),
+        subtitle: Text(l10n.settingsQueuePrefetchSubtitle),
+        value: _settings.queuePrefetchAll,
+        onChanged: (v) => _settings.queuePrefetchAll = v,
+      ),
+      const Divider(height: 24, indent: 16, endIndent: 16),
+      // Déclic de début de piste des rips CD — voir UserSettings.cdRipDeclick.
+      // Pris en compte à l'ouverture du morceau suivant.
+      _SubHeader(
+          label: l10n.settingsCdRipDeclickSection, cs: cs, textTheme: textTheme),
+      SwitchListTile(
+        secondary: const _ResetDot('cdRipDeclick'),
+        title: Text(l10n.settingsCdRipDeclickTitle),
+        subtitle: Text(l10n.settingsCdRipDeclickSubtitle),
+        value: _settings.cdRipDeclick,
+        onChanged: (v) => _settings.cdRipDeclick = v,
+      ),
+      const Divider(height: 24, indent: 16, endIndent: 16),
       _SubHeader(
           label: l10n.settingsSilenceDetection, cs: cs, textTheme: textTheme),
       SwitchListTile(
@@ -676,6 +1152,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
           format: (v) => l10n.settingsValueSeconds(v.round()),
           onChanged: (v) => _settings.silenceSkipSeconds = v,
         ),
+      const Divider(height: 24, indent: 16, endIndent: 16),
+      // Sous-chansons trop courtes — voir UserSettings.minSubsongSeconds et
+      // filterShortSubsongs. 0 = ne rien écarter.
+      _SubHeader(
+          label: l10n.settingsMinSubsongSection, cs: cs, textTheme: textTheme),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Text(
+          l10n.settingsMinSubsongHelp,
+          style: textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+        ),
+      ),
+      _SliderRow(
+        label: l10n.settingsMinSubsongTitle,
+        resetKey: 'minSubsongSecs',
+        value: _settings.minSubsongSeconds,
+        min: 0,
+        max: 10,
+        divisions: 10, // pas de 1 s — le libellé affiche des secondes entières
+        format: (v) => v <= 0
+            ? l10n.settingsOff
+            : l10n.settingsValueSeconds(v.round()),
+        onChanged: (v) => _settings.minSubsongSeconds = v,
+      ),
       const Divider(height: 24, indent: 16, endIndent: 16),
       _SubHeader(
           label: l10n.settingsDefaultDuration, cs: cs, textTheme: textTheme),
@@ -828,28 +1328,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
       const Divider(height: 1),
       // Tiles are named after the ENGINE, not the console/format — the page
       // configures the library, and the same library often spans formats.
-      _engineTile(context, Icons.piano, 'libopenmpt',
-          l10n.settingsEngineOpenmptSubtitle, _omptChildren),
-      _engineTile(context, Icons.memory, 'libgme',
-          l10n.settingsEngineGmeSubtitle, _gmeChildren),
-      _engineTile(context, Icons.videogame_asset, 'nsfplay',
-          l10n.settingsEngineNsfSubtitle, _nsfChildren),
-      _engineTile(context, Icons.videogame_asset_outlined, 'gbsplay',
-          l10n.settingsEngineGbsSubtitle, _gbsChildren),
-      _engineTile(context, Icons.library_music, 'FluidLite',
-          l10n.settingsEngineMidiSubtitle, _midiChildren),
-      _engineTile(context, Icons.sports_esports, 'libgsf (VBA)',
-          l10n.settingsEngineGsfSubtitle, _gsfChildren),
-      _engineTile(context, Icons.computer, 'UADE',
-          l10n.settingsEngineUadeSubtitle, _uadeChildren),
-      _engineTile(context, Icons.tv, 'libsidplayfp',
-          l10n.settingsEngineSidSubtitle, _sidChildren),
-      _engineTile(context, Icons.piano_off, 'AdPlug',
-          l10n.settingsEngineAdplugSubtitle, _adplugChildren),
-      _engineTile(context, Icons.album, 'Highly Experimental',
-          l10n.settingsEngineHeSubtitle, _heChildren),
-      _engineTile(context, Icons.developer_board, 'libvgm',
-          l10n.settingsEngineVgmSubtitle, _vgmChildren),
+      //
+      // ⚠️ TRIÉS PAR NOM, et la liste ci-dessous n'est donc PAS un ordre
+      // d'affichage: elle n'est qu'un inventaire. C'est ce qui rend l'ajout
+      // d'un moteur sûr — l'écrire n'importe où le range au bon endroit — là
+      // où une liste ordonnée à la main dérive au premier ajout pressé.
+      // Comparaison insensible à la casse: `libvgm` doit voisiner `UADE` et
+      // non se retrouver dans un second alphabet des minuscules.
+      ...(<({
+        IconData icon,
+        String name,
+        String subtitle,
+        List<Widget> Function(BuildContext) children
+      })>[
+        (icon: Icons.piano, name: 'libopenmpt',
+            subtitle: l10n.settingsEngineOpenmptSubtitle, children: _omptChildren),
+        (icon: Icons.piano_outlined, name: 'libxmp',
+            subtitle: l10n.settingsEngineXmpSubtitle, children: _xmpChildren),
+        (icon: Icons.memory, name: 'libgme',
+            subtitle: l10n.settingsEngineGmeSubtitle, children: _gmeChildren),
+        (icon: Icons.videogame_asset, name: 'nsfplay',
+            subtitle: l10n.settingsEngineNsfSubtitle, children: _nsfChildren),
+        (icon: Icons.videogame_asset_outlined, name: 'gbsplay',
+            subtitle: l10n.settingsEngineGbsSubtitle, children: _gbsChildren),
+        (icon: Icons.library_music, name: 'FluidLite',
+            subtitle: l10n.settingsEngineMidiSubtitle, children: _midiChildren),
+        // Sous-titre = l'état des ROMs: un jeu manquant se voit sans ouvrir.
+        (icon: Icons.memory, name: 'Munt (mt32emu)',
+            subtitle: Mt32RomManager.instance.status().isEmpty
+                ? l10n.settingsMt32RomsMissing
+                : l10n.settingsMt32RomsActive(Mt32RomManager.instance.status()),
+            children: _mt32Children),
+        (icon: Icons.sports_esports, name: 'libgsf (VBA)',
+            subtitle: l10n.settingsEngineGsfSubtitle, children: _gsfChildren),
+        (icon: Icons.computer, name: 'UADE',
+            subtitle: l10n.settingsEngineUadeSubtitle, children: _uadeChildren),
+        (icon: Icons.tv, name: 'libsidplayfp',
+            subtitle: l10n.settingsEngineSidSubtitle, children: _sidChildren),
+        (icon: Icons.piano_off, name: 'AdPlug',
+            subtitle: l10n.settingsEngineAdplugSubtitle, children: _adplugChildren),
+        (icon: Icons.album, name: 'Highly Experimental',
+            subtitle: l10n.settingsEngineHeSubtitle, children: _heChildren),
+        (icon: Icons.developer_board, name: 'libvgm',
+            subtitle: l10n.settingsEngineVgmSubtitle, children: _vgmChildren),
+      ]..sort((a, b) => compareEngineNames(a.name, b.name)))
+          .map((e) => _engineTile(context, e.icon, e.name, e.subtitle, e.children)),
       const SizedBox(height: 8),
     ];
   }
@@ -879,7 +1402,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
         ),
       ),
-      _SettingRow(
+      SettingRow(
         label: 'NSF / NSFe',
         resetKey: 'nsfPlugin',
         child: DropdownButton<String>(
@@ -892,7 +1415,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: (v) { if (v != null) _settings.nsfPlugin = v; },
         ),
       ),
-      _SettingRow(
+      SettingRow(
         label: 'GBS',
         resetKey: 'gbsPlugin',
         child: DropdownButton<String>(
@@ -905,7 +1428,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: (v) { if (v != null) _settings.gbsPlugin = v; },
         ),
       ),
-      _SettingRow(
+      SettingRow(
         label: 'SNDH',
         resetKey: 'sndhPlugin',
         child: DropdownButton<String>(
@@ -918,7 +1441,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: (v) { if (v != null) _settings.sndhPlugin = v; },
         ),
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsDecoderAmigaTrackers,
         resetKey: 'amigaTrackerPlugin',
         child: DropdownButton<String>(
@@ -931,13 +1454,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: (v) { if (v != null) _settings.amigaTrackerPlugin = v; },
         ),
       ),
+      // .mid: FluidLite (SoundFont) ou Munt (MT-32) — « auto » laisse la sonde
+      // trancher (banque MT-32 dans le fichier ou son dossier, dossier nommé
+      // MT32…), les deux autres épinglent (preferredMidiPluginFor).
+      SettingRow(
+        label: 'MIDI',
+        resetKey: 'midiSynth',
+        child: DropdownButton<String>(
+          value: _settings.midiSynth,
+          isDense: true,
+          // Libellés longs (« SoundFont (FluidLite) » traduit): SettingRow
+          // plafonne le contrôle, l'ellipse évite le débordement.
+          isExpanded: true,
+          items: [
+            DropdownMenuItem(value: 'auto', child: Text(l10n.settingsMidiSynthAuto, overflow: TextOverflow.ellipsis)),
+            DropdownMenuItem(value: 'soundfont', child: Text(l10n.settingsMidiSynthSoundfont, overflow: TextOverflow.ellipsis)),
+            DropdownMenuItem(value: 'mt32', child: Text(l10n.settingsMidiSynthMt32, overflow: TextOverflow.ellipsis)),
+          ],
+          onChanged: (v) { if (v != null) _settings.midiSynth = v; },
+        ),
+      ),
       const SizedBox(height: 8),
     ];
   }
 
   // ── Level 3: per-engine pages ─────────────────────────────────────────────
 
-  List<Widget> _omptChildren(BuildContext context) {
+  static List<Widget> _omptChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
       Align(
@@ -961,7 +1504,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         format: (v) => l10n.settingsValuePercent((v * 100).round()),
         onChanged: (v) => _settings.omptMasterVolume = v,
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsAmigaFilter,
         resetKey: 'omptAmigaFilter',
         child: DropdownButton<int>(
@@ -975,7 +1518,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: (v) { if (v != null) _settings.omptAmigaFilter = v; },
         ),
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsInterpolation,
         resetKey: 'omptInterpolation',
         child: DropdownButton<int>(
@@ -1006,7 +1549,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
   }
 
-  List<Widget> _gmeChildren(BuildContext context) {
+  /// libxmp — les mêmes réglages que son mixeur expose (interpolation,
+  /// séparation stéréo, amplification, volume, filtre passe-bas, mixeur
+  /// Paula). Appliqués À CHAUD: la vtable publie `param_changed`.
+  static List<Widget> _xmpChildren(BuildContext context) {
+    final l10n = context.l10n;
+    return [
+      Align(
+        alignment: Alignment.centerRight,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: TextButton.icon(
+            icon: const Icon(Icons.restart_alt, size: 16),
+            label: Text(l10n.settingsResetEngine),
+            onPressed: () => _settings.resetEngineSettings('xmp'),
+          ),
+        ),
+      ),
+      SettingRow(
+        label: l10n.settingsInterpolation,
+        resetKey: 'xmpInterpolation',
+        child: DropdownButton<int>(
+          value: _settings.xmpInterpolation,
+          isDense: true,
+          items: [
+            DropdownMenuItem(value: 0, child: Text(l10n.settingsInterpNone)),
+            DropdownMenuItem(value: 1, child: Text(l10n.settingsInterpLinear)),
+            DropdownMenuItem(value: 2, child: Text(l10n.settingsInterpCubic)),
+          ],
+          onChanged: (v) { if (v != null) _settings.xmpInterpolation = v; },
+        ),
+      ),
+      _SliderRow(
+        label: l10n.settingsStereoSeparation,
+        resetKey: 'xmpStereoSep',
+        value: _settings.xmpStereoSep.toDouble(),
+        min: 0,
+        max: 100,
+        divisions: 20,
+        format: (v) => l10n.settingsValuePercent(v.round()),
+        onChanged: (v) => _settings.xmpStereoSep = v.round(),
+      ),
+      _SliderRow(
+        label: l10n.settingsMasterVolume,
+        resetKey: 'xmpMasterVolume',
+        value: _settings.xmpMasterVolume.toDouble(),
+        min: 0,
+        max: 200,
+        divisions: 20,
+        format: (v) => l10n.settingsValuePercent(v.round()),
+        onChanged: (v) => _settings.xmpMasterVolume = v.round(),
+      ),
+      _SliderRow(
+        label: l10n.settingsAmplification,
+        resetKey: 'xmpAmplify',
+        value: _settings.xmpAmplify.toDouble(),
+        min: 0,
+        max: 3,
+        divisions: 3,
+        format: (v) => '×${(1 << v.round())}',
+        onChanged: (v) => _settings.xmpAmplify = v.round(),
+      ),
+      SwitchListTile(
+        secondary: const _ResetDot('xmpDspLowpass'),
+        title: Text(l10n.settingsLowpassFilter),
+        value: _settings.xmpDspLowpass,
+        onChanged: (v) => _settings.xmpDspLowpass = v,
+      ),
+      SwitchListTile(
+        secondary: const _ResetDot('xmpAmigaMixer'),
+        title: Text(l10n.settingsAmigaFilter),
+        value: _settings.xmpAmigaMixer,
+        onChanged: (v) => _settings.xmpAmigaMixer = v,
+      ),
+      const SizedBox(height: 8),
+    ];
+  }
+
+  static List<Widget> _gmeChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
       Align(
@@ -1075,7 +1695,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
   }
 
-  List<Widget> _sidChildren(BuildContext context) {
+  static List<Widget> _sidChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
       Align(
@@ -1089,7 +1709,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsSidEmulation,
         resetKey: 'sidEngine',
         child: DropdownButton<int>(
@@ -1102,7 +1722,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: (v) { if (v != null) _settings.sidEngine = v; },
         ),
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsSidSampling,
         resetKey: 'sidSampling',
         child: DropdownButton<int>(
@@ -1117,7 +1737,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: (v) { if (v != null) _settings.sidSampling = v; },
         ),
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsSidClock,
         resetKey: 'sidClock',
         child: DropdownButton<int>(
@@ -1131,7 +1751,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: (v) { if (v != null) _settings.sidClock = v; },
         ),
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsSidModel,
         resetKey: 'sidModel',
         child: DropdownButton<int>(
@@ -1159,7 +1779,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onChanged: (v) => _settings.sidSecondOn = v,
       ),
       if (_settings.sidSecondOn)
-        _SettingRow(
+        SettingRow(
           label: l10n.settingsSidSecondAddr,
           resetKey: 'sidSecondAddr',
           child: DropdownButton<int>(
@@ -1181,7 +1801,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onChanged: (v) => _settings.sidThirdOn = v,
       ),
       if (_settings.sidThirdOn)
-        _SettingRow(
+        SettingRow(
           label: l10n.settingsSidThirdAddr,
           resetKey: 'sidThirdAddr',
           child: DropdownButton<int>(
@@ -1238,7 +1858,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
   }
 
-  List<Widget> _adplugChildren(BuildContext context) {
+  static List<Widget> _adplugChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
       Align(
@@ -1252,7 +1872,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsAudioOutput,
         resetKey: 'adplugSurround',
         child: SegmentedButton<bool>(
@@ -1274,7 +1894,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
   }
 
-  List<Widget> _heChildren(BuildContext context) {
+  static List<Widget> _heChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
       Align(
@@ -1309,19 +1929,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
   }
 
-  List<Widget> _vgmChildren(BuildContext context) {
+  static List<Widget> _vgmChildren(BuildContext context) {
     final l10n = context.l10n;
     Widget core(String label, String resetName, int value, List<String> names,
         ValueChanged<int> set) {
-      return _SettingRow(
+      return SettingRow(
         label: label,
         resetKey: resetName,
+        // ⚠️ `isExpanded` + élision, et les DEUX sont nécessaires. Sans
+        // `isExpanded`, un DropdownButton se dimensionne sur son item le PLUS
+        // LARGE et ignore la contrainte que SettingRow lui pose (60 % de la
+        // ligne): sa Row interne déborde — « A RenderFlex overflowed by 16
+        // pixels ». Avec `isExpanded` l'item devient flexible, mais un Text
+        // sans `overflow` déborde à son tour au lieu de s'élider.
+        //
+        // C'est la famille de libellés la plus longue de tous les réglages:
+        // un nom de cœur porte son avertissement (« SameBoy (sans
+        // oscilloscope) »), et il s'allonge encore dans les langues qui
+        // traduisent ce suffixe.
         child: DropdownButton<int>(
           value: value,
           isDense: true,
+          isExpanded: true,
           items: [
             for (var i = 0; i < names.length; i++)
-              DropdownMenuItem(value: i, child: Text(names[i])),
+              DropdownMenuItem(
+                value: i,
+                child: Text(names[i], overflow: TextOverflow.ellipsis),
+              ),
           ],
           onChanged: (v) { if (v != null) set(v); },
         ),
@@ -1342,6 +1977,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: () => _settings.resetEngineSettings('vgm'),
           ),
         ),
+      ),
+      SwitchListTile(
+        secondary: const _ResetDot('vgmJapaneseTags'),
+        title: Text(l10n.settingsVgmJapaneseTags),
+        subtitle: Text(l10n.settingsVgmJapaneseTagsHelp),
+        value: _settings.vgmJapaneseTags,
+        onChanged: (v) => _settings.vgmJapaneseTags = v,
       ),
       core('YM2612 (Mega Drive)', 'vgmYm2612Core', _settings.vgmYm2612Core,
           [l10n.settingsDefault, 'GPGX (MAME)', 'Nuked OPN2', 'Gens'],
@@ -1398,7 +2040,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// nsfplay's per-chip emulation switches, one folding tile per chip. These
   /// were already wired on the C side (nsfplay_apply_engine_params) with
   /// Modizer's defaults — this only surfaces them.
-  List<Widget> _nsfChipOptions(BuildContext context) {
+  static List<Widget> _nsfChipOptions(BuildContext context) {
     final l10n = context.l10n;
     Widget sw(String label, String? subtitle, String resetKey, bool value,
             ValueChanged<bool> onChanged) =>
@@ -1498,7 +2140,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ExpansionTile(
         title: const Text('VRC7'),
         children: [
-          _SettingRow(
+          SettingRow(
             label: l10n.settingsNsfVrc7Patch,
             resetKey: 'nsfVrc7Patch',
             child: DropdownButton<int>(
@@ -1521,7 +2163,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
   }
 
-  List<Widget> _nsfChildren(BuildContext context) {
+  static List<Widget> _nsfChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
       Align(
@@ -1559,7 +2201,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         format: (v) => '${v.round()}',
         onChanged: (v) => _settings.nsfHpf = v.round(),
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsRegion,
         resetKey: 'nsfRegion',
         child: DropdownButton<int>(
@@ -1595,7 +2237,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
   }
 
-  List<Widget> _gbsChildren(BuildContext context) {
+  static List<Widget> _gbsChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
       Align(
@@ -1609,7 +2251,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsGbsHpFilter,
         resetKey: 'gbsHpFilter',
         child: DropdownButton<int>(
@@ -1627,7 +2269,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
   }
 
-  List<Widget> _midiChildren(BuildContext context) {
+  /// Page moteur « Munt (mt32emu) »: ROMs et réglages de l'émulation. Le
+  /// choix FluidLite / MT-32 est dans « Décodeurs par défaut », avec les
+  /// autres choix de moteur.
+  static List<Widget> _mt32Children(BuildContext context) => const [
+        Mt32EnginePanel(),
+      ];
+
+  static List<Widget> _midiChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
       Align(
@@ -1648,8 +2297,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         resetKey: 'midiGain',
         value: _settings.midiGain,
         min: 0.1,
-        max: 2.0,
-        divisions: 19,
+        max: 1.0,
+        divisions: 18,
         format: (v) => l10n.settingsValuePercent((v * 100).round()),
         onChanged: (v) => _settings.midiGain = v,
       ),
@@ -1663,7 +2312,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         format: (v) => v.round().toString(),
         onChanged: (v) => _settings.midiPolyphony = v.round(),
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsInterpolation,
         resetKey: 'midiInterp',
         child: DropdownButton<int>(
@@ -1692,11 +2341,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
         value: _settings.midiChorus,
         onChanged: (v) => _settings.midiChorus = v,
       ),
+      SwitchListTile(
+        secondary: const _ResetDot('midiMt32ToGm'),
+        title: Text(l10n.settingsMidiMt32ToGm),
+        subtitle: Text(l10n.settingsMidiMt32ToGmSubtitle),
+        isThreeLine: true,
+        value: _settings.midiMt32ToGm,
+        onChanged: (v) => _settings.midiMt32ToGm = v,
+      ),
       const SizedBox(height: 8),
     ];
   }
 
-  List<Widget> _gsfChildren(BuildContext context) {
+  static List<Widget> _gsfChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
       Align(
@@ -1732,7 +2389,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
   }
 
-  List<Widget> _uadeChildren(BuildContext context) {
+  static List<Widget> _uadeChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
       Align(
@@ -1776,7 +2433,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         value: _settings.uadeHeadphones,
         onChanged: (v) => _settings.uadeHeadphones = v,
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsUadeLed,
         resetKey: 'uadeLed',
         child: DropdownButton<int>(
@@ -1790,7 +2447,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: (v) { if (v != null) _settings.uadeLed = v; },
         ),
       ),
-      _SettingRow(
+      SettingRow(
         label: l10n.settingsUadeFilterType,
         resetKey: 'uadeFilterType',
         child: DropdownButton<int>(
@@ -1854,6 +2511,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     final cs = Theme.of(context).colorScheme;
     return [
+      // Ce que l'app garde sur disque, poste par poste, avec la suppression en
+      // face — la contrepartie du fait qu'elle COPIE des fichiers chez elle.
+      ListTile(
+        leading: Icon(Icons.sd_storage_outlined, color: cs.primary),
+        title: Text(l10n.storageTitle),
+        subtitle: Text(l10n.storageSubtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const StorageScreen()),
+        ),
+      ),
+      const Divider(height: 1),
       ListTile(
         leading: Icon(Icons.ios_share, color: cs.primary),
         title: Text(l10n.settingsBackupExport),
@@ -1901,6 +2570,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const Divider(height: 1),
       ],
+      // Un seul geste de nettoyage: base (orphelins + injouables) ET cache.
+      // Le détail — chaque étape séparément, et les réinitialisations — vit
+      // sous « Avancé », groupé par thème.
+      ListTile(
+        leading: const Icon(Icons.cleaning_services_outlined),
+        title: Text(l10n.settingsCleanAll),
+        subtitle: Text(l10n.settingsCleanAllSubtitle),
+        onTap: () => _cleanDatabaseAndCache(context),
+      ),
+      ListTile(
+        leading: const Icon(Icons.tune_outlined),
+        title: Text(l10n.settingsDataAdvanced),
+        subtitle: Text(l10n.settingsDataAdvancedSubtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => _SettingsSectionScreen(
+            title: l10n.settingsDataAdvanced,
+            settings: _settings,
+            childrenBuilder: _dataAdvancedChildren,
+          ),
+        )),
+      ),
+    ];
+  }
+
+  /// En-tête de groupe du sous-écran « Avancé ».
+  Widget _dataGroupHeader(BuildContext context, String label) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Text(label,
+          style: Theme.of(context)
+              .textTheme
+              .labelLarge
+              ?.copyWith(color: cs.primary, fontWeight: FontWeight.w600)),
+    );
+  }
+
+  /// « Avancé », groupé par THÈME dans l'ordre où l'on s'en sert: la base
+  /// (orphelins, puis injouables), le cache, puis ce qui réinitialise — du
+  /// moins destructeur au plus.
+  List<Widget> _dataAdvancedChildren(BuildContext context) {
+    final l10n = context.l10n;
+    final cs = Theme.of(context).colorScheme;
+    return [
+      _dataGroupHeader(context, l10n.settingsDataGroupDb),
       ListTile(
         leading: const Icon(Icons.cleaning_services_outlined),
         title: Text(l10n.settingsCleanDb),
@@ -1908,11 +2623,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: () => _cleanupOrphans(context),
       ),
       ListTile(
+        leading: const Icon(Icons.devices_other_outlined),
+        title: Text(l10n.settingsCleanLocalTitle),
+        subtitle: Text(l10n.settingsCleanLocalBody),
+        onTap: () => _cleanMissingLocalEntries(context),
+      ),
+      const Divider(height: 1),
+      _dataGroupHeader(context, l10n.settingsDataGroupCache),
+      ListTile(
         leading: const Icon(Icons.image_not_supported_outlined),
         title: Text(l10n.settingsClearCache),
         subtitle: Text(l10n.settingsClearCacheSubtitle),
         onTap: () => _clearCache(context),
       ),
+      const Divider(height: 1),
+      _dataGroupHeader(context, l10n.settingsDataGroupReset),
       ListTile(
         leading: Icon(Icons.delete_sweep_outlined, color: cs.error),
         title: Text(l10n.settingsResetStats,
@@ -1921,18 +2646,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: () => _confirmClearHistory(context),
       ),
       ListTile(
-        leading: Icon(Icons.delete_forever_outlined, color: cs.error),
-        title: Text(l10n.settingsResetDatabase,
-            style: TextStyle(color: cs.error)),
-        subtitle: Text(l10n.settingsResetDatabaseSubtitle),
-        onTap: () => _confirmResetDatabase(context),
-      ),
-      ListTile(
         leading: Icon(Icons.folder_delete_outlined, color: cs.error),
         title: Text(l10n.settingsDeleteDownloads,
             style: TextStyle(color: cs.error)),
         subtitle: Text(l10n.settingsDeleteDownloadsSubtitle),
         onTap: () => _confirmDeleteOnlineLibrary(context),
+      ),
+      ListTile(
+        leading: Icon(Icons.delete_forever_outlined, color: cs.error),
+        title: Text(l10n.settingsResetDatabase,
+            style: TextStyle(color: cs.error)),
+        subtitle: Text(l10n.settingsResetDatabaseSubtitle),
+        onTap: () => _confirmResetDatabase(context),
       ),
     ];
   }
@@ -2272,32 +2997,67 @@ class _SubHeader extends StatelessWidget {
 }
 
 /// Label on the left, arbitrary widget on the right.
-class _SettingRow extends StatelessWidget {
+/// Publique pour être TESTABLE: la règle « le contrôle est borné, le label
+/// garde un plancher » se vérifie à des largeurs réelles, et un widget privé
+/// obligerait le test à recopier la disposition — donc à tester sa copie.
+class SettingRow extends StatelessWidget {
   final String label;
   final Widget child;
   /// Semantic setting name (UserSettings.kEnginePrefKeys) → shows a small
   /// reset-to-default button when the value was customised.
   final String? resetKey;
 
-  const _SettingRow({required this.label, required this.child, this.resetKey});
+  const SettingRow(
+      {super.key, required this.label, required this.child, this.resetKey});
+
+  /// Ce que le LABEL garde au minimum, en pixels: la pastille de
+  /// réinitialisation demande 28 px et quelques glyphes doivent tenir à côté.
+  static const double _kLabelFloor = 96;
 
   @override
   Widget build(BuildContext context) {
+    // ⚠️ Le contrôle est BORNÉ, sinon il mange toute la largeur.
+    //
+    // Plusieurs de ces contrôles sont des `SingleChildScrollView` horizontaux
+    // (un SegmentedButton de cinq segments ne tient pas sur un téléphone et ne
+    // scrolle pas tout seul) — et une vue défilante prend TOUTE la contrainte
+    // qu'on lui donne, quelle que soit la taille de son contenu. Le côté label,
+    // en `Expanded`, ne recevait donc plus que ce qui restait: mesuré à 8,4 px
+    // sur une fenêtre étroite, où la pastille de réinitialisation (28 px de
+    // large au minimum) débordait de 12 px — « A RenderFlex overflowed ».
+    //
+    // Un `LayoutBuilder` plutôt qu'un partage de flex: avec deux `Flexible` le
+    // label serait plafonné à sa part MÊME quand le contrôle est un simple
+    // interrupteur, et un libellé long s'élidrait pour rien. Ici le contrôle
+    // n'est qu'un enfant NON flexible avec un plafond, donc il garde sa taille
+    // naturelle quand elle est petite et le label reçoit tout le reste — la
+    // disposition d'aujourd'hui, moins la famine.
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: Row(children: [
-              Flexible(
-                  child: Text(label,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium)),
-              if (resetKey != null) _ResetDot(resetKey!),
-            ]),
-          ),
-          child,
-        ],
+      child: LayoutBuilder(
+        builder: (ctx, cons) {
+          final w = cons.maxWidth;
+          final cap = w.isFinite
+              ? math.max(0.0, math.min(w * 0.6, w - _kLabelFloor))
+              : double.infinity;
+          return Row(
+            children: [
+              Expanded(
+                child: Row(children: [
+                  Flexible(
+                      child: Text(label,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium)),
+                  if (resetKey != null) _ResetDot(resetKey!),
+                ]),
+              ),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: cap),
+                child: child,
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2402,22 +3162,41 @@ class _SoundfontPickerState extends State<_SoundfontPicker> {
     final l10n = context.l10n;
     final messenger = ScaffoldMessenger.of(context);
     String? path;
-    if (Platform.isAndroid) {
-      // file_picker et pas file_selector, même raison qu'ailleurs dans l'app:
-      // l'implémentation Android de file_selector renomme la copie d'après le
-      // type MIME résolu, et un `.sf2` y devient octet-stream — le fichier
-      // arriverait en « soundfont.bin ». Android filtre par MIME de toute
-      // façon, une liste d'extensions n'y sert à rien.
-      final res = await fp.FilePicker.platform.pickFiles(type: fp.FileType.any);
-      path = res?.files.single.path;
+    if (pickerUsesFilePicker) {
+      // MOBILE: file_picker et pas file_selector, pour deux raisons distinctes.
+      //
+      // Android: file_selector y renomme la copie d'après le type MIME résolu,
+      // et un `.sf2` devient octet-stream — le fichier arriverait en
+      // « soundfont.bin ». Android filtre par MIME de toute façon, une liste
+      // d'extensions n'y sert à rien.
+      //
+      // ⚠️ iOS: file_selector n'accepte QUE des UTI
+      // (`XTypeGroup.uniformTypeIdentifiers`) et lève un ArgumentError sur un
+      // groupe qui ne porte que des `extensions` — le bouton d'import ne
+      // faisait donc RIEN du tout. Aucun UTI système ne décrit une SoundFont;
+      // le seul filtre possible serait `public.data`, soit aucun filtre. La
+      // validation ne vient de toute façon pas de l'extension mais de l'en-tête
+      // (`RIFF`…`sfbk`, vérifié par importLocal).
+      //
+      // `pickFile` (singulier) est la porte du choix UNIQUE en file_picker 12:
+      // `pickFiles` sélectionne désormais plusieurs fichiers PAR DÉFAUT.
+      final res = await fp.FilePicker.pickFile(type: fp.FileType.any);
+      path = res?.path;
     } else {
       const group = XTypeGroup(label: 'SoundFont', extensions: ['sf2']);
-      final xf = await openFile(acceptedTypeGroups: const [group]);
+      final xf = await openFile(
+          acceptedTypeGroups: const [group],
+          initialDirectory: await PickerMemory.startDir(PickerSlot.soundfont));
       path = xf?.path;
+      await PickerMemory.rememberFile(PickerSlot.soundfont, path);
     }
     if (path == null) return;
     try {
       final slug = await SoundfontManager.instance.importLocal(path);
+      // importLocal a COPIÉ la SF2 dans le dossier des soundfonts: la copie
+      // qu'iOS avait déposée dans notre Inbox n'a plus d'usage, et une SF2 pèse
+      // couramment 100 Mo.
+      await consumeInboxCopy(path);
       await SoundfontManager.instance.select(slug);
       if (mounted) setState(() {});
     } on FormatException {
@@ -2633,23 +3412,37 @@ class _PatternSettingsScreenState extends State<PatternSettingsScreen> {
               ],
             ),
           ),
-          ListTile(
-            title: _title(l10n.patternSize, 'patternSizeIndex'),
-            trailing: DropdownButton<int>(
-              value: _s.patternSizeIndex,
-              onChanged: (v) { if (v != null) _s.patternSizeIndex = v; },
-              items: [
-                for (int i = 0; i < UserSettings.patternSizeValues.length; i++)
-                  DropdownMenuItem(
-                      value: i,
-                      child: Text('×${UserSettings.patternSizeValues[i]}')),
-              ],
-            ),
+          // CURSEUR et non menu: la taille est continue (0.25→2 par 0.05, 36
+          // crans) — un menu de 36 entrées serait scrollable, donc avec sa
+          // bande morte en haut de première cellule (voir settings_long_picker).
+          _SliderRow(
+            label: l10n.patternSize,
+            resetKey: 'patternSize',
+            value: _s.patternSize,
+            min: UserSettings.kPatternSizeMin,
+            max: UserSettings.kPatternSizeMax,
+            divisions: ((UserSettings.kPatternSizeMax -
+                        UserSettings.kPatternSizeMin) /
+                    UserSettings.kPatternSizeStep)
+                .round(),
+            format: (v) => '×${v.toStringAsFixed(2)}',
+            onChanged: (v) => _s.patternSize = v,
           ),
           SwitchListTile(
             title: _title(l10n.patternSmoothScroll, 'patternSmoothScroll'),
             value: _s.patternSmoothScroll,
             onChanged: (v) => _s.patternSmoothScroll = v,
+          ),
+          SwitchListTile(
+            // La barre devient un AFFICHEUR de la ligne entendue: le motif
+            // défile toujours, mais on ne lit plus deux demi-lignes au centre.
+            // Sans défilement fluide il n'y a rien à épingler — la bascule est
+            // alors éteinte plutôt que trompeuse.
+            title: _title(l10n.patternPinnedRow, 'patternPinnedRow'),
+            value: _s.patternPinnedRow,
+            onChanged: _s.patternSmoothScroll
+                ? (v) => _s.patternPinnedRow = v
+                : null,
           ),
           SwitchListTile(
             // Only meaningful on a NATIVE tracker grid; a synthesized one has
@@ -2993,6 +3786,20 @@ class AboutScreen extends StatelessWidget {
           _sectionTile(context, Icons.info_outline,
               l10n.settingsAboutSubtitle, l10n.settingsCreditsSubtitle,
               _aboutChildren),
+          // Relire la note de version. Elle n'était visible qu'UNE fois, au
+          // premier lancement d'une build: qui la ferme trop vite n'avait
+          // aucun moyen d'y revenir, et rien ne disait ce que cette beta
+          // apportait. Le sous-titre porte le nom de version — un nom, donc
+          // pas de clé de traduction.
+          ListTile(
+            leading: Icon(Icons.new_releases_outlined,
+                color: Theme.of(context).colorScheme.primary),
+            title: Text(l10n.releaseNotesTitle,
+                style: Theme.of(context).textTheme.titleMedium),
+            subtitle: const Text(kReleaseNotesLabel),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showReleaseNotes(context),
+          ),
           // Replays the first-run carousel for the CURRENT build: the beta
           // notice with its version/build line is the thing a tester needs to
           // quote, and it is otherwise only shown once per update.

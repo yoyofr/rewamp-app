@@ -1,5 +1,5 @@
 -- ============================================================
--- Rewamp — schéma SQLite local (sur l'appareil) — version 60
+-- Rewamp — schéma SQLite local (sur l'appareil) — version 77
 -- ============================================================
 --
 -- ⚠️ CE FICHIER EST UNE DOCUMENTATION, généré depuis `_kSchemaStatements`
@@ -74,7 +74,9 @@ CREATE TABLE IF NOT EXISTS tracks (
     library_added_at INTEGER,
     play_count       INTEGER NOT NULL DEFAULT 0,
     last_played_at   INTEGER,
-    ext_key          TEXT,        -- (mig 45) identité hors catalogue du fichier
+    ext_key          TEXT,
+    local_rel_path   TEXT,
+    local_origin     TEXT,        -- (mig 45) identité hors catalogue du fichier
     UNIQUE (file_path, entry_path, subsong_idx)
   );
 
@@ -220,6 +222,10 @@ CREATE TABLE IF NOT EXISTS sid_info (
     stil_title   TEXT,
     stil_artist  TEXT,
     stil_comment TEXT,
+    -- TOUTES les reprises citées, en JSON ([{title, artist, comment}, …],
+    -- ordre du fichier donc chronologique). stil_title/stil_artist en sont la
+    -- PREMIÈRE: un sous-chant peut en citer sept (« Commando », Rob Hubbard).
+    stil_covers  TEXT,
     fetched_at   INTEGER NOT NULL,
     PRIMARY KEY (md5, subsong_idx)
   );
@@ -227,9 +233,12 @@ CREATE TABLE IF NOT EXISTS sid_info (
 -- SAP metadata cache — keyed by standard file MD5 (no subsong dimension).
 CREATE TABLE IF NOT EXISTS sap_info (
     md5          TEXT    PRIMARY KEY,
+    stil_name    TEXT,
+    stil_author  TEXT,
     stil_title   TEXT,
     stil_artist  TEXT,
     stil_comment TEXT,
+    stil_covers  TEXT,
     fetched_at   INTEGER NOT NULL
   );
 
@@ -254,6 +263,8 @@ CREATE TABLE IF NOT EXISTS library_items (
     folder_changed_at INTEGER,
     fav_changed_at  INTEGER,
     saved           INTEGER NOT NULL DEFAULT 1,  -- 1 = explicit add; 0 = favorite-only
+    -- Clé hors catalogue telle que le compte la connaît (migration 67).
+    ext_key         TEXT,
     UNIQUE (type, ref_id)
   );
 

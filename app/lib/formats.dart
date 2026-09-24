@@ -18,6 +18,23 @@ const kTrackerExts = <String>{
   'imf', 'j2b', 'gdm', 'umx',
 };
 
+/// libxmp — les formats de module qu'aucun autre moteur d'ici ne charge.
+/// libopenmpt couvre tout le tronc commun (MOD/XM/IT/S3M…) et le joue mieux,
+/// donc cette liste est volontairement COURTE: ce qu'elle contient, elle est
+/// seule à le lire.
+const kXmpExts = <String>{
+  'musx',   // Archimedes Tracker (!Tracker, RISC OS)
+  'liq',    // Liquid Tracker
+  'no',     // Liquid Tracker NO
+  'fnk',    // Funktracker
+  'mgt',    // Megatracker (SAM Coupé)
+  'stim',   // Slamtilt (Amiga)
+  'emod',   // Quadra Composer (Amiga)
+  'mfp',    // Magnetic Fields Packer (Amiga)
+  'coco',   // Coconizer
+  'muse',   // MUSE container
+};
+
 /// Furnace (DivEngine) native + the FamiTracker family it imports.
 const kFurnaceExts = <String>{ 'fur', 'ftm', '0cc', 'dnm', 'eft' };
 
@@ -26,6 +43,16 @@ const kZxtuneExts = <String>{
   'ay', 'ym', 'vtx', 'psg', 'pt1', 'pt2', 'pt3', 'stc', 'st1', 'stp',
   'asc', 'sqt', 'psc', 'gtr', 'chi', 'dst', 'sqd', 'str', 'dmm',
   'tfc', 'tfd', 'tfe', 'ftc', 'pdt', 'chp', 'vt2',
+  // E-Tracker (SAM Coupé, SAA1099) — zxart la sert sous TROIS extensions,
+  // toutes du format `cop` de son catalogue. Le décodeur zxtune était vendoré
+  // et enregistré depuis le début; seul le routage manquait (comme .vt2).
+  'cop', 'etc', 'saa',
+  // MultiTrackContainer (format propre a zxtune, outil mtctool): des modules
+  // de formats zxtune INTERNES joues ENSEMBLE (multi-device, fusion des
+  // rendus) — un .mtc = UN morceau, jamais dans kMultiTrackExts.
+  'mtc',
+  // .mct: renommage vu sur zxart (« 200% », Xenium 2024 — magie MTC1 dedans).
+  'mct',
 };
 
 /// UADE Amiga custom-chip formats (68k emulation; prefix-convention names like
@@ -93,8 +120,13 @@ const kGmeExts = <String>{
   'nsf', 'nsfe', 'gbs', 'spc', 'hes', 'kss', 'sap', 'ay', 'rsn',
 };
 
+/// gbsplay — Game Boy. Le `.gbs` reste dans `kGmeExts` (libgme le lit aussi, et
+/// c'est le réglage `gbsPlugin` qui arbitre); le `.gbr` est un rip du DRIVER,
+/// que gbsplay est SEUL à charger — d'où son groupe à lui.
+const kGbsplayExts = <String>{ 'gbr' };
+
 /// libkss MSX chiptunes (.kss shared with GME; the rest libkss-only).
-const kKssExts = <String>{ 'kss', 'mgs', 'bgm', 'opx', 'mpk', 'mbm' };
+const kKssExts = <String>{ 'kss', 'mgs', 'bgm', 'opx', 'mpk', 'mbm', 'mus' };
 
 /// Highly Experimental PlayStation PSF/PSF2.
 const kPsfExts = <String>{ 'psf', 'minipsf', 'psf2', 'minipsf2' };
@@ -197,13 +229,13 @@ const kPlainAudioExts = <String>{
 };
 
 /// Palier 0 — formats dont rewamp rend les PATTERNS nativement, c'est-à-dire
-/// exactement les quatre moteurs qui exposent un curseur de pattern
-/// (`pattern_cursor` dans `rewamp_plugin.h`): libopenmpt, Furnace, SunVox,
-/// TIATracker. Ce sont eux qu'un choix entre plusieurs fichiers doit préférer:
-/// ils donnent la vue patterns ET les voix, donc la version la plus riche du
-/// même morceau.
+/// exactement les moteurs qui exposent un curseur de pattern (`pattern_cursor`
+/// dans `rewamp_plugin.h`): libopenmpt, libxmp, Furnace, SunVox, TIATracker.
+/// Ce sont eux qu'un choix entre plusieurs fichiers doit préférer: ils donnent
+/// la vue patterns ET les voix, donc la version la plus riche du même morceau.
 final kPatternExts = <String>{
   ...kTrackerExts,
+  ...kXmpExts,
   ...kFurnaceExts,
   ...kSunvoxExts,
   ...kTiaTrackerExts,
@@ -226,12 +258,14 @@ final kStreamAudioExts = <String>{
 /// literal dedupes at runtime.
 final kAllDecoderExts = <String>{
   ...kTrackerExts,
+  ...kXmpExts,
   ...kFurnaceExts,
   ...kZxtuneExts,
   ...kUadeExts,
   ...kVgmChipExts,
   ...kSidExts,
   ...kGmeExts,
+  ...kGbsplayExts,
   ...kKssExts,
   ...kPsfExts,
   ...kGsfExts,
@@ -260,3 +294,34 @@ final kAllDecoderExts = <String>{
   ...kTiaTrackerExts,
   ...kPlainAudioExts,
 };
+
+/// Un DOSSIER dont le contenu est du matériau de lecture, jamais des pistes.
+///
+/// Le cas mesuré: un `.smus` modland (Sonix Music Driver) range ses
+/// échantillons dans `Instruments/`, à côté du module — c'est UADE qui l'exige
+/// (`ossupport.c` résout le volume Amiga `Instruments:` vers ce dossier). Ces
+/// fichiers portent des extensions parfaitement PLAYABLES par ailleurs: `.ss`
+/// est SpeedySystem dans `eagleplayer.conf`, `.instr` ne dit rien. Rien dans
+/// le NOM ne les distingue d'un morceau — seul leur EMPLACEMENT le fait.
+///
+/// Sans cette règle, les 80 échantillons d'un album se retrouvent dans la
+/// file, chacun échoue, et la bannière « Format non supporté » se réaffiche
+/// sans fin. Pire au classement d'archive: un `.ss` de 31 Ko est du même
+/// palier qu'un `.smus` de 6 Ko et le bat à la TAILLE — le pick générique
+/// aurait servi un échantillon à la place du morceau.
+///
+/// Comparaison insensible à la casse: modland écrit « Instruments », UADE
+/// construit « instruments ».
+const kCompanionDirNames = <String>{'instruments'};
+
+/// [path] est-il DANS un dossier de compagnons ? (voir [kCompanionDirNames])
+///
+/// Regarde TOUS les composants du chemin sauf le dernier: un échantillon peut
+/// être à `Instruments/x.ss` comme à `Album/Instruments/x.ss`.
+bool isInCompanionDir(String path) {
+  final parts = path.split(RegExp(r'[/\\]'));
+  for (var i = 0; i < parts.length - 1; i++) {
+    if (kCompanionDirNames.contains(parts[i].toLowerCase())) return true;
+  }
+  return false;
+}

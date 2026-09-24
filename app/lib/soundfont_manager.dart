@@ -56,7 +56,7 @@ class SoundfontManager {
   Future<List<RemoteAsset>> catalogue() => RewampDb.listAssets('soundfont');
 
   /// Applies the persisted selection at startup (no network). Falls back to
-  /// the native default (<datadir>/soundfonts/default.sf2) when nothing is
+  /// the native default (`<datadir>/soundfonts/default.sf2`) when nothing is
   /// selected/installed, then kicks a silent download of the server-default
   /// soundfont if NO soundfont at all is present.
   Future<void> applyStartup() async {

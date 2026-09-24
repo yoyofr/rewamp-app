@@ -11,7 +11,7 @@ static id<FlutterTextureRegistry> g_textureRegistry = nil;
 static RewampVizTexture*          g_vizTexture       = nil;
 
 // mode 0 = stereo waveform, 1 = per-channel scope, 2 = note scroll,
-// 3 = projectM, 4 = tracker patterns, 5 = stereo spectrum (FFT)
+// 3 = projectM, 4 = tracker patterns, 5 = stereo spectrum (FFT), 6 = piano
 static int g_viz_mode = 0;
 
 // Switching visualizer must NOT rebuild the GL world.
@@ -47,6 +47,7 @@ static int64_t _register_common(int mode, int width, int height) {
 #endif
     else if (mode == 4) err = rewamp_patternviz_init(width, height);
     else if (mode == 5) err = rewamp_spectrum_init(width, height);
+    else if (mode == 6) err = rewamp_pianoviz_init(width, height);
     else                err = rewamp_viz_init(width, height);
     if (err != 0) return (int64_t)err;
     if (reuse) return [g_vizTexture textureId];
@@ -100,6 +101,15 @@ REWAMP_EXPORT void rewamp_spectrum_render_and_notify(void) {
     if (g_vizTexture) [g_vizTexture markFrameAvailable];
 }
 
+REWAMP_EXPORT int64_t rewamp_pianoviz_register(int width, int height) {
+    return _register_common(6, width, height);
+}
+
+REWAMP_EXPORT void rewamp_pianoviz_render_and_notify(void) {
+    rewamp_pianoviz_render();
+    if (g_vizTexture) [g_vizTexture markFrameAvailable];
+}
+
 REWAMP_EXPORT int rewamp_viz_resize_register(int width, int height) {
     int err = rewamp_gl_resize(width, height);
     if (err == 0 && g_vizTexture) [g_vizTexture markFrameAvailable];
@@ -123,6 +133,7 @@ REWAMP_EXPORT void rewamp_viz_unregister(void) {
     rewamp_noteviz_uninit();
     rewamp_patternviz_uninit();
     rewamp_spectrum_uninit();
+    rewamp_pianoviz_uninit();
 #if defined(REWAMP_WITH_PROJECTM)
     rewamp_projectm_uninit();
 #endif

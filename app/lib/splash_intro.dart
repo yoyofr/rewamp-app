@@ -134,6 +134,8 @@ const List<SplashEffect> kSplashEffects = <SplashEffect>[
       duration: Duration(milliseconds: 3600),
       overlay: splashLaserOverlay,
       sunOnTop: true),
+  SplashEffect('shaders/splash_fx_rotozoom.frag',
+      duration: Duration(milliseconds: 4200)),
 ];
 
 /// DEV ONLY — pins the launch intro to ONE effect while it is being tuned
@@ -151,7 +153,7 @@ const String? kSplashForcedEffect = null;
 /// before the app's window exists is never delivered to it, at any layer —
 /// see the note above [installLaunchTouchProbe].
 ///
-/// Fifteen cells for six effects today, and a cell PAST the end of the
+/// Fifteen cells for seven effects today, and a cell PAST the end of the
 /// registry deliberately does nothing (the random pick stands): that is what
 /// lets the list grow later without moving a cell anyone has learned. The
 /// mapping is the registration order of [kSplashEffects], so inserting an

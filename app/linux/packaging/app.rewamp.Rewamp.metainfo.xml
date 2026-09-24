@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 yoyofr -->
+<component type="desktop-application">
+  <id>app.rewamp.Rewamp</id>
+
+  <name>Rewamp</name>
+  <summary>Chiptune, tracker and console music player</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <!-- The combined binary is GPL-3.0-or-later because three bundled decoders
+       are GPL-3 and everything links into one process. See LICENSING.md. -->
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <developer id="app.rewamp">
+    <name>yoyofr</name>
+  </developer>
+
+  <launchable type="desktop-id">app.rewamp.Rewamp.desktop</launchable>
+
+  <description>
+    <p>
+      Rewamp plays the music of the machines that made it. Not recordings —
+      emulation. A .sid runs on an emulated 6581, a .nsf on the NES sound
+      hardware, a .mod through a real Amiga Paula mixer. What you hear is the
+      chip doing the work, exactly as it did on the original hardware.
+    </p>
+    <p>More than 35 audio engines cover over 1,200 file extensions:</p>
+    <ul>
+      <li>Tracker modules — MOD, XM, S3M, IT, MPTM, and dozens of older Amiga and PC formats</li>
+      <li>Amiga — 300+ custom-player formats through a full 68k emulator (TFMX, Hippel, Future Composer, David Whittaker…)</li>
+      <li>Commodore 64 — SID, with HVSC song lengths and STIL credits</li>
+      <li>Nintendo — NSF, GBS, SPC, GSF, 2SF, NCSF, SNSF, USF</li>
+      <li>Sega, NEC, SNK — VGM, S98, HES, SGC, SSF, DSF</li>
+      <li>Computers — MSX, ZX Spectrum, Atari ST and 8-bit, Amstrad CPC, PC-98, X68000, FM Towns, AdLib OPL2/OPL3</li>
+      <li>Game streams — 700+ container formats via vgmstream</li>
+      <li>Also MIDI with SoundFonts, SunVox, PxTone, Organya and Furnace</li>
+    </ul>
+    <p>See the sound:</p>
+    <ul>
+      <li>Oscilloscope — stereo, or one trace per voice with the real channel names</li>
+      <li>Spectrum — five looks, from classic bars to a full-screen beam and a polar ring</li>
+      <li>Notation — every note as it plays, with vibrato, pan and zoom</li>
+      <li>Pattern — the tracker view, in the original font, with VU meters per channel</li>
+      <li>Milkdrop — the full projectM engine and its preset library</li>
+    </ul>
+    <p>
+      Mute any voice, isolate a single channel, and hear how the track was
+      built. Search a large online archive of chip and tracker music by title,
+      artist, group, platform or format; browse by demoparty, production or
+      year. Downloads live in your library and play without a connection.
+    </p>
+    <p>
+      An account is optional and never required. With one, your library,
+      playlists and favourites follow you to your other devices.
+    </p>
+  </description>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Player</category>
+  </categories>
+
+  <keywords>
+    <keyword>chiptune</keyword>
+    <keyword>tracker</keyword>
+    <keyword>module</keyword>
+    <keyword>demoscene</keyword>
+    <keyword>emulation</keyword>
+    <keyword>SID</keyword>
+    <keyword>MOD</keyword>
+    <keyword>NSF</keyword>
+    <keyword>SPC</keyword>
+    <keyword>VGM</keyword>
+    <keyword>Amiga</keyword>
+  </keywords>
+
+  <url type="homepage">https://rewamp.app</url>
+  <url type="bugtracker">https://github.com/yoyofr/rewamp-app/issues</url>
+  <url type="vcs-browser">https://github.com/yoyofr/rewamp-app</url>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#f0388f</color>
+    <color type="primary" scheme_preference="dark">#160a1e</color>
+  </branding>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+
+  <provides>
+    <binary>rewamp</binary>
+    <mediatype>audio/x-mod</mediatype>
+    <mediatype>audio/x-s3m</mediatype>
+    <mediatype>audio/x-it</mediatype>
+    <mediatype>audio/x-xm</mediatype>
+    <mediatype>audio/x-stm</mediatype>
+    <mediatype>audio/prs.sid</mediatype>
+    <mediatype>audio/x-psf</mediatype>
+    <mediatype>audio/x-minipsf</mediatype>
+    <mediatype>audio/midi</mediatype>
+  </provides>
+
+  <!-- TODO avant soumission Flathub: au moins une capture, hébergée sur une URL
+       stable et publique (1er élément = celle de la vitrine). Flathub refuse un
+       composant sans <screenshots>. -->
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/yoyofr/rewamp-app/main/docs/store/screenshots/linux-player.png</image>
+      <caption>The player, with the per-voice oscilloscope</caption>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.6.1" date="2026-09-19">
+      <description>
+        <ul>
+          <li>Roland MT-32 engine for game MIDI, with your own ROMs</li>
+          <li>Ten rare module formats, and every track of Westwood .adl files</li>
+          <li>Instruments named and coloured in the visualizers</li>
+          <li>Search: filter demoscene competition winners</li>
+          <li>Subsongs shorter than a threshold are left out of Play all</li>
+          <li>Import a whole folder, and organise your folders</li>
+          <li>Fixed: wrong song on PC Engine, Master System and SNDH files</li>
+          <li>Fixed: MIDI drums no longer play as a piano</li>
+          <li>Far less processor and battery when nothing is playing</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+
+  <content_rating type="oars-1.1"/>
+</component>

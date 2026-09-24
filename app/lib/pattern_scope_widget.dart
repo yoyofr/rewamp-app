@@ -2,7 +2,7 @@ import 'dart:io' show Platform;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:rewamp_audio/rewamp_audio.dart';
@@ -10,6 +10,7 @@ import 'package:rewamp_audio/rewamp_audio.dart';
 import 'user_settings.dart';
 import 'viz_gl_ownership.dart';
 import 'viz_platform_view.dart';
+import 'font_fallback.dart';
 
 /// Debug escape hatch: force the Dart CustomPaint grid even where the GL
 /// renderer (rewamp_pattern_render.cpp, mode 4) is available, to A/B the two
@@ -26,6 +27,111 @@ const bool kPatternVizForceCpu = false;
 /// hits it and shows a little empty edge, which beats a multi-second delay on
 /// every mute.
 const double kPatternLookaheadMaxSecs = 8.0;
+
+/// Déplacement vertical (px logiques) valant UN cran de DÉTAIL.
+///
+/// Le geste n'a que trois positions (complet / réduit / minimal): un pas court
+/// les traverserait toutes au premier mouvement, un pas long donnerait
+/// l'impression que rien ne répond.
+const double kPatternColumnsDragStep = 70.0;
+
+/// Crans de détail que vaut un glissement vertical de [dy] px (positif vers le
+/// BAS, la convention de Flutter).
+///
+/// **Vers le haut = PLUS de détail.** L'index des colonnes va dans l'autre
+/// sens (0 = tout, 2 = la note seule), d'où le signe: on rend un DELTA
+/// D'INDEX, donc monter le doigt rend un nombre NÉGATIF. Décision pure, et
+/// elle mérite de l'être — c'est exactement le genre de signe qu'on inverse
+/// sans s'en apercevoir.
+int patternColumnSteps(double dy) => (dy / kPatternColumnsDragStep).round();
+
+/// Défilement horizontal qui S'EFFACE dès qu'un second doigt se pose.
+///
+/// Même problème et même remède que `_PanUnlessPinch` de la notation: le
+/// défilement et le pincement se disputent le PREMIER pointeur, et un
+/// recognizer de glissement qui l'emporte verrouille le recognizer d'échelle
+/// pour de bon — ajouter un doigt ne faisait alors plus rien jusqu'à ce que
+/// tout soit relevé. Deux gardes:
+///  - un second doigt qui arrive: on se retire (`rejected`), les deux
+///    pointeurs partent au pincement;
+///  - un délai de grâce avant d'accepter QUOI QUE CE SOIT: un pincement pose
+///    ses deux doigts l'un après l'autre, jamais au même instant, et le
+///    premier voyage un peu en attendant le second (surtout sur Android).
+///
+/// ⚠️ Le compte de pointeurs vient du `Listener` PARENT, jamais d'un compteur
+/// interne: un pointeur REFUSÉ n'est plus suivi, son `up` n'arrive jamais, et
+/// le compteur resterait bloqué à 2 après le premier pincement.
+class _HScrollUnlessPinch extends HorizontalDragGestureRecognizer {
+  final int Function() pointerCount;
+  final _sinceDown = Stopwatch();
+
+  _HScrollUnlessPinch({required this.pointerCount});
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    if (pointerCount() >= 1) {
+      resolve(GestureDisposition.rejected);
+      return;
+    }
+    _sinceDown
+      ..reset()
+      ..start();
+    super.addAllowedPointer(event);
+  }
+
+  /// C'est ICI que le délai de grâce mord: le recognizer de base accepte dès
+  /// que son seuil de déplacement est franchi, et refuser le seuil est la
+  /// seule façon propre de retarder cette acceptation sans avaler les
+  /// événements (les avaler ferait sauter le défilement au premier move
+  /// transmis, le delta étant cumulé).
+  @override
+  bool hasSufficientGlobalDistanceToAccept(
+      PointerDeviceKind pointerDeviceKind, double? deviceTouchSlop) {
+    if (_sinceDown.elapsed < _kPinchGrace) return false;
+    return super
+        .hasSufficientGlobalDistanceToAccept(pointerDeviceKind, deviceTouchSlop);
+  }
+}
+
+/// Délai de grâce avant qu'un glissement à UN doigt n'accepte le geste.
+///
+/// Un pincement pose ses deux doigts l'un après l'autre, jamais au même
+/// instant, et le premier voyage un peu en attendant le second (surtout sur
+/// Android). Sans ce délai, le glissement l'emportait et verrouillait le
+/// recognizer d'échelle POUR DE BON — ajouter un doigt ne faisait alors plus
+/// rien jusqu'à ce que tout soit relevé. Partagé par les DEUX glissements
+/// (horizontal et vertical): ils ont exactement le même problème.
+const Duration _kPinchGrace = Duration(milliseconds: 90);
+
+/// Glissement VERTICAL — le mode d'affichage des colonnes — avec les mêmes
+/// gardes que [_HScrollUnlessPinch]: il s'efface devant un second doigt (le
+/// pincement) et attend le délai de grâce avant d'accepter quoi que ce soit.
+class _VDragUnlessPinch extends VerticalDragGestureRecognizer {
+  final int Function() pointerCount;
+  final _sinceDown = Stopwatch();
+
+  _VDragUnlessPinch({required this.pointerCount});
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    if (pointerCount() >= 1) {
+      resolve(GestureDisposition.rejected);
+      return;
+    }
+    _sinceDown
+      ..reset()
+      ..start();
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  bool hasSufficientGlobalDistanceToAccept(
+      PointerDeviceKind pointerDeviceKind, double? deviceTouchSlop) {
+    if (_sinceDown.elapsed < _kPinchGrace) return false;
+    return super
+        .hasSufficientGlobalDistanceToAccept(pointerDeviceKind, deviceTouchSlop);
+  }
+}
 
 /// Tracker "pattern" visualizer: the classic channels × rows grid of the module
 /// being played, scrolling with the heard playback position. Native pattern
@@ -87,6 +193,9 @@ class _PatternScopeWidgetState extends State<PatternScopeWidget>
   }
 
   void _pushGlOptions() {
+    // Une option a changé: l'image doit suivre même à l'arrêt (voir
+    // src/rewamp_viz_idle.h).
+    widget.audio.vizWake();
     // A synthesized grid (no NATIVE tracker data — the rows are built from the
     // note timeline) has no per-cell volume and no page to scroll: force volume
     // bars OFF and the bar FIXED regardless of the persisted setting. The
@@ -100,9 +209,19 @@ class _PatternScopeWidgetState extends State<PatternScopeWidget>
       palette,
       (native && !pinned) ? UserSettings.instance.patternScrollMode : 0,
       native && UserSettings.instance.patternShowVolume,
-      smoothScroll: UserSettings.instance.patternSmoothScroll,
+      smoothScroll: UserSettings.instance.patternSmoothScroll &&
+          !PatternPalette.selectedForcesNoSmooth(palette),
     );
     widget.audio.setPatternVizOpaqueBg(UserSettings.instance.patternOpaqueBg);
+    // L'épinglage n'a de sens qu'avec un défilement CONTINU sous une barre
+    // FIXE: en barre mobile elle suit déjà une ligne entière, et sans
+    // interpolation la ligne est déjà alignée. Le natif fait la même garde de
+    // son côté — c'est ici pour que la bascule s'éteigne visiblement quand
+    // elle ne peut rien faire.
+    widget.audio.setPatternVizPinnedRow(
+      UserSettings.instance.patternPinnedRow &&
+          UserSettings.instance.patternSmoothScroll &&
+          !PatternPalette.selectedForcesNoSmooth(palette));
     widget.audio.setPatternVizLayout(
       UserSettings.instance.patternSize,
       UserSettings.instance.patternColumns,
@@ -187,7 +306,7 @@ class _PatternScopeWidgetState extends State<PatternScopeWidget>
         _lookaheadSecs = wantSecs;
         widget.audio.setLookaheadSeconds(wantSecs);
       }
-      if (_gpuTextureId >= 0) {
+      if (_gpuTextureId >= 0 && widget.audio.vizFrameDue) {
         widget.audio.vizSetFrameTime(elapsed.inMicroseconds / 1e6);
         widget.audio.patternvizRenderAndNotify();
       }
@@ -250,15 +369,91 @@ class _PatternScopeWidgetState extends State<PatternScopeWidget>
   /// the surface's physical w/h) and `_xScroll` is a native-px offset, so a raw
   /// logical delta scrolled at 1/devicePixelRatio of the finger. The Apple
   /// Texture path registers the GL at logical size → scale 1.0.
-  Widget _glGestures(Widget child, {double pixelScale = 1.0}) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onHorizontalDragUpdate: (d) {
-          _xScroll =
-              (_xScroll - d.delta.dx * pixelScale).clamp(0.0, 100000.0);
-          widget.audio.setPatternVizXScroll(_xScroll);
-        },
-        child: child,
+  Widget _glGestures(Widget child, {double pixelScale = 1.0}) => Listener(
+        // Le compte de pointeurs appartient au PARENT (voir
+        // _HScrollUnlessPinch): un recognizer ne voit pas le `up` d'un
+        // pointeur qu'il a refusé.
+        onPointerDown:   (_) => _pointers++,
+        onPointerUp:     (_) { if (_pointers > 0) _pointers--; },
+        onPointerCancel: (_) { if (_pointers > 0) _pointers--; },
+        child: RawGestureDetector(
+          behavior: HitTestBehavior.opaque,
+          gestures: {
+            _HScrollUnlessPinch:
+                GestureRecognizerFactoryWithHandlers<_HScrollUnlessPinch>(
+              () => _HScrollUnlessPinch(pointerCount: () => _pointers),
+              (r) => r.onUpdate = (d) {
+                _xScroll =
+                    (_xScroll - d.delta.dx * pixelScale).clamp(0.0, 100000.0);
+                widget.audio.setPatternVizXScroll(_xScroll);
+              },
+            ),
+            _VDragUnlessPinch:
+                GestureRecognizerFactoryWithHandlers<_VDragUnlessPinch>(
+              () => _VDragUnlessPinch(pointerCount: () => _pointers),
+              (r) => r
+                ..onStart = _onColumnsDragStart
+                ..onUpdate = _onColumnsDragUpdate,
+            ),
+            ScaleGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<ScaleGestureRecognizer>(
+              () => ScaleGestureRecognizer(),
+              (r) => r
+                ..onStart = _onPinchStart
+                ..onUpdate = _onPinchUpdate,
+            ),
+          },
+          child: child,
+        ),
       );
+
+  // ── Gestes ────────────────────────────────────────────────────────────────
+  //
+  // Un geste, un réglage — c'est ce qui a manqué à la première version, qui
+  // faisait dépendre DEUX réglages de l'axe d'un même pincement: l'axe était
+  // pénible à viser, et sur trackpad il n'existe même pas (l'échelle y est
+  // uniforme). Maintenant:
+  //   • pincement (2 doigts) → TAILLE de la police, en continu;
+  //   • glissement vertical (1 doigt) → DÉTAIL des colonnes, par crans;
+  //   • glissement horizontal (1 doigt) → défilement de la grille.
+  int _pointers = 0;
+  double _pinchSize0 = 1.0;
+  int _cols0 = 0;
+  double _colsDy = 0;
+
+  void _onPinchStart(ScaleStartDetails d) {
+    _pinchSize0 = UserSettings.instance.patternSize;
+  }
+
+  void _onPinchUpdate(ScaleUpdateDetails d) {
+    // pointerCount == 1 = le glissement à un doigt, qui appartient aux autres
+    // recognizers. 0 = geste de TRACKPAD (Flutter n'y compte aucun pointeur),
+    // qu'on accepte: `scale` y est renseigné, et c'est tout ce dont on a
+    // besoin depuis que l'axe ne décide plus de rien.
+    if (d.pointerCount == 1) return;
+    // Taille CONTINUE: le facteur multiplie directement la taille du début du
+    // geste (UserSettings quantifie au pas de 0.01).
+    final v = UserSettings.quantizePatternSize(
+        _pinchSize0 * d.scale.clamp(0.05, 20.0));
+    if (v != UserSettings.instance.patternSize) {
+      UserSettings.instance.patternSize = v;
+    }
+  }
+
+  void _onColumnsDragStart(DragStartDetails d) {
+    _cols0 = UserSettings.instance.patternColumns;
+    _colsDy = 0;
+  }
+
+  void _onColumnsDragUpdate(DragUpdateDetails d) {
+    _colsDy += d.delta.dy;
+    // Crans dérivés de la valeur du DÉBUT du geste, jamais cumulés (qui
+    // dérivent). Vers le haut = plus de détail, voir patternColumnSteps.
+    final v = (_cols0 + patternColumnSteps(_colsDy)).clamp(0, 2);
+    if (v != UserSettings.instance.patternColumns) {
+      UserSettings.instance.patternColumns = v;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -469,6 +664,7 @@ class PatternPalette {
     this.volBarWidth = 5.0,
     this.headerStyle = PatternHeaderStyle.strip,
     this.pinsBar = false,
+    this.forcesNoSmooth = false,
   });
 
   /// The style PINS the playing line mid-screen (ProTracker): the page scrolls
@@ -477,10 +673,17 @@ class PatternPalette {
   /// here it drives what is PUSHED to the engine and hides the scroll toggle,
   /// so the option is never shown as a dead switch.
   final bool pinsBar;
+  /// Le style IMPOSE le défilement par lignes entières (pas de sous-ligne).
+  /// Miroir de `PvPalette::forceNoSmooth`: le rendu l'applique de toute façon,
+  /// et le bouton correspondant est masqué plutôt que laissé mort.
+  final bool forcesNoSmooth;
 
   /// Whether the currently selected style pins the bar.
   static bool selectedPinsBar(int index) =>
       presets[index.clamp(0, presets.length - 1)].pinsBar;
+
+  static bool selectedForcesNoSmooth(int index) =>
+      presets[index.clamp(0, presets.length - 1)].forcesNoSmooth;
 
   static const presets = <PatternPalette>[
     // Rewamp — the app's own dark scheme.
@@ -571,6 +774,33 @@ class PatternPalette {
       fx: Color(0xFFE060E0), highlight: Color(0x66701460),
       beatBg: Color(0x14283048), separator: Color(0xFF3A5AC0),
       volBar: Color(0xFF3FD23F),
+    ),
+    // Visualiser — les couleurs de Rewamp, MOINS la grille: pas de séparateur
+    // de colonne, pas de bande de mesure. Pour les morceaux qui se servent des
+    // motifs comme d'un ÉCRAN (art ASCII, animations de colonnes): tout repère
+    // régulier y découpe le dessin en tranches et le rend illisible. Le
+    // séparateur et la bande sont mis à TRANSPARENT plutôt que retirés du
+    // modèle — le rendu les dessine inconditionnellement, une couleur à alpha
+    // nul est la façon dont un style dit « pas celui-ci » (le mode d'en-tête
+    // et les jauges restent, eux, ceux de Rewamp).
+    PatternPalette(
+      name: 'Visualiser',
+      // Fond NOIR TEINTÉ plutôt que noir pur: la teinte du rose de marque
+      // (#FF1E8C) ramenée tout près du noir. Un noir absolu fait un trou dans
+      // le chrome de l'app, et une image faite de motifs y perd son ancrage.
+      bg: Color(0xFF120A11), headerBg: Color(0xFF1C1019),
+      headerText: Color(0xFFB4BCC8),
+      rowNum: Color(0xFF6A6A6A), beatRowNum: Color(0xFF9AA4B0),
+      note: Color(0xFFE8F0FF), noteEmpty: Color(0xFF3A3A3A),
+      instrument: Color(0xFF5FC9F8), volume: Color(0xFFA8E063),
+      fx: Color(0xFFF7A85C), highlight: Color(0x33FFFFFF),
+      beatBg: Color(0x00000000), separator: Color(0x00000000),
+      volBar: Color(0xFFA8E063),
+      // Barre FIXE et défilement par lignes ENTIÈRES: une image faite de
+      // motifs ne se lit qu'alignée sur sa grille — une barre qui remonte et
+      // un décalage sous-ligne la font trembler et glisser sous elle-même.
+      pinsBar: true,
+      forcesNoSmooth: true,
     ),
   ];
 }
@@ -714,13 +944,13 @@ class _PatternPainter extends CustomPainter {
       final tp = TextPainter(
         text: TextSpan(
           text: '${ch + 1}',
-          style: TextStyle(
+          style: withCjkFallback(TextStyle(
             color: c,
             fontSize: 15,
             fontFamily: 'monospace',
             fontWeight: FontWeight.bold,
             height: 1.0,
-          ),
+          )),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -833,13 +1063,13 @@ class _PatternPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
         text: s,
-        style: TextStyle(
+        style: withCjkFallback(TextStyle(
           color: dim ? color.withValues(alpha: 0.32) : color,
           fontSize: fontSize,
           fontFamily: 'monospace',
           fontFeatures: const [FontFeature.tabularFigures()],
           height: 1.0,
-        ),
+        )),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
@@ -971,14 +1201,14 @@ class _PatternHeaderPainter extends CustomPainter {
       final tp = TextPainter(
         text: TextSpan(
           text: '${ch + 1}',
-          style: TextStyle(
+          style: withCjkFallback(TextStyle(
             color: palette.headerText,
             fontSize: 10,
             fontFamily: 'monospace',
             fontWeight: FontWeight.w600,
             fontFeatures: const [FontFeature.tabularFigures()],
             height: 1.0,
-          ),
+          )),
         ),
         textDirection: TextDirection.ltr,
       )..layout();

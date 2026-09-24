@@ -50,6 +50,7 @@ namespace ZXTune
   void RegisterSIDPlugins(PlayerPluginsRegistrator& registrator);
 #endif
   void RegisterET1Support(PlayerPluginsRegistrator& registrator);
+  void RegisterMTCSupport(PlayerPluginsRegistrator& registrator);
 
   void RegisterPlayerPlugins(PlayerPluginsRegistrator& registrator)
   {
@@ -89,5 +90,6 @@ namespace ZXTune
     RegisterSIDPlugins(registrator);
 #endif
     RegisterET1Support(registrator);
+    RegisterMTCSupport(registrator);
   }
 }

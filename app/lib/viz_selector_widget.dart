@@ -20,9 +20,11 @@ import 'notes_scope_widget.dart';
 import 'pattern_scope_widget.dart';
 import 'projectm_widget.dart';
 import 'spectrum_widget.dart';
+import 'piano_widget.dart';
 import 'user_settings.dart';
 import 'waveform_icons.dart';
 import 'viz_gl_ownership.dart';
+import 'cancel_field.dart';
 
 /// Which projectM state the centred OSD is currently showing. One slot, because
 /// they all draw in the same place: pressing two shortcuts in a row must replace
@@ -33,7 +35,10 @@ enum VizEffect {
   stereo  (Icons.graphic_eq),
   spectrum(Icons.equalizer),
   voices  (Icons.waves),
-  notes   (Icons.piano),
+  // Staggered horizontal bars — the piano-roll timeline, not a keyboard: the
+  // piano viz owns the keyboard glyph now.
+  notes   (Icons.view_timeline_outlined),
+  piano   (Icons.piano),
   patterns(Icons.grid_on),
   projectm(Icons.auto_awesome);
 
@@ -56,6 +61,7 @@ enum VizEffect {
         VizEffect.spectrum => l10n.vizSpectrum,
         VizEffect.voices   => l10n.vizVoices,
         VizEffect.notes    => l10n.vizNotes,
+        VizEffect.piano    => l10n.vizPiano,
         VizEffect.patterns => l10n.vizPatterns,
         VizEffect.projectm => 'projectM',
       };
@@ -195,6 +201,12 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     kVizGlOwnedBySelector = true;
     UserSettings.instance.addListener(_onOpacityChanged);
     HardwareKeyboard.instance.addHandler(_onKey);
+    _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
+    // L'écouteur ne rend que les CHANGEMENTS: l'état de départ se lit à part.
+    final ls = WidgetsBinding.instance.lifecycleState;
+    _appVisible = ls == null ||
+        ls == AppLifecycleState.resumed ||
+        ls == AppLifecycleState.inactive;
     _releaseLookaheadIfIdle();   // start at minimum unless the initial viz needs a lead
     _syncSlowWatch();            // le visualiseur peut S'OUVRIR sur projectM
     _pushPmMode();
@@ -256,8 +268,10 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     }
 
     if (key == LogicalKeyboardKey.keyN) {
+      widget.audio.vizWake();
       widget.audio.projectmNextPreset();
     } else if (key == LogicalKeyboardKey.keyP) {
+      widget.audio.vizWake();
       widget.audio.projectmPrevPreset();
     } else if (key == LogicalKeyboardKey.keyH) {
       // Writing the setting is enough: the settings listener re-pushes the
@@ -386,6 +400,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
   void dispose() {
     UserSettings.instance.removeListener(_onOpacityChanged);
     HardwareKeyboard.instance.removeHandler(_onKey);
+    _lifecycle.dispose();
     _slowPoll?.cancel();
     _slowClear?.cancel();
     _hideTimer?.cancel();
@@ -421,19 +436,28 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     // its `finally` sees the key moved and re-runs for the newest one.
     if (_uploading) return;
 
-    // Resolve local path
+    // ⚠️ MÊME ORDRE que ArtworkImage: l'URL d'abord, la découverte de voisin
+    // en repli seulement. Le viz faisait l'inverse — et « la pochette qu'on
+    // voyait dépendait de l'ÉCRAN » est un piège déjà documenté dans
+    // ArtworkCache._targetPath: un `artwork.png` d'époque traîne encore dans
+    // les dossiers par ARTISTE (hvsc: `Rob Hubbard/c64/` porte des dizaines de
+    // morceaux), la découverte générique le sert à toute piste sans pochette
+    // voisine à son nom, et « International Karate » sortait avec la pochette
+    // de « Monty on the Run » EN MODE VIZ SEULEMENT — viz éteint, le même
+    // morceau montrait la bonne, par l'URL.
     String? localPath;
-    if (widget.artworkLocalFilePath != null) {
-      localPath = await ArtworkCache.instance.findLocalArtwork(
-          widget.artworkLocalFilePath!);
-    }
-    if (localPath == null && widget.artworkUrl != null) {
+    if (widget.artworkUrl != null) {
       localPath = await ArtworkCache.instance.getPath(
         widget.artworkUrl!,
         artist:    widget.artist,
         album:     widget.album,
         targetDir: widget.artworkTargetDir,
+        priority:  true, // la pochette du morceau en cours (voir getPath)
       );
+    }
+    if (localPath == null && widget.artworkLocalFilePath != null) {
+      localPath = await ArtworkCache.instance.findLocalArtwork(
+          widget.artworkLocalFilePath!);
     }
 
     // Resolving the path is itself async — the track may have changed again
@@ -585,6 +609,12 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
   bool _availableFor(VizEffect e) => switch (e) {
         VizEffect.patterns => _patternsAvailable,
         VizEffect.voices || VizEffect.notes => _voiceDataAvailable,
+        // Same feed as the notation (the look-ahead note timeline), GL-only
+        // like the spectrum: no CustomPaint fallback.
+        VizEffect.piano => _voiceDataAvailable &&
+            widget.audio.hasPiano &&
+            (widget.audio.vizGpuAvailable ||
+                (!kIsWeb && Platform.isAndroid)),
         VizEffect.projectm => widget.audio.hasProjectM,
         // Track-independent (fed by the main output like stereo), but GL-only:
         // no CustomPaint fallback, so desktop Linux/Windows and a stale binary
@@ -616,7 +646,9 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
   // the release lives here: whenever the active effect is not a look-ahead one,
   // drop it back to the minimum.
   void _releaseLookaheadIfIdle() {
-    if (_effective != VizEffect.notes && _effective != VizEffect.patterns) {
+    if (_effective != VizEffect.notes &&
+        _effective != VizEffect.piano &&
+        _effective != VizEffect.patterns) {
       widget.audio.setLookaheadSeconds(0.0);
     }
   }
@@ -674,9 +706,35 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
         const Duration(milliseconds: 250), (_) => _checkSlow());
   }
 
+  /// L'app est-elle VISIBLE ? Minimisée ou occultée, le système étrangle le
+  /// vsync (une image par seconde, voire moins): la boucle de rendu tourne
+  /// TOUJOURS, mais à une cadence qui ne dit rien du preset ni de l'appareil —
+  /// et là ce sont des frames lentes EN SÉRIE, donc la règle native « deux
+  /// d'affilée » ne protège pas. Le natif ne sait rien de la visibilité de la
+  /// fenêtre; Flutter, si. `inactive` (fenêtre visible sans le focus) rend
+  /// normalement et reste mesurée.
+  late final AppLifecycleListener _lifecycle;
+  bool _appVisible = true;
+
+  void _onLifecycle(AppLifecycleState s) {
+    final visible =
+        s == AppLifecycleState.resumed || s == AppLifecycleState.inactive;
+    if (visible && !_appVisible) {
+      // Retour à l'écran: les compteurs natifs sont pleins des frames étranglées
+      // d'avant, et les premières d'après rattrapent. Même grâce qu'un preset
+      // neuf, et le verdict qui traînait est jeté.
+      widget.audio.projectmTakeSlowVerdict();
+      _slowGraceUntil = DateTime.now().add(_kSlowGrace);
+    }
+    _appVisible = visible;
+  }
+
   Future<void> _checkSlow() async {
     if (_slowHandling || !mounted) return;
     if (!widget.audio.projectmTakeSlowVerdict()) return;
+    // CONSOMMÉ puis ignoré: un verdict rendu fenêtre cachée ne doit pas
+    // attendre le retour à l'écran pour frapper.
+    if (!_appVisible) return;
     // Le verdict est CONSOMMÉ avant ces deux filtres — c'est voulu: on veut une
     // mesure FRAÎCHE après, pas celle qui traînait.
     if (DateTime.now().isBefore(_slowGraceUntil)) return;
@@ -729,6 +787,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
       }
       _slowLastPath = path;
       _slowGraceUntil = DateTime.now().add(_kSlowGrace);
+      widget.audio.vizWake();
       widget.audio.projectmNextPreset();
       if (!mounted) return;
       AppSnack.show(
@@ -1123,6 +1182,21 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
   /// Spectrum: the four palettes, top-left, same shape as the pattern controls.
   /// They existed only in Settings → Visualisation → Colors, which is a long
   /// way from the thing they change — and a look is picked by looking at it.
+  /// Une barre de contrôles par-viz (haut-gauche) ne DÉBORDE jamais: sur un
+  /// panneau étroit — le mode visualiseur du mini lecteur descend à 240 px —
+  /// elle se réduit d'un bloc (`scaleDown`, jamais agrandie) au lieu de lever
+  /// « RenderFlex overflowed ». La marge droite réserve la colonne des boutons
+  /// de fenêtre (croix, plein écran), posés en haut-DROITE du même Stack: sans
+  /// elle la barre, même réduite, passerait dessous.
+  Widget _fitControlBar(Widget bar) => Padding(
+        padding: const EdgeInsets.only(right: 44),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.topLeft,
+          child: bar,
+        ),
+      );
+
   Widget _spectrumControls(AppLocalizations l10n, ColorScheme cs) {
     return ListenableBuilder(
       listenable: UserSettings.instance,
@@ -1156,6 +1230,196 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
               btn(2, Icons.blur_linear,    l10n.settingsSpectrumModeBeam),
               btn(3, Icons.show_chart,     l10n.settingsSpectrumModeLine),
               btn(4, Icons.blur_circular,  l10n.settingsSpectrumModeRing),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Oscilloscope par voies: ce que le LIBELLÉ d'une voie dit — son nom de
+  /// voie, ou l'instrument qu'elle joue. Rien à afficher quand les noms sont
+  /// éteints: le choix n'aurait aucun effet visible.
+  Widget _voicesControls(AppLocalizations l10n, ColorScheme cs) {
+    return ListenableBuilder(
+      listenable: UserSettings.instance,
+      builder: (context, _) {
+        final s = UserSettings.instance;
+        if (!s.vizVoiceNames) return const SizedBox.shrink();
+        final idle = Colors.white.withValues(alpha: 0.85);
+        const activeColor = Color(0xFF5AD1FF);
+        Widget btn(bool active, String letter, String tooltip, VoidCallback onTap) {
+          return Tooltip(
+            message: tooltip,
+            child: InkResponse(
+              onTap: onTap,
+              radius: 22,
+              child: Padding(
+                padding: const EdgeInsets.all(7),
+                child: SizedBox(
+                  width: 20, height: 20,
+                  child: Center(
+                    child: Text(letter,
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            height: 1,
+                            color: active ? activeColor : idle)),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.42),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              btn(s.vizVoiceNameSource == 0, 'V', l10n.settingsPianoColorVoice,
+                  () => s.vizVoiceNameSource = 0),
+              btn(s.vizVoiceNameSource == 1, 'I', l10n.settingsPianoColorInstrument,
+                  () => s.vizVoiceNameSource = 1),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Notation: ce que la couleur d'une boîte DÉSIGNE — la voix ou
+  /// l'instrument, le même choix que le piano et au même endroit (haut-gauche,
+  /// le coin des réglages par visualiseur).
+  Widget _notesControls(AppLocalizations l10n, ColorScheme cs) {
+    return ListenableBuilder(
+      listenable: UserSettings.instance,
+      builder: (context, _) {
+        final s = UserSettings.instance;
+        final idle = Colors.white.withValues(alpha: 0.85);
+        const activeColor = Color(0xFF5AD1FF);
+        // Des LETTRES, comme au piano: aucune icône Material ne dit « canal »
+        // ni « instrument » sans ambiguïté.
+        Widget btn(bool active, String letter, String tooltip, VoidCallback onTap) {
+          return Tooltip(
+            message: tooltip,
+            child: InkResponse(
+              onTap: onTap,
+              radius: 22,
+              child: Padding(
+                padding: const EdgeInsets.all(7),
+                child: SizedBox(
+                  width: 20, height: 20,
+                  child: Center(
+                    child: Text(letter,
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            height: 1,
+                            color: active ? activeColor : idle)),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.42),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              btn(s.noteColorMode == 0, 'V', l10n.settingsPianoColorVoice,
+                  () => s.noteColorMode = 0),
+              btn(s.noteColorMode == 1, 'I', l10n.settingsPianoColorInstrument,
+                  () => s.noteColorMode = 1),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Piano: the two looks, the two colourings and the glow, top-left — same
+  /// rule as the spectrum: a look is picked by looking at it, not in Settings.
+  Widget _pianoControls(AppLocalizations l10n, ColorScheme cs) {
+    return ListenableBuilder(
+      listenable: UserSettings.instance,
+      builder: (context, _) {
+        final s = UserSettings.instance;
+        final idle = Colors.white.withValues(alpha: 0.85);
+        const activeColor = Color(0xFF5AD1FF);
+        // `enabled: false` = grisé et inerte: une option qui n'a pas de sens
+        // dans l'état courant reste visible (on sait qu'elle existe) mais ne
+        // répond pas.
+        // `letter`: un glyphe TEXTE à la place de l'icône, pour une notion
+        // que Material ne dessine pas (V = voix/canal, I = instrument).
+        Widget btn(bool active, IconData? icon, String tooltip, VoidCallback onTap,
+                {bool enabled = true, String? letter}) {
+          final color = !enabled
+              ? Colors.white.withValues(alpha: 0.28)
+              : active ? activeColor : idle;
+          return Tooltip(
+            message: tooltip,
+            child: InkResponse(
+              onTap: enabled ? onTap : null,
+              radius: 22,
+              child: Padding(
+                padding: const EdgeInsets.all(7),
+                child: letter != null
+                    ? SizedBox(
+                        width: 20, height: 20,
+                        child: Center(
+                          child: Text(letter,
+                              style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1,
+                                  color: color)),
+                        ),
+                      )
+                    : Icon(icon, size: 20, color: color),
+              ),
+            ),
+          );
+        }
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.42),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              btn(s.pianoMode == 0, Icons.view_agenda_outlined,
+                  l10n.settingsPianoModeRoll, () => s.pianoMode = 0),
+              btn(s.pianoMode == 1, Icons.south, l10n.settingsPianoModeFalling,
+                  () => s.pianoMode = 1),
+              const SizedBox(width: 4),
+              // Par VOIX (canal) / par INSTRUMENT: des lettres, aucune icône
+              // Material ne dit « canal » ni « instrument » sans ambiguïté
+              // (la voix humaine et le clavier ont été essayés).
+              btn(s.pianoColorMode == 0, null, l10n.settingsPianoColorVoice,
+                  () => s.pianoColorMode = 0, letter: 'V'),
+              btn(s.pianoColorMode == 1, null, l10n.settingsPianoColorInstrument,
+                  () => s.pianoColorMode = 1, letter: 'I'),
+              const SizedBox(width: 4),
+              btn(s.pianoGlow, Icons.flare, l10n.settingsPianoGlow,
+                  () => s.pianoGlow = !s.pianoGlow),
+              btn(s.pianoLighting, Icons.light_mode_outlined,
+                  l10n.settingsPianoLighting,
+                  () => s.pianoLighting = !s.pianoLighting),
+              // La légende suit le MODE: elle nomme les voies par voix, et
+              // les instruments qui jouent par instrument (leurs noms quand
+              // le moteur en donne: presets d'une SoundFont, échantillons
+              // d'un module).
+              btn(s.pianoVoiceNames, Icons.label_outline,
+                  l10n.settingsPianoVoiceNames,
+                  () => s.pianoVoiceNames = !s.pianoVoiceNames),
             ],
           ),
         );
@@ -1204,13 +1468,29 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
               // controls are hidden rather than shown as dead toggles.
               // Smooth (sub-row) scrolling works for BOTH synth and native
               // patterns, so it stays outside the patternSupported gate below.
-              btn(
-                icon: Icons.animation,
-                tooltip: l10n.patternSmoothScroll,
-                active: s.patternSmoothScroll,
-                onTap: () =>
-                    s.patternSmoothScroll = !s.patternSmoothScroll,
-              ),
+              // Masqué quand le style impose le défilement par lignes
+              // entières (Visualiser), même règle que la barre épinglée: un
+              // interrupteur sans effet vaut moins que pas d'interrupteur.
+              if (!PatternPalette.selectedForcesNoSmooth(s.patternPalette))
+                btn(
+                  icon: Icons.animation,
+                  tooltip: l10n.patternSmoothScroll,
+                  active: s.patternSmoothScroll,
+                  onTap: () =>
+                      s.patternSmoothScroll = !s.patternSmoothScroll,
+                ),
+              // Ligne active épinglée: la barre affiche la ligne ENTENDUE
+              // alignée au pixel pendant que le motif continue de défiler.
+              // Montrée seulement quand le défilement est fluide — sans lui,
+              // la ligne est déjà alignée et la bascule ne ferait rien.
+              if (!PatternPalette.selectedForcesNoSmooth(s.patternPalette) &&
+                  s.patternSmoothScroll)
+                btn(
+                  icon: Icons.push_pin_outlined,
+                  tooltip: l10n.patternPinnedRow,
+                  active: s.patternPinnedRow,
+                  onTap: () => s.patternPinnedRow = !s.patternPinnedRow,
+                ),
               // Opaque background: like smooth scrolling, it applies to a
               // synthesized grid too, so it stays outside the patternSupported
               // gate. Active = the cover art is hidden behind the grid.
@@ -1245,20 +1525,25 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
               ],
               Tooltip(
                 message: l10n.patternSize,
-                child: PopupMenuButton<int>(
+                // La taille est CONTINUE (0.25→2 par 0.05) — le menu n'en
+                // propose que des jalons, le réglage fin passe par le
+                // pincement à deux doigts ou par le curseur des Réglages. Une
+                // liste de 36 entrées serait scrollable, donc avec sa bande
+                // morte en haut de première cellule.
+                child: PopupMenuButton<double>(
                   padding: const EdgeInsets.all(7),
                   iconSize: 20,
                   icon: Icon(Icons.format_size,
-                      color: s.patternSizeIndex > 0 ? activeColor : idle),
-                  initialValue: s.patternSizeIndex,
-                  onSelected: (v) => s.patternSizeIndex = v,
+                      // « Actif » = pas la taille par défaut (×1).
+                      color: s.patternSize != 1.0 ? activeColor : idle),
+                  onSelected: (v) => s.patternSize = v,
                   itemBuilder: (context) => [
-                    for (int i = 0;
-                        i < UserSettings.patternSizeValues.length; i++)
-                      PopupMenuItem<int>(
-                        value: i,
-                        child: Text(
-                            '×${UserSettings.patternSizeValues[i].toString().replaceAll('.0', '')}'),
+                    for (final v in const [
+                      0.15, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0,
+                    ])
+                      PopupMenuItem<double>(
+                        value: v,
+                        child: Text('×${v.toString().replaceAll('.0', '')}'),
                       ),
                   ],
                 ),
@@ -1348,6 +1633,12 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
         );
       case VizEffect.notes:
         effectWidget = NotesScopeWidget(audio: widget.audio);
+      case VizEffect.piano:
+        effectWidget = PianoWidget(
+          audio:      widget.audio,
+          height:     widget.height,
+          fillHeight: widget.fillHeight,
+        );
       case VizEffect.patterns:
         effectWidget = PatternScopeWidget(
           audio:    widget.audio,
@@ -1438,7 +1729,10 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
               child: _presetArrow(
                 icon: Icons.arrow_left,
                 tooltip: _withKeyHint(l10n.vizPrevPreset, 'P'),
-                onPressed: widget.audio.projectmPrevPreset,
+                onPressed: () {
+                  widget.audio.vizWake();   // voir src/rewamp_viz_idle.h
+                  widget.audio.projectmPrevPreset();
+                },
               ),
             ),
           ),
@@ -1449,7 +1743,10 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
               child: _presetArrow(
                 icon: Icons.arrow_right,
                 tooltip: _withKeyHint(l10n.vizNextPreset, 'N'),
-                onPressed: widget.audio.projectmNextPreset,
+                onPressed: () {
+                  widget.audio.vizWake();
+                  widget.audio.projectmNextPreset();
+                },
               ),
             ),
           ),
@@ -1461,7 +1758,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
               alignment: Alignment.topLeft,
               child: Padding(
                 padding: const EdgeInsets.all(8),
-                child: _pmControls(l10n, cs),
+                child: _fitControlBar(_pmControls(l10n, cs)),
               ),
             ),
         ],
@@ -1471,7 +1768,34 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
             alignment: Alignment.topLeft,
             child: Padding(
               padding: const EdgeInsets.all(8),
-              child: _spectrumControls(l10n, cs),
+              child: _fitControlBar(_spectrumControls(l10n, cs)),
+            ),
+          ),
+        // Oscilloscope par voies: libellé par voie / par instrument, top-left.
+        if (_effective == VizEffect.voices)
+          Align(
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: _fitControlBar(_voicesControls(l10n, cs)),
+            ),
+          ),
+        // Notation viz: couleur par voix / par instrument, top-left.
+        if (_effective == VizEffect.notes)
+          Align(
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: _fitControlBar(_notesControls(l10n, cs)),
+            ),
+          ),
+        // Piano viz: look / colours / glow, top-left.
+        if (_effective == VizEffect.piano)
+          Align(
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: _fitControlBar(_pianoControls(l10n, cs)),
             ),
           ),
         // Pattern viz: scroll-mode / volume-bars / color-scheme, top-left.
@@ -1480,7 +1804,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
             alignment: Alignment.topLeft,
             child: Padding(
               padding: const EdgeInsets.all(8),
-              child: _patternControls(l10n, cs),
+              child: _fitControlBar(_patternControls(l10n, cs)),
             ),
           ),
       ],
@@ -1849,17 +2173,21 @@ class _PmPresetPickerSheetState extends State<_PmPresetPickerSheet> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: TextField(
+            child: CancelField(
               controller: _filter,
-              autofocus: true,
-              // The list filters as you type, so the search key has nothing left
-              // to do: keep the results up and let it dismiss the keyboard.
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search),
-                hintText: widget.hintText,
-                isDense: true,
-                border: const OutlineInputBorder(),
+              builder: (_) => TextField(
+                controller: _filter,
+                autofocus: true,
+                // The list filters as you type, so the search key has nothing
+                // left to do: keep the results up and let it dismiss the
+                // keyboard.
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search),
+                  hintText: widget.hintText,
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
               ),
             ),
           ),

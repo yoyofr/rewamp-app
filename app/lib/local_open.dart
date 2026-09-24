@@ -1,10 +1,17 @@
+import 'picker_memory.dart';
 import 'dart:io';
+
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
+import 'package:path/path.dart' as p;
 
 import 'package:flutter/services.dart';
 import 'package:rewamp_audio/rewamp_audio.dart' show SubsongInfo;
 
 import 'formats.dart';
 import 'local_db.dart' show LocalDb, TrackRecord;
+import 'local_import.dart' show androidPickerStartDir;
+import 'opened_files.dart';
 import 'player_controller.dart';
 import 'preset_manager.dart';
 import 'rewamp_db.dart';
@@ -28,6 +35,11 @@ import 'uade_info.dart';
 const kMultiTrackExts = {
   'nsf', 'nsfe',      // NES
   'gbs',              // Game Boy
+  // Un `.gbr` est un rip du DRIVER: aucune table de morceaux, libgbsplay
+  // annonce 255 faute de savoir. C'est la sonde native qui demande au pilote
+  // lesquels jouent vraiment, et sa liste est CREUSE — la position n'est donc
+  // pas l'index (`subsongIndicesFor`), exactement comme un `.adl`.
+  'gbr',              // Game Boy — rip de driver
   'sid', 'psid', 'rsid',
   'sap',              // Atari 8-bit
   'kss', 'mgs', 'bgm', 'mpk', 'mbm', 'opx', 'mus',
@@ -35,6 +47,20 @@ const kMultiTrackExts = {
   'ay', 'vtx', 'pt3', 'stc', 'chp',
   'gym', 's98', 'vgm', 'vgz', 'dro', 'dr0',
   'wsr',              // WonderSwan
+  // Un `.adl` Westwood est une TABLE de morceaux — et sa sous-chanson 0 est
+  // presque toujours la routine d'ARRÊT du pilote, donc sans cette ligne un
+  // `.adl` ouvert localement ne jouait RIEN. ⚠️ Sa liste est CREUSE: la sonde
+  // écarte les entrées qui ne jouent aucune note (DUNE19.ADL: 43 vivantes sur
+  // 74 annoncées), donc la POSITION n'y est pas l'index — voir
+  // subsongIndicesFor.
+  'adl',              // Westwood ADL (AdPlug)
+  // RSN = un RAR SOLIDE de .spc, joué EN PLACE (jamais dépaqueté, les chemins
+  // `.spc` par piste n'existent pas): les pistes sont donc des sous-chansons,
+  // pas des fichiers. `gme_open_file` ouvre le conteneur via Rsn_Emu et
+  // `gme_track_count` rend le compte réel — et le probe natif n'est filtré par
+  // aucune extension, il suffisait de le LUI DEMANDER. Sans cette ligne le
+  // navigateur Local jouait la sous-chanson 0 et rien d'autre.
+  'rsn',              // SNES — archive RAR de SPC
   'sndh',             // Atari ST — SNDH archives commonly bundle up to 128 subsongs.
   // OpenMPT tracker modules can hold several subsongs (order-list sequences,
   // e.g. some S3M/IT compilations). probeSubsongCount tries to open ANY file
@@ -42,6 +68,12 @@ const kMultiTrackExts = {
   // song module, so gating on these extensions is safe and just extends the
   // existing count>1 check to trackers.
   ...kTrackerExts,
+  // Furnace importe les morceaux d'un `.ftm` FamiTracker (et d'un `.0cc`,
+  // `.dnm`, `.eft`) en SOUS-CHANSONS — « Shovel Knight » en porte une dizaine.
+  // Même raisonnement que pour les trackers ci-dessus: la sonde native ne
+  // revendique qu'au-delà d'une sous-chanson, donc un module simple reste un
+  // fichier simple.
+  ...kFurnaceExts,
 };
 
 /// Something the caller may want to tell the user about. Kept as an enum rather
@@ -69,9 +101,81 @@ enum LocalOpenNotice {
 /// the native side has to buffer for.
 Future<void> Function(List<String> paths)? globalOpenLocalPaths;
 
+/// Le sélecteur de fichiers de l'OUVERTURE, et rien d'autre: il rend des
+/// chemins STABLES, prêts à jouer.
+///
+/// Sans filtre (le panneau Apple n'a jamais filtré, et un nom Amiga met son
+/// format AVANT le point: filtrer grisait des fichiers jouables — c'est le
+/// probe qui tranche à la réception), puis matérialisé sous `opened/` sur
+/// mobile, où le chemin rendu par le sélecteur est une copie de cache que le
+/// système purge quand il veut.
+Future<List<String>> pickLocalFilesToPlay() async {
+  final picked = await pickAnyFilePaths(PickerSlot.music,
+      mobileStartDir: Platform.isAndroid ? androidPickerStartDir : null);
+  if (picked.isEmpty) return const [];
+  await PickerMemory.rememberFile(PickerSlot.music, picked.first);
+  return OpenedFiles.materialise(picked);
+}
+
 // ── Files macOS hands the app from outside the UI ────────────────────────────
 
 const _openFilesChannel = MethodChannel('rewamp/open_files');
+
+/// Efface la copie qu'iOS a déposée dans `Documents/Inbox/` pour nous.
+///
+/// Quand une app reçoit un document sans l'ouvrir « en place » — c'est le mode
+/// `.import` qu'utilise `file_selector_ios`, et le cas d'un « Ouvrir avec » sur
+/// un fichier non partageable — **iOS en fait une copie dans notre
+/// `Documents/Inbox/` et nous en donne le chemin**. Cette copie nous
+/// appartient: Apple documente que l'app doit l'effacer une fois le fichier
+/// consommé, et personne d'autre ne le fera.
+///
+/// Laissée là, elle s'accumule à chaque import — dans `Documents`, donc
+/// **sauvegardée dans iCloud et visible dans l'app Fichiers**, sans que
+/// l'utilisateur ait de quoi faire le lien entre « j'ai importé une SoundFont »
+/// et « mon espace disque baisse ». Une SF2 pèse couramment 100 Mo.
+///
+/// À appeler APRÈS que l'import a lu le fichier. Ne touche QUE des copies que
+/// le SÉLECTEUR a faites dans notre bac à sable — Inbox, ou le dossier
+/// temporaire où `file_picker` dépose la sienne (depuis le 2026-09-14, les
+/// imports mobiles passent tous par lui: voir `pickerUsesFilePicker`). Un
+/// chemin ailleurs est le fichier de l'utilisateur, on n'y touche pas.
+Future<void> consumeInboxCopy(String? path) async {
+  if (path == null || !Platform.isIOS) return;
+  final tmp = Directory.systemTemp.path;
+  final isPickerCopy = path.contains('/Documents/Inbox/') ||
+      (tmp.isNotEmpty && path.startsWith(tmp));
+  if (!isPickerCopy) return;
+  try {
+    final f = File(path);
+    if (await f.exists()) await f.delete();
+  } catch (_) {/* rien à faire: c'est du ménage, pas une étape du geste */}
+}
+
+/// Les plateformes dont le côté natif tient un tampon de fichiers ouverts.
+bool get _hasNativeOpen =>
+    Platform.isMacOS || Platform.isIOS || Platform.isAndroid;
+
+/// Chemins passés en ARGUMENTS au lancement — le mécanisme de Linux et de
+/// Windows, là où Apple a `application(_:open:)`.
+///
+/// Le runner GTK transmet déjà tout ce qui suit `argv[0]` comme arguments
+/// d'entrée Dart; il ne manquait qu'un `main` qui les lise. Appelé depuis
+/// `main()`, donc AVANT que le shell existe: les chemins rejoignent la même
+/// file d'attente que ceux d'un démarrage à froid sur Apple, et le premier
+/// `drainOpenedFiles` les emporte.
+///
+/// Filtré sur « le fichier existe »: la ligne de commande porte aussi des
+/// options (`--enable-impeller`, un `--flag=valeur`), et rien ne les distingue
+/// d'un chemin par la forme seule.
+void seedOpenedPathsFromArgs(List<String> args) {
+  for (final a in args) {
+    if (a.isEmpty || a.startsWith('-')) continue;
+    try {
+      if (File(a).existsSync()) _awaitingShell.add(a);
+    } catch (_) {/* chemin invalide: ce n'en était pas un */}
+  }
+}
 
 /// Paths collected from the native buffer before [globalOpenLocalPaths] was
 /// set. `takePending` CLEARS the native side, so anything we fetch is ours to
@@ -82,12 +186,21 @@ final List<String> _awaitingShell = [];
 /// Starts listening for files opened through the Dock, the Finder, or a
 /// double-click. Call once, after [globalOpenLocalPaths] is set.
 ///
-/// macOS only for now: it is the one desktop that builds, and the mechanism is
-/// per-platform (Linux has no equivalent of application(_:open:); Windows
-/// passes paths as argv). The rest of the pipeline is platform-agnostic, so
-/// they plug in here when their runners exist.
+/// macOS, iOS et Android tiennent un tampon natif et la MÊME discipline: le
+/// natif ne pousse jamais, Dart tire. Linux et Windows livrent leurs chemins en
+/// ARGUMENTS, semés depuis `main` (voir [seedOpenedPathsFromArgs]).
+///
+/// Sur iOS le chemin rendu est une COPIE dans notre bac à sable (voir
+/// `AppDelegate.ingestOpenedFile`): une URL « en place » n'est lisible que le
+/// temps d'une portée de sécurité, et nos décodeurs C ouvrent le fichier bien
+/// après.
 void listenForOpenedFiles() {
-  if (!Platform.isMacOS) return;
+  // Linux/Windows n'ont pas de canal natif, mais peuvent avoir des chemins
+  // semés par la ligne de commande: on tente le drain quand même.
+  if (!_hasNativeOpen) {
+    if (_awaitingShell.isNotEmpty) drainOpenedFiles();
+    return;
+  }
   _openFilesChannel.setMethodCallHandler((call) async {
     if (call.method == 'filesAvailable') await drainOpenedFiles();
   });
@@ -98,11 +211,13 @@ void listenForOpenedFiles() {
 
 /// Pulls whatever the native side has buffered and hands it to the shell.
 Future<void> drainOpenedFiles() async {
-  if (!Platform.isMacOS) return;
-  try {
-    final fetched = await _openFilesChannel.invokeListMethod<String>('takePending');
-    if (fetched != null) _awaitingShell.addAll(fetched);
-  } catch (_) {/* channel not up yet — the next nudge retries */}
+  if (_hasNativeOpen) {
+    try {
+      final fetched =
+          await _openFilesChannel.invokeListMethod<String>('takePending');
+      if (fetched != null) _awaitingShell.addAll(fetched);
+    } catch (_) {/* channel not up yet — the next nudge retries */}
+  }
   final open = globalOpenLocalPaths;
   if (open == null || _awaitingShell.isEmpty) return;
   final batch = List<String>.from(_awaitingShell);
@@ -122,7 +237,100 @@ typedef LocalOpenReporter = void Function(LocalOpenNotice notice);
 const kCompanionOnlyExts = <String>{
   'psflib', 'psf2lib', 'gsflib', '2sflib', 'ncsflib',
   'usflib', 'ssflib', 'dsflib', 'snsflib', 'qsflib',
+  // Kits de percussions de FAC Soundtracker: un `.mus` nomme son kit à
+  // l'offset `taille - 124` et le moteur va chercher `<NOM>.SM1` + `.SM2` à
+  // côté. Ce sont des BANQUES D'ÉCHANTILLONS, jamais des morceaux — les mettre
+  // en file donnerait des pistes muettes portant le nom du kit.
+  'sm1', 'sm2',
+  // Banque MT-32 d'un jeu (dump brut de sysex Roland: Sierra, Prince of
+  // Persia, Betrayal at Krondor…): le greffon MT-32 l'envoie avant les
+  // morceaux de son dossier. Sans cette ligne, vgmstream — qui réclame toute
+  // extension inconnue — en faisait une piste.
+  'syx',
 };
+
+/// Ce qui n'est JAMAIS de la musique: images, textes, documents, fichiers de
+/// contrôle. Règle NÉGATIVE absolue, posée AVANT la seconde chance du moteur:
+/// vgmstream réclame toute extension inconnue (score 50), donc `canPlay`
+/// répondait OUI pour un `.jpg` — « lire un dossier » mettait la pochette en
+/// file, et l'import pouvait l'enregistrer comme piste.
+const kNeverPlayableExts = <String>{
+  'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'avif', 'tif', 'tiff', 'ico',
+  'heic', 'svg', 'txt', 'nfo', 'diz', 'pdf', 'htm', 'html', 'md', 'ini',
+  'json', 'xml', 'log', 'doc', 'docx', 'rtf', 'csv', 'sfv', 'md5', 'sha1',
+  'url', 'lnk', 'db', 'exe', 'com', 'bat', 'dll',
+};
+
+/// Un MIDI qui ne porte QUE des sysex: la banque MT-32 d'un jeu livrée comme
+/// un morceau (`sysexmain.mid` d'Ultima VII: « play this first to program the
+/// MT-32 »). Le greffon MT-32 la charge pour les morceaux de son dossier; en
+/// file, elle ne jouerait que du silence. Restreint aux noms en `sys…`, comme
+/// le greffon, et à un fichier de taille raisonnable (lu en entier).
+bool isMt32BankMidi(String path) {
+  final b = p.basename(path).toLowerCase();
+  if (!b.startsWith('sys')) return false;
+  final ext = p.extension(b);
+  if (ext != '.mid' && ext != '.midi') return false;
+  try {
+    final f = File(path);
+    if (f.lengthSync() > 256 * 1024) return false;
+    return midiIsSysexOnly(f.readAsBytesSync());
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Vrai quand ce SMF porte au moins un sysex et AUCUNE note. Un fichier
+/// illisible n'est pas une banque (faux).
+@visibleForTesting
+bool midiIsSysexOnly(List<int> d) {
+  int u32(int i) => (d[i] << 24) | (d[i + 1] << 16) | (d[i + 2] << 8) | d[i + 3];
+  try {
+    if (d.length < 14 || String.fromCharCodes(d.sublist(0, 4)) != 'MThd') return false;
+    final ntr = (d[10] << 8) | d[11];
+    var p0 = 8 + u32(4);
+    var sysex = 0;
+    for (var t = 0; t < ntr; t++) {
+      if (String.fromCharCodes(d.sublist(p0, p0 + 4)) != 'MTrk') return false;
+      final end = p0 + 8 + u32(p0 + 4);
+      var q = p0 + 8;
+      var status = 0;
+      int vlq() {
+        var v = 0;
+        while (true) {
+          final c = d[q++];
+          v = (v << 7) | (c & 0x7F);
+          if (c < 0x80) return v;
+        }
+      }
+      while (q < end) {
+        vlq();
+        if (d[q] & 0x80 != 0) status = d[q++];
+        if (status == 0xFF) {
+          q++;
+          final l = vlq();
+          q += l;
+        } else if (status == 0xF0 || status == 0xF7) {
+          final l = vlq();
+          q += l;
+          sysex++;
+        } else {
+          final k = status & 0xF0;
+          if (k == 0xC0 || k == 0xD0) {
+            q += 1;
+          } else {
+            if (k == 0x90 && d[q + 1] > 0) return false;
+            q += 2;
+          }
+        }
+      }
+      p0 = end;
+    }
+    return sysex > 0;
+  } catch (_) {
+    return false;
+  }
+}
 
 /// Ce fichier mérite-t-il d'entrer dans une file quand on en ouvre PLUSIEURS
 /// d'un coup (« tout sélectionner » dans un dossier, dépôt d'un lot, dossier).
@@ -149,11 +357,18 @@ const kCompanionOnlyExts = <String>{
 bool isBulkQueueCandidate(String path, {bool Function(String)? canPlay}) {
   final b = path.split(Platform.pathSeparator).last;
   if (b.startsWith('.')) return false;
+  // Un dossier de COMPAGNONS ne contient pas de pistes, quelles que soient les
+  // extensions qu'on y trouve — et elles sont jouables par ailleurs (`.ss` est
+  // SpeedySystem). Règle NÉGATIVE de même nature que kCompanionOnlyExts, mais
+  // portée par l'EMPLACEMENT et non par le nom. Voir [isInCompanionDir].
+  if (isInCompanionDir(path)) return false;
   final ext = b.contains('.') ? b.split('.').last.toLowerCase() : '';
   // Forme PRÉFIXE des modules Amiga: `mdat.NAME`, `smpl.NAME`… — le format est
   // avant le point, donc le suffixe ne dit rien.
   final pre = b.contains('.') ? b.split('.').first.toLowerCase() : '';
   if (kCompanionOnlyExts.contains(ext)) return false;
+  if (kNeverPlayableExts.contains(ext)) return false;
+  if (isMt32BankMidi(path)) return false;
   if (RewampDb.kExtractedAudioExts.contains(ext) ||
       RewampDb.kExtractedAudioExts.contains(pre) ||
       RewampDb.kLocalArchiveExts.contains(ext)) {
@@ -178,10 +393,11 @@ Future<List<TrackRecord>?> m3uSubsongsFor(
   String path, {
   String? album,
   String? artist,
+  M3uLookupCache? m3uCache,
 }) async {
   List<SubsongInfo>? subs;
   try {
-    subs = await RewampDb.probeLocalM3u(path);
+    subs = await RewampDb.probeLocalM3u(path, cache: m3uCache);
   } catch (_) {
     return null;
   }
@@ -193,6 +409,17 @@ Future<List<TrackRecord>?> m3uSubsongsFor(
       if (s.filePath.split(Platform.pathSeparator).last.toLowerCase() == want) s
   ];
   if (mine.isEmpty) return null;
+  // Un M3U d'ALBUM — plusieurs fichiers DISTINCTS, chacun listé une fois —
+  // n'est pas une liste de sous-chansons: l'appliquer à un fichier
+  // mono-piste lui inventait un index et un titre (payé sur Battle Garegga:
+  // « 02 Rebellion [Opening].vgz » ressortait « 2 »). L'autorité M3U ne vaut
+  // que quand le fichier y apparaît PLUSIEURS fois (joshw: un .nsf, vingt
+  // lignes) ou que le M3U ne parle que de lui.
+  final distinctFiles = {
+    for (final s in subs)
+      s.filePath.split(Platform.pathSeparator).last.toLowerCase()
+  };
+  if (mine.length == 1 && distinctFiles.length > 1) return null;
   final ext  = name.split('.').last.toLowerCase();
   final base = name.replaceAll(RegExp(r'\.\w+$'), '');
   return [
@@ -250,6 +477,27 @@ List<TrackRecord>? engineSubsongsFor(
   return subsongRecordsFrom(subs, path, album: album, known: known);
 }
 
+/// Les VRAIS index de sous-chanson de [path], dans l'ordre de la liste
+/// jouable, ou l'identité quand la sonde ne sait rien (le cas de tout le
+/// reste).
+///
+/// ⚠️ Une liste peut être CREUSE: un `.adl` Westwood garde entre ses morceaux
+/// des entrées de CONTRÔLE (arrêt, fondu) qui ne jouent aucune note, et la
+/// sonde ne rend que les vivantes. La position n'y est donc pas l'index, et
+/// reconstruire la file par `List.generate(count, (i) => …subsongIdx: i)`
+/// enfile des slots muets. La liste n'est adoptée que si elle a EXACTEMENT
+/// [count] entrées — un compte venu du serveur décrit autre chose.
+List<int> subsongIndicesFor(
+    String path, PlayerController controller, int count) {
+  try {
+    final subs = controller.audio.probeSubsongs(path);
+    if (subs.length == count) return [for (final s in subs) s.subsongIdx];
+  } catch (_) {}
+  // Sonde muette: au moins la BASE du format (SNDH/sc68 comptent à partir de 1).
+  return RewampDb.genericSubsongIndices(
+      path.contains('.') ? path.split('.').last : '', count);
+}
+
 /// La moitié PURE de [engineSubsongsFor] — celle qui décide — séparée du
 /// moteur pour être testable: l'hôte de test Dart n'a pas le natif.
 List<TrackRecord>? subsongRecordsFrom(
@@ -259,7 +507,12 @@ List<TrackRecord>? subsongRecordsFrom(
   Map<int, TrackRecord> known = const {},
 }) {
   if (subs.length < 2) return null;
-  if (!subs.any((s) => (s.title ?? '').trim().isNotEmpty)) return null;
+  // Sans titres, la sonde n'apporte rien que le COMPTE ne dise déjà — sauf
+  // quand la liste est CREUSE: là, l'index réel est une information que le
+  // repli par position (`List.generate(count, (i) => …i)`) ne peut PAS
+  // reconstruire, et s'en passer met en file des slots silencieux.
+  final sparse = subs.any((s) => s.subsongIdx != s.index);
+  if (!sparse && !subs.any((s) => (s.title ?? '').trim().isNotEmpty)) return null;
 
   final name = path.split(Platform.pathSeparator).last;
   final ext  = name.split('.').last.toLowerCase();
@@ -303,11 +556,97 @@ List<TrackRecord>? subsongRecordsFrom(
 ///
 /// Empty means "nothing playable here" — the caller decides whether that is
 /// worth a message. A plain single-subsong file returns exactly one record.
+/// Complète une ligne locale avec ce que dit le M3U voisin: son TITRE d'entrée
+/// (`#EXTINF`), puis l'album et les artistes de l'en-tête.
+///
+/// Un rip local n'a aucune ligne serveur: son M3U est la seule chose qui sache
+/// le nom de l'album et ses compositeurs (`#EXTALB:`, `#EXTART:`, ou un
+/// « # Composer(s): » du bloc libre — voir m3u_info.dart). La branche « fichier
+/// simple » fabriquait une ligne qui ne porte que le NOM DU FICHIER: le lecteur
+/// affichait donc un titre nu, sans artiste ni album, pour un dossier qui les
+/// déclare en toutes lettres.
+///
+/// Deux régimes, et ils ne sont pas contradictoires:
+///
+///  * **le TITRE d'entrée fait AUTORITÉ** et remplace celui de la ligne —
+///    c'est la règle du dépôt (« le M3U fait autorité »), et la ligne
+///    fabriquée ne porte de toute façon que le nom du fichier;
+///  * **l'album et l'artiste ne comblent que les TROUS**. « La ligne DÉJÀ EN
+///    BASE gagne »: une lecture qui ne sait pas ne doit rien écraser.
+///
+/// ⚠️ Rien de tout ça sur une ligne du CATALOGUE (`online_id` posé): le
+/// serveur dit mieux, et un M3U traîne à côté de tout album téléchargé.
+///
+/// ⚠️ Posé dans l'ENTONNOIR et non dans les cinq branches qui fabriquent des
+/// lignes (conteneur, UADE, M3U, moteur, fichier simple): les recoder une par
+/// une garantirait qu'il en manque une.
+Future<List<TrackRecord>> _fillFromM3uHeader(
+    String path, List<TrackRecord> rows, M3uLookupCache? cache) async {
+  if (rows.isEmpty) return rows;
+  // Une ligne du CATALOGUE ne se fait pas corriger par un M3U voisin: le
+  // serveur dit mieux, et un M3U traîne à côté de tout album téléchargé.
+  if (rows.any((t) => (t.onlineId ?? '').isNotEmpty)) return rows;
+
+  // Le TITRE que le M3U donne à CE fichier. `#EXTINF:43,Nom de la piste` —
+  // c'est le nom que le ripeur a voulu, et le dépôt tient déjà le M3U pour
+  // AUTORITAIRE sur les titres. La ligne fabriquée, elle, ne porte que le nom
+  // du fichier (« tentacle_001 »).
+  //
+  // ⚠️ Seulement pour un fichier SIMPLE — une ligne, sous-chanson 0. Un
+  // fichier listé plusieurs fois est un conteneur dont le M3U décrit les
+  // sous-chansons, et ce chemin-là a déjà son traitement (m3uSubsongsFor):
+  // `localM3uEntryFor` ne répond que s'il n'y a qu'une entrée.
+  if (rows.length == 1 && rows.first.subsongIdx == 0) {
+    final entry = await RewampDb.localM3uEntryFor(path, cache: cache);
+    final t = (entry?.title ?? '').trim();
+    if (t.isNotEmpty && t != rows.first.title) {
+      rows = [rows.first.copyWith(title: t)];
+    }
+  }
+
+  final needs = rows.any((t) =>
+      (t.artist ?? '').isEmpty || (t.metaAlbum ?? '').isEmpty);
+  if (!needs) return rows;
+  final info = await RewampDb.localM3uInfo(path, cache: cache);
+  if (info == null) return rows;
+  final artist = info.artists.isEmpty ? null : info.artists.join(', ');
+  final album  = info.album;
+  if (artist == null && album == null) return rows;
+  return [
+    for (final t in rows)
+      t.copyWith(
+        artist:    (t.artist ?? '').isEmpty ? artist : null,
+        metaAlbum: (t.metaAlbum ?? '').isEmpty ? album : null,
+      ),
+  ];
+}
+
+/// Enveloppe de [_tracksForLocalPathInner] — voir [_fillFromM3uHeader].
 Future<List<TrackRecord>> tracksForLocalPath(
   String path, {
   required PlayerController controller,
   LocalOpenReporter? report,
+  LocalOpenBatch? batch,
 }) async {
+  final rows = await _tracksForLocalPathInner(path,
+      controller: controller, report: report, batch: batch);
+  // Un DOSSIER a déjà enrichi chacun de ses fichiers par leur propre M3U (la
+  // récursion passe par ici): l'appel du dessus ne trouve plus de trou.
+  return _fillFromM3uHeader(path, rows, batch?.m3u);
+}
+
+Future<List<TrackRecord>> _tracksForLocalPathInner(
+  String path, {
+  required PlayerController controller,
+  LocalOpenReporter? report,
+  LocalOpenBatch? batch,
+}) async {
+  // Les lignes en base d'un fichier: prises dans le LOT quand il couvre ce
+  // chemin (une requête pour tout le dossier), sinon demandées à la base.
+  Future<List<TrackRecord>> knownFor(String f) async =>
+      (batch != null && batch.covers(f))
+          ? (batch.known[f] ?? const <TrackRecord>[])
+          : await LocalDb.instance.getTracksForFile(f);
   final name = path.split(Platform.pathSeparator).last;
   final ext  = name.split('.').last.toLowerCase();
   final base = name.replaceAll(RegExp(r'\.\w+$'), '');
@@ -333,10 +672,11 @@ Future<List<TrackRecord>> tracksForLocalPath(
       }
     } catch (_) {}
     files.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final inner = await LocalOpenBatch.prepare(files, m3u: batch?.m3u);
     final out = <TrackRecord>[];
     for (final f in files) {
-      out.addAll(
-          await tracksForLocalPath(f, controller: controller, report: report));
+      out.addAll(await tracksForLocalPath(f,
+          controller: controller, report: report, batch: inner));
     }
     return out;
   }
@@ -385,22 +725,58 @@ Future<List<TrackRecord>> tracksForLocalPath(
       final content = await RewampDb.readM3uText(File(path));
       final subs    = RewampDb.parseM3uToSubsongs(content, File(path).parent.path);
       if (subs.isNotEmpty) {
+        // La ligne DÉJÀ EN BASE d'abord, comme pour un fichier simple: un M3U
+        // livré DANS un album téléchargé nomme ses entrées « 1 », « 2 »… et
+        // n'a pour album que SON PROPRE NOM. Persisté tel quel, ça remplaçait
+        // le titre et l'album du catalogue — mesuré sur jw_dsf, où l'album
+        // affiché était « !playlist(MusicPlayer) » et les titres des numéros.
+        //
+        // Ce que le M3U apporte reste PRIORITAIRE là où il sait: un titre
+        // d'entrée (les rips en portent souvent) bat celui de la base, et
+        // c'est l'autorité que le projet lui reconnaît sur les sous-chansons.
+        final byFile = <String, Map<int, TrackRecord>>{};
+        for (final s in subs) {
+          byFile.putIfAbsent(s.filePath, () => {});
+        }
+        for (final f in byFile.keys.toList()) {
+          for (final t in await knownFor(f)) {
+            byFile[f]![t.subsongIdx] = t;
+          }
+        }
         return [
           for (final s in subs)
-            TrackRecord(
-              id:         '',
-              filePath:   s.filePath,
-              entryPath:  '',
-              subsongIdx: s.subsongIdx,
-              title:      s.title ?? '${s.index + 1}',
-              metaAlbum:  base,
-              durationS:  (s.durationMs ?? 0) > 0 ? s.durationMs! / 1000.0 : null,
-              formatExt:  s.filePath.split('.').last.toLowerCase(),
-              source:     'local',
-              isFavorite: false,
-              inLibrary:  false,
-              playCount:  0,
-            ),
+            () {
+              final known = byFile[s.filePath]?[s.subsongIdx];
+              final title = s.title ?? known?.title ?? '${s.index + 1}';
+              final dur = (s.durationMs ?? 0) > 0
+                  ? s.durationMs! / 1000.0
+                  : known?.durationS;
+              if (known != null) {
+                return known.copyWith(
+                  title: title,
+                  durationS: dur,
+                  // L'album de la BASE quand elle en a un: le nom du M3U n'est
+                  // un album que faute de mieux.
+                  metaAlbum: (known.metaAlbum ?? '').isNotEmpty
+                      ? known.metaAlbum
+                      : base,
+                );
+              }
+              return TrackRecord(
+                id:         '',
+                filePath:   s.filePath,
+                entryPath:  '',
+                subsongIdx: s.subsongIdx,
+                title:      title,
+                metaAlbum:  base,
+                durationS:  dur,
+                formatExt:  s.filePath.split('.').last.toLowerCase(),
+                source:     'local',
+                isFavorite: false,
+                inLibrary:  false,
+                playCount:  0,
+              );
+            }(),
         ];
       }
     } catch (_) {/* fall through to the notice below */}
@@ -411,12 +787,12 @@ Future<List<TrackRecord>> tracksForLocalPath(
   // Multi-track container (NSF/GBS/SID/…): rebuild the full subsong queue.
   if (kMultiTrackExts.contains(ext)) {
     // Un M3U voisin bat la sonde native — voir m3uSubsongsFor.
-    final fromM3u = await m3uSubsongsFor(path);
+    final fromM3u = await m3uSubsongsFor(path, m3uCache: batch?.m3u);
     if (fromM3u != null) return fromM3u;
     // Real subsong count from the native decoder (header).
     final count = controller.audio.probeSubsongCount(path);
     // Titles/artwork for subsongs already played (keyed by subsong index).
-    final played = await LocalDb.instance.getTracksForFile(path);
+    final played = await knownFor(path);
     final byIdx  = {for (final t in played) t.subsongIdx: t};
     // Puis ce que le FICHIER déclare (NSFe `tlbl`/`time`, …), avant les noms
     // fabriqués plus bas.
@@ -444,7 +820,7 @@ Future<List<TrackRecord>> tracksForLocalPath(
 
   // UADE multi-subsong (TFMX, some FC/…): subsong count/titles/durations come
   // from the audacious-uade songdb, not a native probe.
-  if (UadeInfoService.isUadePath(path)) {
+  if (UadeInfoService.isUadeFileAt(path)) {
     final info = await UadeInfoService.instance.forPath(path);
     // playableSubsongs drops the songdb's NOSOUND slots (silent, length 0) —
     // same default as upstream's skip_broken_subsongs.
@@ -473,7 +849,26 @@ Future<List<TrackRecord>> tracksForLocalPath(
     }
   }
 
-  // Plain single-subsong file.
+  // Fichier simple.
+  //
+  // ⚠️ **La ligne DÉJÀ EN BASE gagne sur celle qu'on fabriquerait.** Elle porte
+  // le titre du catalogue, l'artiste, l'album, l'`online_id`, la pochette — et
+  // la ligne fabriquée ci-dessous ne porte que le NOM DU FICHIER. Or ce qui est
+  // joué est ensuite PERSISTÉ (`_persistPlay` réécrit la ligne avec le libellé
+  // qui a lancé la lecture): ouvrir par CHEMIN un fichier que la base connaît
+  // le DÉGRADAIT en base. Mesuré sur « Axelay » (jw_spc): « Set Up » est
+  // devenu « 02 Set Up » et l'album a disparu du lecteur — une fois par piste
+  // ouverte ainsi. La branche conteneur juste au-dessus réutilise déjà les
+  // lignes connues, pour une raison voisine; celle-ci ne le faisait pas.
+  //
+  // Vaut pour TOUS les chemins par chemin: dépôt sur la fenêtre, sélecteur,
+  // navigateur local.
+  final known = await knownFor(path);
+  for (final t in known) {
+    if (t.subsongIdx == 0 && t.entryPath.isEmpty) {
+      return [t.formatExt == null ? t.copyWith(formatExt: ext) : t];
+    }
+  }
   return [
     TrackRecord(
       id:         '',
@@ -526,9 +921,14 @@ Future<List<TrackRecord>> tracksForLocalPaths(
     return const [];
   }
   final out = <TrackRecord>[];
+  // UNE requête pour les lignes connues de tout le lot et une mémoire des M3U
+  // par dossier — au lieu d'une requête et d'un listage de dossier par fichier.
+  final batch = await LocalOpenBatch.prepare(
+      [for (final p in kept) if (!FileSystemEntity.isDirectorySync(p)) p]);
   for (final p in kept) {
     try {
-      out.addAll(await tracksForLocalPath(p, controller: controller, report: report));
+      out.addAll(await tracksForLocalPath(p,
+          controller: controller, report: report, batch: batch));
     } catch (_) {/* skip this one, keep the batch */}
   }
   return out;
@@ -544,6 +944,9 @@ Future<List<TrackRecord>> expandLocalModules(
   // below hit the cache instead of N serial round-trips.
   await UadeInfoService.instance
       .prefetchPaths([for (final r in recs) r.filePath]);
+  // Les modules extraits partagent UN dossier: sans mémoire, chacun le
+  // relistait pour y chercher son M3U.
+  final m3uCache = M3uLookupCache();
 
   final out = <TrackRecord>[];
   for (final r in recs) {
@@ -558,7 +961,7 @@ Future<List<TrackRecord>> expandLocalModules(
         : name.replaceAll(RegExp(r'\.\w+$'), '');
 
     // UADE multi-subsong (audacious-uade songdb).
-    if (UadeInfoService.isUadePath(path)) {
+    if (UadeInfoService.isUadeFileAt(path)) {
       final info = await UadeInfoService.instance.forPath(path);
       // NOSOUND slots filtered out — see UadeInfo.playableSubsongs.
       final playable = info?.playableSubsongs ?? const [];
@@ -588,7 +991,8 @@ Future<List<TrackRecord>> expandLocalModules(
       // Le M3U de l'archive: extrait à côté du module, il nomme les morceaux
       // et ne liste que les vrais. Il était simplement ignoré — un `.zip`
       // GBgbs jouait ses cases mortes sous des titres numérotés.
-      final fromM3u = await m3uSubsongsFor(path, album: r.metaAlbum);
+      final fromM3u =
+          await m3uSubsongsFor(path, album: r.metaAlbum, m3uCache: m3uCache);
       if (fromM3u != null) {
         out.addAll(fromM3u);
         continue;
@@ -616,4 +1020,64 @@ Future<List<TrackRecord>> expandLocalModules(
     out.add(r);
   }
   return out;
+}
+
+/// Ordre de lecture d'un conteneur qui DÉSIGNE son sous-chant de départ.
+///
+/// Beaucoup de fichiers ouvrent sur un bruitage ou un jingle et nomment dans
+/// leur en-tête le vrai premier morceau (`startSong` d'un SID, `DEFSONG` d'un
+/// SAP; le serveur les rend en 0-based dense sous `default_subsong`). « Tout
+/// lire » doit alors commencer là — et ne pas PERDRE ce qui précède: on fait
+/// TOURNER la liste. Cinq pistes, défaut sur la 3e ⇒ 3, 4, 5, 1, 2.
+///
+/// Une rotation plutôt qu'un simple `startIndex`: la file doit finir par ce
+/// qu'on a sauté, sinon un « tout lire » ne joue pas tout. Et une rotation
+/// plutôt qu'un tri: l'ordre relatif reste celui du fichier.
+///
+/// [defaultIdx] est un INDEX DANS LA LISTE, pas un index de sous-chanson —
+/// c'est à l'appelant de faire la correspondance (les deux diffèrent dès
+/// qu'un slot muet est retiré, cas UADE). null ou hors bornes ⇒ liste
+/// inchangée, jamais une erreur.
+List<T> rotateToDefaultSubsong<T>(List<T> items, int? defaultIdx) {
+  if (defaultIdx == null || defaultIdx <= 0 || defaultIdx >= items.length) {
+    return items;
+  }
+  return [...items.sublist(defaultIdx), ...items.sublist(0, defaultIdx)];
+}
+
+/// Ce qu'un geste d'ouverture précharge UNE fois pour tous ses fichiers.
+///
+/// Sans lui, chaque fichier d'un « Tout lire » posait sa requête `tracks` et
+/// relistait son dossier pour y chercher un M3U — en série. La requête coûte
+/// 0,02 ms, mais sqflite n'a qu'une file: 185 fichiers = 185 attentes derrière
+/// ce que l'app fait au même moment. Mesuré: 5,2 s de résolution pour 185
+/// MIDIs, jusqu'à 197 ms pour un seul.
+class LocalOpenBatch {
+  LocalOpenBatch._(this._covered, this.known, this.m3u);
+
+  /// Les chemins dont [known] fait autorité: un chemin couvert et ABSENT de
+  /// [known] n'a aucune ligne; un chemin non couvert se demande à la base.
+  final Set<String> _covered;
+
+  /// Lignes `tracks` par chemin.
+  final Map<String, List<TrackRecord>> known;
+
+  /// Listages de dossiers et M3U déjà lus pendant ce geste.
+  final M3uLookupCache m3u;
+
+  bool covers(String path) => _covered.contains(path);
+
+  static Future<LocalOpenBatch> prepare(List<String> files,
+      {M3uLookupCache? m3u}) async {
+    // Un sous-dossier HÉRITE de la mémoire M3U du geste qui le contient.
+    final cache = m3u ?? M3uLookupCache();
+    try {
+      final known = await LocalDb.instance.getTracksForFiles(files);
+      return LocalOpenBatch._(files.toSet(), known, cache);
+    } catch (_) {
+      // Base indisponible: rien n'est « couvert », chaque fichier retombe
+      // sur sa requête individuelle — plus lent, jamais faux.
+      return LocalOpenBatch._(const {}, const {}, cache);
+    }
+  }
 }

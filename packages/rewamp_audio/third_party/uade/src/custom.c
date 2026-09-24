@@ -452,6 +452,13 @@ void DMACON (uae_u16 v)
 	cdp->dmaen = (dmacon & 0x200) && (dmacon & (1<<i));
 	if (cdp->dmaen) {
 	    if (cdp->state == 0) {
+		/* YOYOFR: c'est ICI le key on de Paula — pour redéclencher un
+		 * échantillon, un replay coupe la DMA du canal, repose lc/len/per,
+		 * puis la rallume. Le drapeau était posé sur l'écriture de
+		 * l'adresse de boucle, ce qui est FAUX: beaucoup de replays
+		 * repointent le canal sur leur silence à CHAQUE trame, donc la
+		 * note ne se redéclenchait jamais (ou tout le temps). */
+		cdp->keyon = 1;
 		cdp->state = 1;
 		cdp->pt = cdp->lc;
 		cdp->ptend = cdp->lc + 2 * (cdp->len ? cdp->len : 65536);

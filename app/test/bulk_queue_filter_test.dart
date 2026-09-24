@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rewamp/local_open.dart';
 
@@ -94,5 +96,44 @@ void main() {
     for (final f in ['x.gbs', 'x.nsfe', 'x.ttt', 'x.v2m', 'x.sndh', 'x.ptcop']) {
       expect(isBulkQueueCandidate('/x/$f'), isTrue, reason: f);
     }
+  });
+
+  // Banques MT-32 d'un jeu: le greffon MT-32 les envoie avant les morceaux
+  // de leur dossier — en file, elles ne joueraient rien.
+  List<int> smf(List<int> events) => [
+        ...'MThd'.codeUnits, 0, 0, 0, 6, 0, 0, 0, 1, 0, 120,
+        ...'MTrk'.codeUnits, 0, 0, 0, events.length + 4, ...events, 0, 0xFF, 0x2F, 0,
+      ];
+  const sysex = [0, 0xF0, 5, 0x41, 0x10, 0x16, 0x12, 0xF7];
+  const note = [0, 0x90, 60, 100, 60, 0x80, 60, 0];
+
+  test('dump .syx: écarté', () {
+    expect(isBulkQueueCandidate('/x/LSL5.SYX'), isFalse);
+    expect(isBulkQueueCandidate('/x/Prince of Persia - MT-32 Patch.syx'), isFalse);
+  });
+
+  test("MIDI de sysex seuls nommé sys…: écarté; un vrai morceau en sys…: gardé", () {
+    final d = Directory.systemTemp.createTempSync('mt32bank_');
+    final bank = File('${d.path}/sysexmain.mid')..writeAsBytesSync(smf(sysex));
+    final tune = File('${d.path}/System Shock.mid')..writeAsBytesSync(smf([...sysex, ...note]));
+    final other = File('${d.path}/intro.mid')..writeAsBytesSync(smf(sysex));
+    expect(isBulkQueueCandidate(bank.path), isFalse);
+    expect(isBulkQueueCandidate(tune.path), isTrue);
+    expect(isBulkQueueCandidate(other.path), isTrue, reason: 'règle restreinte aux noms sys…');
+    expect(midiIsSysexOnly(smf(note)), isFalse);
+    expect(midiIsSysexOnly(const [1, 2, 3]), isFalse);
+    d.deleteSync(recursive: true);
+  });
+
+  test('pochettes et textes: écartés MÊME quand le moteur dit « jouable »', () {
+    // vgmstream réclame toute extension inconnue: la seconde chance répond
+    // oui à tout, la règle négative doit passer AVANT elle.
+    bool yes(String _) => true;
+    for (final f in ['cover.jpg', 'Front.PNG', 'scan.jpeg', 'readme.txt',
+                     'notes.nfo', 'booklet.pdf', 'setup.exe']) {
+      expect(isBulkQueueCandidate('/x/$f', canPlay: yes), isFalse, reason: f);
+    }
+    // …sans rien retirer de ce que le moteur joue vraiment.
+    expect(isBulkQueueCandidate('/x/monkey island 2 - intro.raw', canPlay: yes), isTrue);
   });
 }

@@ -293,6 +293,26 @@ static int vgm_voice_detailed_name(uint8_t type, int ch, char* out, size_t len) 
     return 0;
 }
 
+/* Un APPAREIL LIÉ n'est pas une puce: c'est un morceau de son parent.
+ *
+ * `GetSongDeviceInfo` rend le SSG d'un YM2203/2608/2610 (et la partie OPL3 d'un
+ * YMF278B) comme une ENTRÉE À PART, portant le MÊME `id` que son parent — et
+ * `PLR_DEV_INFO.parentIdx` le dit explicitement (« Linked devices are mainly an
+ * implementation detail […] should NOT be shown to the user »). Les prendre
+ * pour des puces à elles seules coûtait deux choses:
+ *   - une puce FANTÔME dans l'UI (un « YM2149 » de 4 voies à côté du YM2203,
+ *     dont les 3 voies SSG sont DÉJÀ comptées dans les 6 du parent), et
+ *   - surtout, `vgm_apply_mute` écrivait DEUX FOIS sur le même `devId`: la
+ *     seconde passe posait `chnMute[1] = 0` et RÉ-ACTIVAIT le SSG que la
+ *     première venait de couper. Symptôme: « je coupe toutes les voies et
+ *     j'entends encore du son » (mesuré sur *Black Heart* de vgmrips, YM2203 +
+ *     OKIM6295: RMS 767 au lieu de 0 avec le fantôme, 0.0 sans).
+ * Le champ n'existait pas dans notre ancienne base; le fantôme est arrivé avec
+ * la montée du 2026-08-21. */
+static inline bool vgm_is_linked_device(const PLR_DEV_INFO& pdi) {
+    return pdi.parentIdx != (UINT32)-1;
+}
+
 /* Set up voice slot → device-ID mapping after the file is loaded. */
 static void vgm_setup_channels(VgmDecoder* dec) {
     PlayerBase* plr = dec->player.GetPlayer();
@@ -308,6 +328,7 @@ static void vgm_setup_channels(VgmDecoder* dec) {
 
     /* First pass: detect variant flags that affect voice count */
     for (auto& pdi : devList) {
+        if (vgm_is_linked_device(pdi)) continue;
         if (pdi.type == DEVID_YM2413 && pdi.devCfg && (pdi.devCfg->flags & 1))
             vgmVRC7  = 1;
         if (pdi.type == DEVID_YM2610 && pdi.devCfg && (pdi.devCfg->flags & 1))
@@ -322,6 +343,7 @@ static void vgm_setup_channels(VgmDecoder* dec) {
     int voiceChannels = 0;   /* only channels with oscilloscope data */
 
     for (auto& pdi : devList) {
+        if (vgm_is_linked_device(pdi)) continue;
         if (!vgm_voice_available(pdi.type)) continue;
 
         int nb = (int)vgm_voices_nb(pdi.type);
@@ -353,6 +375,7 @@ static void vgm_setup_channels(VgmDecoder* dec) {
     dec->chips.clear();
     int slot = 0;
     for (auto& pdi : devList) {
+        if (vgm_is_linked_device(pdi)) continue;
         if (!vgm_voice_available(pdi.type)) continue;
         int nb = (int)vgm_voices_nb(pdi.type);
         if (nb <= 0 || slot + nb > SOUND_MAXVOICES_BUFFER_FX) break;
@@ -378,6 +401,30 @@ static void vgm_setup_channels(VgmDecoder* dec) {
             if (t[1] && t[1][0])
                 rewamp_track_message_append("%s: %s\n", t[0], t[1]);
         }
+        /* Tags STRUCTURÉS pour l'affichage (le TITRE du morceau vient du
+         * GD3, pas du nom de fichier — « 01 Raizing Logo.vgz » s'appelle
+         * « Raizing Logo »). Réglage `japanese_tags` (Réglages → Moteurs →
+         * libvgm): le GD3 porte chaque champ en DEUX langues, les clés
+         * libvgm suffixent la japonaise de « -JPN »; on préfère la version
+         * choisie quand elle est non vide, l'autre en repli. */
+        const int jpn =
+            rewamp_get_engine_param("vgm", "japanese_tags", 0.0) >= 0.5;
+        const char* title  = NULL;
+        const char* artist = NULL;
+        const char* game   = NULL;
+        for (const char* const* t = plr->GetTags(); t && *t; t += 2) {
+            if (!t[1] || !t[1][0]) continue;
+            const char* key = t[0];
+            const int isJpn = strstr(key, "-JPN") != NULL;
+            if (strncmp(key, "TITLE", 5) == 0) {
+                if (isJpn == jpn || title == NULL) title = t[1];
+            } else if (strncmp(key, "ARTIST", 6) == 0) {
+                if (isJpn == jpn || artist == NULL) artist = t[1];
+            } else if (strncmp(key, "GAME", 4) == 0) {
+                if (isJpn == jpn || game == NULL) game = t[1];
+            }
+        }
+        rewamp_track_tag_set(title, artist, game);
     }
 }
 
@@ -485,8 +532,20 @@ static RewampDecoder* vgm_open(const char* path, RewampAudioFormat* outFmt) {
             /* 0 = library/compile default; 1..n = explicit core (fcc[v-1]). */
             int v = (int)rewamp_get_engine_param("vgm", sel[i].key, 0);
             if (v <= 0 || v > sel[i].n) continue;
+            /* LIRE avant d'écrire: SetDeviceOptions remplace la structure
+             * ENTIÈRE, et le constructeur de VGMPlayer y a déjà posé des
+             * `coreOpts` par puce — OPT_AY8910_PCM3CH_DETECT, 0x01B7 pour le
+             * NES, OPT_SCSP_BYPASS_DSP, et depuis le 2026-08-23
+             * OPT_GB_DMG_HIGHPASS (le filtre anti-clic de SameBoy). Repartir
+             * d'un InitDeviceOptions les EFFAÇAIT: choisir explicitement un
+             * cœur ne devait changer que le cœur, or ça changeait aussi le
+             * son — et pour le GameBoy, choisir « SameBoy » donnait un rendu
+             * DIFFÉRENT de SameBoy pris par défaut, ce qui ne peut que passer
+             * pour un bug du cœur. */
             PLR_DEV_OPTS devOpts;
-            PlayerBase::InitDeviceOptions(devOpts);
+            if (vgmEngine->GetDeviceOptions(PLR_DEV_ID(sel[i].devId, 0),
+                                            devOpts) != 0x00)
+                PlayerBase::InitDeviceOptions(devOpts);
             devOpts.emuCore[0] = sel[i].fcc[v - 1];
             vgmEngine->SetDeviceOptions(PLR_DEV_ID(sel[i].devId, 0), devOpts);
         }

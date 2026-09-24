@@ -291,11 +291,42 @@ static void sndsynth(void *ctx, Int32 *p)
     nezChan_output[0]+=(p[0]-tmpval[0])+(p[1]-tmpval[1]);
     
     //YOYOFR
+    /* Hauteur par voie (viz notation + piano).
+     *
+     * ⚠️ La fréquence est `clock / (192 * wl)` et RIEN d'autre. Un cycle de
+     * forme d'onde vaut 32 pas de `st`, chacun demandant 32 franchissements de
+     * `wl` (`count >= 1<<RENDERS`), et `pt` avance de `cps << RENDERS` par
+     * échantillon: 21477270 / 192 = 111860.78, la valeur que donne aussi la
+     * doc PC Engine (3579545 / 32). La version d'avant multipliait par 440 —
+     * un reste de formule « note = 440 * 2^n » — et sortait donc des notes 440
+     * fois trop hautes: la NOTATION n'y voyait rien (elle calibre sa plage sur
+     * ce qu'elle reçoit, un décalage commun est invisible) mais le PIANO les
+     * jetait toutes, ne gardant que les 128 notes MIDI — un `.hes` n'affichait
+     * aucune touche (2026-09-08).
+     *
+     * Et la note est REMISE À ZÉRO dès que la voie ne produit plus de hauteur:
+     * canal coupé, DDA (sortie PCM directe) ou bruit n'ont pas de hauteur, et
+     * une capture qui ne s'écrit que « si wl » laisse la dernière note figée
+     * pour toujours — touche tenue par une voie muette, la même famille de bug
+     * que la capture SPC de libgme. Les gardes sont celles du RENDU lui-même
+     * (voir le début de cette fonction), pas des règles parallèles. */
     for (int c=0;c<6;c++) {
-        if (sndp->ch[c].wl) {
-            vgm_last_note[c]=440*111860.78/sndp->ch[c].wl;
+        HES_WAVEMEMORY *hch = &sndp->ch[c];
+        const Uint32 hwl = (hch->wl + hch->lfooutput) & 0xfff;
+        const Uint32 hvol = hch->regs[4 - 2] & 0x1F;
+        const int tonal = !hch->mute
+                       && (hch->regs[4 - 2] & 0x80)      /* voie activée */
+                       && !(hch->regs[4 - 2] & 0x40)     /* DDA: pas de hauteur */
+                       && !(hch->regs[7 - 2] & 0x80)     /* bruit: idem */
+                       && hwl > 4                        /* le rendu s'arrête là */
+                       && hvol > 0;
+        if (tonal) {
+            vgm_last_note[c]=111860.78/hwl;
             vgm_last_instr[c]=c;
-            vgm_last_vol[c]=1;
+            vgm_last_vol[c]=(hvol * 255) / 31;
+        } else {
+            vgm_last_note[c]=0;
+            vgm_last_vol[c]=0;
         }
     }
     //YOYOFR

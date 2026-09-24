@@ -39,15 +39,16 @@ class SapInfoService {
 
     final cached = await LocalDb.instance.getSapInfoCache(md5hex);
     if (cached != null) {
-      final info = (cached.stilTitle == null &&
-              cached.stilArtist == null &&
-              cached.stilComment == null)
+      final info = cached.isEmpty
           ? null
           : SapInfo(
               md5: md5hex,
+              stilName: cached.stilName,
+              stilAuthor: cached.stilAuthor,
               stilTitle: cached.stilTitle,
               stilArtist: cached.stilArtist,
               stilComment: cached.stilComment,
+              stilCovers: cached.stilCovers,
             );
       _mem[md5hex] = info;
       return info;
@@ -57,9 +58,12 @@ class SapInfoService {
     await LocalDb.instance.upsertSapInfoCache(
       md5hex,
       SapInfoCache(
+        stilName: info?.stilName,
+        stilAuthor: info?.stilAuthor,
         stilTitle: info?.stilTitle,
         stilArtist: info?.stilArtist,
         stilComment: info?.stilComment,
+        stilCovers: info?.stilCovers ?? const [],
       ),
     );
     _mem[md5hex] = info;

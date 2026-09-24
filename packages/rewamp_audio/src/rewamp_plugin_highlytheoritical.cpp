@@ -27,7 +27,12 @@
 #ifdef REWAMP_WITH_HIGHLYTHEORITICAL
 
 #include "rewamp_plugin.h"
+
+/* Boucle forcée (rewamp_audio.c) — lus à l'open. */
+extern "C" int g_force_loop_mode;
+extern "C" int g_force_loop_native_veto;
 #include "rewamp_channel_data.h"
+#include "rewamp_psf_fade.h"   // fondu de fin décrit par le tag `fade`
 #include "ModizerVoicesData.h"
 #include "sega.h"
 #include "libpsflib/psflib.h"
@@ -46,6 +51,7 @@ struct RewampDecoder {
     uint32_t progSize;     // own upload_to_ram COPIES it, but re-uploading
                             // after a fresh sega_clear_state needs the bytes)
     uint64_t totalFrames;  // from length+fade tags; 0 = unknown
+    uint64_t fadeFrames = 0;   // rampe finale (tag `fade`), 0 = aucune
     uint64_t framePos;
 };
 
@@ -125,8 +131,7 @@ static int ht_time_ms(const char* v) {
 }
 struct ht_tag_state { int length_ms, fade_ms; char title[256], artist[256]; };
 static void ht_copy_tag(char* dst, size_t n, const char* v) {
-    strncpy(dst, v, n - 1); dst[n - 1] = '\0';
-    char* nl = strchr(dst, '\n'); if (nl) *nl = '\0';
+    rewamp_psf_tag_copy(dst, n, v);   // 1re ligne, Shift-JIS → UTF-8 au besoin
 }
 static int ht_tag_cb(void* ctx, const char* name, const char* value) {
     struct ht_tag_state* st = (struct ht_tag_state*)ctx;
@@ -161,6 +166,9 @@ static void ht_upload(RewampDecoder* dec) {
 }
 
 static RewampDecoder* ht_open(const char* path, RewampAudioFormat* outFormat) {
+    /* Mode 1 (N boucles): pas de compte natif -> veto, le generique
+     * Dart compte les passes (voir configure_loop). */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
     if (!path) return NULL;
 
     char cleanPath[4096];
@@ -218,6 +226,7 @@ static RewampDecoder* ht_open(const char* path, RewampAudioFormat* outFormat) {
 
     if (ts.length_ms > 0)
         dec->totalFrames = (uint64_t)((double)(ts.length_ms + ts.fade_ms) / 1000.0 * HT_RATE);
+        dec->fadeFrames = rewamp_psf_fade_frames(ts.fade_ms, HT_RATE, dec->totalFrames);
 
     if (ts.title[0])  rewamp_track_message_append("Title: %s\n", ts.title);
     if (ts.artist[0]) rewamp_track_message_append("Artist: %s\n", ts.artist);
@@ -233,6 +242,7 @@ static RewampDecoder* ht_open(const char* path, RewampAudioFormat* outFormat) {
 
 static uint64_t ht_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     if (!dec || frameCount == 0) return 0;
+    const uint64_t fadeBase = dec->framePos;
     if (dec->totalFrames > 0) {
         if (dec->framePos >= dec->totalFrames) return 0;
         uint64_t remain = dec->totalFrames - dec->framePos;
@@ -254,6 +264,8 @@ static uint64_t ht_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
         dec->framePos += got;
         if (got < want) break;
     }
+    rewamp_psf_fade_apply(out, written, 2, fadeBase,
+                          dec->totalFrames, dec->fadeFrames);
     return written;
 }
 
@@ -293,6 +305,24 @@ static uint64_t ht_length(RewampDecoder* dec) {
     return dec ? dec->totalFrames : 0;
 }
 
+
+/* Boucle FORCÉE (repeat-morceau): le moteur ÉMULÉ boucle DE LUI-MÊME au point
+ * de boucle de la musique — c'est notre troncature à totalFrames (longueur de
+ * catalogue/tag) qui coupait, et la relance générique repartait du DÉBUT, ce
+ * qui s'entend (même famille que le .ay zxtune, « Midnight Resistance »).
+ * Mode 2 (infini): on lève la troncature, l'émulation joue et boucle au bon
+ * endroit. Mode 1 (N passes): pas de compte natif ici → VETO posé à l'open,
+ * le générique Dart compte — comportement inchangé. Filet: un moteur qui
+ * s'arrêterait quand même rend un read() à 0 → rechargement replayCurrent,
+ * exactement le comportement d'avant ce câblage. */
+static void ht_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (dec == NULL) return;
+    if (mode == 2) dec->totalFrames = 0;
+    // Toute boucle forcée retire le fondu natif: voir rewamp_psf_fade.h.
+    if (mode != 0) dec->fadeFrames = 0;
+}
+
 static void ht_close(RewampDecoder* dec) {
     if (!dec) return;
     free(dec->core);
@@ -308,6 +338,7 @@ static const RewampPluginVTable kHtVTable = {
     ht_seek,
     ht_length,
     ht_close,
+    ht_configure_loop_fn,
 };
 
 extern "C" const RewampPluginVTable* rewamp_highlytheoritical_plugin(void) { return &kHtVTable; }

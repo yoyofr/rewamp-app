@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' show Random;
 import 'app_snack.dart';
+import 'charts_screen.dart';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
@@ -18,11 +20,18 @@ import 'podium_badge.dart';
 import 'radio_surprise_buttons.dart';
 import 'note_markdown.dart';
 import 'production_screen.dart';
+import 'cancel_field.dart';
+import 'collection_families.dart';
+import 'entity_play_actions.dart';
+import 'podium_filter.dart';
 import 'rewamp_db.dart';
+import 'scrolling_text.dart';
 import 'artwork_image.dart';
 import 'album_detail_screen.dart';
 import 'local_db.dart';
+import 'local_open.dart' show globalOpenLocalPaths;
 import 'library_button.dart';
+import 'local_library_screen.dart';
 import 'song_tile.dart';
 import 'track_options_sheet.dart';
 import 'horizontal_scroll_arrows.dart';
@@ -242,7 +251,39 @@ Future<void> downloadAndPlay(
             );
             resolved = r;
           }
-        } on DownloadCancelledException {
+        } on ArchiveEntryMissingException catch (e) {
+    // La tracklist nomme un fichier que l'archive ne contient pas. Dire QUOI
+    // manque, et le SIGNALER: c'est une lacune du catalogue (le rip liste ses
+    // pistes vocales sans les livrer), pas un incident de téléchargement, et
+    // personne ne peut le voir depuis le serveur.
+    dismiss();
+    debugPrint('[search] absent de l\'archive: ${e.filename} (${e.url})');
+    if (context.mounted) {
+      AppSnack.showOn(messenger,
+          l10n.playbackTrackNotInArchive(p.basename(e.filename)),
+          duration: const Duration(seconds: 4));
+    }
+    if (e.songId != null && e.songId!.isNotEmpty) {
+      RewampDb.reportSong(
+        songId:       e.songId!,
+        reason:       'download_failed',
+        subsongIndex: e.subsongIndex > 0 ? e.subsongIndex : null,
+        detail:       'tracklist names "${e.filename}", absent from ${e.url}',
+      );
+    }
+  } on DownloadTimeoutException catch (e) {
+    // L'origine n'a pas répondu. Le fait UTILE est le nom de l'hôte — pas
+    // « TimeoutException after 0:00:20.000000: Future not completed », qui est
+    // ce que le bandeau affichait. Rien à signaler au serveur: le fichier
+    // n'est pas en cause, la route l'est (mesuré le 2026-09-02: la même url
+    // répondait en 0,19 s ailleurs, et est repassée toute seule ensuite).
+    dismiss();
+    debugPrint('[search] source timeout: ${e.host} (${r.filename})');
+    if (context.mounted) {
+      AppSnack.showOn(messenger, l10n.playbackSourceTimeout(e.host),
+          duration: const Duration(seconds: 4));
+    }
+  } on DownloadCancelledException {
           rethrow; // aborted by the user, not an offline miss
         } catch (_) {/* offline → the branches below surface the error */}
       }
@@ -539,6 +580,46 @@ Future<void> playAlbumFromList(
   String?      platform,
   required OnPlayAlbum onPlayAlbum,
 }) async {
+  // 0. ▶ sur une ligne d'ALBUM ouvre le MÊME choix que partout ailleurs
+  // (« Lire maintenant » / « Lire ensuite » / « Ajouter à la fin »), au lieu
+  // d'écraser la file sans rien demander. Posé ICI, dans l'entonnoir, et non
+  // sur les six ▶ qui y mènent (navigateur d'albums en liste et en grille,
+  // onglet Albums d'un artiste, palmarès, résultats dédiés) — les recoder un
+  // par un garantirait qu'il en manque un, exactement la leçon des liens
+  // « voir » de showPlayChoiceSheet.
+  //
+  // La feuille passe AVANT la résolution des pistes: elle est instantanée,
+  // alors que la suite fait un aller-retour serveur et peut TÉLÉCHARGER le zip
+  // de l'album — un choix écarté ne doit rien avoir coûté.
+  // ⚠️ File vide ⇒ `showPlayChoiceSheet` rend `now` sans rien afficher: le
+  // geste reste direct quand il n'y a pas de file à écraser.
+  final subtitle = [
+    if (platform != null && platform.isNotEmpty) platform,
+    if (collection != null && collection.isNotEmpty)
+      RewampDb.collectionLabel(collection),
+  ].join(' · ');
+  final choice = await showPlayChoiceSheet(ctx,
+      title: albumName, subtitle: subtitle.isEmpty ? null : subtitle);
+  if (choice == null || !ctx.mounted) return;
+
+  // Un seul point de sortie pour les DEUX chemins (album conteneur déplié,
+  // album ordinaire): le choix décide, jamais l'appelant.
+  Future<void> hand(List<SearchResult> tracks) async {
+    if (!ctx.mounted || tracks.isEmpty) return;
+    switch (choice) {
+      case PlayChoice.now:
+        await onPlayAlbum(ctx, tracks);
+      case PlayChoice.next:
+      case PlayChoice.end:
+        // `globalOnAlbumQueueAdd` déplie chaque piste en ses sous-chansons et
+        // annonce le plafond de file, comme le fait `onPlayAlbum`.
+        await globalOnAlbumQueueAdd?.call(tracks,
+            atEnd: choice == PlayChoice.end);
+      case PlayChoice.open:
+        break; // pas d'`openLabel` ici — inatteignable, mais le switch est exhaustif
+    }
+  }
+
   // 1. Full track list ordered by position.
   var songs = await RewampDb.browse(
     albumName:  albumName,
@@ -555,7 +636,7 @@ Future<void> playAlbumFromList(
     try {
       final expanded = await RewampDb.expandContainerAlbum(songs.first);
       if (!ctx.mounted) return;
-      await onPlayAlbum(ctx, expanded);
+      await hand(expanded);
     } catch (e) {
       if (ctx.mounted) {
         AppSnack.show(ctx, ctx.l10n.searchError(e.toString()));
@@ -603,7 +684,7 @@ Future<void> playAlbumFromList(
   }
 
   if (!ctx.mounted) return;
-  await onPlayAlbum(ctx, songs);
+  await hand(songs);
 }
 
 // ---------------------------------------------------------------------------
@@ -772,7 +853,7 @@ String _categoryLabel(String slug, AppLocalizations l10n) {
 
 // Formats tab dropped — the server search_facets RPC now feeds a Format filter
 // dropdown (cross-entity) instead of a standalone client-derived tab.
-enum _Tab { all, artists, groups, albums, playlists, productions }
+enum _Tab { all, artists, groups, albums, playlists, productions, local }
 
 String _tabLabel(_Tab t, AppLocalizations l10n) => switch (t) {
   _Tab.all       => l10n.tabAll,
@@ -784,6 +865,7 @@ String _tabLabel(_Tab t, AppLocalizations l10n) => switch (t) {
   _Tab.albums    => l10n.tabAlbums,
   _Tab.playlists => l10n.libraryPlaylists,
   _Tab.productions => l10n.tabProductions,
+  _Tab.local     => l10n.localLibraryTitle,
 };
 
 // Cross-entity match_reason → UX label. 'direct'/null (a plain name/browse
@@ -840,6 +922,11 @@ class _SearchScreenState extends State<SearchScreen>
   int    _offset       = 0;
   bool   _hasMore      = false;
   String  _currentQuery = '';
+  // Onglet « Sur cet appareil »: les imports locaux qui matchent la requête.
+  // Filtrage en MÉMOIRE (quelques milliers de lignes au plus), pas de
+  // pagination; -1 = pas encore chargé (le libellé d'onglet reste nu).
+  List<(String, TrackRecord)> _localMatches = const [];
+  int _localTotal = -1;
   String  _sortBy       = 'relevance'; // relevance|title|year|rating
   final List<TagItem> _selectedTags = []; // tag facets (display name, send slug)
 
@@ -862,6 +949,8 @@ class _SearchScreenState extends State<SearchScreen>
   int?    _yearMin;          // year facet, inclusive (null = off)
   int?    _yearMax;
   double  _ratingMin = 0;    // 0 = off (rating derives from plays, often null)
+  int?    _podium;           // p_podium: null = aucun, 0 = tout podium, 1-3 = rang
+  List<FacetCount> _facetsAlbum = [];   // facettes au grain ALBUM (onglet Albums)
   // Seed for sort_by 'random': fixed per "radio session" ⇒ stable pagination
   // order without repeats; regenerated on each new radio start / sort toggle.
   String  _radioSeed = DateTime.now().millisecondsSinceEpoch.toString();
@@ -911,6 +1000,8 @@ class _SearchScreenState extends State<SearchScreen>
   // _totalCount/_offset/_hasMore. total = server total_count (1st row), -1 unknown.
   static const int _kEntityPage = 50;
   int  _artistTotal = -1,  _artistOffset = 0;
+  /// `search_artists` a BORNÉ son décompte: `_artistTotal` est un plancher.
+  bool _artistTotalIsFloor = false;
   bool _artistHasMore = false, _artistLoadingMore = false;
   int  _albumTotal = -1,   _albumOffset = 0;
   bool _albumHasMore = false, _albumLoadingMore = false;
@@ -925,6 +1016,7 @@ class _SearchScreenState extends State<SearchScreen>
   @override
   void initState() {
     super.initState();
+    RewampDb.serverLacksChanged.addListener(_onServerCapabilities);
     _tabs = TabController(length: _Tab.values.length, vsync: this);
     _tabs.addListener(_onTabChanged);
     widget.resetTick?.addListener(_resetAllCriteria);
@@ -962,6 +1054,7 @@ class _SearchScreenState extends State<SearchScreen>
       _yearMin = null;
       _yearMax = null;
       _ratingMin = 0;
+      _podium = null;
       _collectionFilter = null;
       _formatFilter = null;
       _platformFilter = null;
@@ -990,7 +1083,8 @@ class _SearchScreenState extends State<SearchScreen>
       _productionsLoaded = false;
       _groups = []; _groupsLoaded = false; _groupsLoading = false;
       _groupTotal = -1; _groupOffset = 0; _groupHasMore = false; _groupLoadingMore = false;
-      _artistTotal = -1; _artistOffset = 0; _artistHasMore = false; _artistLoadingMore = false;
+      _artistTotal = -1; _artistTotalIsFloor = false;
+      _artistOffset = 0; _artistHasMore = false; _artistLoadingMore = false;
       _albumTotal = -1; _albumOffset = 0; _albumHasMore = false; _albumLoadingMore = false;
       _playlistTotal = -1; _playlistOffset = 0; _playlistHasMore = false; _playlistLoadingMore = false;
       _productionTotal = -1; _productionOffset = 0; _productionHasMore = false; _productionLoadingMore = false;
@@ -1203,7 +1297,10 @@ class _SearchScreenState extends State<SearchScreen>
       final pls = await RewampDb.listPlaylists(
           query: q.isEmpty ? null : q, fuzzy: !_exact,
           source: _playlistSource,
-          collection: _collectionFilter, platform: _platformFilter,
+          // Pas (encore) de p_collections sur listPlaylists — slug seul,
+          // une famille y vaut « toutes » (priorité 2 de la proposition).
+          collection: _collectionParams.$1, collections: _collectionParams.$2,
+          platform: _platformFilter,
           formatFilter: _formatFilter, tags: _tagNames, tagCategories: _tagCategoriesFilter,
           yearMin: _yearMin, yearMax: _yearMax,
           ratingMin: _ratingMin > 0 ? _ratingMin : null,
@@ -1273,10 +1370,22 @@ class _SearchScreenState extends State<SearchScreen>
     _focus.dispose();
     _debounce?.cancel();
     _resultsNotifier.dispose();
+    RewampDb.serverLacksChanged.removeListener(_onServerCapabilities);
     super.dispose();
   }
 
   // ---- Search ---------------------------------------------------------------
+
+  /// The server turned out not to know `p_podium` (404, migration not yet
+  /// applied): the page just shown was filtered client-side (RewampDb), but
+  /// paging an unapplied filter would be a lie — say so, clear it, and run the
+  /// search again. The chip stays hidden for the session.
+  void _onServerCapabilities() {
+    if (!mounted || _podium == null || !RewampDb.serverLacks('p_podium')) return;
+    setState(() => _podium = null);
+    AppSnack.show(context, context.l10n.searchPodiumUnavailable);
+    _search(_controller.text.trim());
+  }
 
   // Facet filters that make an empty-text query meaningful (browse path).
   bool get _hasFacets =>
@@ -1284,6 +1393,7 @@ class _SearchScreenState extends State<SearchScreen>
       _yearMin != null ||
       _yearMax != null ||
       _ratingMin > 0 ||
+      _podium != null ||
       _formatFilter != null ||
       _platformFilter != null;
 
@@ -1299,19 +1409,23 @@ class _SearchScreenState extends State<SearchScreen>
     if (q.isNotEmpty) {
       return RewampDb.search(
         q, fuzzy: !_exact, sortBy: sort, sortDir: _sortDir,
-        collection: _collectionFilter, tags: _tagNames, tagCategories: _tagCategoriesFilter,
+        collection: _collectionParams.$1, collections: _collectionParams.$2,
+        tags: _tagNames, tagCategories: _tagCategoriesFilter,
         formatFilter: _formatFilter, platform: _platformFilter,
         yearMin: _yearMin, yearMax: _yearMax,
         ratingMin: _ratingMin > 0 ? _ratingMin : null,
+        podium: _podium,
         seed: rndSeed,
         limit: 50, offset: offset,
       );
     }
     return RewampDb.browse(
-      collection: _collectionFilter, tags: _tagNames, tagCategories: _tagCategoriesFilter,
+      collection: _collectionParams.$1, collections: _collectionParams.$2,
+      tags: _tagNames, tagCategories: _tagCategoriesFilter,
       formatFilter: _formatFilter, platform: _platformFilter,
       yearMin: _yearMin, yearMax: _yearMax,
       ratingMin: _ratingMin > 0 ? _ratingMin : null,
+      podium: _podium,
       seed: rndSeed,
       sortBy: sort == 'relevance' ? 'name' : sort, sortDir: _sortDir,
       limit: 50, offset: offset,
@@ -1356,6 +1470,7 @@ class _SearchScreenState extends State<SearchScreen>
         _groups = []; _groupsLoaded = false;
         _artistTotal = -1; _albumTotal = -1; _playlistTotal = -1; _productionTotal = -1;
         _groupTotal = -1; _groupHasMore = false;
+        _localMatches = const []; _localTotal = -1;
         _artistHasMore = false; _albumHasMore = false; _playlistHasMore = false;
         _productionHasMore = false;
       });
@@ -1365,6 +1480,8 @@ class _SearchScreenState extends State<SearchScreen>
       _loading = true; _albumsLoading = true; _artistsLoading = true;
       _error = null; _fuzzyFallbackOffered = false;
     });
+    // Local: indépendant des RPCs — part en parallèle, s'affiche quand prêt.
+    unawaited(_loadLocalMatches(q));
     // Fan-out: the other entity tabs (Artistes/Albums/Playlists) + the facet
     // counts resolve their own cross-entity RPC in parallel with the Songs page.
     // Fired for a text query AND for facet-only browse (empty q + tags/filters):
@@ -1418,10 +1535,14 @@ class _SearchScreenState extends State<SearchScreen>
   /// keeps all its options while that dimension is filtered.
   Future<void> _fetchFacets(String q) async {
     try {
-      final f = await RewampDb.searchFacets(
+      Future<List<FacetCount>> at(String? grain) => RewampDb.searchFacets(
         q,
+        grain:        grain,
         fuzzy:        !_exact,
-        collection:   _collectionFilter,
+        // Famille dépliée en ses membres depuis la migration serveur 243: les
+        // comptes portent enfin sur la famille et non sur tout le catalogue.
+        collection:   _collectionParams.$1,
+        collections:  _collectionParams.$2,
         platform:     _platformFilter,
         formatFilter: _formatFilter,
         tags:         _tagNames,
@@ -1429,9 +1550,16 @@ class _SearchScreenState extends State<SearchScreen>
         yearMin:      _yearMin,
         yearMax:      _yearMax,
         ratingMin:    _ratingMin > 0 ? _ratingMin : null,
+        podium:       _podium,
       );
+      final both = await Future.wait([
+        at(null),
+        // Onglet Albums: la facette podium y compte des ALBUMS (p_grain), comme
+        // search_albums — le compte du rang r égale alors son total_count.
+        at('album').catchError((Object _) => const <FacetCount>[]),
+      ]);
       if (!mounted || _currentQuery != q) return;
-      setState(() => _facets = f);
+      setState(() { _facets = both[0]; _facetsAlbum = both[1]; });
     } catch (_) {/* leave prior facets */}
   }
 
@@ -1442,7 +1570,11 @@ class _SearchScreenState extends State<SearchScreen>
       final res = await RewampDb.searchArtists(
         q,
         fuzzy:        !_exact,
-        collection:   _collectionFilter,
+        // Famille dépliée (mig serveur 247). ⚠️ Le serveur filtre sur les
+        // MORCEAUX connectés et rend une UNION: sc68 157 + zxart 16 = 173
+        // artistes, pas 173 par addition.
+        collection:   _collectionParams.$1,
+        collections:  _collectionParams.$2,
         platform:     _platformFilter,
         formatFilter: _formatFilter,
         tags:         _tagNames,
@@ -1459,7 +1591,10 @@ class _SearchScreenState extends State<SearchScreen>
         _artistResults = offset == 0 ? res : [..._artistResults, ...res];
         // total_count is only sent for the first page (offset 0); it's -1 on
         // later pages, so keep the page-0 total for the label and DON'T clobber it.
-        if (offset == 0) _artistTotal = res.isEmpty ? 0 : res.first.totalCount;
+        if (offset == 0) {
+          _artistTotal = res.isEmpty ? 0 : res.first.totalCount;
+          _artistTotalIsFloor = res.isNotEmpty && res.first.totalTruncated;
+        }
         _artistOffset  = _artistResults.length;
         // Drive hasMore off "was this page full?" — robust when total_count is
         // unknown (-1) on paginated pages. A short/empty page = end of results.
@@ -1484,8 +1619,10 @@ class _SearchScreenState extends State<SearchScreen>
     try {
       final res = await RewampDb.searchAlbums(
         q,
+        podium:       _podium,
         fuzzy:        !_exact,
-        collection:   _collectionFilter,
+        collection:   _collectionParams.$1,
+        collections:  _collectionParams.$2,
         platform:     _platformFilter,
         formatFilter: _formatFilter,
         tags:         _tagNames,
@@ -1584,6 +1721,44 @@ class _SearchScreenState extends State<SearchScreen>
 
   // ---- Collection filter ----------------------------------------------------
 
+  /// Le filtre déplié pour les RPC: (slug unique, liste de membres).
+  ///
+  /// `_collectionFilter` porte soit un slug, soit le sentinel `family:<key>`
+  /// (la ligne « joshw » du sélecteur, sélectionnable depuis la migration
+  /// serveur 240). La famille se déplie ICI en ses membres — le serveur reste
+  /// ignorant du regroupement, il reçoit `p_collections` — et le repli est
+  /// déjà dans le transport (`_postJsonOptional` rejoue sans le paramètre sur
+  /// un serveur antérieur).
+  ///
+  /// Depuis la migration serveur 247, les HUIT RPC qui avaient
+  /// `collection_slug` prennent aussi `p_collections`: plus aucun appelant ne
+  /// se contente du slug seul. ⚠️ Restent SANS paramètre de collection, et ce
+  /// n'est pas un oubli: `list_tags` n'en a jamais eu, et le hub
+  /// (`get_collection_overview`, `list_collection_groups`) est mono-slug par
+  /// nature — un hub EST une collection.
+  ///
+  /// ⚠️ Deux sémantiques serveur à ne pas confondre avec un bug:
+  ///  - `search_facets` ne filtre PAS la facette collection elle-même, sinon
+  ///    on ne pourrait plus en changer depuis le menu.
+  ///  - `search_artists` rend une UNION, pas une somme: sc68 157 + zxart 16
+  ///    donne 173 artistes, un même artiste des deux collections ne comptant
+  ///    qu'une fois.
+  (String?, List<String>?) get _collectionParams {
+    final f = _collectionFilter;
+    if (f == null) return (null, null);
+    if (f.startsWith('family:')) {
+      final key = f.substring('family:'.length);
+      return (
+        null,
+        [
+          for (final c in _collections)
+            if (collectionFamilyOf(c.slug)?.key == key) c.slug,
+        ],
+      );
+    }
+    return (f, null);
+  }
+
   void _setCollectionFilter(String? slug) {
     // slug == null → all collections. Picks come from the bottom sheet, so set
     // the chosen value directly (no toggle).
@@ -1594,13 +1769,21 @@ class _SearchScreenState extends State<SearchScreen>
 
   // Display label for the current collection filter (the pill text).
   String get _currentCollectionLabel {
-    if (_collectionFilter == null) return context.l10n.searchCollectionAll;
+    final f = _collectionFilter;
+    if (f == null) return context.l10n.searchCollectionAll;
+    if (f.startsWith('family:')) {
+      final key = f.substring('family:'.length);
+      for (final fam in kCollectionFamilies) {
+        if (fam.key == key) return fam.label;
+      }
+      return key;
+    }
     for (final c in _collections) {
-      if (c.slug == _collectionFilter) {
+      if (c.slug == f) {
         return c.name.isNotEmpty ? c.name : c.slug;
       }
     }
-    return _collectionFilter!;
+    return f;
   }
 
   // ---- Filters --------------------------------------------------------------
@@ -1723,17 +1906,21 @@ class _SearchScreenState extends State<SearchScreen>
                   ],
                 ),
                 const SizedBox(height: 8),
-                TextField(
+                CancelField(
                   controller: tagCtrl,
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    hintText: l10n
-                        .searchTagSearchHint(_categoryLabel(category, l10n)),
-                    prefixIcon: const Icon(Icons.tag, size: 18),
-                    isDense: true,
-                    border: const OutlineInputBorder(),
+                  onCleared: fetchTags,
+                  builder: (_) => TextField(
+                    controller: tagCtrl,
+                    textInputAction: TextInputAction.search,
+                    decoration: InputDecoration(
+                      hintText: l10n
+                          .searchTagSearchHint(_categoryLabel(category, l10n)),
+                      prefixIcon: const Icon(Icons.tag, size: 18),
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: fetchTags,
                   ),
-                  onChanged: fetchTags,
                 ),
                 const SizedBox(height: 8),
                 ConstrainedBox(
@@ -1984,15 +2171,21 @@ class _SearchScreenState extends State<SearchScreen>
       final songs = _currentQuery.isNotEmpty
           ? await RewampDb.search(
               _currentQuery, fuzzy: !_exact, sortBy: 'random', seed: seed,
-              collection: _collectionFilter, tags: _tagNames, tagCategories: _tagCategoriesFilter,
+              collection: _collectionParams.$1,
+              collections: _collectionParams.$2,
+              tags: _tagNames, tagCategories: _tagCategoriesFilter,
               formatFilter: _formatFilter, platform: _platformFilter,
               yearMin: _yearMin, yearMax: _yearMax, ratingMin: ratingMin,
+              podium: _podium,
               limit: 1)
           : await RewampDb.browse(
               sortBy: 'random', seed: seed,
-              collection: _collectionFilter, tags: _tagNames, tagCategories: _tagCategoriesFilter,
+              collection: _collectionParams.$1,
+              collections: _collectionParams.$2,
+              tags: _tagNames, tagCategories: _tagCategoriesFilter,
               formatFilter: _formatFilter, platform: _platformFilter,
               yearMin: _yearMin, yearMax: _yearMax, ratingMin: ratingMin,
+              podium: _podium,
               limit: 1);
       if (!mounted || songs.isEmpty) return;
       await downloadAndPlay(context, songs.first, widget.onFileReady);
@@ -2022,6 +2215,7 @@ class _SearchScreenState extends State<SearchScreen>
       if (_yearMin != null) 'ymin': _yearMin,
       if (_yearMax != null) 'ymax': _yearMax,
       if (_ratingMin > 0) 'rmin': _ratingMin,
+      if (_podium != null) 'pod': _podium,
       if (_collectionFilter != null) 'col': _collectionFilter,
     });
   }
@@ -2080,6 +2274,7 @@ class _SearchScreenState extends State<SearchScreen>
           _yearMin = ymin;
           _yearMax = ymax;
           _ratingMin = rmin;
+          _podium = podiumFromStored(m?['pod']);
           _collectionFilter = col;
         });
         _controller.text = q;
@@ -2180,8 +2375,9 @@ class _SearchScreenState extends State<SearchScreen>
                 crossAxisSpacing: 10,
                 childAspectRatio: 1.9,
               ),
-              // +3 leading cards: Collections, Productions (demozoo entities
-              // since migs 161-163 — no longer a tag category) and Albums.
+              // +5 leading cards: Collections, Productions (demozoo entities
+              // since migs 161-163 — no longer a tag category), Albums,
+              // Charts et Imports locaux.
               // La catégorie `origin` est ÉCARTÉE: trois tags en tout (Game /
               // Demoscene / AI Generated), une carte entière pour une liste de
               // trois lignes — la carte Albums prend sa place et la grille
@@ -2189,10 +2385,46 @@ class _SearchScreenState extends State<SearchScreen>
               // les puces de filtre de l'onglet Tags doivent continuer à la
               // proposer.
               itemCount:
-                  _tagCategories.where((s) => s != 'origin').length + 3,
+                  _tagCategories.where((s) => s != 'origin').length + 5,
               itemBuilder: (ctx, i) {
                 final cats =
                     _tagCategories.where((s) => s != 'origin').toList();
+                if (i == 3) {
+                  return _BrowseCard(
+                    label: l10n.browseCharts,
+                    icon: Icons.leaderboard_outlined,
+                    // Indigo — hors de la roue des catégories, comme les
+                    // autres cartes de tête; aucun voisin dans ces tons.
+                    colors: const [Color(0xFF6366F1), Color(0xFF4338CA)],
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => ChartsScreen(
+                        onTap:           _onSongTap,
+                        onPlayAlbum:     widget.onPlayAlbum,
+                        onQueueAdd:      widget.onQueueAdd,
+                        onAlbumQueueAdd: widget.onAlbumQueueAdd,
+                      ),
+                    )),
+                  );
+                }
+                if (i == 4) {
+                  // « Sur cet appareil » — l'arbre des imports locaux
+                  // (local_rel_path). Toujours affichée: l'écran vide guide
+                  // vers les gestes d'import de l'accueil.
+                  return _BrowseCard(
+                    // « Imports locaux », pas « Sur cet appareil »: la carte
+                    // ouvre l'arbre des IMPORTS — les téléchargements ont leur
+                    // entrée dans l'onglet Local — et le nom doit dire ce
+                    // qu'on va y trouver.
+                    label: l10n.storageLocalImports,
+                    icon: Icons.devices_outlined,
+                    // Gris-bleu ardoise — hors de la roue des catégories,
+                    // volontairement neutre: c'est le local, pas le catalogue.
+                    colors: const [Color(0xFF64748B), Color(0xFF334155)],
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const LocalLibraryScreen(),
+                    )),
+                  );
+                }
                 if (i == 2) {
                   return _BrowseCard(
                     label: l10n.tabAlbums,
@@ -2246,7 +2478,7 @@ class _SearchScreenState extends State<SearchScreen>
                     )),
                   );
                 }
-                final slug  = cats[i - 3];
+                final slug  = cats[i - 5];
                 final label = _categoryLabel(slug, l10n);
                 final style = _categoryCardStyle(slug);
                 return _BrowseCard(
@@ -2297,7 +2529,10 @@ class _SearchScreenState extends State<SearchScreen>
                 .withValues(alpha: 0.75),
             borderRadius: BorderRadius.circular(20),
           ),
-          child: TextField(
+          child: CancelField(
+            controller: _controller,
+            onCleared: _onChanged,
+            builder: (_) => TextField(
             controller: _controller,
             focusNode: _focus,
             // Opened as a tag browse: show the results, don't pop the keyboard.
@@ -2311,17 +2546,11 @@ class _SearchScreenState extends State<SearchScreen>
               prefixIconConstraints:
                   const BoxConstraints(minWidth: 38, minHeight: 38),
               contentPadding: const EdgeInsets.fromLTRB(0, 10, 12, 10),
-              suffixIcon: _controller.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, size: 18),
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () { _controller.clear(); _onChanged(''); },
-                    )
-                  : null,
               suffixIconConstraints:
                   const BoxConstraints(minWidth: 36, minHeight: 36),
             ),
             onChanged: _onChanged,
+            ),
           ),
         ),
         actions: [
@@ -2498,7 +2727,15 @@ class _SearchScreenState extends State<SearchScreen>
     final l10n      = context.l10n;
     final formats   = _facetsOf('format');
     final platforms = _facetsOf('platform');
-    if (formats.isEmpty && platforms.isEmpty) return const SizedBox.shrink();
+    // Podium: au même niveau que Format / Plateforme. Comptes par rang de la
+    // facette 'podium' (grain de l'onglet affiché); masquée pour la session si
+    // le serveur ne connaît pas p_podium (404 mémorisé).
+    final podCounts = podiumCounts(
+        _tabs.index == _Tab.albums.index ? _facetsAlbum : _facets);
+    final podTotal  = podiumTotal(podCounts);
+    final showPodium = !RewampDb.serverLacks('p_podium') &&
+        (podTotal > 0 || _podium != null);
+    if (formats.isEmpty && platforms.isEmpty && !showPodium) return const SizedBox.shrink();
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
@@ -2510,6 +2747,27 @@ class _SearchScreenState extends State<SearchScreen>
         if (platforms.isNotEmpty)
           _facetChip(l10n.searchPlatform, _platformFilter, platforms,
               (v) => setState(() { _platformFilter = v; _search(_currentQuery); })),
+        if (showPodium && (formats.isNotEmpty || platforms.isNotEmpty))
+          const SizedBox(width: 6),
+        if (showPodium)
+          ActionChip(
+            avatar: Icon(_podium != null ? Icons.check : Icons.emoji_events_outlined,
+                size: 14),
+            label: Text(podiumChipLabel(l10n, _podium, podTotal),
+                style: const TextStyle(fontSize: 11)),
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            backgroundColor: _podium != null
+                ? Theme.of(context).colorScheme.secondaryContainer
+                : null,
+            onPressed: () async {
+              final v = await showPodiumPicker(context,
+                  current: _podium, counts: podCounts);
+              if (v == null || !mounted) return;
+              setState(() => _podium = v < 0 ? null : v);
+              _search(_currentQuery);
+            },
+          ),
       ]),
     );
   }
@@ -2602,11 +2860,166 @@ class _SearchScreenState extends State<SearchScreen>
               ),
             ),
           ),
-          // Same pair, same shape, same spacing as on the artist screen.
-          RadioSurpriseButtons(onRadio: _startRadio, onSurprise: _surpriseMe),
+          // Same pair, same shape, same spacing as on the artist screen —
+          // plus « Tout lire » DEVANT Radio quand il y a des résultats
+          // (déplacé depuis la _CountBar, demandé le 2026-09-02: trois
+          // actions de lancement, une seule famille de boutons).
+          // ⚠️ Les trois actions appartiennent à l'ONGLET ACTIF, et elles
+          // DISPARAISSENT quand il n'a rien à jouer — sinon l'onglet Groupes
+          // vide laissait lancer une lecture prise ailleurs (signalé le
+          // 2026-09-02). La liste des résultats est un ValueNotifier: sans
+          // l'écouter ici, la rangée ne se redessinerait pas à l'arrivée des
+          // morceaux.
+          ValueListenableBuilder<List<SearchResult>>(
+            valueListenable: _resultsNotifier,
+            builder: (_, __, ___) {
+              final a = _tabActions();
+              if (a == null) return const SizedBox.shrink();
+              return RadioSurpriseButtons(
+                onPlayAll: a.playAll,
+                onRadio: a.radio,
+                onSurprise: a.surprise,
+              );
+            },
+          ),
         ],
       ),
     );
+  }
+
+  /// Les trois actions de lancement de l'onglet ACTIF, ou `null` quand il n'a
+  /// aucune entrée — la rangée n'est alors pas rendue du tout.
+  ///
+  /// La source EST l'onglet: morceaux = les lignes chargées, artistes /
+  /// groupes / albums / playlists / productions = leurs entrées DÉPLIÉES en
+  /// pistes, « sur cet appareil » = les fichiers locaux. Seul l'onglet
+  /// morceaux garde la radio de FACETTES (une station sur la recherche
+  /// courante, pas sur la page chargée) — c'est ce qui fait vivre la page
+  /// d'accueil de la recherche, où il n'y a pas encore de résultats.
+  ({VoidCallback? playAll, VoidCallback? radio, VoidCallback? surprise})?
+      _tabActions() {
+    final tab = _Tab.values[_tabs.index];
+    switch (tab) {
+      case _Tab.all:
+        final rows = _resultsNotifier.value;
+        // Pas de recherche en cours = page d'accueil: la radio et la surprise
+        // portent sur les FACETTES et restent offertes; « Tout lire » n'a rien
+        // à lire.
+        if (!_hasActiveSearch) {
+          return (playAll: null, radio: _startRadio, surprise: _surpriseMe);
+        }
+        if (rows.isEmpty) return null;
+        return (
+          playAll: _playAllResults,
+          radio: _startRadio,
+          surprise: _surpriseMe,
+        );
+      case _Tab.artists:
+        final rows = _artistResults;
+        if (rows.isEmpty) return null;
+        return _entityActions<ArtistResult>(
+          rows,
+          (a) => RewampDb.browse(
+              artistId: a.artistId.isEmpty ? null : a.artistId,
+              artistName: a.artistId.isEmpty ? a.name : null,
+              sortBy: 'name',
+              limit: _kEntityFanout),
+        );
+      case _Tab.groups:
+        final rows = _groups;
+        if (rows.isEmpty) return null;
+        return _entityActions<GroupSearchResult>(
+          rows,
+          (g) => RewampDb.browse(
+              tags: [g.name],
+              tagCategories: const ['group'],
+              sortBy: 'name',
+              limit: _kEntityFanout),
+        );
+      case _Tab.albums:
+        final rows = _albums;
+        if (rows.isEmpty) return null;
+        return _entityActions<_AlbumId>(
+          rows,
+          (a) => RewampDb.browse(
+              albumName: a.name,
+              collection: a.collection,
+              platform: a.platform,
+              sortBy: 'position',
+              limit: 500),
+        );
+      case _Tab.playlists:
+        final rows = _playlists;
+        if (rows.isEmpty) return null;
+        return _entityActions<Playlist>(
+            rows, (p) => RewampDb.playlistTracks(p.id));
+      case _Tab.productions:
+        final rows = _productions;
+        if (rows.isEmpty) return null;
+        return _entityActions<ProductionSearchRow>(
+            rows, (p) => RewampDb.productionTracks(p.production.id));
+      case _Tab.local:
+        final rows = _localMatches;
+        if (rows.isEmpty || globalOpenLocalPaths == null) return null;
+        void play(List<(String, TrackRecord)> list) {
+          final paths = [for (final e in list) e.$2.filePath];
+          if (paths.isEmpty) return;
+          globalOpenLocalPaths?.call(paths);
+        }
+        return (
+          playAll: () => play(rows),
+          radio: () => play(List.of(rows)..shuffle(Random())),
+          surprise: () => play([rows[Random().nextInt(rows.length)]]),
+        );
+    }
+  }
+
+  /// « Tout lire » sur les lignes CHARGÉES du tab Tous (pas le total
+  /// serveur — la file est plafonnée en aval, kQueueLimit).
+  ///
+  /// ⚠️ Le filtre porte sur les lignes qui représentent un ALBUM ENTIER, et
+  /// sur elles SEULES — exactement ce que la liste affiche. L'ancien filtre
+  /// utilisait `isAlbumLevelMatch`, qui attrape en plus les MEMBRES d'archive
+  /// sans url à eux: sur « Kondo » + plage d'années il écartait 10 lignes sur
+  /// 10 et le bouton ne faisait plus rien. Les membres, eux, s'enfilent très
+  /// bien — `_startAlbumQueue` extrait l'archive (`ensureAlbumExtracted`) et
+  /// résout chaque entrée au moment où elle est jouée.
+  Future<void> _playAllResults() async {
+    // Les MORCEAUX de la liste — une ligne qui représente un album entier n'en
+    // est pas un (elle a son onglet). Prédicat ÉTROIT: voir isWholeAlbumRow.
+    final songs = _currentQuery.isEmpty
+        ? _resultsNotifier.value
+        : [
+            for (final r in _resultsNotifier.value)
+              if (!RewampDb.isWholeAlbumRow(r) &&
+                  !RewampDb.matchedAlbumNameOnly(r, _currentQuery))
+                r,
+          ];
+    if (songs.isEmpty) return;
+    // ⚠️ Une ligne dont le serveur a nommé la PISTE désigne cette piste, pas le
+    // conteneur: la résoudre AVANT d'enfiler, sinon « into the wilderness »
+    // lançait l'album entier au lieu du morceau trouvé.
+    final resolved = await RewampDb.resolveMatchedTracks(songs);
+    if (!mounted) return;
+    (widget.onPlayAlbum ?? globalOnPlayAlbum)?.call(context, resolved);
+  }
+
+  /// Combien de pistes on tire d'UNE entité (artiste, groupe). Un « tout lire »
+  /// est un lancement, pas un aspirateur: la file est plafonnée en aval
+  /// (kQueueLimit) et le helper partagé borne déjà entités et total.
+  static const int _kEntityFanout = 200;
+
+  /// La même famille d'actions pour tout onglet dont les entrées sont des
+  /// ENTITÉS — une seule implémentation, partagée avec les écrans d'angle du
+  /// navigateur de collection (`entity_play_actions.dart`).
+  ({VoidCallback? playAll, VoidCallback? radio, VoidCallback? surprise})
+      _entityActions<T>(
+    List<T> rows,
+    Future<List<SearchResult>> Function(T) fetch,
+  ) {
+    final a = entityPlayActions<T>(context, rows, fetch,
+        onPlayAlbum: widget.onPlayAlbum);
+    return (playAll: a.playAll, radio: a.radio, surprise: a.surprise);
   }
 
   void _openCollectionSheet() {
@@ -2635,8 +3048,15 @@ class _SearchScreenState extends State<SearchScreen>
       _Tab.albums    => _albumTotal,
       _Tab.playlists => _playlistTotal,
       _Tab.productions => _productionTotal,
+      _Tab.local     => _localTotal,
     };
-    return total > 0 ? l10n.searchTabWithCount(base, total) : base;
+    // ⚠️ Le total des ARTISTES peut n'être qu'un PLANCHER (migration serveur
+    // 247): le serveur borne son décompte sur les recherches très larges et le
+    // DIT, au lieu de rendre un nombre qui a l'air exact. « 4403+ ».
+    final floor = t == _Tab.artists && _artistTotalIsFloor;
+    return total > 0
+        ? l10n.searchTabWithCount(base, '$total${floor ? '+' : ''}')
+        : base;
   }
 
   Widget _buildResults() {
@@ -2663,6 +3083,7 @@ class _SearchScreenState extends State<SearchScreen>
               // Empty query ⇒ _fetchPage browses instead of searching, and the
               // album-level filter must not run on those rows.
               textSearch:       _currentQuery.isNotEmpty,
+              query:            _currentQuery,
               resultsNotifier:  _resultsNotifier,
               totalCount:       _totalCount,
               loadingMore:      _loadingMore,
@@ -2683,6 +3104,7 @@ class _SearchScreenState extends State<SearchScreen>
                 : _ArtistResultList(
                     items:       _artistResults,
                     total:       _artistTotal,
+                    totalIsFloor: _artistTotalIsFloor,
                     hasMore:     _artistHasMore,
                     loadingMore: _artistLoadingMore,
                     loadMore:    _loadMoreArtists,
@@ -2736,7 +3158,66 @@ class _SearchScreenState extends State<SearchScreen>
                         ? openProductionVideo(ctx, row.production)
                         : openProduction(ctx, row.production),
                   ),
+            // Sur cet appareil — imports locaux (filtrage en mémoire)
+            _buildLocalTab(),
           ],
+        );
+      },
+    );
+  }
+
+  /// Correspondances LOCALES pour l'onglet « Sur cet appareil » — titre ET
+  /// chemin relatif (le nom d'archive/dossier est dans le chemin). Pas de
+  /// facettes: les imports locaux n'en ont pas; une recherche à facettes
+  /// seules montre tout.
+  Future<void> _loadLocalMatches(String q) async {
+    try {
+      final all = await LocalDb.instance.getLocalImports();
+      if (!mounted || _currentQuery != q) return;
+      final lower = q.toLowerCase();
+      final hits = lower.isEmpty
+          ? all
+          : [
+              for (final e in all)
+                if (e.$1.toLowerCase().contains(lower) ||
+                    (e.$2.title ?? '').toLowerCase().contains(lower))
+                  e,
+            ];
+      setState(() {
+        _localMatches = hits;
+        _localTotal = hits.length;
+      });
+    } catch (_) {}
+  }
+
+  Widget _buildLocalTab() {
+    final l10n = context.l10n;
+    final cs = Theme.of(context).colorScheme;
+    if (_localMatches.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(l10n.searchNoResults,
+              style: TextStyle(color: cs.onSurfaceVariant)),
+        ),
+      );
+    }
+    return ListView.builder(
+      itemCount: _localMatches.length,
+      itemBuilder: (ctx, i) {
+        final (rel, t) = _localMatches[i];
+        return ListTile(
+          dense: true,
+          leading: RailArtwork(
+            url:           t.artworkUrl,
+            localFilePath: t.filePath,
+            formatHint:    t.formatExt,
+            platformName:  t.platformName,
+            size:          40,
+          ),
+          title: ScrollingText(text: t.displayTitle),
+          subtitle: Text(rel, maxLines: 1, overflow: TextOverflow.ellipsis),
+          onTap: () => globalOpenLocalPaths?.call([t.filePath]),
         );
       },
     );
@@ -2826,6 +3307,10 @@ class _PaginatedSongList extends StatefulWidget {
   /// it because it runs no text search. Applying it to a browse listing hides
   /// every row that merely has an album and a subsong — i.e. most of them.
   final bool textSearch;
+  /// Le texte cherché — sert à distinguer une piste dont le NOM matche d'une
+  /// ligne qui ne matche que par le nom de son ALBUM (voir
+  /// [RewampDb.matchedAlbumNameOnly]). Vide en mode browse.
+  final String query;
 
   const _PaginatedSongList({
     required this.resultsNotifier,
@@ -2839,6 +3324,7 @@ class _PaginatedSongList extends StatefulWidget {
     this.onQueueAdd,
     this.onPlayAlbum,
     this.textSearch = true,
+    this.query = '',
   });
 
   @override
@@ -2871,20 +3357,29 @@ class _PaginatedSongListState extends State<_PaginatedSongList> {
     return ValueListenableBuilder<List<SearchResult>>(
       valueListenable: widget.resultsNotifier,
       builder: (_, all, __) {
-        // NOTHING is hidden here. This tab's job is to list the tunes that
-        // match, standalone or inside an album, so a row it drops is a tune the
-        // user cannot find — and the drop was invisible: the count comes from
-        // the server and the filter ran on the client, so the tab announced N
-        // and showed fewer (4 and none, for a modland album whose per-file rows
-        // had all been taken for the album itself). Worse, a page filtered down
-        // to nothing rendered "no results" INSTEAD of the ListView, and the
-        // ListView is what triggers loadMore — so page 2 was unreachable.
+        // Cet onglet liste des MORCEAUX. Une ligne qui représente un ALBUM
+        // ENTIER (l'archive joshw d'un jeu, dont le serveur ne connaît pas le
+        // détail) n'en est pas un: elle a son propre onglet Albums, et la
+        // laisser ici mettait des albums complets dans « Tout lire ».
         //
-        // Album-level rows (a joshw archive matched by its game name) stay in
-        // the list and route to the album screen instead of playing, via
-        // SongTile's own isAlbumLevelMatch check (albumRowsAllowed below).
-        final results = all;
-        if (results.isEmpty && !widget.loadingMore) {
+        // ⚠️ Le prédicat est [RewampDb.isWholeAlbumRow], PAS `isAlbumLevelMatch`
+        // — celui-là attrape aussi les MEMBRES d'archive sans url à eux (les
+        // `.spc` d'un `.rsn`), qui sont bel et bien des morceaux. C'est cette
+        // confusion qui avait fait retirer tout filtrage d'ici: elle vidait la
+        // liste (« 4 et aucun » sur un album modland) et rendait la page 2
+        // inatteignable. Deux garde-fous en conséquence: le « aucun résultat »
+        // se juge sur la liste BRUTE, et une page entièrement filtrée demande
+        // quand même la suivante — sinon la ListView est vide, ne défile pas,
+        // et rien ne rappelle jamais `loadMore`.
+        final results = widget.textSearch
+            ? [
+                for (final r in all)
+                  if (!RewampDb.isWholeAlbumRow(r) &&
+                      !RewampDb.matchedAlbumNameOnly(r, widget.query))
+                    r,
+              ]
+            : all;
+        if (all.isEmpty && !widget.loadingMore) {
           return Center(
             child: Text(
               AppLocalizations.of(context)!.searchNoResults,
@@ -2892,13 +3387,20 @@ class _PaginatedSongListState extends State<_PaginatedSongList> {
             ),
           );
         }
+        if (results.isEmpty && widget.hasMore && !widget.loadingMore) {
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => widget.loadMore());
+        }
         return Column(
           children: [
             _CountBar(
               loaded: results.length,
-              total: widget.totalCount,
+              total: '${widget.totalCount}',
               loading: widget.loadingMore,
               hasMore: widget.hasMore,
+              // Pas de « Tout lire » ici: il vit dans la rangée de facettes,
+              // devant Radio (RadioSurpriseButtons.onPlayAll) — un seul
+              // bouton pour une seule action.
             ),
             Expanded(
               child: ListView.builder(
@@ -2922,6 +3424,9 @@ class _PaginatedSongListState extends State<_PaginatedSongList> {
                     onQueueAdd:       widget.onQueueAdd,
                     onPlayAlbum:      widget.onPlayAlbum,
                     albumRowsAllowed: widget.textSearch,
+                    // Une recherche brasse toutes les collections: d'où vient
+                    // la ligne est une information de premier plan ici.
+                    showCollection:   true,
                   );
                 },
               ),
@@ -3074,9 +3579,19 @@ class _DedicatedResultsScreenState extends State<DedicatedResultsScreen> {
                     children: [
                       _CountBar(
                         loaded: results.length,
-                        total: _total,
+                        total: '$_total',
                         loading: _loadingMore,
                         hasMore: _hasMore,
+                        // Écran dédié: pas de onPlayAlbum en propre, le relais
+                        // global suffit (posé par AppShell au démarrage).
+                        onPlayAll: () {
+                          final songs = [
+                            for (final r in results)
+                              if (!RewampDb.isAlbumLevelMatch(r)) r,
+                          ];
+                          if (songs.isEmpty) return;
+                          globalOnPlayAlbum?.call(context, songs);
+                        },
                       ),
                       Expanded(
                         child: ListView.builder(
@@ -3184,6 +3699,13 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
   // loaded so far still feed the same sets as a fallback when that call is
   // unavailable (offline, or an artist known only by name).
   String? _fCollection, _fFormat, _fPlatform;
+  // Podium (compétitions demoscene): albums filtrés côté client par rang
+  // (get_artist_albums rend la liste complète); morceaux par
+  // browse_music(p_podium) — tant que le serveur ne connaît pas le paramètre,
+  // les morceaux restent NON filtrés (voir _onServerCapabilities) plutôt que
+  // paginés à de faux décalages.
+  int? _fPodium;            // p_podium: null = aucun, 0 = tout podium, 1-3
+  Map<int, int> _podiumSongCounts = const {1: 0, 2: 0, 3: 0};   // facette serveur
   final Set<String> _optCollections = {};
   final Set<String> _optFormats     = {};   // lowercase
   final Set<String> _optPlatforms   = {};
@@ -3200,11 +3722,25 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
+    // La puce podium montre les comptes de l'onglet AFFICHÉ.
+    _tabs.addListener(() { if (mounted) setState(() {}); });
     _scroll.addListener(_onScroll);
     // Load albums and first song page in parallel — independent requests
     Future.wait([_loadAlbums(), _loadSongs()]);
     _loadDetails(); // header, independent — never blocks the tabs
     _loadFacets();  // complete filter options, independent too
+    RewampDb.serverLacksChanged.addListener(_onServerCapabilities);
+  }
+
+  int? get _podiumOnServer => RewampDb.serverLacks('p_podium') ? null : _fPodium;
+
+  /// The server does not know `p_podium`: the songs page just loaded was
+  /// filtered client-side, and paging on would use wrong offsets. Say so and
+  /// reload the songs unfiltered — the albums stay filtered (client-side).
+  void _onServerCapabilities() {
+    if (!mounted || _fPodium == null || !RewampDb.serverLacks('p_podium')) return;
+    AppSnack.show(context, context.l10n.searchPodiumUnavailable);
+    _applyFilters();
   }
 
   /// Open an external link, mirroring the credits screen. Server-supplied urls
@@ -3263,6 +3799,11 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
             case 'collection': _optCollections.add(f.value);
             case 'format':     _optFormats.add(f.value.toLowerCase());
             case 'platform':   _optPlatforms.add(f.value);
+            case 'podium':
+              final r = int.tryParse(f.value);
+              if (r != null && r >= 1 && r <= 3) {
+                _podiumSongCounts = {..._podiumSongCounts, r: f.count};
+              }
           }
         }
       });
@@ -3272,7 +3813,15 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
   void _accumulateOpts(Iterable<SearchResult> rows) {
     for (final r in rows) {
       if (r.collection.isNotEmpty) _optCollections.add(r.collection);
-      if (r.formatExt.isNotEmpty)  _optFormats.add(r.formatExt.toLowerCase());
+      // ⚠️ Seulement le format que le SERVEUR connaît: c'est sur SA colonne
+      // que `browse_music(format_filter:)` filtre. Un format déduit du nom de
+      // fichier (une ligne sceneorg est un `.zip` dont le module est dedans,
+      // `format_ext` y est NULL) donnerait une option qui ne ramène jamais
+      // rien — « je filtre sur ZIP et la liste se vide ». Bon pour AFFICHER,
+      // pas pour INTERROGER.
+      if (r.formatExt.isNotEmpty && !r.formatExtFromFileName) {
+        _optFormats.add(r.formatExt.toLowerCase());
+      }
       final p = r.platform;
       if (p != null && p.isNotEmpty) _optPlatforms.add(p);
     }
@@ -3280,6 +3829,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
 
   @override
   void dispose() {
+    RewampDb.serverLacksChanged.removeListener(_onServerCapabilities);
     _tabs.dispose();
     _scroll.dispose();
     _notifier.dispose();
@@ -3328,6 +3878,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
         collection:   _fCollection ?? widget.collection,
         formatFilter: _fFormat,
         platform:     _fPlatform,
+        podium:       _podiumOnServer,
         sortBy:       'name',
         limit:        50,
         offset:       0,
@@ -3355,6 +3906,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
         collection:   _fCollection ?? widget.collection,
         formatFilter: _fFormat,
         platform:     _fPlatform,
+        podium:       _podiumOnServer,
         sortBy:       'name',
         limit:        50,
         offset:       _offset,
@@ -3403,10 +3955,10 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
     final l10n = context.l10n;
     final albumsShown = _filteredAlbums;
     final albumLabel = albumsShown.isNotEmpty
-        ? l10n.searchTabWithCount(l10n.tabAlbums, albumsShown.length)
+        ? l10n.searchTabWithCount(l10n.tabAlbums, '${albumsShown.length}')
         : l10n.tabAlbums;
     final songsLabel = _total > 0
-        ? l10n.searchTabWithCount(l10n.tabAll, _total)
+        ? l10n.searchTabWithCount(l10n.tabAll, '$_total')
         : l10n.tabAll;
 
     // Counts ride ALONG the name in the app bar rather than under it: the
@@ -3738,7 +4290,8 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
         for (final a in _albums)
           if ((_fCollection == null || a.collection == _fCollection) &&
               (_fPlatform == null || a.platform == _fPlatform) &&
-              (_fFormat == null || a.format?.toLowerCase() == _fFormat))
+              (_fFormat == null || a.format?.toLowerCase() == _fFormat) &&
+              podiumMatches(a.podium, _fPodium))
             a,
       ];
 
@@ -3832,6 +4385,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
         collection:   _fCollection ?? widget.collection,
         formatFilter: _fFormat,
         platform:     _fPlatform,
+        podium:       _podiumOnServer,
         sortBy:       'random',
         seed:         seed,
         limit:        limit,
@@ -3850,6 +4404,16 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
         await widget.onTap(context, songs.first);
       }
     } catch (_) {}
+  }
+
+  /// « Tout lire » — les lignes CHARGÉES du tab Morceaux (même règle que la
+  /// recherche: on lance ce qui est affiché, pas le total serveur). Vaut
+  /// aussi depuis le tab Albums: comme Radio, le bouton porte sur les
+  /// morceaux de l'artiste sous les facettes actives.
+  void _playAllArtistSongs() {
+    final songs = _notifier.value;
+    if (songs.isEmpty) return;
+    (widget.onPlayAlbum ?? globalOnPlayAlbum)?.call(context, songs);
   }
 
   Future<void> _surpriseArtist() async {
@@ -3874,13 +4438,21 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
     final canCollection = _optCollections.length > 1 || _fCollection != null;
     final canFormat     = _optFormats.length > 1     || _fFormat != null;
     final canPlatform   = _optPlatforms.length > 1   || _fPlatform != null;
+    final albumPodiums  = podiumCountsOf(_albums.map((x) => x.podium));
+    final podCounts     = _tabs.index == 1 ? albumPodiums : _podiumSongCounts;
+    final canPodium     = _fPodium != null ||
+        podiumTotal(_podiumSongCounts) > 0 || podiumTotal(albumPodiums) > 0;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
       child: Row(children: [
         RadioSurpriseButtons(
-            onRadio: _startArtistRadio, onSurprise: _surpriseArtist),
-        if (canCollection || canFormat || canPlatform) const SizedBox(width: 12),
+            onPlayAll:
+                _notifier.value.isEmpty ? null : _playAllArtistSongs,
+            onRadio: _startArtistRadio,
+            onSurprise: _surpriseArtist),
+        if (canCollection || canFormat || canPlatform || canPodium)
+          const SizedBox(width: 12),
         if (canCollection)
           _facetChip(
             label: l10n.filterCollection,
@@ -3902,6 +4474,29 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
             value: _fPlatform,
             options: _optPlatforms.toList(),
             onPick: (v) => _fPlatform = v,
+          ),
+        if (canPodium)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: InputChip(
+              avatar: const Icon(Icons.emoji_events_outlined, size: 16),
+              label: Text(podiumChipLabel(l10n, _fPodium, podiumTotal(podCounts))),
+              selected: _fPodium != null,
+              showCheckmark: false,
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              deleteIcon: _fPodium != null ? const Icon(Icons.close, size: 16) : null,
+              onDeleted: _fPodium != null
+                  ? () { _fPodium = null; _applyFilters(); }
+                  : null,
+              onPressed: () async {
+                final v = await showPodiumPicker(context,
+                    current: _fPodium, counts: podCounts);
+                if (v == null || !mounted) return;
+                _fPodium = v < 0 ? null : v;
+                _applyFilters();
+              },
+            ),
           ),
       ]),
     );
@@ -3991,9 +4586,15 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
           children: [
             _CountBar(
               loaded:  results.length,
-              total:   _total,
+              total:   '$_total',
               loading: _loadingMore,
               hasMore: _hasMore,
+              // Pas de « Tout lire » ici: il vit dans la rangée de filtres,
+              // devant Radio (`RadioSurpriseButtons.onPlayAll` dans
+              // `_buildFilterBar`) — un seul bouton pour une seule action,
+              // même règle que l'onglet Morceaux de la recherche. Le bouton
+              // isolé de `_CountBar` reste pour les écrans qui n'ont PAS la
+              // famille unifiée (DedicatedResultsScreen), où il est le seul.
             ),
             Expanded(
               child: ListView.builder(
@@ -4033,15 +4634,22 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
 
 class _CountBar extends StatelessWidget {
   final int  loaded;
-  final int? total;
+  /// Déjà FORMATÉ — « 4403 », ou « 4403+ » quand le serveur dit que son
+  /// décompte est un PLANCHER (`search_artists.truncated`, mig 247). null =
+  /// total inconnu.
+  final String? total;
   final bool loading;
   final bool hasMore;
+  /// « Tout lire » — lance ce qui est AFFICHÉ (les lignes déjà chargées, pas
+  /// le total serveur). La file est plafonnée en aval (kQueueLimit, annoncé).
+  final VoidCallback? onPlayAll;
 
   const _CountBar({
     required this.loaded,
     required this.total,
     required this.loading,
     required this.hasMore,
+    this.onPlayAll,
   });
 
   @override
@@ -4068,6 +4676,17 @@ class _CountBar extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
           ],
+          if (onPlayAll != null) ...[
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.play_arrow, size: 20),
+              tooltip: l10n.browsePlayAll,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 28),
+              onPressed: onPlayAll,
+            ),
+          ],
         ],
       ),
     );
@@ -4081,6 +4700,8 @@ class _CountBar extends StatelessWidget {
 class _PaginatedListView extends StatefulWidget {
   final int  itemCount;
   final int  total;
+  /// Le total n'est qu'un PLANCHER (search_artists.truncated): « 4403+ ».
+  final bool totalIsFloor;
   final bool hasMore;
   final bool loadingMore;
   final Future<void> Function() loadMore;
@@ -4090,6 +4711,7 @@ class _PaginatedListView extends StatefulWidget {
   const _PaginatedListView({
     required this.itemCount,
     required this.total,
+    this.totalIsFloor = false,
     required this.hasMore,
     required this.loadingMore,
     required this.loadMore,
@@ -4129,7 +4751,9 @@ class _PaginatedListViewState extends State<_PaginatedListView> {
       children: [
         _CountBar(
           loaded:  widget.itemCount,
-          total:   widget.total >= 0 ? widget.total : null,
+          total: widget.total >= 0
+              ? '${widget.total}${widget.totalIsFloor ? '+' : ''}'
+              : null,
           loading: widget.loadingMore,
           hasMore: widget.hasMore,
         ),
@@ -4452,6 +5076,8 @@ class _AlbumPlayButtonState extends State<_AlbumPlayButton> {
 class _ArtistResultList extends StatelessWidget {
   final List<ArtistResult> items;
   final int  total;
+  /// Voir `_PaginatedListView.totalIsFloor`.
+  final bool totalIsFloor;
   final bool hasMore;
   final bool loadingMore;
   final Future<void> Function() loadMore;
@@ -4460,6 +5086,7 @@ class _ArtistResultList extends StatelessWidget {
   const _ArtistResultList({
     required this.items,
     required this.total,
+    this.totalIsFloor = false,
     required this.hasMore,
     required this.loadingMore,
     required this.loadMore,
@@ -4472,6 +5099,7 @@ class _ArtistResultList extends StatelessWidget {
     return _PaginatedListView(
       itemCount:   items.length,
       total:       total,
+      totalIsFloor: totalIsFloor,
       hasMore:     hasMore,
       loadingMore: loadingMore,
       loadMore:    loadMore,
@@ -4493,7 +5121,7 @@ class _ArtistResultList extends StatelessWidget {
           leading: (a.artworkUrl != null && a.artworkUrl!.isNotEmpty)
               ? CircleAvatar(backgroundImage: NetworkImage(a.artworkUrl!))
               : const CircleAvatar(child: Icon(Icons.person)),
-          title: Text(a.name),
+          title: ScrollingText(text: a.name),
           subtitle: (parts.isEmpty && !hasBadge)
               ? null
               : Column(
@@ -4533,6 +5161,14 @@ class _CollectionPickerSheet extends StatefulWidget {
 class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
   String _query = '';
 
+  /// Familles DÉPLIÉES (clé → ouvert). La famille du slug sélectionné démarre
+  /// ouverte: replier la sélection derrière un chevron la ferait chercher.
+  late final Set<String> _expanded = {
+    for (final f in kCollectionFamilies)
+      if (widget.selected != null && widget.selected!.startsWith(f.prefix))
+        f.key,
+  };
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -4544,6 +5180,9 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
                 c.name.toLowerCase().contains(q) ||
                 c.slug.toLowerCase().contains(q))
             .toList();
+    // Le REGROUPEMENT ne vit qu'au repos: sous recherche, la liste est plate —
+    // l'utilisateur a tapé, il veut des correspondances, pas de la structure.
+    final entries = q.isEmpty ? groupCollections(filtered) : null;
     final showSearch = widget.collections.length > 8;
 
     return SafeArea(
@@ -4566,15 +5205,19 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
             if (showSearch)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: TextField(
-                  autofocus: false,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    prefixIcon: const Icon(Icons.search, size: 18),
-                    hintText: l10n.searchFilterCollections,
-                    border: const OutlineInputBorder(),
+                child: CancelField(
+                  hasText: _query.isNotEmpty,
+                  onCleared: (_) => setState(() => _query = ''),
+                  builder: (_) => TextField(
+                    autofocus: false,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.search, size: 18),
+                      hintText: l10n.searchFilterCollections,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => setState(() => _query = v),
                   ),
-                  onChanged: (v) => setState(() => _query = v),
                 ),
               ),
             Flexible(
@@ -4589,14 +5232,98 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
                       selected: widget.selected == null,
                       onTap: () => widget.onPick(null),
                     ),
-                  for (final c in filtered)
-                    _row(
-                      context,
-                      title: c.name.isNotEmpty ? c.name : c.slug,
-                      trailing: c.filesCount > 0 ? '${c.filesCount}' : null,
-                      selected: widget.selected == c.slug,
-                      onTap: () => widget.onPick(c.slug),
-                    ),
+                  if (entries == null)
+                    for (final c in filtered)
+                      _row(
+                        context,
+                        title: c.name.isNotEmpty ? c.name : c.slug,
+                        trailing: c.filesCount > 0 ? '${c.filesCount}' : null,
+                        selected: widget.selected == c.slug,
+                        onTap: () => widget.onPick(c.slug),
+                      )
+                  else
+                    for (final e in entries)
+                      ...switch (e) {
+                        SingleCollectionEntry(:final collection) => [
+                            _row(
+                              context,
+                              title: collection.name.isNotEmpty
+                                  ? collection.name
+                                  : collection.slug,
+                              trailing: collection.filesCount > 0
+                                  ? '${collection.filesCount}'
+                                  : null,
+                              selected: widget.selected == collection.slug,
+                              onTap: () => widget.onPick(collection.slug),
+                            ),
+                          ],
+                        CollectionFamilyEntry() => [
+                          // La ligne de FAMILLE SÉLECTIONNE la famille entière
+                          // (sentinel `family:<key>`, déplié en `p_collections`
+                          // par l'écran — mig serveur 240; un serveur antérieur
+                          // retombe sur « toutes », voir _postJsonOptional).
+                          // Le DÉPLIAGE est sur le chevron, geste séparé: un
+                          // seul tap ne peut pas vouloir dire les deux.
+                          Builder(builder: (context) {
+                            final famSel =
+                                widget.selected == 'family:${e.key}';
+                            final active =
+                                famSel || e.contains(widget.selected);
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(
+                                  active
+                                      ? Icons.check_circle
+                                      : Icons.circle_outlined,
+                                  size: 20,
+                                  color: active
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null),
+                              title: ScrollingText(
+                                  text: e.label,
+                                  style: TextStyle(
+                                      fontWeight: active
+                                          ? FontWeight.w600
+                                          : FontWeight.normal)),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('${e.filesCount}',
+                                      style: const TextStyle(
+                                          fontSize: 12, color: Colors.grey)),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    icon: Icon(
+                                        _expanded.contains(e.key)
+                                            ? Icons.expand_less
+                                            : Icons.expand_more,
+                                        size: 18),
+                                    onPressed: () => setState(() =>
+                                        _expanded.contains(e.key)
+                                            ? _expanded.remove(e.key)
+                                            : _expanded.add(e.key)),
+                                  ),
+                                ],
+                              ),
+                              onTap: () => widget.onPick('family:${e.key}'),
+                            );
+                          }),
+                          if (_expanded.contains(e.key))
+                            for (final c in e.members)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 24),
+                                child: _row(
+                                  context,
+                                  title: collectionMemberLabel(c, e.label),
+                                  trailing: c.filesCount > 0
+                                      ? '${c.filesCount}'
+                                      : null,
+                                  selected: widget.selected == c.slug,
+                                  onTap: () => widget.onPick(c.slug),
+                                ),
+                              ),
+                        ],
+                      },
                 ],
               ),
             ),
@@ -4616,7 +5343,8 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
       dense: true,
       leading: Icon(selected ? Icons.check_circle : Icons.circle_outlined,
           size: 20, color: selected ? accent : null),
-      title: Text(title,
+      title: ScrollingText(
+          text: title,
           style: TextStyle(
               fontWeight: selected ? FontWeight.w600 : FontWeight.normal)),
       trailing: trailing == null
@@ -4761,7 +5489,7 @@ class _PlaylistList extends StatelessWidget {
                   )
                 : const Icon(Icons.queue_music),
           ),
-          title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          title: ScrollingText(text: p.name),
           subtitle: _matchReasonLabel(p.matchReason, l10n) == null
               ? Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis)
               : Column(

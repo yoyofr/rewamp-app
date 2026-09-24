@@ -144,6 +144,21 @@ static bool sndh_string(struct sndh_cursor *cursor)
 	return true;
 }
 
+/* REWAMP: the per-subtune tables (TIME words, FRMS longs, !#SN/FLAG offset
+ * words) are 68000 word tables and therefore start on an EVEN address; the tag
+ * name that precedes them is a plain byte string and can end on an odd one, in
+ * which case a pad byte sits between the two. Upstream reads the table straight
+ * after the name, so a tag landing at an odd offset makes it read one byte too
+ * early -- for TIME that shifts the duration by a whole byte (measured on
+ * "Crazy-Q - Midnight Sun": TIME at offset 0x51, upstream reads 0x0001 = 1 s
+ * where the real table at 0x56 holds 0x0105 = 261 s, and the tune was cut after
+ * one second). sc68 aligns the same way (file68.c: `i += 4 + (i&1)`). */
+static void sndh_align_subtag(struct sndh_cursor *cursor)
+{
+	if (cursor->offset & 1)
+		cursor->offset++;
+}
+
 static size_t sndh_substrings_subend(size_t o, struct sndh_cursor  *cursor)
 {
 	const char *c = cursor->file.data;
@@ -191,6 +206,7 @@ static bool sndh_substrings(struct sndh_cursor  *cursor)
 	}
 
 	cursor->subtag.start = cursor->offset - strlen(cursor->tag->name);
+	sndh_align_subtag(cursor);
 	cursor->subtag.bound = cursor->offset + cursor->subtunes * 2;
 	cursor->subtag.end = 0;
 
@@ -267,6 +283,7 @@ static bool sndh_time(struct sndh_cursor *cursor)
 	}
 
 	cursor->subtag.start = cursor->offset - strlen(cursor->tag->name);
+	sndh_align_subtag(cursor);
 	cursor->subtag.bound = cursor->offset + cursor->subtunes * 2;
 
 	if (cursor->bound < cursor->subtag.bound) {
@@ -308,6 +325,7 @@ static bool sndh_frames(struct sndh_cursor *cursor)
 	}
 
 	cursor->subtag.start = cursor->offset - strlen(cursor->tag->name);
+	sndh_align_subtag(cursor);
 	cursor->subtag.bound = cursor->offset + cursor->subtunes * 4;
 
 	if (cursor->bound < cursor->subtag.bound) {
@@ -498,12 +516,6 @@ bool sndh_valid_tag(const struct sndh_cursor *cursor)
 	if (!cursor->valid)
 		return false;
 
-	if (cursor->bound <= cursor->offset) {
-		diag_warn(cursor, "missing HDNS tag");
-
-		return false;
-	}
-
 	return true;
 }
 
@@ -511,6 +523,35 @@ void sndh_next_tag(struct sndh_cursor *cursor)
 {
 	if (!cursor->file.data)
 		return;
+
+	/*
+	 * REWAMP: end of header is checked HERE, before parsing, and no longer
+	 * in sndh_valid_tag().
+	 *
+	 * The iteration macro is `next_tag(), valid_tag()`: the condition runs
+	 * AFTER a tag has been parsed. Testing `bound <= offset` there threw
+	 * away a tag that had just been read IN FULL -- the last one of any
+	 * header that ends on the bound instead of on an HDNS terminator.
+	 *
+	 * Measured on modland's "DocLands/atari st/Docklands_Sid.sndh" (ICE
+	 * packed, no HDNS, bound 0x5a from the leading `bra.w`): its tags are
+	 * COMM, TITL, RIPP, CONV, ##01 and finally TC50 at 0x55..0x59. The
+	 * timer was parsed and dropped, sndh_tag_timer() reported none, and
+	 * psgplay_init() therefore passed 0 to the emulated SNDH player -- the
+	 * tune ran at the player's fallback rate instead of its declared one,
+	 * audibly TOO SLOW next to AtariAudio.
+	 *
+	 * Moving the test to the step keeps the exact same stopping point (a
+	 * tag that ends AT the bound is the last one) while yielding it, and
+	 * avoids letting match_tag() run at the bound, where the empty padding
+	 * entry would happily eat NUL bytes past the header.
+	 */
+	if (cursor->bound <= cursor->offset) {
+		cursor->valid = false;
+		diag_warn(cursor, "missing HDNS tag");
+
+		return;
+	}
 
 	const bool valid = match_tag(cursor);
 

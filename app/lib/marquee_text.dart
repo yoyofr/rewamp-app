@@ -1,13 +1,23 @@
 import 'dart:async';
+import 'font_fallback.dart';
 
 import 'package:flutter/material.dart';
 
-/// Single-line text that scrolls itself when it does not fit.
+/// Text that scrolls itself when it does not fit — sur UN axe ou sur l'AUTRE.
 ///
 /// Written rather than pulled from a package: the need is narrow (a rail card's
 /// caption), and a marquee that scrolls when it must and stays still when it
 /// fits is a few lines. Static text never moves — a card whose caption fits
 /// should not wiggle.
+///
+/// ⚠️ **L'axe n'est pas un détail cosmétique.** À l'HORIZONTALE le texte doit
+/// tenir sur UNE ligne: faire glisser un texte REPLIÉ ne révèle rien de
+/// cohérent, son bord droit étant irrégulier (chaque ligne s'arrête sur un
+/// mot). À la VERTICALE c'est l'inverse — le texte se replie normalement,
+/// chaque ligne est complète, et la fenêtre de [maxLines] lignes glisse pour
+/// découvrir les suivantes. D'où deux usages distincts: une seule ligne qui
+/// défile latéralement (sous-titre, lecteur), ou N lignes qui défilent
+/// verticalement (titre d'une carte de rail).
 class MarqueeText extends StatefulWidget {
   final String text;
   final TextStyle? style;
@@ -16,12 +26,21 @@ class MarqueeText extends StatefulWidget {
   /// Pause at each end before turning back.
   final Duration pause;
 
+  /// Axe du défilement. `horizontal` impose une ligne unique; `vertical`
+  /// replie sur [maxLines] et fait défiler le bloc.
+  final Axis axis;
+
+  /// Hauteur de la fenêtre, en lignes. N'a de sens qu'à la verticale.
+  final int maxLines;
+
   const MarqueeText(
     this.text, {
     super.key,
     this.style,
     this.velocity = 26,
     this.pause = const Duration(milliseconds: 1200),
+    this.axis = Axis.horizontal,
+    this.maxLines = 1,
   });
 
   @override
@@ -92,11 +111,34 @@ class _MarqueeTextState extends State<MarqueeText> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      controller: _ctrl,
-      scrollDirection: Axis.horizontal,
-      physics: const NeverScrollableScrollPhysics(),
-      child: Text(widget.text, style: widget.style, maxLines: 1, softWrap: false),
+    if (widget.axis == Axis.horizontal) {
+      return SingleChildScrollView(
+        controller: _ctrl,
+        scrollDirection: Axis.horizontal,
+        physics: const NeverScrollableScrollPhysics(),
+        child:
+            Text(widget.text, style: widget.style, maxLines: 1, softWrap: false),
+      );
+    }
+
+    // Vertical: la fenêtre fait EXACTEMENT [maxLines] lignes, mesurées avec la
+    // vraie police plutôt que déduites de `fontSize` — l'interligne dépend du
+    // style et de la police système, et une fenêtre approximative coupe une
+    // ligne en deux.
+    final style = withCjkFallback(widget.style ?? DefaultTextStyle.of(context).style);
+    final probe = TextPainter(
+      text: TextSpan(text: 'Xg', style: style),
+      maxLines: 1,
+      textDirection: Directionality.of(context),
+    )..layout();
+    return SizedBox(
+      height: probe.height * widget.maxLines,
+      child: SingleChildScrollView(
+        controller: _ctrl,
+        scrollDirection: Axis.vertical,
+        physics: const NeverScrollableScrollPhysics(),
+        child: Text(widget.text, style: widget.style),
+      ),
     );
   }
 }

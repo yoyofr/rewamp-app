@@ -117,7 +117,11 @@ bool	SndhFile::Load(const void* rawSndhFile, int sndhFileSize, uint32_t hostRepl
 				if (0 == strncmp(read8, "!#SN", 4))
 				{
 					assert(m_subSongCount > 0);
-                    read8 += 4 + m_subSongCount * 2; // skip 2bytes per offset
+                    // REWAMP: word table, even address -- see the TIME tag below.
+                    read8 += 4;
+                    if ((read8 - (const char*)m_rawBuffer) & 1)
+                        read8++;
+                    read8 += m_subSongCount * 2; // skip 2bytes per offset
                     for (int i=0;i<m_subSongCount;i++) { //read the subsong Titles
                         m_subSongTitle[i]=_strdup(read8);
                         read8 = skipNTString(read8);
@@ -164,6 +168,17 @@ bool	SndhFile::Load(const void* rawSndhFile, int sndhFileSize, uint32_t hostRepl
 				{
 					assert(m_subSongCount > 0);
 					read8 += 4;
+					// REWAMP: the TIME table is a 68000 word table and starts on
+					// an EVEN address; the tag names before it are byte strings
+					// and can leave the cursor odd, with a pad byte in between.
+					// Reading straight after the name then picks up the pad plus
+					// the high byte of the first duration. Measured on "Crazy-Q -
+					// Midnight Sun": TIME at offset 0x51 gives 0x0001 = 1 s
+					// unaligned where the real table at 0x56 holds 0x0105 = 261 s
+					// -- the tune was cut after one second. sc68 aligns the same
+					// way (file68.c: `i += 4 + (i&1)`).
+					if ((read8 - (const char*)m_rawBuffer) & 1)
+						read8++;
 					for (int i = 0; i < m_subSongCount; i++)
 					{
 						m_subSongLen[i] = Read16(read8);

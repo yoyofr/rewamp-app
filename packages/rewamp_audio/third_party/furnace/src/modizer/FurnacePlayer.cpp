@@ -201,9 +201,28 @@ bool FurnacePlayer::selectSong(int index) {
 
   engine->changeSongP(static_cast<size_t>(index));
   timestampsReady = false;   // new subsong needs fresh timestamps
+  totalDurationCache = -1.0; // idem: le cache décrit l'ancienne sélection
+  // REWAMP: sélectionner un morceau, c'est le (re)démarrer — donc l'arrêt
+  // explicite précédent ne vaut plus. Sans cette ligne, un lecteur réutilisé
+  // après `stop()` gardait `userStopped = true` pour toujours (seul `load()`
+  // l'effaçait), et `isEndOfSong()` — qui vaut `!userStopped && !isPlaying()`
+  // — ne pouvait plus JAMAIS rendre true: la piste ne se terminait pas, le
+  // décodeur rendait du silence sans fin.
+  userStopped = false;
   engine->play();
   setPlaybackSpeed(playbackSpeed);  // re-apply speed to the new subsong
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// getSubsongName
+// ---------------------------------------------------------------------------
+
+std::string FurnacePlayer::getSubsongName(int index) const {
+  if (!songLoaded || !engine) return std::string();
+  if (index < 0 || index >= static_cast<int>(engine->song.subsong.size()))
+    return std::string();
+  return engine->song.subsong[index]->name;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
---- third_party/libkss/upstream/modules/emu8950/emu8950.c	2026-07-06 09:48:52
-+++ third_party/libkss/modules/emu8950/emu8950.c	2026-07-06 13:34:24
+--- third_party/libkss/upstream/modules/emu8950/emu8950.c	2026-07-09 18:43:32
++++ third_party/libkss/modules/emu8950/emu8950.c	2026-09-05 09:34:32
 @@ -9,6 +9,11 @@
  #include <stdlib.h>
  #include <string.h>
@@ -396,16 +396,45 @@
    if (opl->csm_mode && 0 < opl->csm_key_count) {
      csm_key_off(opl);
    }
-@@ -903,7 +908,7 @@
+@@ -903,7 +908,36 @@
  
  }
  
 -static void update_output(OPL *opl) {
++//YOYOFR: notes par voie (voir opllkss_capture_notes dans kss_emu2413.c).
++// F-number sur 10 bits ici: F = fnum * 2^blk * clk/72 / 2^20 (fmopl de libvgm
++// ecrit la meme chose sous la forme fnum*2^blk/2*clk/72/2^19). Voie 14 = ADPCM,
++// sans hauteur: laissee a 0.
++static void oplkss_capture_notes(OPLKSS *opl) {
++  if (m_voicesForceOfs < 0) return;
++  for (int i = 0; i < 9; i++) {
++    unsigned note = 0, vol = 0;
++    const int fm = (i < 6) || !opl->rhythm_mode;
++    const OPLKSS_SLOT *car = CAR(opl, i);
++    if (fm && car->fnum && BIT(opl->slot_key_status, (i << 1) | 1) && car->eg_out < EG_MUTE) {
++      note = (unsigned)(((uint64_t)car->fnum << car->blk) * opl->clk / 72 / (1 << 20));
++      vol = 1;
++    }
++    vgm_last_note[m_voicesForceOfs + i] = note;
++    vgm_last_vol[m_voicesForceOfs + i] = vol;
++    if (note) vgm_last_instr[m_voicesForceOfs + i] = (unsigned char)(m_voicesForceOfs + i);
++  }
++  static const int rslot[5] = { SLOT_BD2, SLOT_HH, SLOT_SD, SLOT_TOM, SLOT_CYM };
++  for (int k = 0; k < 5; k++) {
++    const OPLKSS_SLOT *s = &opl->slot[rslot[k]];
++    const int on = opl->rhythm_mode && BIT(opl->slot_key_status, rslot[k]) && s->eg_out < EG_MUTE;
++    vgm_last_note[m_voicesForceOfs + 9 + k] = on ? 220 : 0;
++    vgm_last_vol[m_voicesForceOfs + 9 + k] = on ? 1 : 0;
++  }
++  vgm_last_note[m_voicesForceOfs + 14] = 0;
++  vgm_last_vol[m_voicesForceOfs + 14] = 0;
++}
++
 +static void update_output(OPLKSS *opl) {
    int16_t *out;
    int i;
  
-@@ -916,18 +921,18 @@
+@@ -916,18 +950,18 @@
  
    /* CH1-6 */
    for (i = 0; i < 6; i++) {
@@ -427,7 +456,7 @@
        out[9] = _RO(calc_fm(opl, 6));
      }
    }
-@@ -935,14 +940,14 @@
+@@ -935,14 +969,14 @@
  
    /* CH8 */
    if (!opl->rhythm_mode) {
@@ -445,7 +474,7 @@
        out[11] = _RO(calc_slot_snare(opl));
      }
    }
-@@ -950,52 +955,108 @@
+@@ -950,52 +984,110 @@
  
    /* CH9 */
    if (!opl->rhythm_mode) {
@@ -495,6 +524,7 @@
 +    
 +    //TODO:  MODIZER changes start / YOYOFR
 +    int64_t smplIncr=(int64_t)(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_rateratio;
++    oplkss_capture_notes(opl); //YOYOFR
 +    if (m_voicesForceOfs>=0) {
 +        int val=0;
 +        for (int i = 0; i < 15; i++) {
@@ -547,6 +577,7 @@
 +    
 +    //TODO:  MODIZER changes start / YOYOFR
 +    int64_t smplIncr=(int64_t)(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_rateratio;
++    oplkss_capture_notes(opl); //YOYOFR
 +    if (m_voicesForceOfs>=0) {
 +        int val=0;
 +        for (int i = 0; i < 15; i++) {
@@ -569,7 +600,7 @@
  }
  
  /***********************************************************
-@@ -1004,14 +1065,14 @@
+@@ -1004,14 +1096,14 @@
  
  ***********************************************************/
  
@@ -587,7 +618,7 @@
    if (opl == NULL)
      return NULL;
  
-@@ -1027,24 +1088,24 @@
+@@ -1027,24 +1119,24 @@
    opl->timer2_func = NULL;
    opl->timer2_user_data = NULL;
  
@@ -617,7 +648,7 @@
    const double f_out = opl->rate;
    const double f_inp = opl->clk / 72;
  
-@@ -1053,23 +1114,23 @@
+@@ -1053,23 +1145,23 @@
    opl->inp_step = ((uint32_t)f_out) << 8;
  
    if (opl->conv) {
@@ -646,7 +677,7 @@
      }
    } else {
      if (opl->adpcm != NULL) {
-@@ -1078,11 +1139,11 @@
+@@ -1078,11 +1170,11 @@
      }
    }
    if (opl->adpcm != NULL) {
@@ -660,7 +691,7 @@
    int i;
  
    if (!opl)
-@@ -1137,35 +1198,35 @@
+@@ -1137,35 +1229,35 @@
    refresh_adpcm_object(opl);
  }
  
@@ -704,7 +735,7 @@
    while (opl->out_step > opl->out_time) {
      opl->out_time += opl->inp_step;
      update_output(opl);
-@@ -1173,12 +1234,12 @@
+@@ -1173,12 +1265,12 @@
    }
    opl->out_time -= opl->out_step;
    if (opl->conv) {
@@ -719,7 +750,7 @@
    while (opl->out_step > opl->out_time) {
      opl->out_time += opl->inp_step;
      update_output(opl);
-@@ -1186,15 +1247,15 @@
+@@ -1186,15 +1278,15 @@
    }
    opl->out_time -= opl->out_step;
    if (opl->conv) {
@@ -738,7 +769,7 @@
    uint32_t ret;
  
    if (opl) {
-@@ -1205,7 +1266,7 @@
+@@ -1205,7 +1297,7 @@
      return 0;
  }
  
@@ -747,7 +778,7 @@
    uint32_t ret;
  
    if (opl) {
-@@ -1216,7 +1277,7 @@
+@@ -1216,7 +1308,7 @@
      return 0;
  }
  
@@ -756,7 +787,7 @@
  
    int32_t s, c;
  
-@@ -1230,7 +1291,7 @@
+@@ -1230,7 +1322,7 @@
      opl->status = 0;
      opl->reg[0x04] &= 0x7f;
      if (opl->adpcm) {
@@ -765,7 +796,7 @@
      }
      return;
    }
-@@ -1258,7 +1319,7 @@
+@@ -1258,7 +1350,7 @@
      }
  
      if (opl->adpcm != NULL && opl->chip_type == TYPE_Y8950) {
@@ -774,7 +805,7 @@
      }
  
    } else if (0x20 <= reg && reg < 0x40) {
-@@ -1336,13 +1397,13 @@
+@@ -1336,13 +1428,13 @@
    }
  }
  
@@ -791,7 +822,7 @@
    }
  
    status &= ~(opl->reg[0x04] & 0x78); // IRQ MASK
-@@ -1353,12 +1414,12 @@
+@@ -1353,12 +1445,12 @@
    return status & 0x7f; // IRQ = 0
  }
  

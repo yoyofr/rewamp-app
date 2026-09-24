@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 import 'package:flutter/services.dart' show rootBundle, AssetManifest;
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:rewamp_audio/rewamp_audio.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -15,16 +16,25 @@ import 'keyboard_dismiss.dart';
 import 'l10n.dart';
 import 'rewamp_db.dart' show RewampDb;
 import 'local_db.dart';
+import 'locale_resolution.dart';
 import 'queue_persistence.dart';
 import 'release_notes.dart';
 import 'preset_manager.dart';
 import 'soundfont_manager.dart';
+import 'mt32_rom_manager.dart';
+import 'mini_window.dart';
 import 'user_settings.dart';
 import 'app_shell.dart';
 import 'app_snack.dart';
 import 'orientation_lock.dart';
 import 'system_ui.dart';
 import 'splash_intro.dart';
+import 'artwork_image.dart';
+import 'library_identity.dart';
+import 'local_open.dart';
+import 'opened_files.dart';
+import 'storage_roots.dart';
+import 'app_theme.dart';
 
 // Bundled library assets copied to the writable data dir at startup, then
 // loaded natively (e.g. libsidplayfp C64 ROMs). Add entries here as new
@@ -65,8 +75,9 @@ const _bundledAssetDirs = <String>[
 /// never reaches the data dir and the engines keep running on stale data
 /// (bitten for real: the webUADE+ score/conf/players update was invisible to
 /// an installed app, so "han." files kept failing with backend="").
-// 4: +7 martin milkdrop presets; 5: preset culling + stale-file sync on bump
-const _kBundledAssetsVersion = 5;
+// 4: +7 martin milkdrop presets; 5: preset culling + stale-file sync on bump;
+// 7: test.milk retiré (le bump seul le purge des installations existantes)
+const _kBundledAssetsVersion = 7;
 
 /// Copy bundled assets into `{appSupport}/rewamp_data/` (preserving their
 /// sub-path under assets/) and return that root so native code can load them.
@@ -147,13 +158,21 @@ Future<String> _prepareDataDir() async {
   return root.path;
 }
 
-void main() async {
+/// [args] = la ligne de commande. C'est ainsi que Linux et Windows livrent un
+/// fichier à ouvrir (Apple passe par `application(_:open:)`), et le runner GTK
+/// les transmet déjà — il ne manquait qu'un `main` qui les lise.
+void main([List<String> args = const []]) async {
   if (!kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows)) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
 
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Un fichier passé en argument attend dans la même file que ceux d'un
+  // démarrage à froid sur Apple: le shell les ramassera quand il existera.
+  // Semé ICI et non dans le shell — les arguments ne parviennent qu'à `main`.
+  seedOpenedPathsFromArgs(args);
 
   // Doigt maintenu au démarrage = effet d'intro forcé (grille 3x5). Doit être
   // posé ICI: tout ce qui suit dans main() est asynchrone et dure — un appui y
@@ -184,11 +203,62 @@ void main() async {
   await maybeResetLocalData();
 
   await LocalDb.initialize();
+  // Linux/Windows: déplacer `~/Documents/online` et le `local/` du dossier de
+  // support sous `Documents/Rewamp/`. ⚠️ APRÈS la base (elle réécrit les
+  // chemins stockés) et AVANT initLibraryRoots (qui fige les racines). Voir
+  // storage_roots.dart.
+  await migrateStorageRoots();
+  // Racines des chemins (imports pérennes, téléchargements, caches): la garde
+  // d'identité de bibliothèque les compare en PRÉFIXE plutôt qu'en
+  // sous-chaîne — un dossier `local/` de l'utilisateur n'est pas le nôtre.
+  await initLibraryRoots();
   // Tampon d'archives d'album (partagé entre les chemins de téléchargement le
   // temps d'un geste): un kill pendant une extraction y laisse des centaines
   // de mégaoctets. Rien n'en dépend au lancement — on n'attend pas.
   unawaited(RewampDb.purgeArchiveCache());
+  // Filet du dossier `opened/` (fichiers entrés par « Ouvrir avec » et le
+  // sélecteur mobile): efface le vieux NON référencé — jamais ce qu'une
+  // playlist, la bibliothèque ou un favori tient encore. La vraie gestion est
+  // dans Réglages → Stockage.
+  unawaited(OpenedFiles.prune());
+  // Une fois: rattraper les pochettes écrites sous l'ancien nom. Estampillée
+  // par un FICHIER et non une préférence — une remise à zéro des données efface
+  // les préférences, et on relancerait alors une migration sur un disque déjà
+  // à jour (inoffensive, mais c'est un balayage récursif pour rien).
+  unawaited(() async {
+    try {
+      final support = await getApplicationSupportDirectory();
+      // v2: le balayage v1 a bien tourné, mais un build ANTÉRIEUR au nom
+      // complet a pu réécrire l'ancien nom APRÈS lui — les builds de beta et
+      // de développement partagent le conteneur. Mesuré sur un vrai profil:
+      // migration à 14:48, `mdat.jpg` réapparu à 19:50 le même jour.
+      final stamp = File(p.join(support.path, '.artwork_names_v2'));
+      if (await stamp.exists()) return;
+      await migrateArtworkSidecarNames(
+          Directory(p.join((await RewampDb.downloadsBaseDir()).path, 'online')));
+      await stamp.writeAsString('1', flush: true);
+    } catch (_) {/* une migration ratée ne doit pas casser un démarrage */}
+  }());
   await UserSettings.init();
+  // Bureau: plancher de taille de la fenêtre + « toujours au premier plan ».
+  await MiniWindow.instance.init();
+  // Nettoyage AUTOMATIQUE au premier lancement d'une build (kAutoCleanupVersion):
+  // le geste « Nettoyer la base locale et le cache » de Réglages → Données,
+  // joué une fois tout seul. En ARRIÈRE-PLAN — sa purge d'entrées mortes peut
+  // demander une passe de synchro bornée à 45 s, et rien de tout cela ne
+  // conditionne le démarrage. Le ticket est pris (et l'estampille posée) ici:
+  // un échec ne doit pas rejouer la passe à chaque lancement.
+  unawaited(() async {
+    try {
+      if (!await takeAutoCleanupTicket()) return;
+      final res = await runLocalCleanup();
+      debugPrint('[auto-cleanup] terminé — ${res.orphans} ligne(s) orpheline(s), '
+          '${res.missing} entrée(s) injouable(s), ${res.artwork} pochette(s) '
+          'en cache');
+    } catch (e) {
+      debugPrint('[auto-cleanup] échec (sans conséquence): $e');
+    }
+  }());
   // Queue persistence / crash guard: must resolve its dir + consume the
   // "loading" flag BEFORE any track can be loaded.
   await QueuePersistence.init();
@@ -197,11 +267,25 @@ void main() async {
   final dataDir = await _prepareDataDir();
   final audio = RewampAudio();
   audio.init();
+  // iOS: **une app dont l'unité audio TOURNE est « en lecture » pour le
+  // système**, quoi qu'annonce la session média — c'est la leçon déjà payée
+  // sur la PAUSE (voir rewamp_device_suspend et PlayerController.togglePlay),
+  // et le lancement tombait dans le même trou: `rewamp_init` démarre le device
+  // aussitôt (il rend du silence), donc l'écran verrouillé affichait le glyphe
+  // PAUSE sur une app qui n'avait jamais joué. Ni le `playbackRate` ni
+  // `MPNowPlayingInfoCenter.playbackState` n'y peuvent quoi que ce soit: le
+  // système ne les consulte pas pour cette décision-là.
+  //
+  // On suspend donc le device tant que rien ne joue. Sans risque: `rewamp_play`
+  // est le SEUL chemin qui démarre le son, et il redémarre le device d'abord.
+  if (!kIsWeb && Platform.isIOS) audio.deviceSuspend();
   audio.setDataDir(dataDir);
   // SoundFonts (MIDI): apply the persisted selection; if none is installed,
   // quietly fetch the server-default one in the background.
   SoundfontManager.instance.init(dataDir, audio);
   unawaited(SoundfontManager.instance.applyStartup());
+  Mt32RomManager.instance.init(dataDir, audio);
+  Mt32RomManager.instance.applyStartup();
   // projectM presets: stage the persisted source + texture dirs so the first
   // visualizer init picks them up. No network.
   PresetManager.instance.init(dataDir, audio);
@@ -255,13 +339,10 @@ class _RewampAppState extends State<RewampApp> {
   void _onSettingsChanged() => setState(() {});
 
   static ThemeData _buildTheme(Brightness brightness) =>
-      ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.deepPurple,
-          brightness: brightness,
-        ),
-      );
+      rewampThemeData(ColorScheme.fromSeed(
+        seedColor: Colors.deepPurple,
+        brightness: brightness,
+      ));
 
   @override
   Widget build(BuildContext context) {
@@ -279,13 +360,16 @@ class _RewampAppState extends State<RewampApp> {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('en'), Locale('fr'), Locale('de'), Locale('es'),
-        Locale('pt'), Locale('it'), Locale('nl'), Locale('pl'),
-        Locale('fi'), Locale('sv'), Locale('no'), Locale('da'),
-        Locale('cs'), Locale('hu'), Locale('ru'), Locale('ja'),
-        Locale('zh'), Locale('ko'),
-      ],
+      // La liste GÉNÉRÉE, jamais une copie à la main: elle suit les fichiers
+      // ARB, et une langue ajoutée n'a rien à recopier ici. (Le pendant Apple,
+      // `CFBundleLocalizations`, ne peut pas la partager — les plists sont lus
+      // par Xcode; `apple_locales_test.dart` compare les deux.)
+      supportedLocales: AppLocalizations.supportedLocales,
+      // ⚠️ Apple canonicalise « no » en « nb »: sans ce rapprochement, un
+      // appareil norvégien tombe sur la langue de repli alors que sa traduction
+      // existe. Voir resolveAppLocale — il fixe aussi le repli, que Flutter
+      // prendrait sinon en tête de liste (alphabétique: le tchèque).
+      localeResolutionCallback: resolveAppLocale,
       // Mobile: un doigt posé hors du champ en cours d'édition ferme le
       // clavier virtuel. Autour du Navigator pour couvrir routes, feuilles et
       // le lecteur en overlay d'un seul geste — voir keyboard_dismiss.dart.

@@ -15,6 +15,28 @@ class AppLocalizationsKo extends AppLocalizations {
   String get navSearch => '검색';
 
   @override
+  String get navLocal => '로컬';
+
+  @override
+  String get settingsTabsOrderTitle => '탭 순서';
+
+  @override
+  String get settingsTabsOrderSubtitle =>
+      '끌어서 정렬하세요. 처음 네 개는 하단 바에, 나머지는 ‘더 보기’에 들어갑니다.';
+
+  @override
+  String get settingsTabsInBar => '바에 표시';
+
+  @override
+  String get settingsTabsInMore => '‘더 보기’에 표시';
+
+  @override
+  String get settingsLaunchTab => '시작 탭';
+
+  @override
+  String get settingsLaunchTabSubtitle => '앱을 열 때 표시할 탭';
+
+  @override
   String get navLibrary => '보관함';
 
   @override
@@ -42,6 +64,16 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String playbackFileGone(String file) {
     return '서버에 파일이 없습니다: $file';
+  }
+
+  @override
+  String playbackTrackNotInArchive(String file) {
+    return '$file은(는) 앨범 아카이브에 없습니다. 립이 목록에만 올리고 파일은 넣지 않았습니다.';
+  }
+
+  @override
+  String playbackSourceTimeout(String host) {
+    return '$host이(가) 응답하지 않았습니다. 연결을 확인한 뒤 다시 시도하세요.';
   }
 
   @override
@@ -128,16 +160,28 @@ class AppLocalizationsKo extends AppLocalizations {
   String get noRecentTracks => '최근 재생한 곡이 없습니다';
 
   @override
-  String get openLocalFile => '로컬 파일 열기';
-
-  @override
   String get playerSourceLocal => '로컬';
 
   @override
-  String get browseFiles => '파일 탐색';
+  String get homePlayFiles => '파일 재생';
 
   @override
-  String countTotal(int loaded, int total) {
+  String get homePlayFolder => '폴더 재생';
+
+  @override
+  String get homeSectionsOrderTitle => '섹션 순서';
+
+  @override
+  String get homeSectionsOrderSubtitle => '끌어서 홈 화면을 원하는 순서로 정리하세요.';
+
+  @override
+  String get homeSectionsOrderReset => '기본 순서';
+
+  @override
+  String get homeSectionsOrderSettings => '홈 섹션 순서';
+
+  @override
+  String countTotal(int loaded, String total) {
     return '$loaded / $total개 결과';
   }
 
@@ -542,6 +586,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get searchMinRating => '평점 ≥';
 
   @override
+  String get searchPodium => '입상';
+
+  @override
+  String get searchPodiumAny => '모든 입상';
+
+  @override
+  String get searchPodiumUnavailable => '입상 필터는 아직 서버에서 사용할 수 없습니다';
+
+  @override
   String searchRatingValue(String value) {
     return '★ $value';
   }
@@ -621,7 +674,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get searchSurpriseTooltip => '무작위 곡 하나';
 
   @override
-  String searchTabWithCount(String label, int count) {
+  String searchTabWithCount(String label, String count) {
     return '$label ($count)';
   }
 
@@ -677,6 +730,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get engineDescOpenmpt => '트래커 모듈 (MOD/XM/S3M/IT/…)';
 
   @override
+  String get engineDescXmp => 'libopenmpt가 읽지 못하는 모듈 (.musx, .liq, .fnk…)';
+
+  @override
   String get engineDescVgm => 'VGM/S98/GYM/DRO — 사운드 칩, 채널별 스코프';
 
   @override
@@ -686,7 +742,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get engineDescNsfplay => 'NES NSF/NSFe — 채널별 보이스';
 
   @override
-  String get engineDescGbsplay => 'Game Boy GBS';
+  String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
   String get engineDescSidplayfp => 'Commodore 64 SID (reSIDfp 엔진)';
@@ -1020,6 +1076,9 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get subsongDefaultTrack => '기본 트랙';
+
+  @override
   String subsongCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -1099,6 +1158,21 @@ class AppLocalizationsKo extends AppLocalizations {
   String get libraryRemovedArtist => '아티스트를 보관함에서 삭제했습니다';
 
   @override
+  String get libraryImportBeforeAddTitle => '먼저 가져올까요?';
+
+  @override
+  String get libraryImportBeforeAddBody =>
+      '이 파일은 시스템이 비울 수 있는 임시 위치에서 재생 중입니다. 항목이 유지되도록 로컬 라이브러리로 가져올까요?';
+
+  @override
+  String get libraryImportBeforeAddArchiveBody =>
+      '이 트랙은 임시 캐시에 풀린 압축 파일에서 왔습니다. 동반 파일을 포함한 압축 파일 전체를 로컬 라이브러리로 가져옵니다.';
+
+  @override
+  String get libraryAddNeedsCatalogueId =>
+      '이 트랙을 추가할 수 없습니다: 이 기기에서 카탈로그 식별자를 알 수 없습니다.';
+
+  @override
   String songTilePlayFailed(String message) {
     return '재생 실패: $message';
   }
@@ -1173,6 +1247,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get vizNotes => '노트';
 
   @override
+  String get vizPiano => '피아노';
+
+  @override
   String get vizPatterns => '패턴';
 
   @override
@@ -1180,6 +1257,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get patternSmoothScroll => '부드러운 스크롤';
+
+  @override
+  String get patternPinnedRow => '재생 중인 행 고정';
 
   @override
   String get patternVolumeBars => '볼륨 막대';
@@ -1334,6 +1414,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get playerAddToPlaylist => '재생목록에 추가';
+
+  @override
+  String get playerEngineSettings => '엔진 설정';
 
   @override
   String get queueAddToPlaylist => '대기열을 재생목록에 추가';
@@ -1833,9 +1916,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get playlistEmpty => '빈 재생목록';
 
   @override
-  String get playlistRemoveEntry => '재생목록에서 삭제';
-
-  @override
   String get trackOptionsAddToLibrary => '보관함에 추가';
 
   @override
@@ -2193,9 +2273,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsLineThickness => '선 굵기';
 
   @override
-  String get settingsColors => '색상';
-
-  @override
   String get settingsScopeVoiceColor => '보이스 오실로스코프';
 
   @override
@@ -2217,9 +2294,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsStereoRightColor => '스테레오 오른쪽';
 
   @override
-  String get settingsNotation => '노테이션 (노트)';
-
-  @override
   String get settingsNotePalette => '색상 팔레트';
 
   @override
@@ -2232,10 +2306,21 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsNoteStyleBox => 'Box';
 
   @override
-  String get settingsCrtEffects => 'CRT 효과';
+  String get settingsVizAll => '모든 시각화';
 
   @override
-  String get settingsCrtGlow => '글로우';
+  String get settingsVizScopes => '오실로스코프 (스테레오 및 보이스별)';
+
+  @override
+  String get settingsVizFrameRate => '프레임 레이트';
+
+  @override
+  String get settingsVizFrameRateScreen => '화면';
+
+  @override
+  String settingsValueFps(int value) {
+    return '$value fps';
+  }
 
   @override
   String get settingsCrtSpeed => '강도 / 속도';
@@ -2257,6 +2342,170 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsSilenceDetection => '무음 감지';
+
+  @override
+  String get settingsCrossfade => '크로스페이드';
+
+  @override
+  String get localActionPlay => '파일 또는 폴더 재생';
+
+  @override
+  String get localActionImport => '파일 또는 폴더 가져오기';
+
+  @override
+  String localOpsImporting(String name) {
+    return '$name 가져오는 중…';
+  }
+
+  @override
+  String get localOpsImportingSelection => '선택한 파일 가져오는 중…';
+
+  @override
+  String localOpsDeleting(String name) {
+    return '$name 삭제 중…';
+  }
+
+  @override
+  String get localOpsPhaseCopying => '복사';
+
+  @override
+  String get localOpsPhaseExtracting => '압축 해제';
+
+  @override
+  String get localOpsPhaseRegistering => '라이브러리에 추가';
+
+  @override
+  String get localOpsPhaseDeleting => '파일 제거';
+
+  @override
+  String get localImportFiles => '파일 가져오기';
+
+  @override
+  String get storageLocalImports => '로컬 가져오기';
+
+  @override
+  String get settingsVgmJapaneseTags => '일본어 태그 (GD3)';
+
+  @override
+  String get settingsVgmJapaneseTagsHelp =>
+      'VGM 태그에 일본어 제목/게임/아티스트 필드가 있으면 우선 사용합니다.';
+
+  @override
+  String get localImportFolder => '폴더 가져오기';
+
+  @override
+  String get localLibraryTitle => '이 기기에서';
+
+  @override
+  String get libraryOnAnotherDevice => '다른 기기에 있음';
+
+  @override
+  String get localLibraryEmpty =>
+      '아직 로컬 가져오기가 없습니다. 홈에서 ‘파일 가져오기’ 또는 ‘폴더 가져오기’를 사용하세요.';
+
+  @override
+  String queueLimitReached(int count) {
+    return '대기열이 처음 $count곡으로 제한되었습니다';
+  }
+
+  @override
+  String localDeleteTrackConfirm(String name) {
+    return '‘$name’을(를) 삭제할까요? 파일과 관련 파일(아트워크 등)이 삭제됩니다.';
+  }
+
+  @override
+  String localDeleteFolderConfirm(String name, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '‘$name’ 폴더와 그 안의 $count곡을 삭제할까요?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String localImportDone(int count) {
+    return '$count개 트랙을 라이브러리로 가져왔습니다';
+  }
+
+  @override
+  String localImportDoneAlbums(int tracks, int albums) {
+    return '$tracks곡 가져옴 — 앨범 $albums개';
+  }
+
+  @override
+  String localImportFailed(String error) {
+    return '가져오기 실패: $error';
+  }
+
+  @override
+  String get settingsCrossfadeHelp =>
+      '각 트랙의 끝을 다음 트랙의 시작과 겹칩니다. 0이면 여전히 끊김 없이 재생됩니다.';
+
+  @override
+  String get settingsMinSubsongSection => '너무 짧은 서브송';
+
+  @override
+  String get settingsMinSubsongTitle => '최소 길이';
+
+  @override
+  String get settingsMinSubsongHelp =>
+      '이보다 짧은 서브송은 목록과 대기열에서 제외됩니다. 게임 파일에는 음악보다 효과음이 더 많은 경우가 흔합니다. 0이면 아무것도 제외하지 않으며, 길이를 알 수 없는 경우에는 짧은 것으로 보지 않습니다.';
+
+  @override
+  String get localNewFolder => '새 폴더';
+
+  @override
+  String get localFolderName => '폴더 이름';
+
+  @override
+  String get localRename => '이름 변경';
+
+  @override
+  String get localMoveTo => '이동 위치…';
+
+  @override
+  String get localMove => '이동';
+
+  @override
+  String get localMoveNothing => '이동된 항목이 없습니다';
+
+  @override
+  String get localNameInvalid => '잘못된 이름';
+
+  @override
+  String get localNameTaken => '이미 사용 중인 이름입니다';
+
+  @override
+  String get localMoveIntoItself => '폴더를 자기 자신 안으로 옮길 수 없습니다';
+
+  @override
+  String get localManageFailed => '작업에 실패했습니다';
+
+  @override
+  String subsongSkippedShort(int seconds) {
+    return '대기열에 넣지 않음: $seconds초 미만 (설정 → 재생)';
+  }
+
+  @override
+  String get settingsQueuePrefetchSection => '대기열 다운로드';
+
+  @override
+  String get settingsQueuePrefetchTitle => '대기열 전체 다운로드';
+
+  @override
+  String get settingsQueuePrefetchSubtitle =>
+      '한 번에 한 파일씩. 이전 파일이 도착하면 다음 누락 트랙을 시작합니다. 끄면 다음 트랙만 받습니다.';
+
+  @override
+  String get settingsCdRipDeclickSection => 'CD 립';
+
+  @override
+  String get settingsCdRipDeclickTitle => '트랙 시작 부분의 클릭 제거';
+
+  @override
+  String get settingsCdRipDeclickSubtitle =>
+      '불량 CD 립(mp3, ape, ogg, flac…)은 손상된 샘플 몇 개로 시작하는 경우가 많습니다. 실제 음악이 200 ms 재생될 때까지 복구하고, 그 뒤로는 필터가 개입하지 않습니다.';
 
   @override
   String get settingsSilenceSkipTitle => '무음이면 다음 곡으로 넘어가기';
@@ -2322,6 +2571,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsEngineOpenmptSubtitle => '트래커 — MOD, XM, S3M, IT…';
 
   @override
+  String get settingsEngineXmpSubtitle =>
+      'libopenmpt가 읽지 못하는 모듈 — .musx, .liq, .fnk…';
+
+  @override
   String get settingsEngineGmeSubtitle => 'SPC, VGM(gme), KSS, AY… — EQ, 스테레오';
 
   @override
@@ -2356,6 +2609,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsMasterVolume => '마스터 볼륨';
 
   @override
+  String get settingsAmplification => '증폭';
+
+  @override
   String get settingsAmigaFilter => 'Amiga 필터';
 
   @override
@@ -2369,6 +2625,17 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsChorus => '코러스';
+
+  @override
+  String get playbackMt32NoRoms =>
+      '이 MIDI는 Roland MT-32용입니다. ROM이 없어 SoundFont로 재생하며 악기는 General MIDI로 변환했습니다 — 설정 › 엔진 › Munt에서 ROM을 가져오세요.';
+
+  @override
+  String get settingsMidiMt32ToGm => 'MT-32 파일 변환';
+
+  @override
+  String get settingsMidiMt32ToGmSubtitle =>
+      'Roland MT-32용 MIDI는 MT-32 고유 목록으로 프로그램 번호를 매깁니다. 가장 가까운 General MIDI 악기로 변환하면 무작위 음색 대신 그럴듯한 악기로 들립니다.';
 
   @override
   String get settingsInterpNone => '없음';
@@ -2817,6 +3084,135 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get storageTitle => '저장 공간';
+
+  @override
+  String get storageSubtitle => '앱이 디스크에 보관하는 항목과 삭제';
+
+  @override
+  String get storageDownloads => '다운로드';
+
+  @override
+  String get storageArtworkCache => '앨범아트 캐시';
+
+  @override
+  String get storageSoundfonts => '사운드폰트';
+
+  @override
+  String get storagePresets => '시각화 프리셋';
+
+  @override
+  String get storageOpenedFiles => '열었던 파일';
+
+  @override
+  String get storageOpenedEmpty =>
+      '외부에서 연 파일(공유, “다음으로 열기”, 모바일 파일 선택)은 여기에 복사됩니다.';
+
+  @override
+  String get storageInUse => '재생목록 또는 보관함에서 사용 중';
+
+  @override
+  String get storageDeleteAll => '모두 삭제';
+
+  @override
+  String get storageClear => '비우기';
+
+  @override
+  String get storageDeleteSelection => '선택 항목 삭제';
+
+  @override
+  String get storageSelectAll => '모두 선택';
+
+  @override
+  String get storageFilterHint => '이름으로 필터';
+
+  @override
+  String get storageNoMatch => '이 필터와 일치하는 파일이 없습니다.';
+
+  @override
+  String storageSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count개 선택됨',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '파일 $count개를 삭제할까요?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDeleteSelectionInUseBody(int count, int inUse) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '파일 $count개를 삭제할까요? 그중 $inUse개는 재생목록이나 보관함에서 사용 중이며 해당 항목은 파일을 잃게 됩니다.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get storageDownloadsClearBody =>
+      '다운로드한 모든 파일과 보관함 행을 삭제할까요? 즐겨찾기와 재생목록 항목은 유지되지만 파일은 다시 다운로드해야 합니다.';
+
+  @override
+  String get storageSoundfontsClearBody =>
+      '가져온 것을 포함해 모든 사운드폰트를 삭제할까요? 카탈로그 항목은 필요 시 다시 받지만 가져온 파일은 사라집니다.';
+
+  @override
+  String get storagePresetsClearBody =>
+      '다운로드한 프리셋 팩과 가져온 프리셋을 삭제할까요? 기본 제공 프리셋은 유지되며, 팩은 다시 받지만 가져온 파일은 사라집니다.';
+
+  @override
+  String get storageOpenedDeleteAllTitle => '열었던 파일 삭제';
+
+  @override
+  String get storageInUseDeleteTitle => '사용 중인 파일';
+
+  @override
+  String get storageInUseDeleteBody =>
+      '재생목록이나 보관함이 아직 이 파일을 가리키고 있습니다. 삭제하면 해당 항목은 파일 없이 남게 됩니다.';
+
+  @override
+  String storageCategoryStat(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '파일 $count개 — $size',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageDownloadsSubtitle(int count, String size) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '파일 $count개 — $size · 앨범과 곡에서 관리',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storageOpenedDeleteAllBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '파일 $count개를 삭제할까요? 재생목록이나 보관함에서 사용 중인 파일은 유지됩니다.',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetStats => '통계 재설정';
 
   @override
@@ -2842,6 +3238,36 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsResetDbTitle => '데이터베이스를 재설정할까요?';
 
   @override
+  String get settingsCleanLocalTitle => '재생할 수 없는 로컬 항목 정리';
+
+  @override
+  String get cleanStageScan => '항목 확인 중…';
+
+  @override
+  String get cleanStageSync => '계정과 동기화 중…';
+
+  @override
+  String get cleanStagePurge => '계정에서 제거 중…';
+
+  @override
+  String get cleanStageDelete => '기기에서 제거 중…';
+
+  @override
+  String get settingsCleanLocalBody =>
+      '이 기기에 없는 파일을 가리키는 라이브러리 항목입니다. 계정에서도 제거되므로 다른 기기에서도 사라집니다.';
+
+  @override
+  String settingsCleanLocalDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count개 항목을 제거했습니다',
+      zero: '정리할 항목이 없습니다',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get settingsResetDbBody =>
       '다음 항목이 영구히 삭제됩니다:\n• 전체 재생 기록\n• 모든 카운터\n• 모든 즐겨찾기\n• 모든 재생목록\n• 캐시된 모든 메타데이터\n\n오디오 파일은 삭제되지 않습니다.';
 
@@ -2854,6 +3280,32 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get settingsDeleteDownloadsSubtitle =>
       '온라인 폴더의 모든 파일을 삭제합니다 (트랙, 아트워크)';
+
+  @override
+  String get settingsCleanAll => '로컬 데이터베이스와 캐시 정리';
+
+  @override
+  String get settingsCleanAllSubtitle =>
+      '파일이 사라진 항목과 다른 기기의 파일을 가리키는 라이브러리 항목을 제거하고, 아트워크와 메타데이터 캐시를 비웁니다';
+
+  @override
+  String get settingsCleanAllConfirmBody =>
+      '다른 기기의 파일을 가리키는 라이브러리 항목은 계정에서도, 즉 다른 기기에서도 제거됩니다. 아트워크와 메타데이터는 다음 재생 시 다시 내려받습니다.';
+
+  @override
+  String get settingsDataAdvanced => '고급';
+
+  @override
+  String get settingsDataAdvancedSubtitle => '정리 단계별 실행, 캐시, 초기화';
+
+  @override
+  String get settingsDataGroupDb => '데이터베이스';
+
+  @override
+  String get settingsDataGroupCache => '캐시';
+
+  @override
+  String get settingsDataGroupReset => '초기화';
 
   @override
   String get settingsDeleteDownloadsTitle => '다운로드를 삭제할까요?';
@@ -3095,6 +3547,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get accountErrorCodeLength => '코드는 6자리입니다';
 
   @override
+  String get albumOfflinePartial => '오프라인 — 이 기기에 있는 항목만 표시합니다';
+
+  @override
   String get accountErrorNetwork => '연결에 실패했습니다. 다시 시도하세요';
 
   @override
@@ -3324,6 +3779,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commonSave => '저장';
 
   @override
+  String get commonImport => '가져오기';
+
+  @override
   String get accountDisplayName => '공개 이름';
 
   @override
@@ -3442,45 +3900,62 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsSpectrumModeRing => '링';
 
   @override
+  String get settingsPianoMode => '피아노 표시';
+
+  @override
+  String get settingsPianoModeRoll => '건반';
+
+  @override
+  String get settingsPianoModeFalling => '떨어지는 음표';
+
+  @override
+  String get settingsPianoColor => '색상';
+
+  @override
+  String get settingsPianoColorVoice => '성부별';
+
+  @override
+  String get settingsPianoColorInstrument => '악기별';
+
+  @override
+  String get settingsPianoGlow => '눌린 건반 빛';
+
+  @override
+  String get settingsPianoLighting => '건반의 빛과 그림자';
+
+  @override
+  String get settingsPianoVoiceNames => '성부 이름';
+
+  @override
+  String get featuredAdditionsHeader => '카탈로그 신규 항목';
+
+  @override
+  String get featuredAdditionsCard => '방금 추가됨';
+
+  @override
+  String get featuredAdditionsPlaylist => '방금 추가된 곡들';
+
+  @override
   String get releaseNotesTitle => '새로운 기능';
 
   @override
-  String get releaseNotesV4Downloads =>
-      '다운로드: 긴 다운로드를 진행 중에 취소할 수 있고, 앨범 압축 파일을 여러 번 내려받지 않습니다.';
+  String get releaseNotesV7Cpu =>
+      '아무것도 재생하지 않을 때 앱이 백그라운드에서 작업하지 않아 프로세서와 배터리 사용이 크게 줄었습니다.';
 
   @override
-  String get releaseNotesV4Queue => '대기열: 확인을 거쳐 비우는 버튼 — 재생도 함께 멈춥니다.';
+  String get releaseNotesV7VizIdle =>
+      '재생이 멈춰 있으면 시각화도 멈추며, 초당 60프레임으로 제한됩니다(변경 가능).';
 
   @override
-  String get releaseNotesV4DropFiles =>
-      '창에 놓은 파일: 지금·다음·마지막에 재생 중에서 선택. 표지와 동반 파일은 제외되고, 압축 파일에 들어 있는 재생 목록을 따릅니다(실제 곡 이름, 빈 트랙 없음).';
+  String get releaseNotesV7Subsongs =>
+      '수정: PC 엔진, 마스터 시스템, Atari ST(.sndh)에서 일부 트랙이 옆 곡을 재생하던 문제를 고쳤습니다.';
 
   @override
-  String get releaseNotesV4Soundfont =>
-      'MIDI: 서버 제공 외에 기기에서 자신의 SoundFont를 가져올 수 있습니다.';
+  String get releaseNotesV7Piano => 'PC 엔진 음악에서 피아노 시각화가 비어 있던 문제를 고쳤습니다.';
 
   @override
-  String get releaseNotesV4Formats =>
-      'Wwise, FSB, OGL 게임 스트림이 드디어 재생됩니다(자체 Vorbis).';
-
-  @override
-  String get releaseNotesV4Chips =>
-      '사운드 칩 6종 추가, 칩별 에뮬레이션 코어 선택(게임보이는 SameBoy), 샘플 기반 칩의 음정도 정확해졌습니다.';
-
-  @override
-  String get releaseNotesV4Zx =>
-      'ZX Spectrum: .vt2가 재생되고, 음표와 패턴 보기가 ZX 제품군 전체를 지원합니다.';
-
-  @override
-  String get releaseNotesV4Loop =>
-      '한 곡 반복이 다시 불러오지 않고 실제로 반복되며, 무한 반복에서도 시간이 멈추지 않습니다.';
-
-  @override
-  String get releaseNotesV4Info =>
-      'ⓘ 패널이 곡이 실제로 연 파일을 나열합니다 — 동반 파일과 라이브러리 포함.';
-
-  @override
-  String get releaseNotesV4Linux => '리눅스 데스크톱 버전.';
+  String get releaseNotesV7Database =>
+      '업데이트로 손상된 데이터베이스가 이제 스스로 복구되어, 보관함에 접근하지 못하는 일이 없어졌습니다.';
 
   @override
   String get releaseNotesDataReset =>
@@ -3763,4 +4238,163 @@ class AppLocalizationsKo extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get browseCharts => '차트';
+
+  @override
+  String get chartsGlobal => '전체';
+
+  @override
+  String get chartsByCollection => '컬렉션별';
+
+  @override
+  String get chartsTopSongs => '인기곡';
+
+  @override
+  String get chartsTopAlbums => '인기 앨범';
+
+  @override
+  String get chartsRewampSection => 'Top rewamp';
+
+  @override
+  String get chartsPublishedSection => '공개 차트';
+
+  @override
+  String chartsUpdated(String date) {
+    return '업데이트: $date';
+  }
+
+  @override
+  String get chartsSource => '출처';
+
+  @override
+  String get settingsMidiSynth => 'MIDI 신시사이저';
+
+  @override
+  String get settingsMidiSynthAuto => '자동 (파일이 요구하면 MT-32)';
+
+  @override
+  String get settingsMidiSynthSoundfont => 'SoundFont (FluidLite)';
+
+  @override
+  String get settingsMidiSynthMt32 => 'Roland MT-32 (에뮬레이션)';
+
+  @override
+  String get settingsMt32Section => 'Roland MT-32 에뮬레이션';
+
+  @override
+  String get settingsMt32RomsTitle => 'MT-32 ROM';
+
+  @override
+  String get settingsMt32RomsMissing =>
+      '사용 가능한 ROM 세트가 없습니다 — MT-32 또는 CM-32L의 컨트롤 ROM과 PCM ROM을 가져오세요';
+
+  @override
+  String settingsMt32RomsActive(String set) {
+    return '사용 중인 세트: $set';
+  }
+
+  @override
+  String get settingsMt32Import => 'ROM 파일 가져오기…';
+
+  @override
+  String get settingsMt32ImportSubtitle =>
+      '컨트롤 ROM + PCM ROM (.rom/.bin), MAME 분할 파일 허용. ROM은 앱에 포함되지 않습니다.';
+
+  @override
+  String settingsMt32ImportRejected(String name) {
+    return '$name은(는) 알려진 MT-32 / CM-32L ROM이 아닙니다';
+  }
+
+  @override
+  String settingsMt32ImportDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'ROM 파일 $count개를 가져왔습니다',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsMt32Model => '모델';
+
+  @override
+  String get settingsMt32ModelAuto => '자동 (CM-32L이 있으면 우선)';
+
+  @override
+  String get settingsMt32Reverb => '리버브';
+
+  @override
+  String get engineDescMt32 =>
+      'MIDI용 Roland MT-32 / CM-32L 에뮬레이션 (.mid/.midi/.kar/.rmi)';
+
+  @override
+  String get miniWindowEnter => '미니 플레이어';
+
+  @override
+  String get miniWindowExit => '기본 창으로 돌아가기';
+
+  @override
+  String get miniWindowIdle => '재생 중인 곡 없음';
+
+  @override
+  String get settingsAlwaysOnTopTitle => '항상 위에 표시';
+
+  @override
+  String get settingsAlwaysOnTopSubtitle =>
+      '창을 항상 다른 창 위에 둡니다 — 기본 창과 미니 플레이어 모두';
+
+  @override
+  String get windowAlwaysOnTopOn => '항상 위에 표시: 켜짐';
+
+  @override
+  String get miniWindowCoverFill => '커버를 확대해 채우기';
+
+  @override
+  String get miniWindowCoverFit => '커버 전체 보기';
+
+  @override
+  String get releaseNotesV7Mt32 =>
+      '게임 MIDI 음악을 위한 Roland MT-32 엔진이 추가되었습니다(ROM은 직접 준비). ROM이 없으면 MT-32용으로 작성된 MIDI를 General MIDI에 맞춰 재생합니다.';
+
+  @override
+  String get releaseNotesV7Xmp =>
+      '희귀한 모듈 형식 10가지를 새로 재생할 수 있습니다(Archimedes Tracker .musx, .liq, .fnk 등).';
+
+  @override
+  String get releaseNotesV7AmigaAdlib =>
+      'Westwood의 AdLib 음악(.adl)이 모든 트랙을 재생하며, Amiga의 BP SoundMon V1도 인식합니다.';
+
+  @override
+  String get releaseNotesV7MiniPlayer =>
+      'Mac: 간단한 모드나 시각화 모드의 미니 플레이어와 \'항상 위에 표시\' 옵션이 추가되었습니다.';
+
+  @override
+  String get releaseNotesV7Instruments =>
+      '오실로스코프, 악보, 피아노에서 성부뿐 아니라 악기마다 이름과 색을 표시할 수 있습니다.';
+
+  @override
+  String get releaseNotesV7Podium =>
+      '검색: 데모신 대회에서 1위, 2위, 3위에 오른 곡만 골라 볼 수 있습니다.';
+
+  @override
+  String get releaseNotesV7ShortSubsongs =>
+      '너무 짧은 서브송(게임 효과음)은 \'모두 재생\'에서 제외됩니다. 기준은 설정 → 재생에서 바꿀 수 있습니다.';
+
+  @override
+  String get releaseNotesV7LocalFolders =>
+      '가져오기: 폴더를 통째로 끌어다 놓을 수 있고(압축 파일은 풀림), 폴더를 만들고 이름을 바꾸고 옮길 수 있습니다.';
+
+  @override
+  String get releaseNotesV7Midi =>
+      'MIDI: 드럼이 더 이상 피아노 소리로 나지 않고, 음량이 찢어지지 않습니다.';
+
+  @override
+  String get releaseNotesV7ProjectM =>
+      'projectM: 실행할 때마다 같은 프리셋이 반복되지 않으며, 일시 정지 후 프리셋이 잘못 제외되는 일도 없어졌습니다.';
+
+  @override
+  String get libraryFileMissing => '파일 없음';
 }

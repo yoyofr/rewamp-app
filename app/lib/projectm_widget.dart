@@ -67,7 +67,9 @@ class _ProjectMWidgetState extends State<ProjectMWidget>
       // Native thread renders; only poll for preset changes here.
     } else {
       if (_gpuTextureId < 0) return;
-      widget.audio.projectmRenderAndNotify();
+      // Voir src/rewamp_viz_idle.h. La veille du preset, plus bas, continue:
+      // c'est le natif qui le change, et la bannière doit suivre.
+      if (widget.audio.vizFrameDue) widget.audio.projectmRenderAndNotify();
     }
     // Usage stats: accumulate the preset id on every change (server-known
     // presets only), pushed in BATCHES by the manager — never one POST per

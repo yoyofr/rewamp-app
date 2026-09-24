@@ -5,7 +5,10 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'artwork_image.dart';
+import 'local_db.dart';
 import 'rewamp_db.dart';
+import 'sync_service.dart';
 
 /// Remise à zéro des données locales, DÉCLENCHÉE PAR UNE VERSION.
 ///
@@ -26,6 +29,78 @@ import 'rewamp_db.dart';
 /// synchro reconstruit bibliothèque, favoris et playlists depuis le compte.
 /// C'est exactement le parcours qu'on veut voir s'exécuter en beta.
 const kDataResetVersion = 3;
+
+/// Nettoyage AUTOMATIQUE, lui aussi piloté par une version — le geste
+/// « Nettoyer la base locale et le cache » de Réglages → Données, joué une
+/// fois, tout seul, au premier lancement d'une build.
+///
+/// Beaucoup plus doux que [maybeResetLocalData]: rien de ce que l'utilisateur
+/// possède ne part. Il ne fait que retirer ce qui ne désigne plus rien —
+/// lignes dont le fichier a disparu, entrées de bibliothèque à l'identité
+/// MORTE (un chemin jetable, jamais un import absent d'ici: celui-là vit sur un
+/// autre appareil du même compte) — et vider les caches, qui se reconstruisent.
+///
+/// **Bumper ce nombre = rejouer le nettoyage une fois sur chaque appareil.**
+/// Estampille FICHIER, même raison que ci-dessus: une préférence serait
+/// emportée par une remise à zéro et le nettoyage se relancerait pour rien.
+///
+/// ⚠️ Le lancement d'une build qui EFFACE tout ([dataWasReset]) n'a rien à
+/// nettoyer — la base vient de naître. On saute alors la passe et on pose
+/// l'estampille: c'est un état propre, pas un nettoyage à faire.
+const kAutoCleanupVersion = 1;
+
+/// Vrai UNE fois, au premier lancement suivant un bump de
+/// [kAutoCleanupVersion]. Pose l'estampille elle-même — l'appelant ne peut donc
+/// pas la rejouer, même s'il échoue: un nettoyage est réparateur, pas
+/// indispensable, et le relancer en boucle sur un appareil où il plante serait
+/// pire que de le sauter.
+///
+/// À appeler APRÈS `LocalDb.initialize()` et `UserSettings.init()` (contrairement
+/// à [maybeResetLocalData], qui doit passer avant).
+Future<bool> takeAutoCleanupTicket() async {
+  try {
+    final support = await getApplicationSupportDirectory();
+    final stamp   = File(p.join(support.path, '.auto_cleanup'));
+    if (await stamp.exists() &&
+        (await stamp.readAsString()).trim() == '$kAutoCleanupVersion') {
+      return false;
+    }
+    await stamp.writeAsString('$kAutoCleanupVersion', flush: true);
+    if (dataWasReset) {
+      debugPrint('[auto-cleanup] v$kAutoCleanupVersion — sauté: les données '
+          'viennent d\'être remises à zéro, il n\'y a rien à nettoyer');
+      return false;
+    }
+    debugPrint('[auto-cleanup] v$kAutoCleanupVersion — nettoyage automatique '
+        'de la base locale et des caches');
+    return true;
+  } catch (_) {
+    // Estampille illisible / non écrivable: ne pas nettoyer. Un nettoyage
+    // qu'on ne peut pas estampiller se rejouerait à CHAQUE démarrage.
+    return false;
+  }
+}
+
+/// Le nettoyage lui-même: les TROIS gestes de « Nettoyer la base locale et le
+/// cache », dans l'ordre du moins au plus coûteux — lignes orphelines, entrées
+/// de bibliothèque à l'identité morte (la seule qui touche le COMPTE, d'où la
+/// confirmation exigée de l'appelant interactif), puis les caches.
+///
+/// Rend les trois bilans. [onStage] est relayé à la purge, qui est la seule
+/// étape assez longue pour mériter d'être racontée.
+///
+/// UN seul exemplaire de cette séquence: le geste manuel de Réglages et le
+/// nettoyage automatique du premier lancement doivent faire exactement la même
+/// chose, sinon ils divergeront.
+Future<({int orphans, int missing, int artwork})> runLocalCleanup(
+    {void Function(String stage)? onStage}) async {
+  final orphans = await LocalDb.instance.purgeOrphanEntries();
+  final missing =
+      await SyncService.purgeMissingLocalLibraryEntries(onStage: onStage);
+  final artwork = await ArtworkCache.instance.clearCache();
+  await LocalDb.instance.clearMetadataCache();
+  return (orphans: orphans, missing: missing, artwork: artwork);
+}
 
 /// Clés de préférence épargnées par l'effacement.
 ///
