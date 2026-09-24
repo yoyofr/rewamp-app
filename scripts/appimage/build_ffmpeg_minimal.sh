@@ -99,9 +99,24 @@ make install
 # Le but de tout ce script est ce chiffre. On le vérifie sur l'artefact plutôt
 # que de faire confiance aux drapeaux de configure.
 bold "Dépendances de la libavcodec produite"
-DEPS="$(ldd "$OUT/lib/libavcodec.so" | awk '{print $1}' \
-        | grep -vE '^(linux-vdso|/lib/ld-|libc\.so|libm\.so|libdl\.so|libpthread|librt\.so|libz\.so|libgcc_s|libstdc\+\+)' \
-        | grep -v '^libav' | grep -v '^libsw' | sort -u)"
+# ⚠️ DEUX pièges, les deux payés au premier run de CI (2026-09-24), et les deux
+# invisibles sur la machine de développement:
+#
+#   * le chargeur dynamique n'a pas le même CHEMIN selon l'architecture —
+#     `/lib/ld-linux-aarch64.so.1` mais `/lib64/ld-linux-x86-64.so.2`. Un
+#     filtre écrit sur `/lib/ld-` laissait donc passer le chargeur x86_64 et
+#     le comptait comme dépendance externe: le job x86_64 mourait sur
+#     « 1 dépendance(s) externe(s) restante(s) » qui n'en était pas une. On
+#     filtre désormais sur le NOM du chargeur, pas sur son dossier;
+#   * `grep -v` rend 1 quand il ne sélectionne RIEN — c'est-à-dire dans le cas
+#     NOMINAL, où tout a été filtré. Sous `set -e` (+ pipefail), le succès
+#     TUAIT donc le script, sans un mot: c'est exactement ce qu'a fait le job
+#     aarch64. D'où `|| true` sur le filtrage, et un `ldd` séparé qui, lui,
+#     doit toujours échouer bruyamment s'il échoue.
+RAW="$(ldd "$OUT/lib/libavcodec.so")"
+DEPS="$(printf '%s\n' "$RAW" | awk '{print $1}' \
+        | grep -vE '^(linux-vdso|libc\.so|libm\.so|libdl\.so|libpthread|librt\.so|libz\.so|libgcc_s|libstdc\+\+|libav|libsw)|(^|/)ld[-.][^/]*\.so' \
+        | sort -u || true)"
 n="$(printf '%s' "$DEPS" | grep -c . || true)"
 if [[ "$n" -gt 0 ]]; then
   echo "$DEPS" | sed 's/^/    /'

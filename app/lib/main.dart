@@ -77,7 +77,7 @@ const _bundledAssetDirs = <String>[
 /// an installed app, so "han." files kept failing with backend="").
 // 4: +7 martin milkdrop presets; 5: preset culling + stale-file sync on bump;
 // 7: test.milk retiré (le bump seul le purge des installations existantes)
-const _kBundledAssetsVersion = 7;
+const _kBundledAssetsVersion = 8;
 
 /// Copy bundled assets into `{appSupport}/rewamp_data/` (preserving their
 /// sub-path under assets/) and return that root so native code can load them.

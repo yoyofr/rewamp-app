@@ -1,0 +1,165 @@
+# AppImage Linux — x86_64 et aarch64.
+#
+# ⚠️ Le CONTENEUR fait le plancher glibc, pas le runner. Un AppImage bâti sur
+# le runner nu (Ubuntu 24.04, glibc 2.39) ne démarrerait sur AUCUNE
+# distribution plus ancienne, et le message serait
+# « GLIBC_2.38 not found » chez l'utilisateur, jamais ici. D'où `container:
+# ubuntu:22.04` (glibc 2.35, soutenue jusqu'en 2027): on peut TOUJOURS tourner
+# sur plus récent que ce contre quoi on a lié, jamais sur plus ancien.
+#
+# Ce fichier voyage dans le dépôt PUBLIC (allowlist de publish_public.sh): les
+# binaires publiés sont construits par la CI de ce dépôt-là.
+#
+# Déclenchement MANUEL ou par TAG — jamais à chaque poussée: un build complet
+# est long (FFmpeg + le moteur, ~40 moteurs) et un instantané public en reçoit
+# un par version, pas un par commit.
+name: AppImage
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write        # la création de release attache les AppImage
+
+env:
+  # ⚠️ ÉPINGLÉE, pas « stable »: une CI dont la chaîne d'outils bouge toute
+  # seule finit par échouer un jour où l'on n'a rien changé, et il faut alors
+  # chercher la cause dans le mauvais dépôt. À monter à la main.
+  FLUTTER_VERSION: '3.47.5'
+
+jobs:
+  build:
+    name: ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    container: ubuntu:22.04
+    strategy:
+      fail-fast: false   # une arche cassée ne doit pas masquer l'état de l'autre
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            # ⚠️ Runner ARM natif: gratuit pour un dépôt PUBLIC, payant
+            # ailleurs. Émuler aarch64 en qemu prendrait des heures.
+            runner: ubuntu-24.04-arm
+
+    steps:
+      # Le conteneur est nu: tout ce qui suit (y compris actions/checkout, qui
+      # a besoin de git) en dépend. Donc AVANT le checkout.
+      - name: Dépendances système
+        run: |
+          set -eu
+          export DEBIAN_FRONTEND=noninteractive
+          # ⚠️ RÉESSAYÉ, et `update` refait à chaque tour. Le 2026-09-24 le job
+          # x86_64 est mort sur un 404: l'index annonçait
+          # `libexpat1 2.4.7-1ubuntu0.9` que le pool du miroir avait déjà
+          # remplacé. C'est une course de PUBLICATION côté Ubuntu — rien de
+          # local, rien de reproductible, et ça se reproduira. Un index frais
+          # la résout; y mourir ferait accuser la recette.
+          # ⚠️ `libgl1-mesa-dri` n'est PAS tirée par les paquets -dev: c'est le
+          # pilote de rendu LOGICIEL. Sans GPU ni pilote, l'app ne crée aucun
+          # contexte GL sous Xvfb, et l'oracle conclurait « l'app n'a pas
+          # démarré » pour une raison qui n'a rien à voir avec ce qu'il teste.
+          pkgs="ca-certificates curl git unzip xz-utils zip file
+                build-essential clang-15 cmake ninja-build pkg-config
+                libgtk-3-dev libegl1-mesa-dev libgles2-mesa-dev
+                libasound2-dev libsecret-1-dev libbz2-dev
+                xvfb xauth dbus-x11 libgtk-3-0 libsecret-1-0 libgcrypt20
+                libgl1-mesa-dri libglx-mesa0
+                python3 nasm"
+          for attempt in 1 2 3; do
+            if apt-get update -qq && apt-get install -y --no-install-recommends $pkgs; then
+              break
+            fi
+            [ "$attempt" = 3 ] && { echo "apt a échoué trois fois" >&2; exit 1; }
+            echo "apt: tentative $attempt échouée — nouvel index dans 20 s"
+            sleep 20
+          done
+          # `flutter build linux` appelle clang; 22.04 en a un 14 par défaut et
+          # vgmstream demande gnu2x (voir cmake/rewamp.cmake). clang-15 est
+          # dans les dépôts de 22.04, donc pas de source tierce à ajouter.
+          update-alternatives --install /usr/bin/clang   clang   /usr/bin/clang-15   100
+          update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-15 100
+
+      # Dans un conteneur, le dépôt appartient à un autre uid que celui qui
+      # lance git: sans ça, chaque commande git répond « dubious ownership » —
+      # et `flutter` lui-même refuse de démarrer, puisqu'il s'interroge par git.
+      - name: git safe.directory
+        run: git config --global --add safe.directory '*'
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Les trois sous-modules pointent sur de l'AMONT INTACT: nos changements
+      # sont des patchs appliqués en arbre de travail. Les sauter compile très
+      # bien et se trompe en silence (pas de Wwise Vorbis, tempo XM 16 bits
+      # cassé, captures par voix manquantes dans libvgm).
+      - name: Patchs des sous-modules
+        working-directory: packages/rewamp_audio
+        run: |
+          set -eux
+          ./scripts/sync_libopenmpt.sh
+          ./scripts/sync_vgmstream.sh
+          ./scripts/sync_libvgm.sh
+
+      - name: Flutter ${{ env.FLUTTER_VERSION }}
+        run: |
+          set -eux
+          git clone --depth 1 --branch "$FLUTTER_VERSION" \
+            https://github.com/flutter/flutter.git /opt/flutter
+          echo /opt/flutter/bin >> "$GITHUB_PATH"
+          /opt/flutter/bin/flutter --version
+          /opt/flutter/bin/flutter config --enable-linux-desktop
+          /opt/flutter/bin/flutter precache --linux
+
+      # FFmpeg minimal (≈ 20 min): il ne change QUE si sa recette ou sa version
+      # changent, d'où la clé. C'est le seul morceau qui mérite un cache — le
+      # moteur, lui, change à chaque instantané.
+      - name: Cache FFmpeg
+        uses: actions/cache@v4
+        with:
+          path: app/build/appimage/ffmpeg
+          key: ffmpeg-${{ matrix.arch }}-${{ hashFiles('scripts/appimage/build_ffmpeg_minimal.sh') }}
+
+      - name: Construire l'AppImage
+        run: scripts/appimage/build_appimage.sh
+
+      # L'oracle qui compte: faire DISPARAÎTRE l'arbre de build et lire
+      # /proc/<pid>/maps. Un contrôle statique des RUNPATH dit ce que le binaire
+      # DEMANDE, pas ce qui est CHARGÉ — c'est cette différence qui a caché, le
+      # 2026-09-21, un AppImage chargeant son FFmpeg depuis `…/app/build/…`.
+      # Il DÉMARRE l'app, donc il lui faut un écran: Xvfb en fournit un.
+      # (Les visualiseurs GL y seraient noirs — sans importance ici, on ne
+      # regarde que les bibliothèques chargées.)
+      # ⚠️ `dbus-run-session` en plus de Xvfb: l'app prend un nom sur le bus de
+      # SESSION au démarrage (MPRIS, le centre multimédia de Linux), et un
+      # conteneur de CI n'en a aucun.
+      - name: Vérifier que l'AppImage est relogeable
+        run: xvfb-run -a dbus-run-session -- scripts/appimage/verify_relocatable.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rewamp-${{ matrix.arch }}.AppImage
+          path: app/build/appimage/Rewamp-*.AppImage
+          if-no-files-found: error
+
+  # Sur un TAG seulement: une release brouillon qui porte les deux arches.
+  # Brouillon, pas publiée: le texte de release et le moment d'appuyer
+  # appartiennent à l'auteur (même règle que l'instantané public lui-même).
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -lh dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist/Rewamp-*.AppImage
