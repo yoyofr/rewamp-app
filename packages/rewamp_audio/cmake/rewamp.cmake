@@ -2201,6 +2201,17 @@ function(rewamp_add_projectm target)
     PROJECTM_FILESYSTEM_NAMESPACE=std
     "PROJECTM_FILESYSTEM_INCLUDE=<filesystem>")
   target_compile_options(rewamp_projectm PRIVATE -w)   # vendored tree is noisy
+  # ⚠️ `size_t` NU, sans `#include <cstddef>`: l'arbre amont s'en remet à une
+  # fuite transitive de la bibliothèque standard. Elle EXISTE avec libstdc++ 13
+  # et 14 (d'où un build vert sur la machine de dev, Ubuntu 24.04/clang 18) et
+  # PAS avec libstdc++ 11 — celle d'Ubuntu 22.04, contre laquelle la CI bâtit
+  # pour tenir le plancher glibc. `VertexIndexArray.hpp` est mort dessus au
+  # premier vrai passage de CI (2026-09-24); VINGT fichiers de cet arbre sont
+  # dans le même cas, donc on ne les corrige pas un par un: l'en-tête est forcé
+  # en tête de chaque TU C++ de CETTE cible. Rien d'autre n'est touché, et un
+  # resync de l'arbre vendoré ne le perd pas.
+  target_compile_options(rewamp_projectm PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX>:-include;cstddef>")
   target_include_directories(rewamp_projectm PRIVATE
     "${PM_ROOT}/src/api/include"
     "${PM_ROOT}/src/playlist/api"

@@ -17,6 +17,13 @@ Pod::Spec.new do |s|
   header_dirs     = ['$(PODS_TARGET_SRCROOT)/../src']
   preprocessor    = ['$(inherited)']
   need_cpp_stdlib = false
+  # ⚠️ DÉCLARÉ ICI, avec les autres accumulateurs, et pas près du `s.libraries`
+  # qui le consomme: un bloc de moteur qui réclame une bibliothèque système le
+  # fait là où il est (furnace veut zlib), donc bien AVANT la fin du fichier.
+  # Déclaré trop tard, Ruby ne voit pas une liste vide mais une variable
+  # INCONNUE, et `pod install` meurt sur « undefined local variable or method
+  # 'libs' » — sans dire qu'il s'agit d'un ordre de déclaration.
+  libs            = []
   prepare_parts   = []
   vendored_libs   = []
   vendored_frameworks = []
@@ -1807,7 +1814,6 @@ Pod::Spec.new do |s|
     s.prepare_command = "set -e\n" + prepare_parts.join("\n")
   end
 
-  libs = []
   # rewamp_channel_data.c's rewamp_sjis_to_utf8 (Shift-JIS tags: PxTone, MDX, …)
   # uses iconv unconditionally on Apple, so this can't hang off an engine flag —
   # it used to be added only inside the VGM/GME blocks.

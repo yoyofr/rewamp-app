@@ -53,7 +53,14 @@ case "$(uname -m)" in
 esac
 export ARCH                      # appimagetool le lit
 
-VERSION_FULL="$(sed -n 's/^version: *//p' "$APP/pubspec.yaml" | head -1)"
+# ⚠️ Pas de TUBE vers un lecteur qui s'arrête tôt (`head`, `awk … exit`): celui
+# qui écrit reçoit SIGPIPE, le tube rend 141, et sous `set -e` + pipefail le
+# script MEURT — d'autant plus volontiers que la sortie est grosse ou la machine
+# lente. Payé le 2026-09-24: la CI aarch64 est morte à 141 sur le contrôle des
+# RUNPATH (`objdump | awk … exit`) là où la machine de dev passait. Partout où
+# l'on ne veut que la PREMIÈRE ligne, on lit la source directement ou on passe
+# par une chaîne déjà capturée (`<<<`), jamais par un tube.
+VERSION_FULL="$(awk -F': *' '/^version:/{print $2; exit}' "$APP/pubspec.yaml")"
 VERSION="${VERSION_FULL%%+*}"
 [[ -n "$VERSION" ]] || die "version introuvable dans app/pubspec.yaml"
 
@@ -110,12 +117,12 @@ for so in "$FFMPEG_DIR"/lib/lib*.so.*; do
   ( cd "$APPDIR/usr/rewamp/lib" && ln -sfn "$(basename "$so")" \
       "$(basename "$so" | sed 's/\(\.so\.[0-9]*\).*/\1/')" )
 done
-LIBDIR="$(dirname "$(ldconfig -p | awk '/libsecret-1\.so\.0/{print $NF; exit}')")"
 # libbz2: réclamée par librewamp_audio (libarchive). C'est une FEUILLE — rien
 # derrière elle que libc, mesuré — donc aucun risque de conflit, et elle manque
 # sur un système minimal.
+LDCONFIG_CACHE="$(ldconfig -p)"   # lu UNE fois; voir la note sur les tubes
 for name in libsecret-1.so.0 libgcrypt.so.20 libgpg-error.so.0 libbz2.so.1.0; do
-  f="$(ldconfig -p | awk -v n="$name" '$1==n{print $NF; exit}')"
+  f="$(awk -v n="$name" '$1==n{print $NF; exit}' <<<"$LDCONFIG_CACHE")"
   [[ -n "$f" ]] || die "$name introuvable sur cette machine"
   cp -L "$f" "$APPDIR/usr/rewamp/lib/$name"
 done
@@ -191,7 +198,16 @@ bold "Contrôle du partage embarqué / système"
 # n'est ni glib ni GTK: `libgtk-3.so.0` la réclame elle-même (vérifié), donc
 # elle est présente partout où GTK3 l'est — et c'est la couche de dispatch GL,
 # qui doit correspondre au GL du système. L'embarquer serait activement faux.
-SYSTEM_OK='^(libc|libm|libdl|libpthread|librt|libz|libstdc\+\+|libgcc_s|ld-linux.*|linux-vdso|libgtk-3|libgdk-3|libgdk_pixbuf-2\.0|libpango-1\.0|libpangocairo-1\.0|libcairo|libcairo-gobject|libatk-1\.0|libharfbuzz|libglib-2\.0|libgio-2\.0|libgobject-2\.0|libgmodule-2\.0|libEGL|libGLESv2|libepoxy|libasound)\.so'
+#
+# ⚠️ libfontconfig / libfreetype: MÊME raisonnement, et la question s'est posée
+# pour de bon le 2026-09-24 — `libfontconfig.so.1` est sortie « INATTENDU » sur
+# le job x86_64 et PAS sur aarch64 (les greffons Flutter ne la réclament pas
+# directement partout). Tiroir SYSTÈME: c'est la pile de POLICES, réclamée par
+# pango/cairo donc présente partout où GTK3 l'est, et elle lit la configuration
+# et les caches de fontes de la MACHINE. En embarquer une autre version, c'est
+# se retrouver avec deux moteurs de rendu de texte dont un ne voit pas les
+# polices du système.
+SYSTEM_OK='^(libc|libm|libdl|libpthread|librt|libz|libstdc\+\+|libgcc_s|ld-linux.*|linux-vdso|libgtk-3|libgdk-3|libgdk_pixbuf-2\.0|libpango-1\.0|libpangocairo-1\.0|libcairo|libcairo-gobject|libatk-1\.0|libharfbuzz|libglib-2\.0|libgio-2\.0|libgobject-2\.0|libgmodule-2\.0|libEGL|libGLESv2|libepoxy|libasound|libfontconfig|libfreetype)\.so'
 BUNDLED="$(cd "$APPDIR/usr/rewamp/lib" && ls)"
 unknown=0
 while read -r so; do
@@ -217,7 +233,8 @@ echo "    tout est soit embarqué, soit dans la pile système sanctionnée ✓"
 bold "Contrôle des RUNPATH"
 bad=0
 while read -r f; do
-  rp="$(objdump -p "$f" 2>/dev/null | awk '/R(UN)?PATH/{print $2; exit}')"
+  hdr="$(objdump -p "$f" 2>/dev/null || true)"
+  rp="$(awk '/R(UN)?PATH/{print $2; exit}' <<<"$hdr")"
   [[ -z "$rp" ]] && continue
   IFS=: read -ra parts <<<"$rp"
   for part in "${parts[@]}"; do

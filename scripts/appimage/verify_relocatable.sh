@@ -23,7 +23,9 @@ WORK="$SRC/app/build/appimage"
 bold() { printf '\033[1m==> %s\033[0m\n' "$1"; }
 die()  { printf '\033[31mERREUR: %s\033[0m\n' "$1" >&2; exit 1; }
 
-APPIMAGE="${1:-$(ls -t "$WORK"/Rewamp-*.AppImage 2>/dev/null | head -1)}"
+# Même précaution que build_appimage.sh: pas de tube vers `head` (SIGPIPE).
+BUILT="$(ls -t "$WORK"/Rewamp-*.AppImage 2>/dev/null || true)"
+APPIMAGE="${1:-$(awk 'NR==1' <<<"$BUILT")}"
 [[ -x "$APPIMAGE" ]] || die "AppImage introuvable — scripts/appimage/build_appimage.sh d'abord"
 
 # ⚠️ L'app doit pouvoir s'afficher: c'est en démarrant pour de vrai qu'elle
@@ -34,6 +36,8 @@ hidden=0
 cleanup() {
   [[ $hidden -eq 1 && -d "$WORK/ffmpeg.hidden" ]] && mv "$WORK/ffmpeg.hidden" "$WORK/ffmpeg"
   [[ -n "${PID:-}" ]] && kill "$PID" 2>/dev/null
+  # L'arbre extrait pèse autant que l'AppDir: on ne le laisse pas derrière.
+  [[ -n "${EXDIR:-}" ]] && rm -rf "$EXDIR"
   return 0
 }
 trap cleanup EXIT
@@ -43,7 +47,32 @@ if [[ -d "$WORK/ffmpeg" ]]; then
   bold "Arbre de build de FFmpeg caché — il ne peut plus servir de repli"
 fi
 
-"$APPIMAGE" >/tmp/rewamp-reloc.log 2>&1 &
+# ⚠️ Un conteneur n'a PAS de FUSE, donc l'AppImage ne peut pas se MONTER — et
+# c'est là que la CI est morte le 2026-09-24, après avoir pourtant produit
+# l'artefact. Le repli est celui que ce projet documente déjà pour les
+# utilisateurs: `--appimage-extract`, puis AppRun. Il ne dilue PAS l'oracle —
+# ce qu'on mesure est la RÉSOLUTION des bibliothèques par $ORIGIN, identique
+# depuis un montage ou un dossier extrait, et ce qu'on veut exclure est un
+# chemin de la machine de BUILD (caché juste au-dessus).
+# REWAMP_RELOC_FORCE_EXTRACT=1 force ce chemin sur une machine qui a FUSE:
+# sans ça, il ne serait jamais exercé avant la CI.
+RUNNER="$APPIMAGE"
+EXPECT="/tmp/.mount_"
+if [[ "${REWAMP_RELOC_FORCE_EXTRACT:-0}" == 1 ]] || [[ ! -e /dev/fuse ]] \
+   || ! { command -v fusermount3 >/dev/null || command -v fusermount >/dev/null; }; then
+  bold "Pas de FUSE (ou extraction forcée) — on extrait, le repli documenté"
+  EXDIR="$WORK/reloc-extract"
+  rm -rf "$EXDIR"; mkdir -p "$EXDIR"
+  # ⚠️ `--appimage-extract` écrit `squashfs-root/` dans le dossier COURANT, et
+  # `--appimage-extract-run` n'existe pas dans ce runtime (voir §5 de
+  # docs/APPIMAGE.md).
+  ( cd "$EXDIR" && "$APPIMAGE" --appimage-extract >/dev/null )
+  RUNNER="$EXDIR/squashfs-root/AppRun"
+  EXPECT="$EXDIR/squashfs-root/"
+  [[ -x "$RUNNER" ]] || die "extraction ratée: pas d'AppRun dans $EXDIR"
+fi
+
+"$RUNNER" >/tmp/rewamp-reloc.log 2>&1 &
 PID=""
 for _ in $(seq 1 40); do
   for d in /proc/[0-9]*; do
@@ -66,7 +95,7 @@ for lib in libavcodec libavformat libavutil libswresample libsecret libgcrypt li
   path="$(grep -oE "/[^ ]*${lib}[^ ]*" <<<"$MAPS" | sort -u | head -1 || true)"
   if [[ -z "$path" ]]; then
     printf '    %-14s %s\n' "$lib" "(pas chargée)"
-  elif [[ "$path" == /tmp/.mount_* ]]; then
+  elif [[ "$path" == "$EXPECT"* ]]; then
     printf '    %-14s ✓ depuis l'"'"'AppImage\n' "$lib"
   else
     printf '    %-14s ✗ %s\n' "$lib" "$path"; bad=1
