@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:rewamp_audio/rewamp_audio.dart';
 import 'app_snack.dart';
+import 'frame_stats.dart';
 import 'onboarding.dart';
 import 'l10n.dart';
 import 'package:desktop_drop/desktop_drop.dart';
@@ -588,8 +589,12 @@ class _AppShellState extends State<AppShell>
     _ticker = Timer.periodic(
       const Duration(milliseconds: 250),
       (_) {
+        // Chronométré pour les stats d'images (REWAMP_VIZ_STATS=1): un tick
+        // qui coûte 50 ms quatre fois par seconde EST une saccade régulière.
+        final sw = FrameStats.enabled ? (Stopwatch()..start()) : null;
         _controller.tick();
         _logUnderruns();
+        if (sw != null) FrameStats.instance.noteTick(sw.elapsedMicroseconds / 1000.0);
       },
     );
 

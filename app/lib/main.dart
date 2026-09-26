@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited;
 import 'dart:io' show File, Directory, Platform;
+import 'frame_stats.dart';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -168,6 +169,9 @@ void main([List<String> args = const []]) async {
   }
 
   WidgetsFlutterBinding.ensureInitialized();
+  // REWAMP_VIZ_STATS=1: temps de build/raster par image, blocages de l'isolate
+  // UI, pire tick — inerte sans la variable (voir frame_stats.dart).
+  FrameStats.instance.start();
 
   // Un fichier passé en argument attend dans la même file que ceux d'un
   // démarrage à froid sur Apple: le shell les ramassera quand il existera.

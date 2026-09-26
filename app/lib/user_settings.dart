@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'home_sections.dart';
 import 'shell_tabs.dart';
+import 'token_file.dart';
 
 /// Singleton that persists all user preferences via SharedPreferences.
 /// Extends ChangeNotifier so widgets can rebuild on change.
@@ -1613,10 +1614,14 @@ class UserSettings extends ChangeNotifier {
         _secureOk = false;
       }
     }
-    // No secure backend (no libsecret on Linux, missing entitlement…): the
-    // token stays in MEMORY for this session only. Deliberately NOT mirrored to
-    // SharedPreferences the way the uuid is — the uuid was a weak identifier,
-    // this is a signed credential and a clear-text copy is a real key on disk.
+    // No secure backend (no libsecret service on Linux, missing entitlement…):
+    // the token goes to a FILE readable by this user only (0600), the way gh
+    // and git keep theirs. It used to stay in memory for the session — and on
+    // a desktop without a secrets service that meant a NEW account at every
+    // launch, the previous one and its server library abandoned (measured on a
+    // Steam Deck, 2026-09-26). Not SharedPreferences: that store is world-
+    // readable by design and travels in backups.
+    await TokenFile.write(v);
     notifyListeners();
   }
 
@@ -1627,6 +1632,7 @@ class UserSettings extends ChangeNotifier {
     } catch (e) {
       debugPrint('[UserSettings] secure token delete failed: $e');
     }
+    await TokenFile.delete();
     notifyListeners();
   }
 
@@ -1669,6 +1675,25 @@ class UserSettings extends ChangeNotifier {
     } catch (e) {
       debugPrint('[UserSettings] secure read failed: $e');
       _secureOk = false;
+    }
+    if (_authToken == null || _authToken!.isEmpty) {
+      // Le repli fichier (voir setAuthToken). Lu aussi quand le service de
+      // secrets RÉPOND mais ne connaît pas de jeton: un service apparu entre
+      // deux lancements ne doit pas faire perdre le compte tenu par le fichier.
+      final fromFile = await TokenFile.read();
+      if (fromFile != null) {
+        _authToken = fromFile;
+        if (_secureOk) {
+          // Le service est là: on lui rend la garde, et le fichier disparaît.
+          try {
+            await _secure.write(key: _kSecureAuthToken, value: fromFile);
+            await TokenFile.delete();
+          } catch (e) {
+            debugPrint('[UserSettings] secure token write failed: $e');
+            _secureOk = false;
+          }
+        }
+      }
     }
     final legacy = _p.getString(_kLegacyUserId);
     if (secure != null && secure.isNotEmpty) {
