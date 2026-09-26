@@ -23,7 +23,10 @@ class MarqueeText extends StatefulWidget {
   final TextStyle? style;
   /// Scroll speed, logical pixels per second.
   final double velocity;
-  /// Pause at each end before turning back.
+  /// Pause sur la position de DÉPART, à chaque tour. Le défilement est une
+  /// BOUCLE dans un seul sens (voir ScrollingText): deux copies séparées d'un
+  /// écart, et un retour invisible à zéro quand la seconde a pris la place de
+  /// la première — jamais d'aller-retour.
   final Duration pause;
 
   /// Axe du défilement. `horizontal` impose une ligne unique; `vertical`
@@ -50,11 +53,12 @@ class MarqueeText extends StatefulWidget {
 class _MarqueeTextState extends State<MarqueeText> {
   final _ctrl = ScrollController();
   Timer? _timer;
-  bool _forward = true;
   // See ScrollingText: an in-flight animateTo() from the previous (long) text
   // outlives the timer cancel and would re-scroll the new (short) text. Each
   // async step captures this and bails when the text has changed since.
   int _gen = 0;
+  // Longueur d'un cycle (une copie + l'écart), posée au build; 0 = ça tient.
+  double _cycle = 0;
 
   @override
   void initState() {
@@ -68,37 +72,31 @@ class _MarqueeTextState extends State<MarqueeText> {
     if (old.text != widget.text) {
       _gen++;
       _timer?.cancel();
-      _forward = true;
       if (_ctrl.hasClients) _ctrl.jumpTo(0);
       WidgetsBinding.instance.addPostFrameCallback((_) => _schedule());
     }
   }
 
   void _schedule() {
-    if (!mounted || !_ctrl.hasClients) return;
-    final extent = _ctrl.position.maxScrollExtent;
-    if (extent <= 0) return;   // it fits — leave it alone
+    if (!mounted || !_ctrl.hasClients || _cycle <= 0) return;
     _timer?.cancel();
     _timer = Timer(widget.pause, _step);
   }
 
   Future<void> _step() async {
-    if (!mounted || !_ctrl.hasClients) return;
+    if (!mounted || !_ctrl.hasClients || _cycle <= 0) return;
     final gen = _gen;
-    final extent = _ctrl.position.maxScrollExtent;
-    if (extent <= 0) return;
-    final target = _forward ? extent : 0.0;
-    final distance = (target - _ctrl.offset).abs();
+    final distance = _cycle - _ctrl.offset;
     if (distance > 0) {
       await _ctrl.animateTo(
-        target,
+        _cycle,
         duration: Duration(
             milliseconds: (distance / widget.velocity * 1000).round()),
         curve: Curves.linear,
       );
     }
-    if (!mounted || gen != _gen) return;   // text swapped mid-animation
-    _forward = !_forward;
+    if (!mounted || gen != _gen || !_ctrl.hasClients) return;   // text swapped mid-animation
+    _ctrl.jumpTo(0);   // la seconde copie était là: rien ne bouge à l'écran
     _timer = Timer(widget.pause, _step);
   }
 
@@ -111,34 +109,86 @@ class _MarqueeTextState extends State<MarqueeText> {
 
   @override
   Widget build(BuildContext context) {
+    // Style EFFECTIF (fusion avec DefaultTextStyle), le même pour les deux
+    // copies — voir ScrollingText.
+    final style = withCjkFallback(
+        DefaultTextStyle.of(context).style.merge(widget.style));
+    final dir = Directionality.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+
     if (widget.axis == Axis.horizontal) {
-      return SingleChildScrollView(
-        controller: _ctrl,
-        scrollDirection: Axis.horizontal,
-        physics: const NeverScrollableScrollPhysics(),
-        child:
-            Text(widget.text, style: widget.style, maxLines: 1, softWrap: false),
-      );
+      return LayoutBuilder(builder: (ctx, constraints) {
+        final cw = constraints.maxWidth.isFinite ? constraints.maxWidth : 0.0;
+        final tp = TextPainter(
+          text: TextSpan(text: widget.text, style: style),
+          maxLines: 1,
+          textDirection: dir,
+        )..layout(minWidth: 0, maxWidth: double.infinity);
+        final tw = tp.width;
+        final gap = (style.fontSize ?? 14) * 3;   // « quelques caractères »
+        final overflows = cw > 0 && tw > cw + 1;
+        _cycle = overflows ? tw + gap : 0;
+        final line = Text(widget.text, style: style, maxLines: 1, softWrap: false);
+        // Copie de relais en RichText nu: invisible à `find.text` (voir ScrollingText).
+        final echo = RichText(
+          text: TextSpan(text: widget.text, style: style),
+          maxLines: 1, softWrap: false, overflow: TextOverflow.clip,
+          textDirection: dir, textScaler: scaler,
+        );
+        return SingleChildScrollView(
+          controller: _ctrl,
+          scrollDirection: Axis.horizontal,
+          physics: const NeverScrollableScrollPhysics(),
+          child: overflows
+              ? Row(mainAxisSize: MainAxisSize.min, children: [
+                  line, SizedBox(width: gap), ExcludeSemantics(child: echo),
+                ])
+              : line,
+        );
+      });
     }
 
     // Vertical: la fenêtre fait EXACTEMENT [maxLines] lignes, mesurées avec la
     // vraie police plutôt que déduites de `fontSize` — l'interligne dépend du
     // style et de la police système, et une fenêtre approximative coupe une
-    // ligne en deux.
-    final style = withCjkFallback(widget.style ?? DefaultTextStyle.of(context).style);
+    // ligne en deux. Le texte replié est mesuré à la largeur du conteneur pour
+    // savoir s'il déborde; s'il déborde, deux copies séparées d'UNE ligne vide.
     final probe = TextPainter(
       text: TextSpan(text: 'Xg', style: style),
       maxLines: 1,
-      textDirection: Directionality.of(context),
+      textDirection: dir,
     )..layout();
-    return SizedBox(
-      height: probe.height * widget.maxLines,
-      child: SingleChildScrollView(
-        controller: _ctrl,
-        scrollDirection: Axis.vertical,
-        physics: const NeverScrollableScrollPhysics(),
-        child: Text(widget.text, style: widget.style),
-      ),
-    );
+    final lineH = probe.height;
+    return LayoutBuilder(builder: (ctx, constraints) {
+      final cw = constraints.maxWidth.isFinite ? constraints.maxWidth : 0.0;
+      final tp = TextPainter(
+        text: TextSpan(text: widget.text, style: style),
+        textDirection: dir,
+      )..layout(minWidth: 0, maxWidth: cw > 0 ? cw : double.infinity);
+      final th = tp.height;
+      final windowH = lineH * widget.maxLines;
+      final overflows = cw > 0 && th > windowH + 1;
+      _cycle = overflows ? th + lineH : 0;
+      final block = Text(widget.text, style: style);
+      final echo  = RichText(
+        text: TextSpan(text: widget.text, style: style),
+        textDirection: dir, textScaler: scaler,
+      );
+      return SizedBox(
+        height: windowH,
+        child: SingleChildScrollView(
+          controller: _ctrl,
+          scrollDirection: Axis.vertical,
+          physics: const NeverScrollableScrollPhysics(),
+          child: overflows
+              ? Column(mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    block, SizedBox(height: lineH), ExcludeSemantics(child: echo),
+                  ])
+              : block,
+        ),
+      );
+    });
   }
 }

@@ -68,6 +68,7 @@ static gboolean rewamp_viz_texture_populate(FlTextureGL* texture,
                                             uint32_t* width, uint32_t* height,
                                             GError** error) {
   RewampVizTexture* self = REWAMP_VIZ_TEXTURE(texture);
+  rewamp_viz_stats_populate();   // REWAMP_VIZ_STATS=1, voir rewamp_viz_stats.cc
 
   // Le contexte de Flutter est courant ICI et nulle part ailleurs: c'est le
   // seul endroit d'où l'on peut connaître SON EGLDisplay, qu'aucune API
@@ -194,28 +195,88 @@ static void rewamp_viz_texture_init(RewampVizTexture* self) {
   }
 }
 
+// ── Texture par TAMPON DE PIXELS: le repli X11 / GLX ────────────────────────
+// Sous X11, Flutter est en GLX et l'EGLImage ci-dessus ne s'importe pas (voir
+// rewamp_gl_linux.h, « mode pixels »). Ici le moteur a RELU l'image sur le
+// processeur; Flutter la remonte en texture dans SON contexte, quel qu'il
+// soit. Le tampon appartient à cette texture, donc il survit exactement le
+// temps que la doc de FlPixelBufferTexture exige (« jusqu'au prochain tour du
+// fil de rendu ») et un resize ne peut pas le lui retirer sous les pieds.
+G_DECLARE_FINAL_TYPE(RewampVizPixelTexture, rewamp_viz_pixel_texture, REWAMP,
+                     VIZ_PIXEL_TEXTURE, FlPixelBufferTexture)
+
+struct _RewampVizPixelTexture {
+  FlPixelBufferTexture parent_instance;
+  uint8_t* buf;
+  size_t   cap;
+};
+
+G_DEFINE_TYPE(RewampVizPixelTexture, rewamp_viz_pixel_texture,
+              fl_pixel_buffer_texture_get_type())
+
+static gboolean rewamp_viz_pixel_texture_copy_pixels(FlPixelBufferTexture* texture,
+                                                     const uint8_t** out_buffer,
+                                                     uint32_t* width, uint32_t* height,
+                                                     GError** error) {
+  RewampVizPixelTexture* self = REWAMP_VIZ_PIXEL_TEXTURE(texture);
+  rewamp_viz_stats_populate();
+  int w = 0, h = 0;
+  if (!rewamp_gl_linux_copy_front_pixels(&self->buf, &self->cap, &w, &h)) {
+    g_set_error(error, g_quark_from_static_string("rewamp"), 0,
+                "aucune image relue pour l'instant");
+    return FALSE;
+  }
+  static bool announced = false;
+  if (!announced) {
+    announced = true;
+    fprintf(stderr, "[rewamp_viz] mode PIXELS (X11/GLX): image relue consommée "
+                    "par Flutter (%dx%d)\n", w, h);
+  }
+  *out_buffer = self->buf;
+  *width  = (uint32_t)w;
+  *height = (uint32_t)h;
+  return TRUE;
+}
+
+static void rewamp_viz_pixel_texture_finalize(GObject* obj) {
+  RewampVizPixelTexture* self = REWAMP_VIZ_PIXEL_TEXTURE(obj);
+  free(self->buf); self->buf = nullptr; self->cap = 0;
+  G_OBJECT_CLASS(rewamp_viz_pixel_texture_parent_class)->finalize(obj);
+}
+
+static void rewamp_viz_pixel_texture_class_init(RewampVizPixelTextureClass* klass) {
+  FL_PIXEL_BUFFER_TEXTURE_CLASS(klass)->copy_pixels = rewamp_viz_pixel_texture_copy_pixels;
+  G_OBJECT_CLASS(klass)->finalize = rewamp_viz_pixel_texture_finalize;
+}
+
+static void rewamp_viz_pixel_texture_init(RewampVizPixelTexture* self) {
+  self->buf = nullptr; self->cap = 0;
+}
+
 // ── Vtable remis au moteur ──────────────────────────────────────────────────
 static FlTextureRegistrar* g_registrar = nullptr;
-static RewampVizTexture*   g_texture   = nullptr;
+static FlTexture*          g_texture   = nullptr;   // GL (EGLImage) ou pixels
 
 static int64_t ops_create(void*) {
   if (!g_registrar) return -1;
-  g_texture = REWAMP_VIZ_TEXTURE(g_object_new(rewamp_viz_texture_get_type(), nullptr));
-  if (!fl_texture_registrar_register_texture(g_registrar, FL_TEXTURE(g_texture))) {
+  g_texture = rewamp_gl_linux_pixel_mode()
+      ? FL_TEXTURE(g_object_new(rewamp_viz_pixel_texture_get_type(), nullptr))
+      : FL_TEXTURE(g_object_new(rewamp_viz_texture_get_type(), nullptr));
+  if (!fl_texture_registrar_register_texture(g_registrar, g_texture)) {
     g_clear_object(&g_texture);
     return -2;
   }
-  return (int64_t)fl_texture_get_id(FL_TEXTURE(g_texture));
+  return (int64_t)fl_texture_get_id(g_texture);
 }
 
 static void ops_mark(void*) {
   if (g_registrar && g_texture)
-    fl_texture_registrar_mark_texture_frame_available(g_registrar, FL_TEXTURE(g_texture));
+    fl_texture_registrar_mark_texture_frame_available(g_registrar, g_texture);
 }
 
 static void ops_destroy(void*) {
   if (g_registrar && g_texture)
-    fl_texture_registrar_unregister_texture(g_registrar, FL_TEXTURE(g_texture));
+    fl_texture_registrar_unregister_texture(g_registrar, g_texture);
   g_clear_object(&g_texture);
 }
 
@@ -271,6 +332,30 @@ void rewamp_audio_plugin_register_with_registrar(FlPluginRegistrar* registrar) {
   }
   void* dpy = derive_flutter_egl_display();
   if (dpy) rewamp_gl_linux_set_display(dpy);
+
+  // Le backend GDK décide de l'API du contexte que Flutter recevra: EGL sous
+  // Wayland, GLX sous X11 (mesuré, docs/FLATPAK.md §5). C'est connu ICI, avant
+  // le premier enregistrement — pas besoin d'attendre populate() pour le voir.
+  // REWAMP_VIZ_PIXEL_MODE=0|1 force le choix — porte de secours pour un
+  // utilisateur, et le seul moyen de comparer les deux chemins sur la MÊME
+  // session (c'est ainsi qu'on a mesuré que le gel au démarrage sous XWayland
+  // n'appartenait pas à ce mode).
+  int pixel = 0;
+#ifdef GDK_WINDOWING_X11
+  {
+    GdkDisplay* gdpy = gdk_display_get_default();
+    if (gdpy && GDK_IS_X11_DISPLAY(gdpy)) {
+      pixel = 1;
+      rewamp_viz_linux_set_display_is_x11(1);   // « toujours au premier plan » s'y débloque
+    }
+  }
+#endif
+  if (const char* force = getenv("REWAMP_VIZ_PIXEL_MODE")) pixel = (force[0] == '1');
+  if (pixel) {
+    rewamp_gl_linux_set_pixel_mode(1);
+    fprintf(stderr, "[rewamp_viz] Flutter en GLX (X11) — visualiseurs en mode "
+                    "PIXELS (relecture CPU)\n");
+  }
 
   static const RewampLinuxTextureOps ops = {
       nullptr, ops_create, ops_mark, ops_destroy};

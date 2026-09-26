@@ -26,15 +26,18 @@
 #include "../rewamp_audio.h"
 #include "../rewamp_gl.h"
 #include "rewamp_gl_linux.h"   // les attributs de visibilite du pont
+#include "rewamp_viz_linux.h"  // rewamp_viz_stats_lap
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
 #include <GLES2/gl2ext.h>   // glEGLImageTargetTexture2DOES
 
+#include <dlfcn.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // ── État global ─────────────────────────────────────────────────────────────
@@ -48,6 +51,180 @@ static int g_width = 0, g_height = 0;
 // Display fourni par le plugin GTK (déduit de GdkDisplay), puis éventuellement
 // corrigé par ce que populate() observe réellement.
 static EGLDisplay g_wanted_dpy = EGL_NO_DISPLAY;
+
+// ── Mode PIXELS (X11 / GLX) — voir rewamp_gl_linux.h ────────────────────────
+static int g_pixel_mode = 0;
+
+// GLX chargé à la demande: le moteur ne lie PAS libGL (il parle EGL/GLES), et
+// il n'a besoin de GLX que pour une chose — écarter le contexte de Flutter le
+// temps du rendu, puis le lui rendre. RTLD_NOLOAD d'abord: si GTK ne l'a pas
+// chargée, personne n'est en GLX et il n'y a rien à écarter.
+typedef void*         (*PFN_glXGetCurrentContext)(void);
+typedef void*         (*PFN_glXGetCurrentDisplay)(void);
+typedef unsigned long (*PFN_glXGetCurrentDrawable)(void);
+typedef unsigned long (*PFN_glXGetCurrentReadDrawable)(void);
+typedef int           (*PFN_glXMakeContextCurrent)(void*, unsigned long, unsigned long, void*);
+static struct {
+    int loaded, ok;
+    PFN_glXGetCurrentContext      GetCurrentContext;
+    PFN_glXGetCurrentDisplay      GetCurrentDisplay;
+    PFN_glXGetCurrentDrawable     GetCurrentDrawable;
+    PFN_glXGetCurrentReadDrawable GetCurrentReadDrawable;
+    PFN_glXMakeContextCurrent     MakeContextCurrent;
+} g_glx;
+
+static void glx_load(void) {
+    if (g_glx.loaded) return;
+    g_glx.loaded = 1;
+    void* h = dlopen("libGLX.so.0", RTLD_NOW | RTLD_NOLOAD);
+    if (!h) h = dlopen("libGL.so.1", RTLD_NOW | RTLD_NOLOAD);
+    if (!h) return;
+    g_glx.GetCurrentContext      = (PFN_glXGetCurrentContext)     dlsym(h, "glXGetCurrentContext");
+    g_glx.GetCurrentDisplay      = (PFN_glXGetCurrentDisplay)     dlsym(h, "glXGetCurrentDisplay");
+    g_glx.GetCurrentDrawable     = (PFN_glXGetCurrentDrawable)    dlsym(h, "glXGetCurrentDrawable");
+    g_glx.GetCurrentReadDrawable = (PFN_glXGetCurrentReadDrawable)dlsym(h, "glXGetCurrentReadDrawable");
+    g_glx.MakeContextCurrent     = (PFN_glXMakeContextCurrent)    dlsym(h, "glXMakeContextCurrent");
+    g_glx.ok = g_glx.GetCurrentContext && g_glx.GetCurrentDisplay && g_glx.GetCurrentDrawable
+            && g_glx.GetCurrentReadDrawable && g_glx.MakeContextCurrent;
+}
+
+// Le contexte GLX de Flutter, mis de côté pendant notre rendu.
+static struct {
+    int saved;
+    void* dpy; unsigned long draw, read; void* ctx;
+} g_glx_saved;
+
+// Rend NOTRE contexte courant sur ce fil. En mode pixels, écarte d'abord le
+// GLX qui s'y trouve — sinon EGL_BAD_ACCESS, la panne d'origine.
+static double lap_now_ms(void) {
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
+}
+
+static EGLBoolean gl_bind(void) {
+    const double t0 = lap_now_ms();
+    const int timed = g_pixel_mode && !g_glx_saved.saved;
+    if (g_pixel_mode && !g_glx_saved.saved) {
+        glx_load();
+        if (g_glx.ok) {
+            void* c = g_glx.GetCurrentContext();
+            if (c) {
+                g_glx_saved.dpy  = g_glx.GetCurrentDisplay();
+                g_glx_saved.draw = g_glx.GetCurrentDrawable();
+                g_glx_saved.read = g_glx.GetCurrentReadDrawable();
+                g_glx_saved.ctx  = c;
+                g_glx_saved.saved = 1;
+                g_glx.MakeContextCurrent(g_glx_saved.dpy, 0, 0, nullptr);
+            }
+        }
+    }
+    const EGLBoolean r = eglMakeCurrent(g_dpy, g_baseSurf, g_baseSurf, g_ctx);
+    if (timed) rewamp_viz_stats_lap(0, lap_now_ms() - t0);
+    return r;
+}
+
+REWAMP_EXPORT void rewamp_gl_release_current(void) {
+    if (!g_glx_saved.saved) return;
+    const double t0 = lap_now_ms();
+    if (g_dpy != EGL_NO_DISPLAY)
+        eglMakeCurrent(g_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    g_glx.MakeContextCurrent(g_glx_saved.dpy, g_glx_saved.draw, g_glx_saved.read, g_glx_saved.ctx);
+    g_glx_saved.saved = 0;
+    rewamp_viz_stats_lap(3, lap_now_ms() - t0);
+}
+
+extern "C" void rewamp_gl_linux_set_pixel_mode(int enabled) { g_pixel_mode = enabled ? 1 : 0; }
+extern "C" int  rewamp_gl_linux_pixel_mode(void)            { return g_pixel_mode; }
+
+// Relecture: deux PBO en alternance (la lecture demandée à l'image N est
+// récupérée à l'image N+1, quand le GPU l'a finie — le mapper tout de suite
+// serait un glFinish déguisé), et UN tampon CPU partagé avec le fil de
+// rastérisation, sous verrou. Le plugin copie depuis ce tampon: une copie de
+// plus (4 Mo à 1280×800), mais aucune question de durée de vie ni de resize.
+static GLuint          g_pbo[2]      = {0, 0};
+static int             g_pbo_cur     = 0;
+static int             g_pbo_primed  = 0;   // le PBO "précédent" porte-t-il une image ?
+static pthread_mutex_t g_px_mutex    = PTHREAD_MUTEX_INITIALIZER;
+static uint8_t*        g_px          = nullptr;   // RGBA, g_px_w × g_px_h
+static int             g_px_w = 0, g_px_h = 0;
+static int             g_px_valid    = 0;
+
+static void _destroy_pbos(void) {
+    if (g_pbo[0]) { glDeleteBuffers(2, g_pbo); g_pbo[0] = g_pbo[1] = 0; }
+    g_pbo_primed = 0;
+    pthread_mutex_lock(&g_px_mutex);
+    g_px_valid = 0;
+    pthread_mutex_unlock(&g_px_mutex);
+}
+
+static void _create_pbos(int w, int h) {
+    _destroy_pbos();
+    if (!g_pixel_mode) return;
+    glGenBuffers(2, g_pbo);
+    for (int i = 0; i < 2; i++) {
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, g_pbo[i]);
+        glBufferData(GL_PIXEL_PACK_BUFFER, (GLsizeiptr)w * h * 4, nullptr, GL_STREAM_READ);
+    }
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    pthread_mutex_lock(&g_px_mutex);
+    if (g_px_w != w || g_px_h != h) {
+        free(g_px);
+        g_px = (uint8_t*)malloc((size_t)w * h * 4);
+        g_px_w = w; g_px_h = h;
+    }
+    g_px_valid = 0;
+    pthread_mutex_unlock(&g_px_mutex);
+}
+
+// Appelé juste après le blit vers le tampon publié `fbo` (contexte courant).
+static void _readback_after_blit(GLuint fbo) {
+    if (!g_pixel_mode || !g_pbo[0] || !g_px) return;
+    // 1. Demander la lecture de CETTE image, asynchrone, dans le PBO courant.
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, g_pbo[g_pbo_cur]);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    const double t0 = lap_now_ms();
+    glReadPixels(0, 0, g_width, g_height, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    rewamp_viz_stats_lap(1, lap_now_ms() - t0);
+    const double t1 = lap_now_ms();
+    // 2. Récupérer celle de l'image PRÉCÉDENTE, que le GPU a eu une image
+    //    entière pour finir.
+    const int prev = g_pbo_cur ^ 1;
+    if (g_pbo_primed) {
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, g_pbo[prev]);
+        const size_t sz = (size_t)g_width * g_height * 4;
+        void* src = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, (GLsizeiptr)sz, GL_MAP_READ_BIT);
+        if (src) {
+            pthread_mutex_lock(&g_px_mutex);
+            if (g_px_w == g_width && g_px_h == g_height) {
+                memcpy(g_px, src, sz);
+                g_px_valid = 1;
+            }
+            pthread_mutex_unlock(&g_px_mutex);
+            glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+        }
+    }
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    if (g_pbo_primed) rewamp_viz_stats_lap(2, lap_now_ms() - t1);
+    g_pbo_primed = 1;
+    g_pbo_cur = prev;
+}
+
+extern "C" int rewamp_gl_linux_copy_front_pixels(uint8_t** buf, size_t* cap, int* w, int* h) {
+    pthread_mutex_lock(&g_px_mutex);
+    if (!g_px_valid || !g_px) { pthread_mutex_unlock(&g_px_mutex); return 0; }
+    const size_t sz = (size_t)g_px_w * g_px_h * 4;
+    if (*cap < sz) {
+        uint8_t* nb = (uint8_t*)realloc(*buf, sz);
+        if (!nb) { pthread_mutex_unlock(&g_px_mutex); return 0; }
+        *buf = nb; *cap = sz;
+    }
+    memcpy(*buf, g_px, sz);
+    *w = g_px_w; *h = g_px_h;
+    pthread_mutex_unlock(&g_px_mutex);
+    return 1;
+}
 
 typedef struct {
     GLuint       colorTex;    // notre texture (notre contexte)
@@ -116,6 +293,7 @@ static int _create_scene(int w, int h) {
     const GLenum st = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     if (st != GL_FRAMEBUFFER_COMPLETE) { _destroy_scene(); return -20; }
+    _create_pbos(w, h);   // ne fait rien hors du mode pixels
     return 0;
 }
 
@@ -191,8 +369,15 @@ REWAMP_EXPORT int rewamp_gl_init(int w, int h) {
 
     g_dpy = (g_wanted_dpy != EGL_NO_DISPLAY) ? g_wanted_dpy
                                              : eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    if (g_dpy == EGL_NO_DISPLAY) return -1;
-    if (!eglInitialize(g_dpy, nullptr, nullptr)) return -2;
+    if (g_dpy == EGL_NO_DISPLAY) {
+        fprintf(stderr, "[rewamp_gl] aucun EGLDisplay (voulu=%p)\n", (void*)g_wanted_dpy);
+        return -1;
+    }
+    if (!eglInitialize(g_dpy, nullptr, nullptr)) {
+        fprintf(stderr, "[rewamp_gl] eglInitialize a échoué sur %p: 0x%x\n",
+                (void*)g_dpy, eglGetError());
+        return -2;
+    }
     eglBindAPI(EGL_OPENGL_ES_API);
 
     // ⚠️ Le display de Flutter n'offre PAS forcément de config pbuffer.
@@ -242,7 +427,13 @@ REWAMP_EXPORT int rewamp_gl_init(int w, int h) {
         g_baseSurf = eglCreatePbufferSurface(g_dpy, g_config, pbufAttrs);
         if (g_baseSurf == EGL_NO_SURFACE) return -4;
     }
-    if (!eglMakeCurrent(g_dpy, g_baseSurf, g_baseSurf, g_ctx)) return -6;
+    if (!gl_bind()) {
+        fprintf(stderr, "[rewamp_gl] eglMakeCurrent a échoué: 0x%x "
+                        "(surfaceless=%d) — un contexte d'une AUTRE API "
+                        "(GLX) est-il courant sur ce fil ?\n",
+                eglGetError(), (int)g_surfaceless);
+        return -6;
+    }
 
     { const int e = _create_scene(w, h); if (e) return e; }
     for (int i = 0; i < 3; i++) { const int e = _create_buf(&g_buf[i], w, h); if (e) return e; }
@@ -253,7 +444,7 @@ REWAMP_EXPORT int rewamp_gl_init(int w, int h) {
 }
 
 REWAMP_EXPORT void rewamp_gl_make_current(void) {
-    if (g_ctx != EGL_NO_CONTEXT) eglMakeCurrent(g_dpy, g_baseSurf, g_baseSurf, g_ctx);
+    if (g_ctx != EGL_NO_CONTEXT) gl_bind();
 }
 
 static unsigned g_gl_generation = 0;
@@ -272,7 +463,7 @@ REWAMP_EXPORT int rewamp_gl_ensure(int width, int height) {
         // La valeur de retour d'eglMakeCurrent était jadis jetée: un contexte
         // détruit sous nos pieds passait inaperçu et le visualiseur dessinait
         // dans le vide.
-        if (eglMakeCurrent(g_dpy, g_baseSurf, g_baseSurf, g_ctx) == EGL_TRUE) return 0;
+        if (gl_bind() == EGL_TRUE) return 0;
         rewamp_gl_uninit();
     }
     const int err = rewamp_gl_init(width, height);
@@ -335,6 +526,7 @@ REWAMP_EXPORT void rewamp_gl_flush(void) {
                       0, g_height, g_width, 0,
                       GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    _readback_after_blit(g_buf[bi].fbo);   // mode pixels seulement
 
     GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     glFlush();   // s'assurer que le fence est réellement soumis
@@ -343,7 +535,11 @@ REWAMP_EXPORT void rewamp_gl_flush(void) {
     if (g_pending >= 0 && g_pendingFence) {
         // Au-delà, le GPU est en vraie difficulté: une frame en retard vaut
         // mieux qu'un fil bloqué pour toujours.
-        glClientWaitSync(g_pendingFence, GL_SYNC_FLUSH_COMMANDS_BIT, 50ull * 1000ull * 1000ull);
+        {
+            const double tw = lap_now_ms();
+            glClientWaitSync(g_pendingFence, GL_SYNC_FLUSH_COMMANDS_BIT, 50ull * 1000ull * 1000ull);
+            rewamp_viz_stats_lap(4, lap_now_ms() - tw);
+        }
         glDeleteSync(g_pendingFence);
         pthread_mutex_lock(&g_swap_mutex);
         const int prevFront = atomic_load(&g_front);
@@ -361,9 +557,10 @@ REWAMP_EXPORT void rewamp_gl_flush(void) {
 
 REWAMP_EXPORT void rewamp_gl_uninit(void) {
     if (g_dpy == EGL_NO_DISPLAY) return;
-    eglMakeCurrent(g_dpy, g_baseSurf, g_baseSurf, g_ctx);
+    gl_bind();
     if (g_pendingFence) { glDeleteSync(g_pendingFence); g_pendingFence = 0; }
     g_pending = -1; g_draw = 1;
+    _destroy_pbos();
     _destroy_scene();
     for (int i = 0; i < 3; i++) _destroy_buf(&g_buf[i]);
     eglMakeCurrent(g_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -374,12 +571,13 @@ REWAMP_EXPORT void rewamp_gl_uninit(void) {
     // ⚠️ PAS d'eglTerminate: le display est PARTAGÉ avec Flutter (c'est tout
     // l'intérêt), le terminer emporterait ses propres ressources.
     g_dpy = EGL_NO_DISPLAY; g_config = nullptr; g_width = 0; g_height = 0;
+    rewamp_gl_release_current();   // le fil retrouve le GLX de Flutter, s'il y en avait un
 }
 
 REWAMP_EXPORT int rewamp_gl_resize(int w, int h) {
     if (w == g_width && h == g_height) return 0;
     g_width = w; g_height = h;
-    eglMakeCurrent(g_dpy, g_baseSurf, g_baseSurf, g_ctx);
+    gl_bind();
     pthread_mutex_lock(&g_swap_mutex);
     if (g_pendingFence) { glDeleteSync(g_pendingFence); g_pendingFence = 0; }
     g_pending = -1;

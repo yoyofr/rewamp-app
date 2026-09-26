@@ -93,7 +93,8 @@ endif()
 # n'est qu'un pont vers le registrar), donc ils se compilent dans ${PLUGIN_NAME}.
 target_sources(${PLUGIN_NAME} PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/../src/linux/rewamp_gl_linux.cc"
-  "${CMAKE_CURRENT_SOURCE_DIR}/../src/linux/rewamp_viz_linux.cc")
+  "${CMAKE_CURRENT_SOURCE_DIR}/../src/linux/rewamp_viz_linux.cc"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../src/linux/rewamp_viz_stats.cc")
 target_compile_definitions(${PLUGIN_NAME} PRIVATE REWAMP_GL_GLES=1)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::REWAMP_EGL)
 

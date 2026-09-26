@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'scrolling_text.dart';
 
 /// Central in-app notification (the "bordereau"). Every transient message goes
 /// through here instead of a raw SnackBar so they all share one compact look:
@@ -244,76 +245,20 @@ class _SnackContent extends StatelessWidget {
                 const SizedBox(width: 8),
               ],
               Expanded(
-                child: _Marquee(
-                  message,
+                // Le même défilement que partout ailleurs (boucle dans un
+                // seul sens, écart, pause au départ), à la cadence qu'avait
+                // le marquee maison du bandeau: 0,7 s de pause, ~70 px/s.
+                child: ScrollingText(
+                  text: message,
                   style: tt.bodySmall?.copyWith(color: fg),
+                  pauseMs: 700,
+                  pixelsPerSecond: 70,
                 ),
               ),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Single-line text that horizontally auto-scrolls (back and forth, looping)
-/// when it doesn't fit, and stays put when it does. Keeps the banner one line
-/// tall regardless of message length.
-class _Marquee extends StatefulWidget {
-  const _Marquee(this.text, {this.style});
-  final String text;
-  final TextStyle? style;
-
-  @override
-  State<_Marquee> createState() => _MarqueeState();
-}
-
-class _MarqueeState extends State<_Marquee> {
-  final _sc = ScrollController();
-  bool _running = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loop());
-  }
-
-  Future<void> _loop() async {
-    if (_running) return;
-    _running = true;
-    // Let the first frame settle, then scroll only if the text overflows.
-    while (mounted && _sc.hasClients) {
-      final max = _sc.position.maxScrollExtent;
-      if (max <= 0) break; // fits — nothing to scroll
-      // Pixels/second → duration; clamp so short and very long strings both
-      // scroll at a readable pace.
-      final ms = (max * 14).clamp(1600, 9000).toInt();
-      await Future.delayed(const Duration(milliseconds: 700));
-      if (!mounted || !_sc.hasClients) break;
-      await _sc.animateTo(_sc.position.maxScrollExtent,
-          duration: Duration(milliseconds: ms), curve: Curves.linear);
-      await Future.delayed(const Duration(milliseconds: 700));
-      if (!mounted || !_sc.hasClients) break;
-      await _sc.animateTo(0,
-          duration: Duration(milliseconds: ms), curve: Curves.linear);
-    }
-    _running = false;
-  }
-
-  @override
-  void dispose() {
-    _sc.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      controller: _sc,
-      scrollDirection: Axis.horizontal,
-      physics: const NeverScrollableScrollPhysics(),
-      child: Text(widget.text, maxLines: 1, style: widget.style),
     );
   }
 }

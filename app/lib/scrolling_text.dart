@@ -2,8 +2,16 @@ import 'dart:async';
 import 'font_fallback.dart';
 import 'package:flutter/material.dart';
 
-/// Single-line text that auto-scrolls (ping-pong) when it overflows its
-/// container.  Static when it fits.
+/// Single-line text that auto-scrolls when it overflows its container.
+/// Static when it fits.
+///
+/// Défilement en BOUCLE, toujours dans le même sens — pas un aller-retour: le
+/// texte est rendu DEUX fois, séparé d'un écart de quelques caractères, et l'on
+/// défile jusqu'à ce que la seconde copie occupe exactement la place de la
+/// première; là, un `jumpTo(0)` ne change pas un pixel à l'écran, et la pause
+/// se fait sur la position de DÉPART — c'est le seul moment où le texte est
+/// immobile, et c'est celui où il est lisible depuis son début. Un aller-retour
+/// faisait relire le texte à l'envers à chaque cycle. Décidé le 2026-09-26.
 class ScrollingText extends StatefulWidget {
   final String     text;
   final TextStyle? style;
@@ -39,6 +47,7 @@ class _ScrollingTextState extends State<ScrollingText> {
   Timer? _timer;
   double _containerWidth = 0;
   double _textWidth = 0;
+  double _gap = 0;
   // Bumped whenever the text changes. An in-flight animateTo() from the OLD
   // (long) text keeps running after the text is swapped — cancelling the timer
   // doesn't stop the awaited animation, and its continuation would re-arm a
@@ -47,6 +56,10 @@ class _ScrollingTextState extends State<ScrollingText> {
   int _gen = 0;
 
   bool get _overflows => _textWidth > _containerWidth + 1;
+
+  /// L'écart entre les deux copies: « quelques caractères », mesurés dans la
+  /// police du texte plutôt que fixés en pixels.
+  static double gapFor(TextStyle style) => (style.fontSize ?? 14) * 3;
 
   @override
   void didUpdateWidget(ScrollingText old) {
@@ -71,14 +84,16 @@ class _ScrollingTextState extends State<ScrollingText> {
     _timer = null;
   }
 
-  void _scheduleScroll({required bool toEnd}) {
+  /// Un cycle: pause au départ, puis UNE longueur de texte plus l'écart, puis
+  /// retour instantané et invisible à zéro. Jamais dans l'autre sens.
+  void _scheduleScroll() {
     _cancel();
     final gen = _gen;
     _timer = Timer(Duration(milliseconds: widget.pauseMs), () async {
       if (!mounted || gen != _gen || !_scroll.hasClients || !_overflows) return;
-      final target = toEnd ? (_textWidth - _containerWidth) : 0.0;
-      final dist   = (target - _scroll.offset).abs();
-      if (dist < 1) { _scheduleScroll(toEnd: !toEnd); return; }
+      final target = _textWidth + _gap;
+      final dist   = target - _scroll.offset;
+      if (dist < 1) { _scroll.jumpTo(0); _scheduleScroll(); return; }
       final ms = (dist / widget.pixelsPerSecond * 1000).round();
       await _scroll.animateTo(
         target,
@@ -87,7 +102,9 @@ class _ScrollingTextState extends State<ScrollingText> {
       );
       // The text may have changed mid-animation (interrupted by jumpTo) — the
       // token guard stops a stale continuation from re-scrolling the new text.
-      if (mounted && gen == _gen) _scheduleScroll(toEnd: !toEnd);
+      if (!mounted || gen != _gen || !_scroll.hasClients) return;
+      _scroll.jumpTo(0);   // la seconde copie était là: rien ne bouge à l'écran
+      _scheduleScroll();
     });
   }
 
@@ -96,34 +113,62 @@ class _ScrollingTextState extends State<ScrollingText> {
     return LayoutBuilder(
       builder: (ctx, constraints) {
         final cw    = constraints.maxWidth.isFinite ? constraints.maxWidth : 0.0;
-        final style = withCjkFallback(widget.style ?? DefaultTextStyle.of(ctx).style);
+        // Le style EFFECTIF (celui que `Text` obtiendrait en fusionnant avec
+        // DefaultTextStyle): les deux copies doivent être au pixel près les
+        // mêmes, sinon le saut se voit.
+        final style = withCjkFallback(
+            DefaultTextStyle.of(ctx).style.merge(widget.style));
         final tp = TextPainter(
           text:      TextSpan(text: widget.text, style: style),
           maxLines:  1,
           textDirection: Directionality.of(ctx),
         )..layout(minWidth: 0, maxWidth: double.infinity);
-        final tw = tp.width;
+        final tw  = tp.width;
+        final gap = gapFor(style);
 
-        if (cw != _containerWidth || tw != _textWidth) {
+        if (cw != _containerWidth || tw != _textWidth || gap != _gap) {
           _containerWidth = cw;
           _textWidth      = tw;
+          _gap            = gap;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             _cancel();
             if (_scroll.hasClients) _scroll.jumpTo(0);
-            if (_overflows) _scheduleScroll(toEnd: true);
+            if (_overflows) _scheduleScroll();
           });
         }
 
+        final overflows = tw > cw + 1;
+        final line = Text(widget.text, style: style, maxLines: 1, softWrap: false);
+        // La copie de relais est un RichText nu: rendu identique (style
+        // effectif, même échelle de texte), mais invisible à `find.text` — un
+        // test qui cherche le libellé n'en trouve qu'UN, comme un lecteur
+        // d'écran n'en entend qu'un. (`Text.rich` ne suffit pas: c'est un
+        // `Text`, que `find.text` reconnaît par son span.)
+        final echo = RichText(
+          text: TextSpan(text: widget.text, style: style),
+          maxLines: 1, softWrap: false, overflow: TextOverflow.clip,
+          textDirection: Directionality.of(ctx),
+          textScaler: MediaQuery.textScalerOf(ctx),
+        );
         final view = ClipRect(
           child: SingleChildScrollView(
             controller:      _scroll,
             scrollDirection: Axis.horizontal,
             physics:         const NeverScrollableScrollPhysics(),
-            child: SizedBox(
-              width: tw > cw ? tw : null,
-              child: Text(widget.text, style: style, maxLines: 1, softWrap: false),
-            ),
+            child: overflows
+                // Deux copies: la seconde prend la place de la première au bout
+                // du cycle. Exclue de la sémantique, sinon un lecteur d'écran
+                // lirait le titre deux fois.
+                ? SizedBox(
+                    width: tw * 2 + gap,
+                    child: Row(children: [
+                      line,
+                      SizedBox(width: gap),
+                      ExcludeSemantics(child: echo),
+                    ]),
+                  )
+                : line,
           ),
         );
         if (!widget.shrinkWrap || !constraints.maxWidth.isFinite) return view;

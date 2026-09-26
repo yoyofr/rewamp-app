@@ -55,6 +55,12 @@ REWAMP_EXPORT RewampResult rewamp_device_suspend(void);
 REWAMP_EXPORT RewampResult rewamp_stop(void);
 
 REWAMP_EXPORT int          rewamp_is_playing(void);
+/* Linux seulement: 1 si GTK a pris le backend X11 (session Xorg, ou XWayland —
+ * le mode jeu du Steam Deck). Posé par le plugin GTK à l'enregistrement, donc
+ * connu avant que Dart ne le demande. Ce qui en dépend: « toujours au premier
+ * plan », qui est de l'EWMH et n'existe QUE sous X11 (mesuré: Mutter l'honore
+ * pour une fenêtre XWayland). Ailleurs, le symbole n'existe pas. */
+REWAMP_EXPORT int          rewamp_linux_display_is_x11(void);
 REWAMP_EXPORT double       rewamp_get_position_seconds(void);
 REWAMP_EXPORT double       rewamp_get_duration_seconds(void);
 REWAMP_EXPORT RewampResult rewamp_seek_seconds(double seconds);

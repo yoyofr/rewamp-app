@@ -4,6 +4,9 @@
 #ifndef REWAMP_GL_LINUX_H
 #define REWAMP_GL_LINUX_H
 
+#include <stddef.h>
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -36,6 +39,33 @@ REWAMP_GL_LINUX_API int rewamp_gl_linux_display_rebuild_pending(void);
 // Confronte l'hypothèse du plugin à la réalité observée dans populate().
 // Ne fait rien après le premier appel.
 REWAMP_GL_LINUX_API void rewamp_gl_linux_check_display(void* flutter_egl_display);
+
+// ── Mode PIXELS: le repli quand Flutter est en GLX (X11) ─────────────────────
+//
+// Sous X11, GTK3 donne à Flutter un contexte GLX, et DEUX choses cassent d'un
+// coup: notre contexte EGL ne peut pas devenir courant tant que le GLX l'est
+// sur le même fil (eglMakeCurrent ⇒ EGL_BAD_ACCESS, mesuré le 2026-09-25 — le
+// mode jeu du Steam Deck, gamescope ⇒ XWayland), et une EGLImage ne s'importe
+// pas dans un contexte GLX de toute façon. Le repli: on RELÂCHE le GLX de
+// Flutter le temps de notre rendu et on le lui rend après; et l'image publiée
+// est RELUE sur le processeur (PBO asynchrone, une image de retard) puis
+// remise à Flutter comme tampon de pixels, qui s'upload dans n'importe quel
+// contexte. Plus lent que zéro-copie, mais ça marche partout où X11 existe.
+//
+// Posé par le plugin AVANT tout enregistrement, d'après le backend GDK.
+REWAMP_GL_LINUX_API void rewamp_gl_linux_set_pixel_mode(int enabled);
+REWAMP_GL_LINUX_API int  rewamp_gl_linux_pixel_mode(void);
+
+// Copie l'image publiée dans le tampon de l'appelant (réalloué au besoin), en
+// RGBA, dans l'ordre des lignes qu'un glTexImage2D attend. Rend 0 si rien n'a
+// encore été publié. Fil de rastérisation.
+REWAMP_GL_LINUX_API int rewamp_gl_linux_copy_front_pixels(uint8_t** buf, size_t* cap,
+                                                          int* w, int* h);
+
+// Rend au fil le contexte qu'il avait AVANT notre rendu (le GLX de Flutter,
+// en mode pixels). Sans effet hors de ce mode. À appeler à chaque sortie vers
+// Dart qui a pu rendre notre contexte courant.
+REWAMP_GL_LINUX_API void rewamp_gl_release_current(void);
 
 #ifdef __cplusplus
 }

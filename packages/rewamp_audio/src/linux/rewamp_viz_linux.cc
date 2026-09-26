@@ -38,10 +38,15 @@
 // pour pourquoi Linux a deux bibliothèques là où les autres plateformes n'en
 // ont qu'une.
 #include <stdio.h>
+#include <time.h>
 #include "rewamp_viz_linux.h"
 #include "rewamp_gl_linux.h"
 
 static RewampLinuxTextureOps g_ops = {nullptr, nullptr, nullptr, nullptr};
+static int g_display_is_x11 = 0;   // posé par le plugin GTK, voir rewamp_audio.h
+
+extern "C" REWAMP_VIZ_LINUX_API
+void rewamp_viz_linux_set_display_is_x11(int yes) { g_display_is_x11 = yes ? 1 : 0; }
 static int64_t g_texture_id = -1;
 static bool    g_have_texture = false;
 
@@ -81,7 +86,22 @@ static int64_t viz_register_common(int mode, int width, int height) {
         rewamp_gl_resize(width, height);
 
     const int err = viz_init_mode(mode, width, height);
-    if (err != 0) return (int64_t)err;
+    // ⚠️ En mode pixels (X11), l'init a écarté le GLX de Flutter pour lier le
+    // nôtre: on le lui rend AVANT de retourner vers Dart, sinon la prochaine
+    // image de Flutter se dessine dans le vide. Sans effet sous Wayland.
+    rewamp_gl_release_current();
+    if (err != 0) {
+        // ⚠️ Un enregistrement qui ÉCHOUE rendait un code négatif que Dart
+        // traite en silence: le widget affiche un rectangle NOIR, et rien,
+        // nulle part, ne dit pourquoi. C'est ce qui a rendu le diagnostic du
+        // mode jeu (Steam Deck, 2026-09-25) plus long qu'il n'aurait dû: on a
+        // d'abord cru au trou EGLImage/GLX documenté, alors que le contexte
+        // n'était même pas créé. Un échec DOIT se nommer.
+        fprintf(stderr, "[rewamp_viz] enregistrement du mode %d en %dx%d "
+                        "ÉCHOUE -> %d (voir rewamp_gl_init)\n",
+                mode, width, height, err);
+        return (int64_t)err;
+    }
     if (reuse) return g_texture_id;
 
     g_texture_id = g_ops.create(g_ops.user);
@@ -105,6 +125,7 @@ static int viz_init_mode(int mode, int w, int h) {
 }
 
 static void viz_render_and_notify(void) {
+    rewamp_viz_stats_render_begin();
     // ⚠️ L'EGLDisplay de Flutter n'est observable que depuis populate(), donc
     // APRÈS que notre contexte et nos EGLImage existent. Quand il diffère du
     // nôtre (c'est le cas sous Wayland/Mesa, mesuré), les images publiées ne
@@ -126,6 +147,7 @@ static void viz_render_and_notify(void) {
         }
     }
 
+    struct timespec _ts0; clock_gettime(CLOCK_MONOTONIC, &_ts0);
     switch (g_viz_mode) {
         case 1:  rewamp_scope_render();      break;
         case 2:  rewamp_noteviz_render();    break;
@@ -137,10 +159,18 @@ static void viz_render_and_notify(void) {
         case 6:  rewamp_pianoviz_render();   break;
         default: rewamp_viz_render();        break;
     }
+    {   // l'appel entier du renderer (CPU + soumission GL + fence + relecture)
+        struct timespec _ts1; clock_gettime(CLOCK_MONOTONIC, &_ts1);
+        rewamp_viz_stats_lap(5, (_ts1.tv_sec - _ts0.tv_sec) * 1e3 + (_ts1.tv_nsec - _ts0.tv_nsec) / 1e6);
+    }
     if (g_have_texture && g_ops.mark) g_ops.mark(g_ops.user);
+    rewamp_gl_release_current();   // mode pixels: Flutter retrouve son GLX
+    rewamp_viz_stats_render_end();
 }
 
 extern "C" {
+
+REWAMP_EXPORT int rewamp_linux_display_is_x11(void) { return g_display_is_x11; }
 
 REWAMP_EXPORT int64_t rewamp_viz_register(int w, int h)        { return viz_register_common(0, w, h); }
 REWAMP_EXPORT int64_t rewamp_scope_register(int w, int h)      { return viz_register_common(1, w, h); }
@@ -163,7 +193,9 @@ REWAMP_EXPORT void    rewamp_projectm_render_and_notify(void) { viz_render_and_n
 
 REWAMP_EXPORT int rewamp_viz_resize_register(int w, int h) {
     if (rewamp_gl_width() == w && rewamp_gl_height() == h) return 0;
-    return rewamp_gl_resize(w, h);
+    const int r = rewamp_gl_resize(w, h);
+    rewamp_gl_release_current();
+    return r;
 }
 
 // ⚠️ Le fil qui appelle ceci est le fil PRINCIPAL, et sous Linux Flutter y

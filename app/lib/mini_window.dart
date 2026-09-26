@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:rewamp_audio/rewamp_audio.dart';
 import 'user_settings.dart';
 
 /// Mode « mini lecteur » du bureau (macOS, Linux, Windows) + « toujours au
@@ -74,16 +75,22 @@ class MiniWindow extends ChangeNotifier {
   static bool get supported =>
       !kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows);
 
-  /// « Toujours au premier plan » n'est PAS offert sur Linux.
+  /// « Toujours au premier plan » n'est offert sur Linux que sous X11.
   ///
-  /// `window_manager` le fait par de l'EWMH (X11); sous Wayland l'appel n'émet
-  /// AUCUN message de protocole (mesuré le 2026-09-20) et ne fait rien. Forcer
-  /// X11 pour le rendre effectif rendait NOIRS tous les visualiseurs GL (GTK3 y
-  /// donne un contexte GLX, leurs images passent par EGLImage) — annulé. Le
-  /// compositeur, lui, le propose dans son menu de fenêtre (Alt+Espace sous
-  /// GNOME), ce qui marche: un interrupteur de l'app n'y ajouterait qu'un
-  /// réglage qui ment. Voir docs/FLATPAK.md §5.
-  static bool get alwaysOnTopSupported => supported && !Platform.isLinux;
+  /// `window_manager` le fait par de l'EWMH (`_NET_WM_STATE_ABOVE`), qui
+  /// n'existe que sous X11: sous Wayland l'appel n'émet AUCUN message de
+  /// protocole (mesuré le 2026-09-20) et ne fait rien — d'où le masquage, un
+  /// interrupteur qui ment étant pire que pas d'interrupteur. Le compositeur,
+  /// lui, le propose dans son menu de fenêtre (Alt+Espace sous GNOME).
+  ///
+  /// Sous X11 en revanche — session Xorg, ou XWayland, ce qu'est le mode jeu
+  /// du Steam Deck — ça marche, et Mutter honore l'état même pour une fenêtre
+  /// XWayland (mesuré le 2026-09-26: rewamp reste au-dessus d'une fenêtre
+  /// ouverte APRÈS elle, et repasse dessous une fois l'état retiré). Le
+  /// backend est connu du plugin GTK avant tout affichage, donc la décision
+  /// se prend une fois, au démarrage. Voir docs/FLATPAK.md §5.
+  static bool get alwaysOnTopSupported =>
+      supported && (!Platform.isLinux || RewampAudio().linuxDisplayIsX11);
 
   bool _ready = false;
   bool _busy = false;
@@ -218,8 +225,8 @@ class MiniWindow extends ChangeNotifier {
     // UserSettings notifie pour TOUT réglage: ne toucher au natif que si
     // celui-ci a bougé.
     if (!_ready || want == _appliedOnTop) return;
-    // Linux: réglage masqué — une valeur restée à vrai d'avant ne doit pas
-    // agir, puisque plus rien ne permet de la remettre à faux.
+    // Linux/Wayland: réglage masqué — une valeur restée à vrai d'avant ne
+    // doit pas agir, puisque plus rien ne permet de la remettre à faux.
     if (!alwaysOnTopSupported) return;
     _appliedOnTop = want;
     windowManager.setAlwaysOnTop(want).catchError((Object e) {

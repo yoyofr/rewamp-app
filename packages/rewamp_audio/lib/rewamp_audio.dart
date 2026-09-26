@@ -444,6 +444,7 @@ class RewampAudio {
   _VizWakeDart?              _vizWakeFn;
   _VizShouldRenderDart?      _vizShouldRenderFn;
   _VizShouldRenderDart?      _vizFrameDueFn;
+  _IsPlayingDart?            _linuxDisplayIsX11Fn;
   _ScopeSetGridDart?         _vizSetMaxFpsFn;
   _VizClearArtworkDart?      _vizClearArtworkFn;
   _ScopeSetGridDart?         _scopeSetGridFn;
@@ -784,6 +785,12 @@ class RewampAudio {
         _vizWakeFn           = _lib.lookupFunction<_VizWakeNative,           _VizWakeDart>          ('rewamp_viz_wake');
         _vizShouldRenderFn   = _lib.lookupFunction<_VizShouldRenderNative,   _VizShouldRenderDart>  ('rewamp_viz_should_render');
         _vizFrameDueFn       = _lib.lookupFunction<_VizShouldRenderNative,   _VizShouldRenderDart>  ('rewamp_viz_frame_due');
+        // Linux seulement (le symbole n'existe pas ailleurs — d'où le try/catch
+        // partagé): 1 si GTK a pris X11, où l'EWMH « toujours au premier plan »
+        // fonctionne. Voir MiniWindow.alwaysOnTopSupported.
+        try {
+          _linuxDisplayIsX11Fn = _lib.lookupFunction<_IsPlayingNative, _IsPlayingDart>('rewamp_linux_display_is_x11');
+        } catch (_) {}
         _vizSetMaxFpsFn      = _lib.lookupFunction<_ScopeSetGridNative,      _ScopeSetGridDart>     ('rewamp_viz_set_max_fps');
         _vizClearArtworkFn  = _lib.lookupFunction<_VizClearArtworkNative,   _VizClearArtworkDart>  ('rewamp_viz_clear_artwork');
       } catch (_) {
@@ -1692,6 +1699,10 @@ class RewampAudio {
   /// une reconstruction de widget: tout ce qui change l'image sans que la
   /// musique avance.
   void vizWake() => _vizWakeFn?.call();
+
+  /// Linux: GTK a-t-il pris le backend X11 (Xorg, ou XWayland — le mode jeu du
+  /// Steam Deck) ? Faux sous Wayland et sur les autres plateformes.
+  bool get linuxDisplayIsX11 => (_linuxDisplayIsX11Fn?.call() ?? 0) != 0;
 
   bool? _vizAwake;
 

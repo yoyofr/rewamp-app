@@ -45,7 +45,7 @@ Several playback engines customization are reusing the work I've done previously
 | **iOS** | 15.0 | Primary target — beta on TestFlight |
 | **Android** | 8.0 (API 26) | Primary target — beta on the Play internal track |
 | **macOS** | 13.0 (Ventura) | Primary target — beta as a notarized DMG |
-| **Linux** | — | In preparation: it builds and plays, not yet released |
+| **Linux** | glibc 2.35 (Ubuntu 22.04, Debian 12) | Released as an AppImage, x86_64 and aarch64 — see [Releases](https://github.com/yoyofr/rewamp-app/releases) |
 | **Windows** | — | Planned |
 
 Android ships **64-bit only** (`arm64-v8a`, `x86_64`). A 32-bit build links and
@@ -55,7 +55,16 @@ runs but silently loses the formats whose codec goes through
 
 These floors come from what the engine needs, not from taste: API 26 is where
 AAudio arrives on Android, and the Apple versions are what the GLES visualizer
-stack and the Flutter toolchain require.
+stack and the Flutter toolchain require. The Linux floor is the glibc of the
+container the AppImage is built in (see `.github/workflows/appimage.yml`).
+
+The AppImage needs `fusermount3` and `/dev/fuse`, present on any modern
+desktop — **not** `libfuse2`, its runtime is statically linked. If mounting
+fails anyway: `./Rewamp-*.AppImage --appimage-extract && ./squashfs-root/AppRun`
+(`--appimage-extract-run` does not exist in this runtime). Audio goes through
+PulseAudio/PipeWire: `libpulse0` must be installed, or everything runs and
+nothing plays. On an X11 session the visualizers use a CPU read-back path,
+slower than the Wayland one but complete.
 
 ## Tech architecture
 
@@ -90,13 +99,27 @@ sound**, joined by FFI.
 
 ## Building from source
 
-Flutter **3.41 or newer** (Dart 3). Then, per platform:
-Xcode for macOS/iOS, the Android SDK +
-NDK for Android, and `clang cmake ninja-build pkg-config
-libgtk-3-dev libegl1-mesa-dev libgles2-mesa-dev libasound2-dev libsecret-1-dev`
-for Linux — plus `libpulse0` at **runtime**, which no `-dev` package pulls in
-and miniaudio only `dlopen`s: without it everything compiles, the app starts,
-and nothing plays.
+Flutter **3.41 or newer** (Dart 3; the Linux CI builds with 3.47.5). Then,
+per platform: Xcode for macOS/iOS, the Android SDK + NDK for Android, and on
+Linux:
+
+```bash
+sudo apt install clang cmake ninja-build pkg-config \
+     libgtk-3-dev libegl1-mesa-dev libgles2-mesa-dev \
+     libasound2-dev libsecret-1-dev libbz2-dev \
+     libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
+sudo apt install libpulse0        # runtime, see below
+```
+
+Two of these hide their absence. The FFmpeg `-dev` packages: without them the
+build **succeeds** and vgmstream silently loses every format whose codec goes
+through FFmpeg (Vorbis, Opus, AAC, ATRAC3, WMA, XMA…) — CMake picks the
+system FFmpeg up through `pkg-config`, or a prebuilt one through
+`REWAMP_FFMPEG_DIR`. And `libpulse0` at **runtime**: no `-dev` package pulls
+it in and miniaudio only `dlopen`s it, so without it everything compiles, the
+app starts, and nothing plays. On Ubuntu 22.04 the stock `clang` is 14 and is
+not enough: install `clang-15` (in the distribution's repositories) and select
+it with `update-alternatives`, as the CI does.
 
 ### 1. Clone, submodules included
 
@@ -196,11 +219,13 @@ REWAMP_WITH_OPENMPT=0 flutter build macos
 
 ### Known gap
 
-The prebuilt **ffmpeg-kit** slices are not redistributed here. Without them
-vgmstream builds without FFmpeg and loses the formats whose codec goes through
-it; everything else is unaffected. Drop your own under
+The prebuilt **ffmpeg-kit** slices for Android are not redistributed here.
+Without them vgmstream builds without FFmpeg and loses the formats whose codec
+goes through it; everything else is unaffected. Drop your own under
 `packages/rewamp_audio/third_party/ffmpeg-kit/android-{arm64,x86_64}/ffmpeg/`,
-or point CMake at a build with `-DREWAMP_FFMPEG_DIR=…`.
+or point CMake at a build with `REWAMP_FFMPEG_DIR` (environment or `-D`). On
+Linux the system FFmpeg is found through `pkg-config` instead, and the
+AppImage carries its own minimal build (`scripts/appimage/build_ffmpeg_minimal.sh`).
 
 ## Licence
 

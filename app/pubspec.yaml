@@ -4,7 +4,7 @@ publish_to: 'none'
 # The part after "+" is the build number. TestFlight and the Play Console both
 # refuse an upload whose build number is not strictly greater than the last one
 # they accepted — bump it on EVERY upload, even when 0.1.0 does not move.
-version: 0.6.1+13
+version: 0.6.2+14
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
