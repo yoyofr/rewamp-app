@@ -1205,8 +1205,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                           bottom: safe.bottom,
                           left: safe.left,
                           right: safe.right),
+                      // `stateChanges`, PAS le contrôleur: il notifie à chaque
+                      // tick de lecture (250 ms) et tout le lecteur se
+                      // reconstruisait quatre fois par seconde pour une barre
+                      // qui avance — ~28 ms par tick sur le Steam Deck, la
+                      // saccade. Ce qui affiche la POSITION écoute le
+                      // contrôleur lui-même (barre de progression ci-dessous,
+                      // transport plein écran).
                       child: ListenableBuilder(
-                        listenable: widget.controller,
+                        listenable: widget.controller.stateChanges,
                         builder: (context, _) => _buildContent(context, cs),
                       ),
                     ),
@@ -1681,7 +1688,12 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (!fs)
           KeyedSubtree(
               key: const ValueKey('ps-seek-bar'),
-              child: _seekBar(ctrl, textTheme)),
+              // Seul abonné au TICK dans le contenu: le reste écoute
+              // `stateChanges` (voir build).
+              child: ListenableBuilder(
+                listenable: ctrl,
+                builder: (context, _) => _seekBar(ctrl, textTheme),
+              )),
         if (!fs)
           Transform.translate(
             key: const ValueKey('ps-transport'),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'font_fallback.dart';
+import 'text_measure_memo.dart';
 
 import 'package:flutter/material.dart';
 
@@ -59,6 +60,10 @@ class _MarqueeTextState extends State<MarqueeText> {
   int _gen = 0;
   // Longueur d'un cycle (une copie + l'écart), posée au build; 0 = ça tient.
   double _cycle = 0;
+  // Mesures refaites seulement quand texte / style / sens / largeur changent
+  // (voir TextMeasureMemo): une par question posée à chaque build.
+  final _measure = TextMeasureMemo();
+  final _probe = TextMeasureMemo();
 
   @override
   void initState() {
@@ -119,12 +124,8 @@ class _MarqueeTextState extends State<MarqueeText> {
     if (widget.axis == Axis.horizontal) {
       return LayoutBuilder(builder: (ctx, constraints) {
         final cw = constraints.maxWidth.isFinite ? constraints.maxWidth : 0.0;
-        final tp = TextPainter(
-          text: TextSpan(text: widget.text, style: style),
-          maxLines: 1,
-          textDirection: dir,
-        )..layout(minWidth: 0, maxWidth: double.infinity);
-        final tw = tp.width;
+        final tw =
+            _measure.measure(widget.text, style, dir, maxLines: 1).width;
         final gap = (style.fontSize ?? 14) * 3;   // « quelques caractères »
         final overflows = cw > 0 && tw > cw + 1;
         _cycle = overflows ? tw + gap : 0;
@@ -153,19 +154,13 @@ class _MarqueeTextState extends State<MarqueeText> {
     // style et de la police système, et une fenêtre approximative coupe une
     // ligne en deux. Le texte replié est mesuré à la largeur du conteneur pour
     // savoir s'il déborde; s'il déborde, deux copies séparées d'UNE ligne vide.
-    final probe = TextPainter(
-      text: TextSpan(text: 'Xg', style: style),
-      maxLines: 1,
-      textDirection: dir,
-    )..layout();
-    final lineH = probe.height;
+    final lineH = _probe.measure('Xg', style, dir, maxLines: 1).height;
     return LayoutBuilder(builder: (ctx, constraints) {
       final cw = constraints.maxWidth.isFinite ? constraints.maxWidth : 0.0;
-      final tp = TextPainter(
-        text: TextSpan(text: widget.text, style: style),
-        textDirection: dir,
-      )..layout(minWidth: 0, maxWidth: cw > 0 ? cw : double.infinity);
-      final th = tp.height;
+      final th = _measure
+          .measure(widget.text, style, dir,
+              maxWidth: cw > 0 ? cw : double.infinity)
+          .height;
       final windowH = lineH * widget.maxLines;
       final overflows = cw > 0 && th > windowH + 1;
       _cycle = overflows ? th + lineH : 0;

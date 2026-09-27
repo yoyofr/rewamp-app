@@ -518,7 +518,42 @@ class PlayerController extends ChangeNotifier {
   void dispose() {
     LocalDb.instance.removeListener(_onDbChanged);
     UserSettings.instance.removeListener(_pushForcedLoopSnapshot);
+    _stateChanges.dispose();
     super.dispose();
+  }
+
+  // ── Deux cadences de notification ───────────────────────────────────────────
+  //
+  // Le contrôleur notifie à CHAQUE tick de lecture (250 ms) parce que la
+  // position avance. Un écran qui l'écoute en bloc se reconstruit donc quatre
+  // fois par seconde, même si rien d'autre que la barre n'a bougé. Mesuré sur
+  // le Steam Deck (2026-09-27): le lecteur plein écran ajoutait ~28 ms à chaque
+  // tick — vingt images perdues toutes les cinq secondes, la saccade visible.
+  //
+  // [stateChanges] est le MÊME flux privé des notifications de position seule:
+  // il part pour tout le reste (piste, lecture/pause, file, favori, seek…).
+  // Seuls les sites du tick qui ne changent que position / temps écoulé / durée
+  // passent par [_notifyPositionOnly]; tout autre `notifyListeners()` reste un
+  // changement d'état — le défaut SÛR: un oubli coûte une reconstruction, pas un
+  // affichage figé. Un widget qui affiche la position écoute le contrôleur
+  // lui-même, le reste peut écouter [stateChanges].
+  final _StateChangeNotifier _stateChanges = _StateChangeNotifier();
+  Listenable get stateChanges => _stateChanges;
+  bool _positionOnlyNotify = false;
+
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    if (!_positionOnlyNotify) _stateChanges.fire();
+  }
+
+  void _notifyPositionOnly() {
+    _positionOnlyNotify = true;
+    try {
+      notifyListeners();
+    } finally {
+      _positionOnlyNotify = false;
+    }
   }
 
   /// Durée d'UNE passe du morceau chargé, telle que transmise au moteur
@@ -2136,7 +2171,7 @@ class PlayerController extends ChangeNotifier {
           position = disp;
           elapsedPosition = e;
           if (d != duration) duration = d;
-          notifyListeners();
+          _notifyPositionOnly();
         }
       }
       return;
@@ -2304,11 +2339,18 @@ class PlayerController extends ChangeNotifier {
         elapsedShown != elapsedPosition ||
         dShown != duration ||
         plShown != isPlaying) {
+      // Lecture/pause qui bascule = un changement d'ÉTAT (le glyphe du
+      // transport en dépend); le reste n'est que la position qui avance.
+      final stateChanged = plShown != isPlaying;
       position  = pShown;
       elapsedPosition = elapsedShown;
       duration  = dShown;
       isPlaying = plShown;
-      notifyListeners();
+      if (stateChanged) {
+        notifyListeners();
+      } else {
+        _notifyPositionOnly();
+      }
     }
   }
 
@@ -2420,7 +2462,7 @@ class PlayerController extends ChangeNotifier {
         position = shown;
         elapsedPosition = elapsed;
         duration = total;
-        notifyListeners();
+        _notifyPositionOnly();
       }
       return;
     }
@@ -2453,7 +2495,7 @@ class PlayerController extends ChangeNotifier {
       position = elapsed;
       elapsedPosition = elapsed;
       duration = total;
-      notifyListeners();
+      _notifyPositionOnly();
     }
   }
 
@@ -2754,4 +2796,11 @@ class PlayerController extends ChangeNotifier {
       ..addAll(entries);
     notifyListeners();
   }
+}
+
+
+/// Le flux « tout sauf la position » de [PlayerController.stateChanges].
+/// Une sous-classe seulement parce que `notifyListeners` est protégé.
+class _StateChangeNotifier extends ChangeNotifier {
+  void fire() => notifyListeners();
 }

@@ -1,5 +1,7 @@
+
 import 'dart:async';
 import 'font_fallback.dart';
+import 'text_measure_memo.dart';
 import 'package:flutter/material.dart';
 
 /// Single-line text that auto-scrolls when it overflows its container.
@@ -46,6 +48,9 @@ class _ScrollingTextState extends State<ScrollingText> {
   final _scroll = ScrollController();
   Timer? _timer;
   double _containerWidth = 0;
+  // Mesure du libellé, refaite seulement quand texte / style / sens changent:
+  // ce widget est reconstruit à chaque tick de lecture dans le lecteur.
+  final _measure = TextMeasureMemo();
   double _textWidth = 0;
   double _gap = 0;
   // Bumped whenever the text changes. An in-flight animateTo() from the OLD
@@ -118,12 +123,9 @@ class _ScrollingTextState extends State<ScrollingText> {
         // mêmes, sinon le saut se voit.
         final style = withCjkFallback(
             DefaultTextStyle.of(ctx).style.merge(widget.style));
-        final tp = TextPainter(
-          text:      TextSpan(text: widget.text, style: style),
-          maxLines:  1,
-          textDirection: Directionality.of(ctx),
-        )..layout(minWidth: 0, maxWidth: double.infinity);
-        final tw  = tp.width;
+        final tw  = _measure
+            .measure(widget.text, style, Directionality.of(ctx), maxLines: 1)
+            .width;
         final gap = gapFor(style);
 
         if (cw != _containerWidth || tw != _textWidth || gap != _gap) {

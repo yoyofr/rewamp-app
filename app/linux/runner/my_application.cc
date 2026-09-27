@@ -10,6 +10,9 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  // Référence gardée sur le moteur pour l'ARRÊTER nous-mêmes à la fin de la
+  // boucle, avant la sortie du processus (voir window_delete_cb et shutdown).
+  FlEngine* engine;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -17,6 +20,35 @@ G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
+}
+
+// Fermeture de la fenêtre: quitter la boucle SANS détruire la fenêtre.
+//
+// ⚠️ Pourquoi ce gestionnaire existe. `window_manager` (à l'enregistrement de
+// son greffon) DÉCONNECTE le `delete-event` de FlView — celui qui demandait à
+// Dart la permission de sortir puis quittait proprement — et pose le sien, qui
+// rend « empêcher la fermeture » (faux chez nous). GTK DÉTRUISAIT alors la
+// fenêtre, donc la vue et son compositeur, pendant que le moteur tournait
+// encore: le fil de rendu présentait une image dans un compositeur libéré.
+// Symptômes: SIGSEGV à la sortie sur le Steam Deck (rappel de `FlTaskRunner`
+// sur de la mémoire libérée), SIGABRT « g_mutex_clear() called on
+// uninitialised or locked mutex » sur la VM de dev — 2 fermetures sur 3.
+//
+// On fait donc ce que fait Flutter lui-même (`quit_application` de
+// fl_platform_handler.cc): détacher les fenêtres de l'application, puis
+// quitter la boucle. Connecté APRÈS les greffons: si un jour Dart empêche la
+// fermeture (`setPreventClose(true)`), le gestionnaire de `window_manager`
+// rend TRUE et l'émission s'arrête avant d'arriver ici.
+static gboolean window_delete_cb(GtkWidget* window, GdkEvent* event,
+                                 gpointer user_data) {
+  GApplication* app = G_APPLICATION(user_data);
+  g_autoptr(GList) windows =
+      g_list_copy(gtk_application_get_windows(GTK_APPLICATION(app)));
+  for (GList* l = windows; l != nullptr; l = l->next) {
+    gtk_window_set_application(GTK_WINDOW(l->data), nullptr);
+  }
+  g_application_quit(app);
+  return TRUE;
 }
 
 // Implements GApplication::activate.
@@ -89,6 +121,12 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
+  // APRÈS fl_register_plugins: window_manager vient de retirer le gestionnaire
+  // de fermeture de FlView (voir window_delete_cb).
+  self->engine = FL_ENGINE(g_object_ref(fl_view_get_engine(view)));
+  g_signal_connect(window, "delete-event", G_CALLBACK(window_delete_cb),
+                   application);
+
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
@@ -124,9 +162,18 @@ static void my_application_startup(GApplication* application) {
 
 // Implements GApplication::shutdown.
 static void my_application_shutdown(GApplication* application) {
-  // MyApplication* self = MY_APPLICATION(object);
+  MyApplication* self = MY_APPLICATION(application);
 
-  // Perform any actions required at application shutdown.
+  // Arrêter le moteur MAINTENANT, boucle finie mais GTK et GL encore vivants.
+  // Sans ça ses fils de rendu et d'E/S tournent encore pendant `exit()` et
+  // meurent dans le pilote GL qu'on démonte sous eux (mesuré: 2 sorties sur 10
+  // plantaient encore dans Mesa avec window_delete_cb seul). La destruction du
+  // moteur appelle FlutterEngineShutdown, qui JOINT ces fils. Garder la
+  // référence sans cet arrêt ne suffit pas: c'est ce qui prolongeait la course.
+  if (self->engine != nullptr) {
+    g_object_run_dispose(G_OBJECT(self->engine));
+    g_clear_object(&self->engine);
+  }
 
   G_APPLICATION_CLASS(my_application_parent_class)->shutdown(application);
 }
