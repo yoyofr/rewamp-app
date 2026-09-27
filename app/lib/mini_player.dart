@@ -144,8 +144,11 @@ class _MiniPlayerState extends State<MiniPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    // `stateChanges`: la barre ne se reconstruit plus à chaque tick de lecture
+    // (250 ms); seule sa fine barre de progression écoute le contrôleur
+    // lui-même (voir _MiniPlayerBar).
     return ListenableBuilder(
-      listenable: widget.controller,
+      listenable: widget.controller.stateChanges,
       builder: (context, _) {
         if (!widget.controller.hasFile) return const SizedBox.shrink();
         final bar = _MiniPlayerBar(
@@ -244,9 +247,6 @@ class _MiniPlayerBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final progress = controller.duration > 0
-        ? (controller.position / controller.duration).clamp(0.0, 1.0)
-        : 0.0;
 
     // EXPÉRIMENTATION verre: la dalle devient transparente et c'est GlassChrome
     // qui porte le fond. `Material` reste (ripple de l'InkWell, élévation du
@@ -443,21 +443,32 @@ class _MiniPlayerBar extends StatelessWidget {
                           // borne. Ajouter ici sans reprendre là ferait
                           // déborder.
                           const SizedBox(height: 2),
-                          TweenAnimationBuilder<double>(
-                            tween: Tween<double>(end: progress),
-                            duration: const Duration(milliseconds: 230),
-                            curve: Curves.linear,
-                            builder: (_, v, __) => LinearProgressIndicator(
-                              value: v,
-                              minHeight: 3,
-                              borderRadius: BorderRadius.circular(2),
-                              color: cs.primary,
-                              // Sur le verre, le fond par défaut disparaît
-                              // selon ce qui passe derrière: un voile tiré de
-                              // `onSurface` tient dans les deux thèmes.
-                              backgroundColor:
-                                  cs.onSurface.withValues(alpha: 0.22),
-                            ),
+                          // Seul abonné au TICK de la barre: le reste écoute
+                          // `stateChanges` (voir MiniPlayer.build).
+                          ListenableBuilder(
+                            listenable: controller,
+                            builder: (_, __) {
+                              final progress = controller.duration > 0
+                                  ? (controller.position / controller.duration)
+                                      .clamp(0.0, 1.0)
+                                  : 0.0;
+                              return TweenAnimationBuilder<double>(
+                                tween: Tween<double>(end: progress),
+                                duration: const Duration(milliseconds: 230),
+                                curve: Curves.linear,
+                                builder: (_, v, __) => LinearProgressIndicator(
+                                  value: v,
+                                  minHeight: 3,
+                                  borderRadius: BorderRadius.circular(2),
+                                  color: cs.primary,
+                                  // Sur le verre, le fond par défaut disparaît
+                                  // selon ce qui passe derrière: un voile tiré
+                                  // de `onSurface` tient dans les deux thèmes.
+                                  backgroundColor:
+                                      cs.onSurface.withValues(alpha: 0.22),
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),

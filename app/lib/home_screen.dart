@@ -343,7 +343,12 @@ class HomeScreen extends StatelessWidget {
             // et sans cette écoute revenir de l'éditeur ne redessinerait rien
             // (le lecteur, lui, n'a pas bougé). `Listenable.merge` plutôt qu'un
             // second builder imbriqué: une seule reconstruction par événement.
-            listenable: Listenable.merge([controller, UserSettings.instance]),
+            // `stateChanges` et non le contrôleur: l'accueil n'affiche aucune
+            // position, et il se reconstruisait ENTIER à chaque tick de
+            // lecture (250 ms) — y compris sous le lecteur plein écran, dont il
+            // retardait le visualiseur (rendu par un ticker sur le même fil).
+            listenable: Listenable.merge(
+                [controller.stateChanges, UserSettings.instance]),
             builder: (context, _) {
               // Chaque section est une LISTE de slivers (un en-tête + son
               // rail), rangée sous son identifiant: l'ordre d'affichage est

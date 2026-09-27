@@ -3869,8 +3869,9 @@ class _AppShellState extends State<AppShell>
       // Le contrôleur aussi: l'apparition du mini-lecteur (premier fichier
       // chargé) doit reconstruire la géométrie — l'animation seule ne tique
       // pas à ce moment-là, et la dalle restait invisible jusqu'au premier
-      // scroll.
-      animation: Listenable.merge([_chromeT, _controller]),
+      // scroll. Son flux d'ÉTAT seulement: la position n'y joue aucun rôle, et
+      // la coquille se reconstruisait sinon à chaque tick de lecture (250 ms).
+      animation: Listenable.merge([_chromeT, _controller.stateChanges]),
       builder: (context, _) {
         final hasMini = _controller.hasFile;
         // The mini player can disappear (stop, delete) while condensed —
@@ -4637,7 +4638,9 @@ class _AppShellState extends State<AppShell>
                   AnimatedBuilder(
                     // _controller aussi: l'inset dépend de hasFile, qui change
                     // sans setState du shell (voir _phoneChrome).
-                    animation: Listenable.merge([_chromeT, _controller]),
+                    // (son flux d'ÉTAT: la position n'y joue aucun rôle)
+                    animation:
+                        Listenable.merge([_chromeT, _controller.stateChanges]),
                     builder: (context, child) => MediaQuery(
                       data: MediaQuery.of(context).copyWith(
                         padding: MediaQuery.of(context).padding.copyWith(
@@ -4759,7 +4762,8 @@ class _AppShellState extends State<AppShell>
                               children: [
                                 Expanded(
                                   child: ListenableBuilder(
-                                    listenable: _controller,
+                                    // File et index: pas de position.
+                                    listenable: _controller.stateChanges,
                                     builder: (context, _) => QueuePanel(
                                       cs: cs,
                                       queue: _sidebarQueue(),
