@@ -5,10 +5,11 @@
 //
 // GL header (<GLES3/gl3.h> on ANGLE, <OpenGL/gl3.h> desktop) is included by the
 // platform wrapper TU before this file, same as the other renderers.
-#if defined(__ANDROID__) || (defined(__linux__) && !defined(__ANDROID__))
+#if defined(__ANDROID__) || (defined(__linux__) && !defined(__ANDROID__)) || defined(_WIN32)
 // Sur Apple, le TU wrapper du podspec inclut l'en-tete GL avant ce fichier; la
-// build cmake (Android et Linux de bureau) le compile directement, donc on le
-// tire nous-memes. Linux prend le meme <GLES3/gl3.h>, servi par Mesa.
+// build cmake (Android, Linux de bureau, Windows) le compile directement, donc
+// on le tire nous-memes. Linux prend le meme <GLES3/gl3.h>, servi par Mesa;
+// Windows le prend dans notre ANGLE (windows/Libs/angle).
 #include <GLES3/gl3.h>
 #endif
 #if defined(__APPLE__)
@@ -16,7 +17,7 @@
 #endif
 
 #include "rewamp_audio.h"
-#include "rewamp_viz_idle.h"   /* plafond de cadence: ce qu'on déclare aux presets */
+#include "rewamp_viz_idle.h"   /* plafond de cadence: borne haute de la cadence déclarée */
 #include "rewamp_waveform.h"
 #include "rewamp_gl.h"
 #include "rewamp_assets.h"  // rewamp_get_data_dir
@@ -28,6 +29,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstdlib>   // abs — hystérésis de la cadence déclarée
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -196,20 +198,90 @@ static int _ensure_pm_target(int w, int h) {
     return 0;
 }
 
+/* ── La cadence DÉCLARÉE aux presets est la cadence MESURÉE ────────────────
+ *
+ * ⚠️ `set_fps` n'est PAS un plafond de rendu: c'est la valeur que les presets
+ * lisent dans leur variable `fps` (ProjectM.cpp: `ctx.fps = m_targetFps`). Ils
+ * s'en servent pour régler leurs amortissements PAR IMAGE — `pow(x, 30/fps)`,
+ * `1 - 0.6/fps` — elle part aussi aux shaders dans `_c2.y`, et `1/fps` sert de
+ * pas de temps au lissage du spectre. MilkDrop y met la cadence RÉELLE;
+ * projectM y met ce qu'on lui déclare.
+ *
+ * On déclarait le plafond (60 par défaut). Juste tant que la machine TIENT le
+ * plafond, faux dès qu'elle ne le tient pas: mesuré le 2026-09-27 sur la VM
+ * Linux arm64, « martin - space debris » rend à 32 img/s en se croyant à 60 —
+ * ses décroissances et son gain automatique (un pic de référence qui décroît de
+ * `0.6/fps` par image) vont deux fois trop lentement en temps réel, le pic
+ * reste haut et le spectre paraît écrasé, sans nerf. Même erreur dans l'autre
+ * sens sans plafond sur un écran 120 Hz.
+ *
+ * Donc: intervalle entre deux rendus projectM, moyenné sur ~50 images,
+ * déclaré au plus une fois par seconde et seulement s'il a bougé de plus de
+ * 10 % — un preset ne doit pas voir sa constante de temps trembler. Mesuré:
+ * avec une moyenne sur ~10 images et un seuil de 2 img/s, la VM déclarait
+ * 26, 30, 35, 33, 28, 37… en dix secondes. Borné à [15, plafond].
+ *
+ * Un intervalle de plus de 100 ms (pause, viz en veille, chargement de preset:
+ * mesuré jusqu'à 190 ms) n'est pas une cadence: ignoré. Et rien n'est déclaré
+ * avant 30 intervalles valides — sans quoi la toute première valeur, tirée
+ * d'un seul intervalle, a déclaré 15 img/s au démarrage (mesuré), d'où la
+ * moyenne lente mettait ensuite des secondes à remonter. */
+static double    g_fps_interval_s = 0.0;   // moyenne glissante de l'intervalle
+static long long g_fps_last_ns    = 0;
+static long long g_fps_decl_ns    = 0;
+static int       g_fps_declared   = 0;     // 0 = rien de mesuré encore
+static int       g_fps_samples    = 0;     // intervalles valides accumulés
+
+static int _fps_upper_bound(void) {
+    const int cap = rewamp_viz_max_fps();
+    return cap > 0 ? cap : 240;
+}
+
+static void _declare_measured_fps(long long nowNs) {
+    if (g_fps_last_ns != 0) {
+        const double dt = (double)(nowNs - g_fps_last_ns) / 1e9;
+        if (dt > 0.0 && dt < 0.1) {
+            // Les premiers intervalles en MOYENNE SIMPLE (poids 1/n), puis la
+            // moyenne glissante: la valeur de départ n'est pas un échantillon
+            // isolé qu'il faudrait des secondes pour oublier.
+            ++g_fps_samples;
+            const double w = g_fps_samples < 50 ? 1.0 / g_fps_samples : 0.02;
+            g_fps_interval_s = g_fps_interval_s * (1.0 - w) + dt * w;
+        }
+    }
+    g_fps_last_ns = nowNs;
+    if (g_fps_samples < 30) return;
+    if (g_fps_declared != 0 && nowNs - g_fps_decl_ns < 1000000000LL) return;
+
+    int fps = (int)(1.0 / g_fps_interval_s + 0.5);
+    const int hi = _fps_upper_bound();
+    if (fps > hi) fps = hi;
+    if (fps < 15) fps = 15;
+    const int tol = g_fps_declared / 10 > 2 ? g_fps_declared / 10 : 2;
+    if (g_fps_declared == 0 || abs(fps - g_fps_declared) > tol) {
+        projectm_set_fps(g_pm, fps);
+        static const bool s_log = getenv("REWAMP_VIZ_STATS") != nullptr;
+        if (s_log)
+            fprintf(stderr, "[projectm] cadence déclarée aux presets: %d -> %d img/s\n",
+                    g_fps_declared, fps);
+        g_fps_declared = fps;
+    }
+    g_fps_decl_ns = nowNs;
+}
+
 static void _apply_params(void) {
     if (!g_pm) return;
-    /* ⚠️ `set_fps` n'est PAS un plafond de rendu: c'est la cadence qu'on
-     * DÉCLARE aux presets. `fps` est une variable de leurs équations par frame
-     * (les amortissements MilkDrop s'écrivent couramment `pow(x, 30/fps)`),
-     * elle part aussi aux shaders dans `_c2.y`, et `1/fps` sert de pas de
-     * temps au lissage du spectre. Annoncer 60 en rendant à 120 fait donc
-     * décroître tout ça deux fois trop vite. On annonce le plafond quand il y
-     * en a un, 60 sinon — faute de connaître le rafraîchissement réel ici. Ici
-     * et pas à l'init: le plafond est un réglage, il peut changer en cours de
-     * route. */
+    /* Avant toute mesure, on déclare le plafond (60 sans plafond); la mesure
+     * prend le relais dès les premières images (voir _declare_measured_fps).
+     * Un changement de plafond relance la déclaration, bornée au nouveau. */
     {
         const int cap = rewamp_viz_max_fps();
-        projectm_set_fps(g_pm, cap > 0 ? cap : 60);
+        const int hi  = _fps_upper_bound();
+        int fps = (g_fps_declared > 0) ? g_fps_declared : (cap > 0 ? cap : 60);
+        if (fps > hi) fps = hi;
+        projectm_set_fps(g_pm, fps);
+        g_fps_declared = fps;
+        g_fps_decl_ns  = 0;   // prochaine image: re-décider sous la nouvelle borne
     }
     projectm_set_preset_duration(g_pm, g_preset_duration);
     // Modizer: blend off → soft-cut duration 0 (hard transitions everywhere).
@@ -710,6 +782,7 @@ extern "C" REWAMP_EXPORT void rewamp_projectm_render(void) {
     projectm_pcm_add_int16(g_pm, pcm, 512, PROJECTM_STEREO);
 
     long long ft0 = _prof_now_ns();
+    _declare_measured_fps(ft0);
     mdzRenderInProgress = true;
     projectm_opengl_render_frame_fbo(g_pm, g_pmFbo);
     mdzRenderInProgress = false;

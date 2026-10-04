@@ -12,13 +12,19 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// rewamp_set_data_dir est un export FFI, déclaré REWAMP_EXPORT dans
+// rewamp_audio.h. MSVC refuse qu'un dllexport arrive APRÈS une déclaration nue
+// (C2375): un TU qui incluait cet en-tête avant rewamp_audio.h ne compilait
+// pas (rewamp_plugin_uade.cpp). On tire donc la déclaration exportée d'ici.
+#include "rewamp_audio.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 // Set the root directory under which plugin assets live. `path` is copied.
 // Passing NULL or "" clears it. Safe to call before rewamp_init().
-void rewamp_set_data_dir(const char* path);
+// (Déclaration exportée: rewamp_audio.h.)
 
 // Return the current data dir (never NULL; "" when unset).
 const char* rewamp_get_data_dir(void);

@@ -229,6 +229,9 @@ REWAMP_EXPORT void rewamp_viz_unregister(void) {
         case 6:  rewamp_pianoviz_uninit();   break;
         default: rewamp_viz_uninit();        break;
     }
+    // Fond pochette: voir rewamp_viz_windows.cc — seul l'uninit stéréo
+    // nettoyait, la pochette disparaissait au retour sur un autre viz.
+    art_cleanup();
     if (g_have_texture && g_ops.destroy) g_ops.destroy(g_ops.user);
     g_have_texture = false;
     g_texture_id = -1;

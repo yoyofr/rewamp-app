@@ -302,7 +302,15 @@ stime_ticks_t stime_ticks_per_second()
 }
 #endif
 #ifdef OS_WIN
+/* YOYOFR (rewamp): `force_align_arg_pointer` est un attribut GCC/MinGW qui
+ * realigne la pile a l'entree — necessaire en x86 32 bits, ou un appelant
+ * pouvait livrer une pile mal alignee. L'ABI x64 de Windows GARANTIT
+ * l'alignement, et MSVC n'a pas cet attribut. */
+#ifdef _MSC_VER
+stime_ticks_t stime_ticks()
+#else
 stime_ticks_t __attribute__ ((force_align_arg_pointer)) stime_ticks()
+#endif
 #else
 stime_ticks_t stime_ticks()
 #endif

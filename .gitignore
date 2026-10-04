@@ -42,6 +42,7 @@ DerivedData/
 packages/rewamp_audio/build/
 packages/rewamp_audio/macos/Libs/
 packages/rewamp_audio/ios/Libs/
+packages/rewamp_audio/windows/Libs/
 
 # Pre-compiled third-party XCFrameworks (download manually — see third_party/README.md)
 packages/rewamp_audio/third_party/MetalANGLE/

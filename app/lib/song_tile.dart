@@ -146,8 +146,23 @@ class _SongTileState extends State<SongTile> {
 
   /// A row that IS a whole album (joshw archive / container album: album_id +
   /// several tracks, not an already-expanded track row).
-  bool get _isAlbumRow =>
-      widget.albumRowsAllowed && RewampDb.isAlbumLevelMatch(widget.result);
+  ///
+  /// Une archive d'album PSF (jw_psf, jw_gsf, jw_ssf…) l'est TOUJOURS, même
+  /// là où l'écran interdit les lignes d'album (`albumRowsAllowed: false`,
+  /// posé pour des listes de pistes): browse_music y rend l'ARCHIVE entière,
+  /// une ligne par album. Prise pour un conteneur à sous-chansons
+  /// (`track_count` > 1), elle ouvrait ContainerSubsongScreen, qui sonde
+  /// l'archive et échoue (« Impossible de lire les pistes ») — seul l'écran
+  /// d'album sait la déplier.
+  bool get _isAlbumRow {
+    final r = widget.result;
+    // isArchiveAlbumRow écarte les PISTES déjà dépliées (trackPosition /
+    // resolvedSubsong): elles portent encore l'url de l'archive.
+    if (RewampDb.isArchiveAlbumRow(r) && RewampDb.isPsfArchiveAlbum([r])) {
+      return true;
+    }
+    return widget.albumRowsAllowed && RewampDb.isAlbumLevelMatch(r);
+  }
 
   void _openAlbum(BuildContext ctx) {
     final r = widget.result;

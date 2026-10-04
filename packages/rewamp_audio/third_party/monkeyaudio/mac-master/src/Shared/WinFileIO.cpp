@@ -25,7 +25,7 @@ int CWinFileIO::Open(const wchar_t * pName, BOOL bOpenReadOnly)
     #ifdef _UNICODE
         CSmartPtr<wchar_t> spName((wchar_t *) pName, TRUE, FALSE);    
     #else
-        CSmartPtr<char> spName(GetANSIFromUTF16(pName), TRUE);
+        CSmartPtr<char> spName(CAPECharacterHelper::GetANSIFromUTF16(pName), TRUE);
     #endif
 
 #ifdef SHNTOOL
@@ -146,7 +146,7 @@ int CWinFileIO::Create(const wchar_t * pName)
     #ifdef _UNICODE
         CSmartPtr<wchar_t> spName((wchar_t *) pName, TRUE, FALSE);    
     #else
-        CSmartPtr<char> spName(GetANSIFromUTF16(pName), TRUE);
+        CSmartPtr<char> spName(CAPECharacterHelper::GetANSIFromUTF16(pName), TRUE);
     #endif
 
 #ifdef SHNTOOL
@@ -179,7 +179,7 @@ int CWinFileIO::Delete()
     #ifdef _UNICODE
         CSmartPtr<wchar_t> spName(m_cFileName, TRUE, FALSE);    
     #else
-        CSmartPtr<char> spName(GetANSIFromUTF16(m_cFileName), TRUE);
+        CSmartPtr<char> spName(CAPECharacterHelper::GetANSIFromUTF16(m_cFileName), TRUE);
     #endif
 
     return DeleteFile(spName) ? 0 : -1;

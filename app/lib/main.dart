@@ -34,6 +34,7 @@ import 'artwork_image.dart';
 import 'library_identity.dart';
 import 'local_open.dart';
 import 'opened_files.dart';
+import 'portable_path.dart';
 import 'storage_roots.dart';
 import 'app_theme.dart';
 
@@ -78,23 +79,28 @@ const _bundledAssetDirs = <String>[
 /// an installed app, so "han." files kept failing with backend="").
 // 4: +7 martin milkdrop presets; 5: preset culling + stale-file sync on bump;
 // 7: test.milk retiré (le bump seul le purge des installations existantes)
-const _kBundledAssetsVersion = 8;
+// 9: +textures/heartfelt2.jpg — la texture de bruit par défaut du convertisseur
+//    Milkwave, que lit « oneshade - Koch Snowflake Kaleidoscope ». Absente,
+//    projectM la remplaçait par un pixel NOIR: image noire partout.
+const _kBundledAssetsVersion = 9;
 
 /// Copy bundled assets into `{appSupport}/rewamp_data/` (preserving their
 /// sub-path under assets/) and return that root so native code can load them.
 Future<String> _prepareDataDir() async {
   final support = await getApplicationSupportDirectory();
-  final root = Directory('${support.path}/rewamp_data');
+  // Racine NATIVE; les clés d'assets (toujours en '/') s'y joignent par
+  // joinPortable, jamais par concaténation (chemins mélangés sous Windows).
+  final root = Directory(p.join(support.path, 'rewamp_data'));
 
   // Version stamp: on mismatch, overwrite everything once, then restamp.
-  final stamp = File('${root.path}/.assets_version');
+  final stamp = File(p.join(root.path, '.assets_version'));
   final fresh =
       !await stamp.exists() || await stamp.readAsString() != '$_kBundledAssetsVersion';
 
   Future<void> copy(String key) async {
     // Strip the leading "assets/" so on-disk layout is e.g. c64/kernal.c64.
     final rel = key.startsWith('assets/') ? key.substring(7) : key;
-    final out = File('${root.path}/$rel');
+    final out = File(joinPortable(root.path, rel));
     if (!fresh && await out.exists()) return; // already copied, same version
     await out.parent.create(recursive: true);
     final data = await rootBundle.load(key);
@@ -137,11 +143,17 @@ Future<String> _prepareDataDir() async {
           if (r.contains('/')) r.substring(0, r.lastIndexOf('/')),
       };
       for (final d in owned) {
-        final dir = Directory('${root.path}/$d');
+        final dir = Directory(joinPortable(root.path, d));
         if (!await dir.exists()) continue;
         await for (final e in dir.list()) {
           if (e is! File) continue;
-          final rel = e.path.substring(root.path.length + 1);
+          // ⚠️ `/` partout: les clés d'assets s'écrivent avec `/`, mais sous
+          // Windows `Directory.list()` rend des chemins en `\`. Sans cette
+          // normalisation AUCUN fichier ne correspondait, et chaque passage de
+          // version supprimait tout ce qu'il venait de recopier — mesuré le
+          // 2026-10-03: presets et textures projectM, replays sc68 et données
+          // UADE vidés d'un coup (projectM retombait sur son preset par défaut).
+          final rel = portableRelative(e.path, from: root.path);
           if (rel.split('/').last.startsWith('.')) continue;
           if (!rels.contains(rel)) {
             try { await e.delete(); } catch (_) {}
@@ -310,7 +322,22 @@ void main([List<String> args = const []]) async {
   // de la lentille. Sans ça, la première apparition d'une surface en verre
   // coûte la compilation du programme — même problème que la construction du
   // PSO au premier draw côté projectM.
-  await LiquidGlassShaders.ensureLoaded();
+  //
+  // ⚠️ `ensureLensLoaded` et PAS `ensureLoaded`. Depuis la 4.3 du kit,
+  // `ensureLoaded()` compile AUSSI le shader de fusion (`metaball_glass.frag`,
+  // 44 Ko), que seuls `LiquidGlassBlender`/`LiquidGlassMorph` dessinent — et
+  // nous n'utilisons ni l'un ni l'autre (glass_chrome.dart: lentille et vue).
+  // Sous Impeller sur Windows (GLES → ANGLE → Direct3D, sans cache: payé à
+  // CHAQUE lancement) ce shader-là retarde la première image, et le runner
+  // ne montre la fenêtre qu'à cette image. Mesuré le 2026-10-02, première
+  // image: kit 4.3.1, ~25 s (l'app semblait ne jamais s'ouvrir, sans erreur
+  // nulle part); kit 4.3.4, 1,6 s — contre 0,04 s pour la lentille seule.
+  // ⚠️ Le plancher `^4.3.3` du pubspec n'est pas décoratif: c'est la version
+  // où l'auteur a réécrit ces shaders pour ANGLE (voir BUILD_WINDOWS.md §5.10).
+  // L'API est marquée @internal: une montée de version du kit qui la
+  // retirerait casse la COMPILATION, ce qui se voit — c'est le but.
+  // ignore: invalid_use_of_internal_member
+  await LiquidGlassShaders.ensureLensLoaded();
 
   runApp(RewampApp(splashImage: splashImage, splashEffect: splashEffect));
   // Display metrics may not be ready before the first frame (the early lock

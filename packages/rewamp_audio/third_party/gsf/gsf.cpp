@@ -20,8 +20,14 @@
 
 int emulating = 0;
 
+/* rewamp: liaison C. Sound.cpp et rewamp_plugin_gsf.cpp les déclarent
+ * `extern "C"`; sans la même liaison ICI, MSVC décore la définition et les
+ * deux références ne la trouvent plus (GCC/clang ne décorent pas les
+ * variables, d'où un écart resté invisible ailleurs). */
+extern "C" {
 int GSFshoudlReset=0;
 int GSFsndSamplesPerSec;
+}
 
 
 struct EmulatedSystem emulator;

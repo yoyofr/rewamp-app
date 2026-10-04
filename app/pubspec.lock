@@ -520,10 +520,10 @@ packages:
     dependency: "direct main"
     description:
       name: liquid_glass_easy
-      sha256: "5b3f01c8bea8f4f2b88387be9426eef61657cb29a26297ae431a02fed2ac6b95"
+      sha256: "48f2147e8b662402ccef9304cf8c216082b7913ad985ea2ac3d4f402b16ab417"
       url: "https://pub.dev"
     source: hosted
-    version: "4.3.1"
+    version: "4.3.4"
   logging:
     dependency: transitive
     description:

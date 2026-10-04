@@ -4086,24 +4086,56 @@ class AppLocalizationsDa extends AppLocalizations {
   String get releaseNotesTitle => 'Nyheder';
 
   @override
-  String get releaseNotesV7Cpu =>
-      'Appen arbejder ikke længere i baggrunden, når intet afspilles: langt mindre processor og batteri.';
+  String get releaseNotesV8Windows =>
+      'Rewamp kører nu på Windows, med alle motorer og visualiseringerne, projectM inklusive.';
 
   @override
-  String get releaseNotesV7VizIdle =>
-      'Visualiseringer står stille, mens afspilningen er stoppet, og er begrænset til 60 billeder i sekundet (kan justeres).';
+  String get releaseNotesV8Linux =>
+      'Linux: visualiseringerne virker nu også under X11 (Steam Decks spiltilstand), »Altid øverst« er tilbage dér, og at lukke vinduet får ikke længere appen til at gå ned.';
 
   @override
-  String get releaseNotesV7Subsongs =>
-      'Rettet: på PC Engine, Master System og Atari ST (.sndh) startede nogle numre sangen ved siden af.';
+  String get releaseNotesV8Formats =>
+      'Game Boy-filer (.gbr) og DefleMask-filer (.dmf) afspilles nu.';
 
   @override
-  String get releaseNotesV7Piano =>
-      'Klavervisualiseringen forblev tom med PC Engine-musik.';
+  String get releaseNotesV8Smooth =>
+      'Mere flydende afspiller og visualiseringer: skærmen tegnes ikke længere helt om ved hver positionsopdatering.';
 
   @override
-  String get releaseNotesV7Database =>
-      'En database, der er blevet beskadiget af en opdatering, reparerer nu sig selv i stedet for at gøre biblioteket utilgængeligt.';
+  String get releaseNotesV8Scrolling =>
+      'En titel, der er for lang til sin plads, ruller nu i en løkke i én retning i stedet for frem og tilbage.';
+
+  @override
+  String get releaseNotesV8MouseDrag =>
+      'Computere: de vandrette rækker ruller ved at klikke og trække med musen.';
+
+  @override
+  String get releaseNotesV8Presets =>
+      'projectM: pakker med forudindstillinger installeres op til ni gange hurtigere, og store mapper med forudindstillinger bliver ikke længere afkortet.';
+
+  @override
+  String get releaseNotesV8Pause =>
+      'Rettet: pause kunne springe til næste nummer.';
+
+  @override
+  String get releaseNotesV8Psf =>
+      'PSF-album (PlayStation, Nintendo DS…) leveret som ét arkiv foldes nu ud i deres numre, også når de føjes til køen.';
+
+  @override
+  String get releaseNotesV8ArtistTracks =>
+      'Kunstnersider: nummerlisten viser igen numre og ikke arkiver med hele album.';
+
+  @override
+  String get releaseNotesV8VizFixes =>
+      'Visualiseringer: Nintendo 64-stemmer vises og slås korrekt fra, klaveret tilpasser sit udsnit til hvert nummer, og coverbaggrunden forsvinder ikke længere.';
+
+  @override
+  String get releaseNotesV8ProjectMFixes =>
+      'projectM: forudindstillingerne følger den reelle billedfrekvens (nogle reagerede trægt), og to forudindstillinger, der aldrig dukkede op, er der nu.';
+
+  @override
+  String get releaseNotesV8Covers =>
+      'Covers indlæses meget hurtigere: et gitter af album fyldes på én gang i stedet for ét cover hvert halvandet sekund.';
 
   @override
   String get releaseNotesDataReset =>
@@ -4514,46 +4546,6 @@ class AppLocalizationsDa extends AppLocalizations {
 
   @override
   String get miniWindowCoverFit => 'Vis hele omslaget';
-
-  @override
-  String get releaseNotesV7Mt32 =>
-      'Ny Roland MT-32-motor til MIDI-spilmusik, med dine egne ROM-filer. Uden ROM-filer tilpasses en MIDI skrevet til MT-32 til General MIDI.';
-
-  @override
-  String get releaseNotesV7Xmp =>
-      'Ti sjældne modulformater afspilles nu (Archimedes Tracker .musx, .liq, .fnk…).';
-
-  @override
-  String get releaseNotesV7AmigaAdlib =>
-      'Westwoods AdLib-musik (.adl) afspiller alle sine numre, og BP SoundMon V1 genkendes på Amiga.';
-
-  @override
-  String get releaseNotesV7MiniPlayer =>
-      'Mac: en miniafspiller, kompakt eller med visualiseringen, og indstillingen »Altid øverst«.';
-
-  @override
-  String get releaseNotesV7Instruments =>
-      'Oscilloskop, noder og klaver kan navngive og farvelægge hvert instrument, ikke kun hver stemme.';
-
-  @override
-  String get releaseNotesV7Podium =>
-      'Søgning: filtrer de numre, der blev nr. 1, 2 eller 3 i en demoscene-konkurrence.';
-
-  @override
-  String get releaseNotesV7ShortSubsongs =>
-      'For korte delnumre (lydeffekter fra spil) udelades fra »Afspil alle« — tærskel under Indstillinger → Afspilning.';
-
-  @override
-  String get releaseNotesV7LocalFolders =>
-      'Dine importer: slip en hel mappe (arkiver pakkes ud), og opret, omdøb eller flyt mapper.';
-
-  @override
-  String get releaseNotesV7Midi =>
-      'MIDI: trommerne lyder ikke længere som et klaver, og lydstyrken klipper ikke længere.';
-
-  @override
-  String get releaseNotesV7ProjectM =>
-      'projectM: forudindstillinger gentages ikke længere fra én opstart til den næste, og en forudindstilling sorteres ikke længere fejlagtigt fra efter en pause.';
 
   @override
   String get libraryFileMissing => 'Filen mangler';

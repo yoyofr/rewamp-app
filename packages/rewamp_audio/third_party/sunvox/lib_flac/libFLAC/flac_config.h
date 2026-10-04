@@ -156,3 +156,13 @@
 
 /* The size of `void*', as computed by sizeof. */
 //#define SIZEOF_VOIDP sizeof( void* )
+
+/* ===== Override Windows/MSVC (ajoute) =====
+   ⚠️ `private/macros.h` teste `HAVE_SYS_PARAM_H` AVANT `_MSC_VER`. Il a donc
+   une branche MSVC parfaitement bonne (`__min`/`__max` de <stdlib.h>) qui
+   n'etait jamais atteinte, et il tentait d'inclure <sys/param.h>, absent de
+   l'UCRT. Retirer le define suffit: la branche `_MSC_VER` prend le relais.
+   ===== */
+#ifdef _WIN32
+#  undef HAVE_SYS_PARAM_H
+#endif

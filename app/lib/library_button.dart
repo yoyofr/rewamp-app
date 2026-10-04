@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'l10n.dart';
 import 'library_identity.dart';
 import 'local_db.dart';
@@ -174,7 +173,7 @@ class _LibraryButtonState extends State<LibraryButton> {
         final base = splitLibraryRefId(refId).$1;
         await SyncService.recordLocalLibraryChange(
           itemType:   'song',
-          fileName:   base.split(Platform.pathSeparator).last,
+          fileName:   p.basename(base),
           // The app-relative path travels too. Without it the snapshot named a
           // file and nothing else, so the pull could not tell the file was
           // already on this device: it minted a row under the computed

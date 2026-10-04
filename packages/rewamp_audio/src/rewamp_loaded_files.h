@@ -20,6 +20,10 @@
 #ifndef REWAMP_LOADED_FILES_H
 #define REWAMP_LOADED_FILES_H
 
+/* Porte la déclaration EXPORTÉE de rewamp_loaded_files_json() — voir plus bas
+ * pourquoi elle n'est pas redéclarée ici. */
+#include "rewamp_audio.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -33,8 +37,14 @@ void rewamp_loaded_files_reset(void);
 void rewamp_loaded_files_add(const char* path);
 
 /* `[{"name":"mdat.monkey island","size":52014}, …]`, or `[]`.
- * The buffer is static and valid until the next reset/add. */
-const char* rewamp_loaded_files_json(void);
+ * The buffer is static and valid until the next reset/add.
+ *
+ *   const char* rewamp_loaded_files_json(void);
+ *
+ * ⚠️ Déclarée dans rewamp_audio.h (inclus ci-dessus), avec REWAMP_EXPORT, et
+ * NULLE PART ailleurs: une seconde déclaration sans l'export passe chez GCC et
+ * clang, mais MSVC refuse de voir `dllexport` arriver APRÈS une déclaration
+ * nue (C2375 « liaison différente »), dans chaque TU qui inclut les deux. */
 
 #ifdef __cplusplus
 }

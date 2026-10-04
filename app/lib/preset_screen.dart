@@ -1086,7 +1086,7 @@ class _PmPlaylistDetailState extends State<PmPlaylistDetailScreen> {
                     index: i,
                     child: const Icon(Icons.drag_handle, size: 20),
                   ),
-                  title: Text(it.name ?? it.path.split('/').last,
+                  title: Text(it.name ?? p.basename(it.path),
                       maxLines: 1, overflow: TextOverflow.ellipsis),
                   trailing: IconButton(
                     icon: const Icon(Icons.close, size: 18),
@@ -1217,7 +1217,7 @@ class _UserImportsScreenState extends State<UserImportsScreen> {
               itemCount: _paths.length,
               itemBuilder: (context, i) {
                 final abs = _paths[i];
-                final base = abs.split('/').last;
+                final base = p.basename(abs);
                 final display = base.toLowerCase().endsWith('.milk')
                     ? base.substring(0, base.length - 5)
                     : base;

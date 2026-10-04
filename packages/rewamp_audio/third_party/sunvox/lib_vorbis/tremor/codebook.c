@@ -672,7 +672,9 @@ int decode_map(codebook *s, tremor_oggpack_buffer *b, ogg_int32_t *v, int point)
   }
   case 3:{
     /* offset into array */
-    void *ptr=s->q_val+entry*s->q_pack;
+    /* YOYOFR (rewamp): arithmetique sur `void*`, extension GNU que MSVC
+     * refuse. `char*` designe le meme octet, en C standard. */
+    void *ptr=(char*)s->q_val+entry*s->q_pack;
 
     if(s->q_bits<=8){
       for(i=0;i<s->dim;i++)

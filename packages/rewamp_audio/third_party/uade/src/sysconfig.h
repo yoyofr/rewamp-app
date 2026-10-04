@@ -403,3 +403,22 @@
 /* MODIF PMO */
 #endif
 /* ENDOF MODIF PMO */
+
+/* rewamp: Windows (MSVC). Ce fichier a été GÉNÉRÉ par configure sous Linux;
+ * l'UCRT range utime sous <sys/utime.h>. Le reste (<unistd.h>, <dirent.h>,
+ * <strings.h>, <sys/time.h>) vient de src/windows/compat. */
+#ifdef _WIN32
+#undef HAVE_UTIME_H
+#define HAVE_SYS_UTIME_H 1
+/* Pas de <sys/time.h> dans le coeur: le nôtre (compat) tire winsock2.h donc
+ * windows.h, qui heurte les types de l'émulateur (BOOL…). Le coeur ne s'en
+ * sert que pour gettimeofday(), sous HAVE_GETTIMEOFDAY: statistiques de cadence
+ * et « timehack » de UAE (l'heure de l'hôte donnée au 68k) — rien qui touche
+ * au son; l'amont a déjà le repli (timehack répond « non pris en charge »). */
+#undef HAVE_GETTIMEOFDAY
+#undef HAVE_SYS_TIME_H
+#undef TIME_WITH_SYS_TIME
+/* Pas de sigaction(): uadecore ne s'en sert que pour ignorer Ctrl-C, sans objet
+ * pour un fil de l'app. */
+#undef HAVE_SIGACTION
+#endif

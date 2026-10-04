@@ -4099,24 +4099,56 @@ class AppLocalizationsHu extends AppLocalizations {
   String get releaseNotesTitle => 'Újdonságok';
 
   @override
-  String get releaseNotesV7Cpu =>
-      'Az alkalmazás már nem dolgozik a háttérben, amikor semmi sem szól: sokkal kevesebb processzor- és akkumulátorhasználat.';
+  String get releaseNotesV8Windows =>
+      'A Rewamp mostantól Windowson is fut, az összes motorral és a vizualizációkkal, a projectM-mel együtt.';
 
   @override
-  String get releaseNotesV7VizIdle =>
-      'A vizualizációk megállnak, amíg a lejátszás le van állítva, és legfeljebb 60 képkocka/másodpercre korlátozódnak (állítható).';
+  String get releaseNotesV8Linux =>
+      'Linux: a vizualizációk mostantól X11 alatt is működnek (Steam Deck játékmód), ott ismét elérhető a „Mindig felül” beállítás, és az ablak bezárása már nem okozza az alkalmazás összeomlását.';
 
   @override
-  String get releaseNotesV7Subsongs =>
-      'Javítva: PC Engine, Master System és Atari ST (.sndh) esetén egyes számok a szomszédos dalt indították el.';
+  String get releaseNotesV8Formats =>
+      'Mostantól lejátszhatók a Game Boy .gbr és a DefleMask .dmf fájlok.';
 
   @override
-  String get releaseNotesV7Piano =>
-      'A Zongora vizualizáció üres maradt PC Engine-zenénél.';
+  String get releaseNotesV8Smooth =>
+      'Gördülékenyebb lejátszó és vizualizációk: a képernyő már nem rajzolódik újra teljesen minden pozícióváltozáskor.';
 
   @override
-  String get releaseNotesV7Database =>
-      'A frissítés által megrongált adatbázis most magától helyreáll, ahelyett hogy elérhetetlenné tenné a könyvtárat.';
+  String get releaseNotesV8Scrolling =>
+      'A helyéhez túl hosszú cím mostantól körbe-körbe, egy irányba görög, oda-vissza helyett.';
+
+  @override
+  String get releaseNotesV8MouseDrag =>
+      'Számítógépek: a vízszintes sorok egérrel kattintva és húzva görgethetők.';
+
+  @override
+  String get releaseNotesV8Presets =>
+      'projectM: az előbeállítás-csomagok akár kilencszer gyorsabban települnek, és a nagy előbeállítás-mappák már nem csonkulnak.';
+
+  @override
+  String get releaseNotesV8Pause =>
+      'Javítva: a szüneteltetés a következő számra ugorhatott.';
+
+  @override
+  String get releaseNotesV8Psf =>
+      'Az egyetlen archívumként érkező PSF-albumok (PlayStation, Nintendo DS…) mostantól kibomlanak a számaikra, a sorhoz adáskor is.';
+
+  @override
+  String get releaseNotesV8ArtistTracks =>
+      'Előadói oldalak: a számlista ismét számokat mutat, nem teljes albumok archívumait.';
+
+  @override
+  String get releaseNotesV8VizFixes =>
+      'Vizualizációk: a Nintendo 64 hangjai helyesen jelennek meg és némíthatók, a zongora minden számnál újra igazítja a nézetét, és a borítós háttér már nem tűnik el.';
+
+  @override
+  String get releaseNotesV8ProjectMFixes =>
+      'projectM: az előbeállítások a valós képkockasebességet követik (némelyik lomhán reagált), és két korábban soha meg nem jelenő előbeállítás most már látható.';
+
+  @override
+  String get releaseNotesV8Covers =>
+      'A borítók sokkal gyorsabban töltődnek be: egy albumrács egyszerre telik meg, nem másfél másodpercenként egy borítóval.';
 
   @override
   String get releaseNotesDataReset =>
@@ -4524,46 +4556,6 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get miniWindowCoverFit => 'Teljes borító megjelenítése';
-
-  @override
-  String get releaseNotesV7Mt32 =>
-      'Új Roland MT-32 motor a játékok MIDI-zenéjéhez, a saját ROM-jaiddal. ROM-ok nélkül az MT-32-re írt MIDI a General MIDI-hez igazodik.';
-
-  @override
-  String get releaseNotesV7Xmp =>
-      'Tíz ritka modulformátum is lejátszható (Archimedes Tracker .musx, .liq, .fnk…).';
-
-  @override
-  String get releaseNotesV7AmigaAdlib =>
-      'A Westwood AdLib-zenéi (.adl) minden számukat lejátsszák, a BP SoundMon V1 pedig felismerhető Amigán.';
-
-  @override
-  String get releaseNotesV7MiniPlayer =>
-      'Mac: minilejátszó, kompakt vagy vizualizációval, és „Mindig felül” beállítás.';
-
-  @override
-  String get releaseNotesV7Instruments =>
-      'Az oszcilloszkóp, a kotta és a zongora minden hangszert meg tud nevezni és színezni, nem csak minden szólamot.';
-
-  @override
-  String get releaseNotesV7Podium =>
-      'Keresés: szűrés a demoscene-versenyeken 1., 2. vagy 3. helyezést elért számokra.';
-
-  @override
-  String get releaseNotesV7ShortSubsongs =>
-      'A túl rövid alszámok (játékok hangeffektusai) kimaradnak az „Összes lejátszása” alól — küszöb: Beállítások → Lejátszás.';
-
-  @override
-  String get releaseNotesV7LocalFolders =>
-      'Importjaid: húzz be egy teljes mappát (az archívumok kibontva), és hozz létre, nevezz át vagy helyezz át mappákat.';
-
-  @override
-  String get releaseNotesV7Midi =>
-      'MIDI: a dob többé nem zongoraként szól, és a hangerő sem torzul.';
-
-  @override
-  String get releaseNotesV7ProjectM =>
-      'projectM: az előbeállítások már nem ismétlődnek indításról indításra, és szünet után sem sorolódik ki tévesen egy előbeállítás.';
 
   @override
   String get libraryFileMissing => 'Hiányzó fájl';

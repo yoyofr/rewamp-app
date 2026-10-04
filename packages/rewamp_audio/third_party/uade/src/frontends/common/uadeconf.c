@@ -451,7 +451,11 @@ char *uade_open_create_home(void)
 		struct stat st;
 		snprintf(name, sizeof name, "%s/.uade", home);
 		if (stat(name, &st) != 0)
+#ifdef _WIN32  /* rewamp: mkdir() à un argument sous Windows */
+			mkdir(name);
+#else
 			mkdir(name, S_IRUSR | S_IWUSR | S_IXUSR);
+#endif
 	}
 
 	return home;

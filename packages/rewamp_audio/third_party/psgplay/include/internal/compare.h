@@ -19,10 +19,17 @@
 		typeof(y) unique_y = (y);		\
 		__cmp(unique_x, unique_y, op); })
 
+#if defined(_MSC_VER) && !defined(__clang__)
+/* rewamp: MSVC n'a ni expressions-instructions ni __builtin_choose_expr. La
+ * forme simple évalue ses arguments DEUX fois: vérifié sur tous les appels
+ * compilés, aucun n'a d'effet de bord (docs/BUILD_WINDOWS.md §6.4). */
+#define __careful_cmp(x, y, op) __cmp(x, y, op)
+#else
 #define __careful_cmp(x, y, op) \
 	__builtin_choose_expr(__safe_cmp(x, y), \
 		__cmp(x, y, op), \
 		__cmp_once(x, y, __UNIQUE_ID(__x), __UNIQUE_ID(__y), op))
+#endif
 
 /**
  * min - return minimum of two values of the same or compatible types
@@ -59,10 +66,15 @@
  * @x: value1
  * @y: value2
  */
+#if defined(_MSC_VER) && !defined(__clang__)
+#define min_not_zero(x, y) \
+	((x) == 0 ? (y) : ((y) == 0 ? (x) : min((x), (y))))
+#else
 #define min_not_zero(x, y) ({			\
 	typeof(x) __x = (x);			\
 	typeof(y) __y = (y);			\
 	__x == 0 ? __y : ((__y == 0) ? __x : min(__x, __y)); })
+#endif
 
 /**
  * clamp - return a value clamped to a given range with strict typechecking

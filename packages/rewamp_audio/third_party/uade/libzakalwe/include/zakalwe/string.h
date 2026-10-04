@@ -37,8 +37,8 @@ static inline char *z_strdup_or_die(const char *s)
 	return t;
 }
 
-#define z_snprintf_or_die(target, targetsize, fmt, args...) do { \
-               int _z_ret = snprintf((target), (targetsize), fmt, ## args); \
+#define z_snprintf_or_die(target, targetsize, fmt, ...) do { \
+               int _z_ret = snprintf((target), (targetsize), fmt, ## __VA_ARGS__); \
                z_assert(_z_ret >= 0); \
 	       z_assert((targetsize) == 0 || \
 			((size_t) _z_ret) < (targetsize)); \

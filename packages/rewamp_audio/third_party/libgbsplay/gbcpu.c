@@ -10,7 +10,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
+#ifndef _MSC_VER   /* rewamp: absent sous MSVC, et rien ici ne s'en sert */
 #include <sys/param.h>
+#endif
 #include <unistd.h>
 #include <string.h>
 #include <assert.h>

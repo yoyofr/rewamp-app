@@ -1,13 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show File, Platform;
+import 'dart:io' show File;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart' show DatabaseExecutor;
 
 import 'local_db.dart';
 import 'playlist_sync.dart';
+import 'portable_path.dart';
 import 'rewamp_db.dart';
 import 'user_settings.dart';
 
@@ -1239,7 +1241,7 @@ class SyncService extends ChangeNotifier {
           containerEntry: splitLibraryRefId(refId).$2 == null,
           localTitle:     localTrack?.title,
           catalogueTitle: s.title,
-          fileName:       localTrack?.filePath.split(Platform.pathSeparator).last,
+          fileName:       (localTrack == null ? null : p.basename(localTrack.filePath)),
         ),
         artist:      localTrack?.artist,
         album:       localTrack?.metaAlbum ?? s.album,
@@ -1663,7 +1665,7 @@ class SyncService extends ChangeNotifier {
       // deux racines ont été poussées avec un relPath NUL. Une clé qui ne
       // correspond à rien est ignorée par le serveur.
       final (base, parsedSub) = splitLibraryRefId(refId);
-      final fileName = base.split(Platform.pathSeparator).last;
+      final fileName = p.basename(base);
       final rel = await LocalDb.instance.relPathOf(base);
       // Aucun suffixe ⇒ l'entrée vise le fichier ENTIER, et sa clé de compte
       // porte le jeton `whole` (voir localLibraryKey): la recalculer sans lui
@@ -1892,7 +1894,7 @@ class SyncService extends ChangeNotifier {
         if (stored != null && stored.isNotEmpty) {
           if (serverExt.contains(stored)) continue;
         } else {
-          final fileName = base.split(Platform.pathSeparator).last;
+          final fileName = p.basename(base);
           final rel = await LocalDb.instance.relPathOf(base);
           final whole = parsedSub == null;
           final candidates = <String>{
@@ -2111,10 +2113,16 @@ class SyncService extends ChangeNotifier {
     /// avait avant ce paramètre, donc aucune entrée de compte existante ne
     /// change d'identité.
     bool whole = false,
+    /// Style de chemin à supposer pour [relPath] — celui de la plateforme;
+    /// les tests passent `p.windows` pour exercer Windows sur toute machine.
+    p.Context? keyContext,
   }) {
     final material = [
       fileName.toLowerCase(),
-      (relPath ?? '').toLowerCase(),
+      // ⚠️ PORTABLE ('/') avant le hash: la même clé sur iPhone et sur PC.
+      // `relPathOf` la rend déjà portable; la conversion ici couvre tout
+      // relatif qui arriverait encore en natif Windows (portable_path.dart).
+      toPortableRel(relPath ?? '', ctx: keyContext).toLowerCase(),
       entryPath.toLowerCase(),
       '$subsongIdx',
       if (whole) 'whole',
@@ -2300,7 +2308,7 @@ class SyncService extends ChangeNotifier {
           : await LocalDb.instance.libraryExtKeyOf('track', refId, db: db);
       await recordLocalLibraryChange(
         itemType:   'song',
-        fileName:   base.split(Platform.pathSeparator).last,
+        fileName:   p.basename(base),
         relPath:    await LocalDb.instance.relPathOf(base),
         value:      value,
         extKey:     stored,

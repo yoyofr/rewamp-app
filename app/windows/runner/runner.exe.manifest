@@ -3,6 +3,11 @@
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
       <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+      <!-- Le moteur reçoit des chemins UTF-8 (Dart) et ses ~40 bibliothèques
+           les ouvrent par fopen/CreateFileA, qui lisent la page de code du
+           PROCESSUS (1252 par défaut): tout nom non ASCII échouait à
+           l'ouverture. UTF-8 ici couvre toutes les DLL d'un coup (Win10 1903+). -->
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
     </windowsSettings>
   </application>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">

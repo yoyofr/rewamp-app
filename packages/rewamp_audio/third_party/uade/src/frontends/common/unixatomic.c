@@ -40,6 +40,7 @@ ssize_t uade_atomic_read(int fd, const void *buf, size_t count)
     if (ret < 0) {
       if (errno == EINTR)
         continue;
+#ifndef _WIN32  /* rewamp: tubes CRT BLOQUANTS sous Windows, jamais EAGAIN */
       if (errno == EAGAIN) {
 	fd_set s;
 	FD_ZERO(&s);
@@ -48,6 +49,7 @@ ssize_t uade_atomic_read(int fd, const void *buf, size_t count)
 	  fprintf(stderr, "atomic_read: very strange. infinite select() returned 0. report this!\n");
 	continue;
       }
+#endif
       return -1;
     } else if (ret == 0) {
       return 0;
@@ -67,6 +69,7 @@ ssize_t uade_atomic_write(int fd, const void *buf, size_t count)
     if (ret < 0) {
       if (errno == EINTR)
         continue;
+#ifndef _WIN32
       if (errno == EAGAIN) {
 	fd_set s;
 	FD_ZERO(&s);
@@ -75,6 +78,7 @@ ssize_t uade_atomic_write(int fd, const void *buf, size_t count)
 	  fprintf(stderr, "atomic_write: very strange. infinite select() returned 0. report this!\n");
 	continue;
       }
+#endif
       return -1;
     }
     bytes_written += ret;

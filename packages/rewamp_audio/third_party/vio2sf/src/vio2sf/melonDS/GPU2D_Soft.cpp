@@ -386,7 +386,16 @@ template<bool mosaic>
 void SoftRenderer2D::DrawBG_Text(u32 line, u32 bgnum)
 {
     // workaround for backgrounds missing on aarch64 with lto build
+    /* YOYOFR (rewamp): barriere de COMPILATION (pas de processeur) — l'amont
+     * la pose pour contourner un bug de reordonnancement sous LTO aarch64.
+     * `asm volatile` est une extension GCC; `_ReadWriteBarrier` est l'exact
+     * equivalent MSVC: il n'emet aucune instruction et interdit juste au
+     * compilateur de deplacer les acces memoire autour de ce point. */
+#ifdef _MSC_VER
+    _ReadWriteBarrier();
+#else
     asm volatile ("" : : : "memory");
+#endif
 
     u16 bgcnt = GPU2D.BGCnt[bgnum];
 

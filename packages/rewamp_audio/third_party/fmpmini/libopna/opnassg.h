@@ -1,6 +1,18 @@
 #ifndef LIBOPNA_OPNASSG_H_INCLUDED
 #define LIBOPNA_OPNASSG_H_INCLUDED
 
+/* YOYOFR (rewamp): `__attribute__((hot, optimize(3)))` est une indication
+ * d'OPTIMISATION propre à GCC — aucune incidence sémantique, et MSVC n'a pas
+ * d'équivalent (il n'a pas d'attribut par fonction pour le niveau
+ * d'optimisation). Tel quel, cl.exe s'arrêtait sur la syntaxe, et comme
+ * l'attribut est posé sur une DÉCLARATION, la fonction devenait inconnue:
+ * l'erreur sortait sur l'initialisation du pointeur, pas ici. */
+#if defined(__GNUC__) || defined(__clang__)
+#  define OPNA_SSG_HOT __attribute__((hot, optimize(3)))
+#else
+#  define OPNA_SSG_HOT
+#endif
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -89,9 +101,9 @@ typedef void (*opna_ssg_sinc_calc_func_type)(unsigned resampler_index,
                                              const int16_t *inbuf, int32_t *outbuf);
 extern opna_ssg_sinc_calc_func_type opna_ssg_sinc_calc_func;
 void opna_ssg_sinc_calc_c(unsigned resampler_index,
-                          const int16_t *inbuf, int32_t *outbuf) __attribute__((hot, optimize(3)));
+                          const int16_t *inbuf, int32_t *outbuf) OPNA_SSG_HOT;
 void opna_ssg_sinc_calc_neon(unsigned, const int16_t *, int32_t *);
-void opna_ssg_sinc_calc_sse2(unsigned, const int16_t *, int32_t *) __attribute__((hot, optimize(3)));
+void opna_ssg_sinc_calc_sse2(unsigned, const int16_t *, int32_t *) OPNA_SSG_HOT;
 
 extern const int16_t opna_ssg_sinctable[OPNA_SSG_SINCTABLELEN*2];
 

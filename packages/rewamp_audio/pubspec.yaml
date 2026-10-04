@@ -27,6 +27,9 @@ flutter:
         pluginClass: RewampAudioPlugin
       windows:
         ffiPlugin: true
+        # Même raison que Linux: le registre de textures de l'embedder n'est
+        # remis qu'à un vrai greffon de plateforme (windows/rewamp_audio_plugin.cpp).
+        pluginClass: RewampAudioPlugin
 
 dependencies:
   flutter:

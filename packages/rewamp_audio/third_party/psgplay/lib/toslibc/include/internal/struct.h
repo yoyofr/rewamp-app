@@ -18,11 +18,17 @@
  * @type: the type of the container struct this is embedded in
  * @member: the name of the member within the struct
  */
+#if defined(_MSC_VER) && !defined(__clang__)
+/* rewamp: forme MSVC, sans la vérification de type (expression-instruction). */
+#define container_of(ptr, type, member) \
+	((type *)((char *)(ptr) - offsetof(type, member)))
+#else
 #define container_of(ptr, type, member) ({				\
 	void *__mptr = (void *)(ptr);					\
 	BUILD_BUG_ON_MSG(!__same_type(*(ptr), ((type *)0)->member) &&	\
 			 !__same_type(*(ptr), void),			\
 			 "pointer type mismatch in container_of()");	\
 	((type *)(__mptr - offsetof(type, member))); })
+#endif
 
 #endif /* INTERNAL_STRUCT_H */

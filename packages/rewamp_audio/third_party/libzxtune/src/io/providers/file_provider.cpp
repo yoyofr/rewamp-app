@@ -29,8 +29,14 @@
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/make_shared.hpp>
+// rewamp: la branche Windows de boost.interprocess tire boost.date_time, absent
+// du jeu de boost vendoré — sous Windows le « mmap » devient une lecture en
+// mémoire (voir OpenMemoryMappedFile). Sans effet chez nous: le greffon lit
+// lui-même le fichier et passe un tampon à ZxTuneWrapper.
+#ifndef _WIN32
 #include <boost/interprocess/file_mapping.hpp>
 #include <boost/interprocess/mapped_region.hpp>
+#endif
 #include <boost/range/end.hpp>
 //text includes
 #include <io/text/io.h>
@@ -193,6 +199,22 @@ namespace IO
     const String FullValue;
   };
 
+  Binary::Data::Ptr ReadFileToMemory(std::ifstream& stream, std::size_t size);
+
+#ifdef _WIN32
+  Binary::Data::Ptr OpenMemoryMappedFile(const std::string& path)
+  {
+    std::ifstream stream(path.c_str(), std::ios::binary);
+    if (!stream)
+    {
+      throw Error(THIS_LINE, translate("Failed to open file."));
+    }
+    stream.seekg(0, std::ios::end);
+    const std::size_t size = static_cast<std::size_t>(stream.tellg());
+    stream.seekg(0);
+    return ReadFileToMemory(stream, size);
+  }
+#else
   class MemoryMappedData : public Binary::Data
   {
   public:
@@ -225,6 +247,7 @@ namespace IO
   {
     return boost::make_shared<MemoryMappedData>(path);
   }
+#endif
 
   Binary::Data::Ptr ReadFileToMemory(std::ifstream& stream, std::size_t size)
   {

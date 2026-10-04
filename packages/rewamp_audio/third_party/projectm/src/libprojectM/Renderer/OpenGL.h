@@ -28,6 +28,11 @@
 # include <GLES2/gl2ext.h>
 # include <EGL/egl.h>
 # include <EGL/eglext.h>
+#elif defined(_WIN32) && defined(USE_GLES)
+/* rewamp: Windows sur ANGLE (GLES 3.0 → Direct3D 11), comme les autres
+ * plateformes de ce dépôt. La branche _WIN32 de l'amont, juste en dessous,
+ * suppose l'OpenGL de bureau par GLEW + WGL, que nous n'avons pas. */
+# include <GLES3/gl3.h>
 #elif defined(_WIN32)
 # define GLM_FORCE_CXX03
 # include <windows.h>

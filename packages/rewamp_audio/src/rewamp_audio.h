@@ -132,6 +132,10 @@ REWAMP_EXPORT void rewamp_set_track_end_seconds(double seconds);
  * track — flip title/metadata and advance the queue WITHOUT reloading. Never
  * reset; re-sync the last-seen value after every explicit load. */
 REWAMP_EXPORT int64_t rewamp_handoff_serial(void);
+/* Change à chaque nouveau morceau ENTENDU: chargement explicite réussi OU
+ * relais gapless promu. Pour un état de visualiseur qui doit repartir à zéro
+ * avec le morceau (cadre auto du piano), sans rien deviner de son contenu. */
+REWAMP_EXPORT int64_t rewamp_track_generation(void);
 /* Vrai entre le RELAIS gapless et sa PROMOTION: le décodeur décrit déjà la
  * piste suivante alors que l'oreille est encore dans la précédente. Les
  * visualiseurs qui lisent du contenu STATIQUE du décodeur (motifs) doivent

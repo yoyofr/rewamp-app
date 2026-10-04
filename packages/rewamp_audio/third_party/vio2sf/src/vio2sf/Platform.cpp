@@ -23,7 +23,20 @@
 
 #include <string>
 
+/* YOYOFR (rewamp): Windows n'a pas de pthread. Cette couche-ci ne demande que
+ * des primitives que la bibliothèque standard C++ fournit depuis C++11, donc on
+ * la réimplémente ici plutôt que de poser un faux <pthread.h> — un shim aurait
+ * eu à émuler `pthread_cond_timedwait` et sa notion de temps ABSOLU, ce qui est
+ * précisément l'endroit où l'amont a un bug (voir Semaphore_TryWait).
+ * Le chemin POSIX n'est pas touché. */
+#ifdef _WIN32
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <chrono>
+#else
 #include <pthread.h>
+#endif
 
 #include <vio2sf/Platform.h>
 #include <vio2sf/SPI_Firmware.h>
@@ -186,6 +199,162 @@ void Log(LogLevel level, const char* fmt, ...)
 	va_end(args);
 #endif
 }
+
+#ifdef _WIN32
+
+// ── Portage Windows de la couche threads/sync/horloge ────────────────────────
+// Correspondance stricte avec la version POSIX ci-dessous, y compris ses
+// particularités. Les deux qui comptent:
+//
+//  * `Thread_Free` ET `Thread_Wait` JOIGNENT tous les deux, et l'amont appelle
+//    parfois les deux. Sur POSIX un second `pthread_join` est un comportement
+//    indéfini qui passe inaperçu; `std::thread::join` LÈVE. On teste donc
+//    `joinable()`, ce qui rend le second appel inoffensif au lieu de le rendre
+//    fatal.
+//  * `Semaphore_TryWait` passait à `pthread_cond_timedwait` un timespec
+//    RELATIF, alors que cette fonction attend une date ABSOLUE: amont demandait
+//    donc en réalité « expire immédiatement » (une date de 1970). On implémente
+//    l'INTENTION — un délai relatif — ce qui est ce que le nom et l'argument
+//    `timeout_ms` décrivent.
+
+namespace {
+
+struct WinThread { std::thread t; };
+
+struct WinSem {
+    std::mutex              lock;
+    std::condition_variable bump;
+    unsigned                count = 0;
+};
+
+} // namespace
+
+Thread* Thread_Create(std::function<void()> func)
+{
+    WinThread* th = new WinThread;
+    try {
+        th->t = std::thread(std::move(func));
+    } catch (...) {
+        delete th;
+        return nullptr;
+    }
+    return (Thread*) th;
+}
+
+void Thread_Free(Thread* thread)
+{
+    WinThread* th = (WinThread*) thread;
+    if (!th) return;
+    if (th->t.joinable()) th->t.join();
+    delete th;
+}
+
+void Thread_Wait(Thread* thread)
+{
+    WinThread* th = (WinThread*) thread;
+    if (th && th->t.joinable()) th->t.join();
+}
+
+Semaphore* Semaphore_Create()
+{
+    return (Semaphore*) new WinSem;
+}
+
+void Semaphore_Free(Semaphore* sema)
+{
+    delete (WinSem*) sema;
+}
+
+void Semaphore_Reset(Semaphore* sema)
+{
+    WinSem* sem = (WinSem*) sema;
+    std::lock_guard<std::mutex> g(sem->lock);
+    sem->count = 0;
+}
+
+void Semaphore_Wait(Semaphore* sema)
+{
+    WinSem* sem = (WinSem*) sema;
+    std::unique_lock<std::mutex> g(sem->lock);
+    // `wait` avec prédicat: il absorbe les réveils intempestifs, que la version
+    // POSIX laissait passer (elle ne décrémente alors simplement pas).
+    sem->bump.wait(g, [sem] { return sem->count > 0; });
+    sem->count--;
+}
+
+bool Semaphore_TryWait(Semaphore* sema, int timeout_ms)
+{
+    WinSem* sem = (WinSem*) sema;
+    std::unique_lock<std::mutex> g(sem->lock);
+    if (sem->count == 0) {
+        if (timeout_ms <= 0) return false;
+        if (!sem->bump.wait_for(g, std::chrono::milliseconds(timeout_ms),
+                                [sem] { return sem->count > 0; }))
+            return false;
+    }
+    sem->count--;
+    return true;
+}
+
+void Semaphore_Post(Semaphore* sema, int count)
+{
+    WinSem* sem = (WinSem*) sema;
+    {
+        std::lock_guard<std::mutex> g(sem->lock);
+        sem->count += (unsigned) count;
+    }
+    // ⚠️ `notify_all` et non `notify_one`: `count` peut monter de PLUSIEURS
+    // d'un coup, et un seul réveil laisserait les autres jetons inexploités.
+    // La version POSIX ne signale qu'une fois — c'est son troisième écart, et
+    // le seul qu'on corrige franchement.
+    sem->bump.notify_all();
+}
+
+Mutex* Mutex_Create()
+{
+    return (Mutex*) new std::mutex;
+}
+
+void Mutex_Free(Mutex* mutex)
+{
+    delete (std::mutex*) mutex;
+}
+
+void Mutex_Lock(Mutex* mutex)
+{
+    ((std::mutex*) mutex)->lock();
+}
+
+void Mutex_Unlock(Mutex* mutex)
+{
+    ((std::mutex*) mutex)->unlock();
+}
+
+bool Mutex_TryLock(Mutex* mutex)
+{
+    return ((std::mutex*) mutex)->try_lock();
+}
+
+void Sleep(u64 usecs)
+{
+    std::this_thread::sleep_for(std::chrono::microseconds(usecs));
+}
+
+u64 GetMSCount()
+{
+    using namespace std::chrono;
+    return (u64) duration_cast<milliseconds>(
+        steady_clock::now().time_since_epoch()).count();
+}
+
+u64 GetUSCount()
+{
+    using namespace std::chrono;
+    return (u64) duration_cast<microseconds>(
+        steady_clock::now().time_since_epoch()).count();
+}
+
+#else   // !_WIN32
 
 Thread* Thread_Create(std::function<void()> func)
 {
@@ -373,6 +542,8 @@ u64 GetUSCount()
     return tp.tv_sec * 1000000ULL + tp.tv_nsec / 1000;
 }
 
+
+#endif  // _WIN32
 
 void WriteNDSSave(const u8* savedata, u32 savelen, u32 writeoffset, u32 writelen, void* userdata)
 {

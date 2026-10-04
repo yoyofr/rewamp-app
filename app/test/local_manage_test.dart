@@ -7,6 +7,7 @@
 // exercée par local_manage_db_test.
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:rewamp/local_manage.dart';
 
 void main() {
@@ -34,40 +35,52 @@ void main() {
     });
   });
 
-  group('un dossier ne rentre pas dans lui-même', () {
-    test('dans lui-même', () {
-      expect(movesIntoItself('/l/Jeux', '/l/Jeux'), isTrue);
-    });
-    test('dans un descendant', () {
-      expect(movesIntoItself('/l/Jeux', '/l/Jeux/MT-32'), isTrue);
-    });
-    test('ailleurs, c\'est permis', () {
-      expect(movesIntoItself('/l/Jeux', '/l/Archives/Jeux'), isFalse);
-      // ⚠️ Un préfixe de NOM n'est pas un préfixe de CHEMIN.
-      expect(movesIntoItself('/l/Jeux', '/l/Jeux2'), isFalse);
-    });
-  });
+  // Les règles de CHEMIN, sous les DEUX styles (p.posix / p.windows) sur
+  // n'importe quelle machine: la CI Linux exerce Windows, et réciproquement.
+  for (final c in [p.posix, p.windows]) {
+    final style = c.style == p.Style.windows ? 'Windows' : 'POSIX';
+    final l = c.style == p.Style.windows ? r'C:\l' : '/l';
+    String at(List<String> parts) => c.joinAll([l, ...parts]);
 
-  group('nom libre', () {
-    test('libre: on garde le nom demandé', () {
-      expect(freeName('/l/a.mid', (_) => false), '/l/a.mid');
-    });
-
-    test('pris: on suffixe AVANT l\'extension', () {
-      // « a (2).mid », jamais « a.mid (2) » — l'extension doit rester la
-      // dernière chose du nom, sinon le fichier n'est plus routable.
-      final taken = {'/l/a.mid'};
-      expect(freeName('/l/a.mid', taken.contains), '/l/a (2).mid');
+    group('un dossier ne rentre pas dans lui-même ($style)', () {
+      test('dans lui-même', () {
+        expect(movesIntoItself(at(['Jeux']), at(['Jeux']), ctx: c), isTrue);
+      });
+      test('dans un descendant', () {
+        expect(movesIntoItself(at(['Jeux']), at(['Jeux', 'MT-32']), ctx: c),
+            isTrue);
+      });
+      test('ailleurs, c\'est permis', () {
+        expect(movesIntoItself(at(['Jeux']), at(['Archives', 'Jeux']), ctx: c),
+            isFalse);
+        // ⚠️ Un préfixe de NOM n'est pas un préfixe de CHEMIN.
+        expect(movesIntoItself(at(['Jeux']), at(['Jeux2']), ctx: c), isFalse);
+      });
     });
 
-    test('on monte jusqu\'au premier libre', () {
-      final taken = {'/l/a.mid', '/l/a (2).mid', '/l/a (3).mid'};
-      expect(freeName('/l/a.mid', taken.contains), '/l/a (4).mid');
-    });
+    group('nom libre ($style)', () {
+      test('libre: on garde le nom demandé', () {
+        expect(freeName(at(['a.mid']), (_) => false, ctx: c), at(['a.mid']));
+      });
 
-    test('un DOSSIER n\'a pas d\'extension à préserver', () {
-      final taken = {'/l/Jeux'};
-      expect(freeName('/l/Jeux', taken.contains), '/l/Jeux (2)');
+      test('pris: on suffixe AVANT l\'extension', () {
+        // « a (2).mid », jamais « a.mid (2) » — l'extension doit rester la
+        // dernière chose du nom, sinon le fichier n'est plus routable.
+        final taken = {at(['a.mid'])};
+        expect(freeName(at(['a.mid']), taken.contains, ctx: c),
+            at(['a (2).mid']));
+      });
+
+      test('on monte jusqu\'au premier libre', () {
+        final taken = {at(['a.mid']), at(['a (2).mid']), at(['a (3).mid'])};
+        expect(freeName(at(['a.mid']), taken.contains, ctx: c),
+            at(['a (4).mid']));
+      });
+
+      test('un DOSSIER n\'a pas d\'extension à préserver', () {
+        final taken = {at(['Jeux'])};
+        expect(freeName(at(['Jeux']), taken.contains, ctx: c), at(['Jeux (2)']));
+      });
     });
-  });
+  }
 }

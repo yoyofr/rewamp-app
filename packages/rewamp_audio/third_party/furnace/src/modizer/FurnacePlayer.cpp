@@ -22,7 +22,11 @@
 #include <cstring>
 #include <algorithm>
 #include <cmath>
+#ifdef _WIN32
+#include <windows.h>   /* CreateThread: la pile de 8 Mo du chargeur */
+#else
 #include <pthread.h>
+#endif
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -131,6 +135,24 @@ static void* loadThreadFunc(void* arg) {
   return nullptr;
 }
 
+#ifdef _WIN32
+// YOYOFR (rewamp): ce fil n'existe QUE pour sa pile de 8 Mo (voir le
+// commentaire de FurnacePlayer::load). Rien d'autre n'en dépend: il est créé,
+// joint, et jeté, sans concurrence avec quoi que ce soit.
+//
+// Windows n'a pas de pthread, mais il prend la taille de pile en ARGUMENT de
+// CreateThread, ce qui est plus direct qu'un pthread_attr. ⚠️ Le drapeau
+// STACK_SIZE_PARAM_IS_A_RESERVATION est OBLIGATOIRE: sans lui le paramètre est
+// lu comme la taille à COMMITER d'emblée, et sa valeur par défaut (celle de
+// l'en-tête du binaire, 1 Mo) devient le plafond — on croirait avoir 8 Mo et
+// loadFTM déborderait quand même, en silence, avec un plantage de pile loin de
+// sa cause.
+static DWORD WINAPI loadThreadFuncWin(LPVOID arg) {
+  loadThreadFunc(arg);
+  return 0;
+}
+#endif
+
 bool FurnacePlayer::load(const uint8_t* data, size_t dataLen, const char* filename) {
   if (!engineReady) return false;
 
@@ -142,6 +164,17 @@ bool FurnacePlayer::load(const uint8_t* data, size_t dataLen, const char* filena
 
   // Spin a thread with 8 MB stack to safely accommodate loadFTM's heavy
   // local variables (DivSong on stack alone can exceed 200 KB).
+#ifdef _WIN32
+  HANDLE thread = CreateThread(nullptr, 8 * 1024 * 1024, loadThreadFuncWin,
+                               &ctx, STACK_SIZE_PARAM_IS_A_RESERVATION,
+                               nullptr);
+  if (thread == nullptr) {
+    delete[] buf;
+    return false;
+  }
+  WaitForSingleObject(thread, INFINITE);
+  CloseHandle(thread);
+#else
   pthread_attr_t attr;
   pthread_attr_init(&attr);
   pthread_attr_setstacksize(&attr, 8 * 1024 * 1024);
@@ -154,6 +187,7 @@ bool FurnacePlayer::load(const uint8_t* data, size_t dataLen, const char* filena
   }
   pthread_attr_destroy(&attr);
   pthread_join(thread, nullptr);
+#endif
 
   if (!ctx.result) return false;
 

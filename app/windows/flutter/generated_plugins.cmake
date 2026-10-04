@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_windows
   flutter_secure_storage_windows
   permission_handler_windows
+  rewamp_audio
   screen_retriever_windows
   share_plus
   url_launcher_windows
@@ -15,7 +16,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
   jni
-  rewamp_audio
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

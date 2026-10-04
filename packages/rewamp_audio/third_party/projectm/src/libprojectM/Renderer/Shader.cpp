@@ -16,11 +16,23 @@
 #if !defined(_WIN32)
 #include <EGL/egl.h>   // eglGetProcAddress — KHR_parallel_shader_compile lookup
 #endif
+#ifdef _MSC_VER
+// rewamp: usleep() est POSIX, l'UCRT ne l'a pas. Les deux appelants de ce
+// fichier attendent quelques centaines de microsecondes dans une boucle.
+#include <chrono>
+#include <thread>
+static inline void usleep(unsigned int us) {
+    std::this_thread::sleep_for(std::chrono::microseconds(us));
+}
+#endif
 // rewamp: was mach_port_t + pthread_mach_thread_np (Apple-only) — pthread_t +
 // pthread_equal is the portable spelling of the same identity check, so this
 // background-precompile guard also builds on Android.
-extern pthread_t mdzMainThreadId;
-extern volatile bool mdzRenderInProgress;
+// rewamp: liaison C, comme leur DÉFINITION dans rewamp_projectm_render.cpp.
+// GCC et clang ne décorent pas le nom d'une variable, donc l'écart ne s'y voit
+// pas; MSVC, si (symbole non résolu au lien).
+extern "C" pthread_t mdzMainThreadId;
+extern "C" volatile bool mdzRenderInProgress;
 
 //YOYOFR/rewamp: preset-load profiling. Every Milkdrop shader (warp, comp, blur,
 // motion vectors, custom shapes/waves) funnels through CompileProgram, so

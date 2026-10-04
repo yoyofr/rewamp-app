@@ -6,7 +6,9 @@
 #include <zakalwe/file.h>
 #include <zakalwe/string.h>
 
+#ifndef _WIN32
 #include <ftw.h>
+#endif
 
 #include <dirent.h>
 #include <errno.h>
@@ -178,6 +180,22 @@ error:
 	return NULL;
 }
 
+#ifdef _WIN32
+/* rewamp: ni nftw ni mkdtemp sous Windows, et UADE n'appelle aucune de ces
+ * deux fonctions (vérifié par grep sur tout l'arbre). Un refus explicite
+ * plutôt qu'une émulation qui ne serait jamais exercée. */
+char *z_mkdtemp(const char *tmpdir)
+{
+	(void) tmpdir;
+	return NULL;
+}
+
+int z_rmdir_recursively(const char *dir)
+{
+	(void) dir;
+	return 0;
+}
+#else
 #ifndef _Z_HAS_MKDTEMP
 static char *mkdtemp_replacement(const char *tmpdir)
 {
@@ -299,3 +317,4 @@ int z_rmdir_recursively(const char *dir)
 
 	return nftw(dir, dir_entry_fn, 4, FTW_DEPTH) == 0;
 }
+#endif /* _WIN32 */

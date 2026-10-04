@@ -78,7 +78,12 @@ BOOL FileExists(wchar_t * pFilename)
     BOOL bFound = FALSE;
 
     WIN32_FIND_DATA WFD;
-    CSmartPtr<char> spANSI(GetANSIFromUTF16(pFilename), TRUE);
+    /* YOYOFR (rewamp): `GetANSIFromUTF16` est un membre STATIQUE de
+     * CAPECharacterHelper, et cet appel-ci est dans une fonction LIBRE:
+     * il lui manquait sa qualification. Bug amont, mais il ne se voit que
+     * sur le chemin `_WIN32 && !__MINGW32__` — que personne n'avait
+     * compile. La ligne 93, juste en dessous, le qualifie bien. */
+    CSmartPtr<char> spANSI(CAPECharacterHelper::GetANSIFromUTF16(pFilename), TRUE);
     HANDLE hFind = FindFirstFile(spANSI, &WFD);
     if (hFind != INVALID_HANDLE_VALUE)
     {

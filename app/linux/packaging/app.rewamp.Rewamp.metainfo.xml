@@ -118,6 +118,22 @@
   </screenshots>
 
   <releases>
+    <release version="0.7.0" date="2026-10-04">
+      <description>
+        <ul>
+          <li>Visualizers now work under X11, including Steam Deck game mode</li>
+          <li>"Always on top" is back under X11</li>
+          <li>Closing the window no longer crashes the app</li>
+          <li>Game Boy .gbr and DefleMask .dmf files play</li>
+          <li>Smoother player and visualizers</li>
+          <li>Long titles scroll in a one-way loop</li>
+          <li>projectM preset packs install up to nine times faster</li>
+          <li>Fixed: pausing could skip to the next track</li>
+          <li>Single-archive PSF albums unfold into their tracks</li>
+          <li>Covers load much faster</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.1" date="2026-09-19">
       <description>
         <ul>

@@ -502,6 +502,11 @@ const List<BundledComponent> kComponents = [
       url: 'https://www.libarchive.org/', author: 'Tim Kientzle'),
   BundledComponent('liblzma (XZ Utils)', '0BSD',
       url: 'https://tukaani.org/xz/', author: 'Lasse Collin'),
+  // Windows seulement: aucune zlib système, donc vendorée (third_party/zlib,
+  // 1.3.1 intacte) et liée STATIQUEMENT dans la DLL — redistribuée, d'où la
+  // ligne. Ailleurs c'est celle du système, que le binaire n'embarque pas.
+  BundledComponent('zlib (Windows)', 'Zlib',
+      url: 'https://zlib.net/', author: 'Jean-loup Gailly, Mark Adler'),
   // ⚠️ Licence PARTICULIÈRE, et c'est pourquoi elle est citée telle quelle: le
   // code UnRAR peut être utilisé pour DÉCOMPRESSER du RAR, mais pas pour
   // recréer l'algorithme de compression. On ne fait que décompresser (les RAR

@@ -1,3 +1,6 @@
+/* rewamp_audio.h AVANT rewamp_assets.h: c'est lui qui porte REWAMP_EXPORT, et
+ * sous MSVC la PREMIÈRE déclaration vue doit déjà être `dllexport`. */
+#include "rewamp_audio.h"
 #include "rewamp_assets.h"
 
 #include <stdio.h>
@@ -7,7 +10,9 @@
 static char g_data_dir[4096] = "";
 
 // Exported for FFI even when the target hides symbols by default.
-__attribute__((visibility("default"))) __attribute__((used))
+// REWAMP_EXPORT et pas l'attribut GNU en dur: MSVC ne connaît pas
+// `__attribute__`, et sur Windows l'export passe par `__declspec(dllexport)`.
+REWAMP_EXPORT
 void rewamp_set_data_dir(const char* path) {
     if (path == NULL) {
         g_data_dir[0] = '\0';

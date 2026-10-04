@@ -4087,24 +4087,56 @@ class AppLocalizationsSv extends AppLocalizations {
   String get releaseNotesTitle => 'Nyheter';
 
   @override
-  String get releaseNotesV7Cpu =>
-      'Appen arbetar inte längre i bakgrunden när inget spelas: mycket mindre processor och batteri.';
+  String get releaseNotesV8Windows =>
+      'Rewamp fungerar nu på Windows, med alla motorer och visualiseringarna, projectM inräknat.';
 
   @override
-  String get releaseNotesV7VizIdle =>
-      'Visualiseringar står stilla när uppspelningen är stoppad, och är begränsade till 60 bilder per sekund (justerbart).';
+  String get releaseNotesV8Linux =>
+      'Linux: visualiseringarna fungerar nu även under X11 (Steam Decks spelläge), ”Alltid överst” är tillbaka där, och att stänga fönstret får inte längre appen att krascha.';
 
   @override
-  String get releaseNotesV7Subsongs =>
-      'Åtgärdat: på PC Engine, Master System och Atari ST (.sndh) startade vissa spår låten bredvid.';
+  String get releaseNotesV8Formats =>
+      'Game Boy-filer (.gbr) och DefleMask-filer (.dmf) spelas nu.';
 
   @override
-  String get releaseNotesV7Piano =>
-      'Pianovisualiseringen förblev tom med PC Engine-musik.';
+  String get releaseNotesV8Smooth =>
+      'Smidigare spelare och visualiseringar: skärmen ritas inte längre om helt vid varje positionsuppdatering.';
 
   @override
-  String get releaseNotesV7Database =>
-      'En databas som skadats av en uppdatering reparerar sig nu själv, i stället för att göra biblioteket oåtkomligt.';
+  String get releaseNotesV8Scrolling =>
+      'En titel som är för lång för sin plats rullar nu i en slinga, åt ett håll, i stället för fram och tillbaka.';
+
+  @override
+  String get releaseNotesV8MouseDrag =>
+      'Datorer: de vågräta raderna rullar genom att klicka och dra med musen.';
+
+  @override
+  String get releaseNotesV8Presets =>
+      'projectM: paket med förinställningar installeras upp till nio gånger snabbare, och stora mappar med förinställningar kortas inte längre av.';
+
+  @override
+  String get releaseNotesV8Pause =>
+      'Åtgärdat: paus kunde hoppa till nästa spår.';
+
+  @override
+  String get releaseNotesV8Psf =>
+      'PSF-album (PlayStation, Nintendo DS…) som levereras som ett enda arkiv fälls nu ut i sina spår, även när de läggs till i kön.';
+
+  @override
+  String get releaseNotesV8ArtistTracks =>
+      'Artistsidor: spårlistan visar spår igen, inte arkiv med hela album.';
+
+  @override
+  String get releaseNotesV8VizFixes =>
+      'Visualiseringar: Nintendo 64-röster visas och tystas korrekt, pianot anpassar sitt utsnitt efter varje låt, och omslagsbakgrunden försvinner inte längre.';
+
+  @override
+  String get releaseNotesV8ProjectMFixes =>
+      'projectM: förinställningarna följer den verkliga bildfrekvensen (vissa reagerade trögt), och två förinställningar som aldrig visades finns nu.';
+
+  @override
+  String get releaseNotesV8Covers =>
+      'Omslag laddas mycket snabbare: ett rutnät med album fylls på en gång i stället för ett omslag var och en halv sekund.';
 
   @override
   String get releaseNotesDataReset =>
@@ -4514,46 +4546,6 @@ class AppLocalizationsSv extends AppLocalizations {
 
   @override
   String get miniWindowCoverFit => 'Visa hela omslaget';
-
-  @override
-  String get releaseNotesV7Mt32 =>
-      'Ny Roland MT-32-motor för MIDI-spelmusik, med dina egna ROM-filer. Utan ROM-filer anpassas en MIDI skriven för MT-32 till General MIDI.';
-
-  @override
-  String get releaseNotesV7Xmp =>
-      'Tio ovanliga modulformat spelas nu (Archimedes Tracker .musx, .liq, .fnk…).';
-
-  @override
-  String get releaseNotesV7AmigaAdlib =>
-      'Westwoods AdLib-musik (.adl) spelar alla sina spår, och BP SoundMon V1 känns igen på Amiga.';
-
-  @override
-  String get releaseNotesV7MiniPlayer =>
-      'Mac: en minispelare, kompakt eller med visualiseringen, och alternativet ”Alltid överst”.';
-
-  @override
-  String get releaseNotesV7Instruments =>
-      'Oscilloskop, noter och piano kan namnge och färglägga varje instrument, inte bara varje stämma.';
-
-  @override
-  String get releaseNotesV7Podium =>
-      'Sök: filtrera låtar som kom 1:a, 2:a eller 3:a i en demoscenetävling.';
-
-  @override
-  String get releaseNotesV7ShortSubsongs =>
-      'För korta dellåtar (ljudeffekter från spel) utesluts från ”Spela alla” — tröskel under Inställningar → Uppspelning.';
-
-  @override
-  String get releaseNotesV7LocalFolders =>
-      'Dina importer: släpp en hel mapp (arkiv packas upp), och skapa, byt namn på eller flytta mappar.';
-
-  @override
-  String get releaseNotesV7Midi =>
-      'MIDI: trummorna låter inte längre som ett piano, och volymen klipper inte längre.';
-
-  @override
-  String get releaseNotesV7ProjectM =>
-      'projectM: förinställningar upprepas inte längre från en start till nästa, och en förinställning sorteras inte längre bort felaktigt efter en paus.';
 
   @override
   String get libraryFileMissing => 'Filen saknas';

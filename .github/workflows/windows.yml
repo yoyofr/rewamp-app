@@ -1,0 +1,143 @@
+# Windows x64 — le dossier runner\Release, zippé.
+#
+# La recette est celle de docs/BUILD_WINDOWS.md §4, pas une autre: les pièges
+# qu'elle documente (§2 fins de ligne, §3 NuGet, ANGLE et FFmpeg à bâtir) sont
+# ceux qui casseraient ce job.
+#
+# Ce fichier voyage dans le dépôt PUBLIC (allowlist de publish_public.sh, comme
+# appimage.yml): les binaires publiés sont construits par la CI de ce dépôt-là,
+# où les minutes Windows sont gratuites.
+#
+# Déclenchement MANUEL ou par TAG — jamais à chaque poussée.
+name: Windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+env:
+  # ⚠️ ÉPINGLÉE (même règle qu'appimage.yml): la version validée sous Windows.
+  FLUTTER_VERSION: '3.47.6'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      # §2: avec core.autocrlf=true (le défaut de Git for Windows, et du
+      # runner), les .patch des sous-modules sortent en CRLF et
+      # sync_vgmstream.sh échoue sur « CONFLIT » — un symptôme qui désigne un
+      # seul sous-module pour une cause globale. AVANT le checkout.
+      - name: Git en LF
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Les trois sous-modules pointent sur de l'AMONT INTACT: nos changements
+      # sont des patchs appliqués en arbre de travail (voir appimage.yml).
+      - name: Patchs des sous-modules
+        shell: bash
+        working-directory: packages/rewamp_audio
+        run: |
+          set -eux
+          ./scripts/sync_libopenmpt.sh
+          ./scripts/sync_vgmstream.sh
+          ./scripts/sync_libvgm.sh
+
+      - name: Flutter ${{ env.FLUTTER_VERSION }}
+        run: |
+          git clone --depth 1 --branch $env:FLUTTER_VERSION https://github.com/flutter/flutter.git C:\flutter
+          "C:\flutter\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          C:\flutter\bin\flutter.bat --version
+          C:\flutter\bin\flutter.bat config --enable-windows-desktop
+          C:\flutter\bin\flutter.bat precache --windows
+
+      # §3: permission_handler_windows tire CppWinRT par NuGet, et une
+      # configuration sans AUCUNE source échoue sur « primarySources » en
+      # accusant le paquet. On n'écrit la nôtre que si celle du runner n'en
+      # déclare pas.
+      - name: NuGet — une source déclarée
+        run: |
+          $cfg = "$env:APPDATA\NuGet\NuGet.Config"
+          if (-not (Test-Path $cfg) -or -not (Select-String -Path $cfg -Pattern '<add ' -Quiet)) {
+            New-Item -ItemType Directory -Force (Split-Path $cfg) | Out-Null
+            $xml = '<?xml version="1.0" encoding="utf-8"?><configuration><packageSources>' +
+                   '<add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />' +
+                   '</packageSources></configuration>'
+            Set-Content -Encoding utf8 -Path $cfg -Value $xml
+            "NuGet.Config écrit"
+          } else { "NuGet.Config du runner conservé" }
+
+      # ANGLE (~4 min) et FFmpeg (~11 min) ne changent que si leur recette
+      # change: manifeste vcpkg (baseline comprise), triplet, script. Le moteur,
+      # lui, se recompile à chaque fois.
+      - name: Cache ANGLE
+        id: angle
+        uses: actions/cache@v4
+        with:
+          path: packages/rewamp_audio/windows/Libs/angle
+          key: angle-${{ hashFiles('packages/rewamp_audio/windows/angle/**', 'packages/rewamp_audio/scripts/build_angle_windows.ps1') }}
+
+      - name: Cache FFmpeg
+        id: ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: packages/rewamp_audio/windows/Libs/ffmpeg
+          key: ffmpeg-${{ hashFiles('packages/rewamp_audio/windows/ffmpeg/**', 'packages/rewamp_audio/scripts/build_ffmpeg_windows.ps1') }}
+
+      # ⚠️ Un vcpkg CLONÉ en entier, pas celui du runner: nos manifestes
+      # épinglent un `builtin-baseline`, et le C:\vcpkg de l'image peut ne pas
+      # contenir ce commit. Les scripts le prennent par VCPKG_EXE.
+      - name: vcpkg
+        if: steps.angle.outputs.cache-hit != 'true' || steps.ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP\vcpkg"
+          & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          "VCPKG_EXE=$env:RUNNER_TEMP\vcpkg\vcpkg.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Construire ANGLE
+        if: steps.angle.outputs.cache-hit != 'true'
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File packages/rewamp_audio/scripts/build_angle_windows.ps1 -Work "$env:RUNNER_TEMP\angle-work"
+
+      - name: Construire FFmpeg
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File packages/rewamp_audio/scripts/build_ffmpeg_windows.ps1 -Work "$env:RUNNER_TEMP\ffmpeg-work"
+
+      # Les tests Dart AVANT la build longue: un échec y coûte une minute, pas
+      # vingt. Ils tournent sous Windows pour de vrai — c'est là que les
+      # séparateurs de chemin ('\' contre '/') ont fait 27 rouges, tous
+      # corrigés dans le code (portable_path.dart), aucun ignoré.
+      - name: flutter test
+        working-directory: app
+        run: flutter test
+
+      - name: flutter build windows --release
+        working-directory: app
+        run: flutter build windows --release
+
+      # Ce qui a ATTERRI dans le dossier, pas ce que la recette promettait:
+      # fichiers attendus présents, et chaque dépendance de chaque binaire soit
+      # livrée, soit du système (BUILD_WINDOWS.md §5.7 — une build verte peut
+      # très bien ne pas avoir copié la DLL du moteur).
+      - name: Vérifier le dossier
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File packages/rewamp_audio/scripts/verify_windows_bundle.ps1 app\build\windows\x64\runner\Release -Release
+
+      - name: Zip
+        run: |
+          $v = (Select-String -Path app\pubspec.yaml -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value
+          $name = "Rewamp-$v-windows-x64.zip"
+          Compress-Archive -Path app\build\windows\x64\runner\Release\* -DestinationPath $name
+          "ZIP_NAME=$name" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "{0}: {1:N1} Mo" -f $name, ((Get-Item $name).Length / 1MB)
+
+      # Pas de release attachée ici, même sur un tag: appimage.yml crée déjà la
+      # release BROUILLON du tag, et action-gh-release ne retrouve pas un
+      # brouillon par son tag — deux workflows en créeraient deux. Le zip est
+      # l'artefact du run; il se joint à la release à la main.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_NAME }}
+          if-no-files-found: error

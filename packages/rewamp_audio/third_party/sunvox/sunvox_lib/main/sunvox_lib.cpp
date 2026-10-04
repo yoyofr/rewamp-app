@@ -20,10 +20,24 @@
 //      thread 1: sv_lock_slot(0); sv_get_module_flags(0,mod1); sv_unlock_slot(0);
 //      thread 2: sv_lock_slot(0); sv_remove_module(0,mod2); sv_unlock_slot(0);
 
-#ifdef OS_WIN
+/* YOYOFR (rewamp): deux choses fausses ici pour notre build, et une seule se
+ * voit a la compilation.
+ *
+ * Celle qui se voit: MSVC REFUSE une convention d'appel placee avant le type
+ * de retour quand elle suit un `__declspec` — verifie au compilateur,
+ * `extern "C" __declspec(dllexport) __stdcall int f()` sort en C2062 « type
+ * 'int' inattendu », suivi de trois erreurs de cascade PAR FONCTION (d'ou une
+ * centaine sur ce seul fichier).
+ *
+ * Celle qui ne se voit pas: `dllexport` n'a rien a faire ici. SunVox est bati
+ * en bibliotheque STATIQUE et lie DANS rewamp_audio.dll; exporter les `sv_*`
+ * depuis notre DLL n'a aucun objet. La branche Apple/Linux juste en dessous
+ * dit exactement ce qu'on veut, et `__stdcall` est de toute facon sans effet
+ * en x64, ou il n'existe qu'une seule convention d'appel. */
+#if defined(OS_WIN) && !defined(_MSC_VER)
     #define SUNVOX_EXPORT extern "C" __declspec(dllexport) __stdcall
 #endif
-#if defined(OS_APPLE) || defined(OS_LINUX) || defined(OS_EMSCRIPTEN)
+#if defined(OS_APPLE) || defined(OS_LINUX) || defined(OS_EMSCRIPTEN) || defined(_MSC_VER)
     #define SUNVOX_EXPORT extern "C"
 #endif
 #ifndef SUNVOX_EXPORT

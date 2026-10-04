@@ -1057,7 +1057,18 @@ void SPU::BufferAudio()
     BlipTimer = 0;
 
     int avail = blip_samples_avail(BlipLeft);
-    s16 temp[avail * 2];
+    /* YOYOFR (rewamp): c'etait un TABLEAU DE LONGUEUR VARIABLE — du C99, que
+     * le C++ n'a jamais eu et que GCC/clang acceptent en extension. MSVC le
+     * refuse (« l'expression n'a pas ete evaluee en constante »).
+     *
+     * La borne n'est pas une estimation: les deux buffers sont crees par
+     * `blip_new(512)` (SPU.cpp:250-251), donc `blip_samples_avail` ne peut pas
+     * rendre plus de 512. On taille en dur a ce maximum (2 Ko de pile) et on
+     * ECRETE quand meme — si un jour `blip_new` change d'argument, on veut une
+     * troncature audible, pas un debordement de pile silencieux. */
+    static const int kMaxBlipSamples = 512;
+    s16 temp[kMaxBlipSamples * 2];
+    if (avail > kMaxBlipSamples) avail = kMaxBlipSamples;
     blip_read_samples(BlipLeft, temp, avail, true);
     blip_read_samples(BlipRight, temp + 1, avail, true);
 

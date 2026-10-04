@@ -4,7 +4,10 @@
 
 #if defined(__APPLE__)
 #include <iconv.h>
-#elif !defined(_WIN32)
+#elif defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h> /* MultiByteToWideChar: CP932 natif, pas d'iconv */
+#else
 #include <dlfcn.h>   /* iconv résolu à l'exécution: bionic ≥ API 28, glibc */
 #endif
 
@@ -211,6 +214,13 @@ void rewamp_channel_data_reset(int channelCount) {
     memset(vgm_last_vol, 0, sizeof(vgm_last_vol));
     memset(vgm_last_note, 0, sizeof(vgm_last_note));
     memset(vgm_last_instr, 0, sizeof(vgm_last_instr));
+    /* Attribution des voix N64 (lazyusf) par ADRESSE d'échantillon: sans
+     * remise à zéro, le morceau suivant héritait des slots du précédent, et
+     * « voix 1 » ne désignait pas la même voix d'une écoute à l'autre. */
+    memset(vgm_last_sample_address, 0, sizeof(vgm_last_sample_address));
+    memset(vgm_last_sample_address_lastupdate, 0,
+           sizeof(vgm_last_sample_address_lastupdate));
+    memset(vgm_last_sample_address_inst, 0, sizeof(vgm_last_sample_address_inst));
 
     for (int i = 0; i < channelCount; i++) {
         m_voice_buff[i] = (signed char*)calloc(RING_BUF_SAMPLES, 1);
@@ -719,7 +729,32 @@ void rewamp_sjis_to_utf8(const char* in, char* out, size_t outCap) {
             if (out[0]) return;
         }
     }
-#elif !defined(_WIN32)
+#elif defined(_WIN32)
+    {
+        /* Windows n'a pas d'iconv mais connaît CP932 nativement (la même
+         * voie que StrUtils-CPConv_Win.c de libvgm). Sans cette branche, tout
+         * tag japonais sortait en '?'. Un octet indécodable devient un
+         * caractère de remplacement au lieu d'arrêter la conversion. */
+        int wlen = MultiByteToWideChar(932, 0, in, (int)inLen, NULL, 0);
+        wchar_t* w = wlen > 0 ? (wchar_t*)malloc((size_t)wlen * sizeof(wchar_t)) : NULL;
+        if (w && MultiByteToWideChar(932, 0, in, (int)inLen, w, wlen) == wlen) {
+            /* Comme la sortie partielle d'iconv: on tronque à la capacité,
+             * sans couper une paire de substitution. */
+            int n = WideCharToMultiByte(CP_UTF8, 0, w, wlen, NULL, 0, NULL, NULL);
+            while (wlen > 0 && n > (int)outCap - 1) {
+                wlen--;
+                if (wlen > 0 && w[wlen - 1] >= 0xD800 && w[wlen - 1] <= 0xDBFF) wlen--;
+                n = WideCharToMultiByte(CP_UTF8, 0, w, wlen, NULL, 0, NULL, NULL);
+            }
+            n = wlen > 0 ? WideCharToMultiByte(CP_UTF8, 0, w, wlen, out, (int)outCap - 1, NULL, NULL) : 0;
+            out[n > 0 ? n : 0] = '\0';
+            free(w);
+            if (out[0]) return;
+        } else {
+            free(w);
+        }
+    }
+#else
     {
         /* Même conversion, iconv cherché à l'exécution (comme
          * StrUtils-CPConv_Stub.c): présent dans la glibc et dans bionic

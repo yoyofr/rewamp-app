@@ -1702,3 +1702,294 @@
    `#ifndef __ANDROID__` plus haut): l'un est dans la libc, l'autre demande de
    lier -lbz2, ce que fait linux/CMakeLists.txt. */
 #endif
+
+/* ===== Overrides Windows/MSVC (ajoutés): neutralisent les hypothèses macOS ===
+   Même raison et même place que le bloc Linux ci-dessus: ce config.h est
+   GÉNÉRÉ sur macOS, donc il annonce la quasi-totalité de POSIX. Appliqué en
+   DERNIER pour l'emporter sur les defines automatiques.
+
+   libarchive SAIT se construire sur Windows — `archive_windows.c`,
+   `archive_windows.h` et `filter_fork_windows.c` sont vendorés ici — mais ces
+   chemins ne s'activent que si le config.h cesse de prétendre que la machine a
+   unistd.h, les ACL POSIX.1e, fork(), les xattr Darwin et CommonCrypto. Sans
+   ce bloc: 1 606 erreurs sur cette seule cible, dont les `__la_read`/
+   `__la_write`/`__la_waitpid` que `archive_windows.h` devait déclarer.
+
+   ⚠️ Ce qui RESTE actif est aussi un choix: zlib et liblzma sont vendorées
+   (third_party/zlib, third_party/liblzma) donc leurs HAVE_* ne sont pas
+   retirés; bzlib l'est, parce que rien ne fournit bz2 sur Windows — le filtre
+   bzip2 n'existe donc pas dans cette build, et c'est volontaire. Un .tar.bz2
+   ne s'ouvrira pas; zip, 7z, tar, gz et xz, si.
+   ===== */
+#ifdef _WIN32
+
+/* --- En-têtes que l'UCRT n'a pas --- */
+#undef HAVE_UNISTD_H
+#undef HAVE_DIRENT_H
+#undef HAVE_DLFCN_H
+#undef HAVE_GRP_H
+#undef HAVE_PWD_H
+#undef HAVE_LANGINFO_H
+#undef HAVE_PATHS_H
+#undef HAVE_POLL_H
+#undef HAVE_PTHREAD_H
+#undef HAVE_REGEX_H
+#undef HAVE_SPAWN_H
+#undef HAVE_STRINGS_H
+#undef HAVE_FNMATCH_H
+#undef HAVE_ICONV_H
+#undef HAVE_COPYFILE_H
+#undef HAVE_MEMBERSHIP_H
+#undef HAVE_READPASSPHRASE_H
+#undef HAVE_SYS_ACL_H
+#undef HAVE_SYS_CDEFS_H
+#undef HAVE_SYS_IOCTL_H
+#undef HAVE_SYS_MOUNT_H
+#undef HAVE_SYS_PARAM_H
+#undef HAVE_SYS_POLL_H
+#undef HAVE_SYS_QUEUE_H
+#undef HAVE_SYS_SELECT_H
+#undef HAVE_SYS_STATVFS_H
+#undef HAVE_SYS_TIME_H
+#undef HAVE_SYS_UTSNAME_H
+#undef HAVE_SYS_WAIT_H
+#undef HAVE_SYS_XATTR_H
+#undef HAVE_LIBXML_XMLREADER_H
+#undef HAVE_LIBXML_XMLWRITER_H
+#undef HAVE_BZLIB_H
+#undef HAVE_LIBBZ2
+
+/* --- `ssize_t`: libarchive l'attend de CE fichier, pas d'un en-tête ---
+   `archive_windows.h` DÉCLARE `__la_read`/`__la_write` avec `ssize_t` sans le
+   définir nulle part: sur Windows c'est au config.h de le fournir, et c'est
+   ce que fait le config.h.in de l'amont (`#define ssize_t ${ssize_t}`). Sans
+   lui, les trois déclarations de wrappers échouent et ENTRAÎNENT tout le
+   reste — 3 767 erreurs mesurées, dont la quasi-totalité n'étaient que la
+   cascade de ce seul type manquant.
+
+   ⚠️ Un `#define` et non un `typedef`: c'est ce que fait l'amont, et un
+   typedef ici entrerait en conflit avec celui que MSVC pose lui-même dès
+   qu'une TU tire <BaseTsd.h> (la garde `_SSIZE_T_DEFINED` ne protège qu'un
+   typedef, pas un second typedef de même nom). */
+#ifndef ssize_t
+#  ifdef _WIN64
+#    define ssize_t __int64
+#  else
+#    define ssize_t int
+#  endif
+#endif
+
+/* --- Types POSIX que libarchive attend de CE fichier ---
+   Même famille que `ssize_t` ci-dessus: le config.h.in de l'amont les `#define`
+   sur Windows, parce que l'UCRT ne les a pas et que les en-têtes de libarchive
+   les emploient dans des DÉCLARATIONS. `__la_waitpid` rend un `pid_t`, et
+   `archive_write_disk_windows.c` manipule des `mode_t`.
+
+   ⚠️ Les valeurs sont celles de l'amont, pas des choix: `mode_t` en
+   `unsigned short` est ce que le `struct _stat` de MSVC porte réellement
+   (`st_mode`), et en prendre un plus large ferait mentir les comparaisons de
+   bits de permission. */
+#ifndef mode_t
+#  define mode_t unsigned short
+#endif
+#ifndef pid_t
+#  define pid_t int
+#endif
+#ifndef uid_t
+#  define uid_t short
+#endif
+#ifndef gid_t
+#  define gid_t short
+#endif
+#ifndef id_t
+#  define id_t short
+#endif
+
+/* --- Deux noms POSIX que l'UCRT porte autrement ---
+   `SSIZE_MAX` va avec le `ssize_t` défini plus haut: <limits.h> ne le connaît
+   pas sous ce nom, et les filtres gzip/program s'en servent pour BORNER une
+   taille de lecture — un plafond manquant n'est pas un détail cosmétique.
+
+   `timezone` est la variable globale POSIX; MSVC la nomme `_timezone`
+   (iso9660 l'utilise pour dater les volumes). ⚠️ Un `#define` de ce nom-là est
+   un peu large: si un en-tête déclarait un `struct timezone`, il se ferait
+   réécrire. Notre <sys/time.h> de compat en déclare un — mais il n'est PAS sur
+   le chemin d'include de libarchive (rewamp_win_compat n'est pas appelé pour
+   cette cible), donc les deux ne se croisent jamais. */
+#ifndef SSIZE_MAX
+#  ifdef _WIN64
+#    define SSIZE_MAX _I64_MAX
+#  else
+#    define SSIZE_MAX INT_MAX
+#  endif
+#endif
+#ifndef timezone
+#  define timezone _timezone
+#endif
+
+/* --- liblzma lit CE config.h, pas le sien ---
+   ⚠️ Point non évident, et déjà noté dans CLAUDE.md pour Apple: l'ordre des
+   chemins d'include met `third_party/libarchive` AVANT `third_party/liblzma`,
+   donc les sources de liblzma résolvent `#include "config.h"` sur CELUI-CI. Les
+   overrides liblzma doivent donc vivre ici — posés dans
+   `../liblzma/config.h`, ils ne sont jamais lus (mesuré: l'erreur
+   `<pthread.h>` de `mythread.h` survivait intacte).
+
+   liblzma ne compile pas « sans threads » par omission: `mythread.h` exige
+   qu'EXACTEMENT un modèle soit choisi, et `MYTHREAD_POSIX` inclut
+   <pthread.h>. `MYTHREAD_VISTA` est le modèle Windows de l'amont (SRWLOCK +
+   CONDITION_VARIABLE), sans dépendance externe. */
+#undef MYTHREAD_POSIX
+#define MYTHREAD_VISTA 1
+
+/* --- En-têtes propres à Windows, que libarchive attend --- */
+#define HAVE_WINDOWS_H 1
+#define HAVE_WINCRYPT_H 1
+#define HAVE_IO_H 1
+#define HAVE_DIRECT_H 1
+#define HAVE_PROCESS_H 1
+
+/* --- Digests: wincrypt remplace CommonCrypto --- */
+#undef ARCHIVE_CRYPTO_MD5_LIBSYSTEM
+#undef ARCHIVE_CRYPTO_SHA1_LIBSYSTEM
+#undef ARCHIVE_CRYPTO_SHA256_LIBSYSTEM
+#undef ARCHIVE_CRYPTO_SHA384_LIBSYSTEM
+#undef ARCHIVE_CRYPTO_SHA512_LIBSYSTEM
+#define ARCHIVE_CRYPTO_MD5_WIN 1
+#define ARCHIVE_CRYPTO_SHA1_WIN 1
+#define ARCHIVE_CRYPTO_SHA256_WIN 1
+#define ARCHIVE_CRYPTO_SHA384_WIN 1
+#define ARCHIVE_CRYPTO_SHA512_WIN 1
+
+/* --- ACL et attributs étendus: aucun équivalent utilisé ici --- */
+#undef ARCHIVE_ACL_DARWIN
+#undef ARCHIVE_XATTR_DARWIN
+#undef HAVE_ACL
+#undef HAVE_ACL_ADD_FLAG_NP
+#undef HAVE_ACL_ADD_PERM
+#undef HAVE_ACL_CLEAR_FLAGS_NP
+#undef HAVE_ACL_CLEAR_PERMS
+#undef HAVE_ACL_CREATE_ENTRY
+#undef HAVE_ACL_DELETE_DEF_FILE
+#undef HAVE_ACL_ENTRY_T
+#undef HAVE_ACL_FREE
+#undef HAVE_ACL_GET_ENTRY
+#undef HAVE_ACL_GET_FD
+#undef HAVE_ACL_GET_FD_NP
+#undef HAVE_ACL_GET_FILE
+#undef HAVE_ACL_GET_FLAGSET_NP
+#undef HAVE_ACL_GET_FLAG_NP
+#undef HAVE_ACL_GET_LINK_NP
+#undef HAVE_ACL_GET_PERMSET
+#undef HAVE_ACL_GET_PERM_NP
+#undef HAVE_ACL_GET_QUALIFIER
+#undef HAVE_ACL_GET_TAG_TYPE
+#undef HAVE_ACL_INIT
+#undef HAVE_ACL_PERMSET_T
+#undef HAVE_ACL_SET_FD
+#undef HAVE_ACL_SET_FD_NP
+#undef HAVE_ACL_SET_FILE
+#undef HAVE_ACL_SET_LINK_NP
+#undef HAVE_ACL_SET_QUALIFIER
+#undef HAVE_ACL_SET_TAG_TYPE
+#undef HAVE_ACL_T
+#undef HAVE_ACL_TAG_T
+#undef HAVE_DECL_ACL_SYNCHRONIZE
+#undef HAVE_DECL_ACL_TYPE_EXTENDED
+#undef HAVE_DECL_ACL_TYPE_NFS4
+#undef HAVE_DECL_ACE_GETACL
+#undef HAVE_DECL_ACE_GETACLCNT
+#undef HAVE_DECL_ACE_SETACL
+#undef HAVE_DECL_EXTATTR_NAMESPACE_USER
+#undef HAVE_DECL_XATTR_NOFOLLOW
+#undef HAVE_FGETXATTR
+#undef HAVE_FLISTXATTR
+#undef HAVE_FSETXATTR
+#undef HAVE_GETXATTR
+#undef HAVE_LISTXATTR
+#undef HAVE_SETXATTR
+#undef HAVE_MBR_GID_TO_UUID
+#undef HAVE_MBR_UID_TO_UUID
+#undef HAVE_MBR_UUID_TO_ID
+
+/* --- Appels POSIX absents de l'UCRT --- */
+#undef HAVE_CHOWN
+#undef HAVE_CHROOT
+#undef HAVE_CHFLAGS
+#undef HAVE_FCHDIR
+#undef HAVE_FCHFLAGS
+#undef HAVE_FCHMOD
+#undef HAVE_FCHOWN
+#undef HAVE_FCNTL
+#undef HAVE_FDOPENDIR
+#undef HAVE_FORK
+#undef HAVE_VFORK
+#undef HAVE_POSIX_SPAWNP
+#undef HAVE_PIPE
+#undef HAVE_POLL
+#undef HAVE_SELECT
+#undef HAVE_SIGACTION
+#undef HAVE_GETEUID
+#undef HAVE_GETGRGID_R
+#undef HAVE_GETGRNAM_R
+#undef HAVE_GETPWNAM_R
+#undef HAVE_GETPWUID_R
+#undef HAVE_GETLINE
+#undef HAVE_GETVFSBYNAME
+#undef HAVE_LINK
+#undef HAVE_LINKAT
+#undef HAVE_SYMLINK
+#undef HAVE_READLINK
+#undef HAVE_READLINKAT
+#undef HAVE_LSTAT
+#undef HAVE_LCHMOD
+#undef HAVE_LCHOWN
+#undef HAVE_LCHFLAGS
+#undef HAVE_LUTIMES
+#undef HAVE_MKFIFO
+#undef HAVE_MKNOD
+#undef HAVE_MKSTEMP
+#undef HAVE_NL_LANGINFO
+#undef HAVE_OPENAT
+#undef HAVE_FSTATAT
+#undef HAVE_UNLINKAT
+#undef HAVE_READDIR_R
+#undef HAVE_DIRFD
+#undef HAVE_STATFS
+#undef HAVE_STATVFS
+#undef HAVE_FSTATFS
+#undef HAVE_FSTATVFS
+#undef HAVE_FUTIMENS
+#undef HAVE_FUTIMES
+#undef HAVE_UTIMES
+#undef HAVE_UTIMENSAT
+#undef HAVE_TIMEGM
+#undef HAVE_SETENV
+#undef HAVE_UNSETENV
+#undef HAVE_STRERROR_R
+#undef HAVE_DECL_STRERROR_R
+#undef HAVE_CTIME_R
+#undef HAVE_GMTIME_R
+#undef HAVE_LOCALTIME_R
+#undef HAVE_ARC4RANDOM_BUF
+#undef HAVE_READPASSPHRASE
+#undef HAVE_FNMATCH
+#undef HAVE_ICONV
+#undef HAVE_LOCALE_CHARSET
+#undef HAVE_FSEEKO
+#undef HAVE_FTRUNCATE
+#undef HAVE_D_MD_ORDER
+#undef HAVE_EFTYPE
+
+/* --- Champs de struct absents sur Windows --- */
+#undef HAVE_STRUCT_STAT_ST_BIRTHTIME
+#undef HAVE_STRUCT_STAT_ST_BIRTHTIMESPEC_TV_NSEC
+#undef HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+#undef HAVE_STRUCT_STAT_ST_BLKSIZE
+#undef HAVE_STRUCT_STAT_ST_FLAGS
+#undef HAVE_STRUCT_STATFS
+#undef HAVE_STRUCT_STATFS_F_IOSIZE
+#undef HAVE_STRUCT_VFSCONF
+#undef HAVE_STRUCT_TM_TM_GMTOFF
+
+#endif /* _WIN32 */

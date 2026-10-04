@@ -37,13 +37,13 @@ struct cf2149_channel_lo {
 struct cf2149_channel_hi {
 	CF2149_BITFIELD(uint8_t : 4,
 	CF2149_BITFIELD(uint8_t period : 4,
-	;))
+	))
 };
 
 struct cf2149_noise {
 	CF2149_BITFIELD(uint8_t : 3,
 	CF2149_BITFIELD(uint8_t period : 5,
-	;))
+	))
 };
 
 struct cf2149_iomix {
@@ -55,14 +55,14 @@ struct cf2149_iomix {
 	CF2149_BITFIELD(uint8_t tone_c : 1,
 	CF2149_BITFIELD(uint8_t tone_b : 1,
 	CF2149_BITFIELD(uint8_t tone_a : 1,
-	;))))))))
+	))))))))
 };
 
 struct cf2149_level {
 	CF2149_BITFIELD(uint8_t : 3,
 	CF2149_BITFIELD(uint8_t m : 1,
 	CF2149_BITFIELD(uint8_t level : 4,
-	;)))
+	)))
 };
 
 struct cf2149_envelope_lo {
@@ -80,10 +80,10 @@ struct cf2149_envelope_shape {
 		CF2149_BITFIELD(uint8_t att : 1,
 		CF2149_BITFIELD(uint8_t alt : 1,
 		CF2149_BITFIELD(uint8_t hold: 1,
-		;)))))
+		)))))
 		CF2149_BITFIELD(uint8_t : 4,
 		CF2149_BITFIELD(uint8_t ctrl : 4,
-		;))
+		))
 	};
 };
 
@@ -121,10 +121,10 @@ struct cf2149_regs {
 
 struct cf2149_ac_level {
 	union {
-		struct { CF2149_BITFIELD(uint8_t u4 : 4, CF2149_BITFIELD(uint8_t : 4, ;)) };
-		struct { CF2149_BITFIELD(uint8_t u5 : 5, CF2149_BITFIELD(uint8_t : 3, ;)) };
-		struct { CF2149_BITFIELD(uint8_t u6 : 6, CF2149_BITFIELD(uint8_t : 2, ;)) };
-		struct { CF2149_BITFIELD(uint8_t u7 : 7, CF2149_BITFIELD(uint8_t : 1, ;)) };
+		struct { CF2149_BITFIELD(uint8_t u4 : 4, CF2149_BITFIELD(uint8_t : 4, )) };
+		struct { CF2149_BITFIELD(uint8_t u5 : 5, CF2149_BITFIELD(uint8_t : 3, )) };
+		struct { CF2149_BITFIELD(uint8_t u6 : 6, CF2149_BITFIELD(uint8_t : 2, )) };
+		struct { CF2149_BITFIELD(uint8_t u7 : 7, CF2149_BITFIELD(uint8_t : 1, )) };
 		uint8_t u8;
 	};
 };
@@ -159,7 +159,7 @@ struct cf2149_bdc {
 			CF2149_BITFIELD(uint8_t bdir : 1,
 			CF2149_BITFIELD(uint8_t bc2 : 1,
 			CF2149_BITFIELD(uint8_t bc1 : 1,
-			;))))
+			))))
 		};
 		uint8_t u8;
 	};
@@ -171,7 +171,7 @@ struct cf2149_a98 {
 			CF2149_BITFIELD(uint8_t : 6,
 			CF2149_BITFIELD(uint8_t a9_l : 1,
 			CF2149_BITFIELD(uint8_t a8 : 1,
-			;)))
+			)))
 		};
 		uint8_t u8;
 	};

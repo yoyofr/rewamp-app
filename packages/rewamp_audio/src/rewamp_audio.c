@@ -696,8 +696,16 @@ static ma_result rewamp_create_device(const ma_device_id* pDeviceID) {
     return r;
 }
 
+#if defined(_MSC_VER)
+void rewamp_win_crash_trace_install(void);   /* src/windows/rewamp_win_crash.c */
+#endif
+
 RewampResult rewamp_init(void) {
     if (g_initialized) return REWAMP_OK;
+#if defined(_MSC_VER)
+    // REWAMP_CRASH_TRACE=1: pile symbolisée sur stderr au premier plantage.
+    rewamp_win_crash_trace_install();
+#endif
 
     ma_engine_config cfg = ma_engine_config_init();
     cfg.sampleRate = 44100;
@@ -1195,6 +1203,13 @@ static int rewamp_open_track(const char* path, RewampOpenedTrack* out) {
     return 0;
 }
 
+/* Chargements explicites réussis; + les relais gapless = une GÉNÉRATION de
+ * morceau (rewamp_track_generation). Course tolérée, comme la télémétrie. */
+static int64_t g_load_count = 0;
+int64_t rewamp_track_generation(void) {
+    return g_load_count + rewamp_handoff_serial();
+}
+
 RewampResult rewamp_load_file(const char* path) {
     if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
 
@@ -1208,6 +1223,7 @@ RewampResult rewamp_load_file(const char* path) {
 
     RewampOpenedTrack ot;
     if (!rewamp_open_track(path, &ot)) return REWAMP_ERROR_LOAD_FAILED;
+    g_load_count++;
     /* Nouvelle piste = nouvelle image (pochette, grille de motifs, voies),
      * même si l'on ne joue pas encore: le visualiseur doit sortir de sa veille.
      * Voir rewamp_viz_idle.h. */
@@ -1248,6 +1264,17 @@ void rewamp_unload(void) {
 /* Short enough to feel instant, long enough to kill the click. */
 #define REWAMP_PAUSE_FADE_MS 12
 
+/* Une pause est DEMANDÉE: rewamp_is_playing répond faux tout de suite, même
+ * pendant le fondu anti-clic. Sans ça, ma_sound_is_playing restait vrai
+ * jusqu'à ce que l'arrêt programmé tombe — 12 ms de fondu, calé sur l'horloge
+ * du moteur qui n'avance qu'au rythme des callbacks (20 ms): une fenêtre de
+ * ~12-32 ms. Le tick Dart de 250 ms qui tombait dedans recopiait « en
+ * lecture » dans isPlaying (le moteur fait autorité), et le tick SUIVANT
+ * voyait « moteur arrêté alors qu'on se croit en lecture » = fin de piste:
+ * appuyer sur pause passait au morceau suivant (~5-13 % des pauses). Le
+ * moteur répond désormais l'état COMMANDÉ; seul rewamp_play le lève. */
+static volatile int g_pause_requested = 0;
+
 RewampResult rewamp_play(void) {
     if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
     if (!g_sound_loaded) return REWAMP_ERROR_NO_SOUND;
@@ -1263,6 +1290,7 @@ RewampResult rewamp_play(void) {
     // which miniaudio requires before restarting.)
     ma_sound_reset_stop_time_and_fade(&g_sound);
     ma_sound_set_fade_in_milliseconds(&g_sound, 0.0f, 1.0f, REWAMP_PAUSE_FADE_MS);
+    g_pause_requested = 0;
     ma_sound_start(&g_sound);
     rewamp_notes_set_paused(0);
     // The data source stops being read while paused, so the next ds_read would
@@ -1282,6 +1310,7 @@ RewampResult rewamp_pause(void) {
         // device renders, so the sound stayed "playing" forever and the UI
         // pause flap-flopped against the tick (`isPlaying = audio.isPlaying`).
         // Nothing renders, so there is no waveform to click: stop dead.
+        g_pause_requested = 1;
         ma_sound_stop(&g_sound);
         rewamp_notes_set_paused(1);
         rewamp_android_stop_service();
@@ -1289,6 +1318,7 @@ RewampResult rewamp_pause(void) {
     }
     // NOT ma_sound_stop(): cutting the waveform dead mid-cycle is a step
     // discontinuity, which is exactly the click heard on pause. Fade it out.
+    g_pause_requested = 1;
     ma_sound_stop_with_fade_in_milliseconds(&g_sound, REWAMP_PAUSE_FADE_MS);
     // Freeze the notation playhead NOW: extrapolating through the pause made
     // the notes scroll on for a beat and resume out of sync.
@@ -1332,6 +1362,7 @@ RewampResult rewamp_stop(void) {
 
 int rewamp_is_playing(void) {
     if (!g_initialized || !g_sound_loaded) return 0;
+    if (g_pause_requested) return 0;   /* voir g_pause_requested: l'état COMMANDÉ */
     return ma_sound_is_playing(&g_sound) ? 1 : 0;
 }
 

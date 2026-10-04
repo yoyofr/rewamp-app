@@ -7,7 +7,25 @@
 /*****************************************************************************************
 Global includes
 *****************************************************************************************/
-#ifndef BUILD_CROSS_PLATFORM
+/* YOYOFR (rewamp): ce garde-fou mélangeait DEUX questions, et sur Windows la
+ * réponse n'est pas la même pour les deux.
+ *
+ * `BUILD_CROSS_PLATFORM` (posé en dur par notre config.h pré-généré) sert ici
+ * à sauter `windows.h`, et plus bas à ne PAS définir `ENABLE_ASSEMBLY` (de
+ * l'asm x86 inline, que MSVC refuse en x64). Sur Windows il nous faut les
+ * DEUX: `windows.h` OUI, l'asm NON.
+ *
+ * Tel quel, sous MSVC, `windows.h` était sauté alors que le bloc `_WIN32`
+ * juste en dessous inclut quand même `<mmsystem.h>` — un en-tête qui n'existe
+ * pas sans `windows.h`. Résultat mesuré: 3 800 erreurs sur cette seule cible
+ * (MCIERROR, MCIDEVICEID, HDRVR, DRVCALLBACK, et des redéfinitions de FAR,
+ * CALLBACK et DECLSPEC_IMPORT), c'est-à-dire le plus gros poste d'erreurs de
+ * toute la build Windows.
+ *
+ * On sépare donc les deux: `_WIN32` décide de `windows.h`, et
+ * `BUILD_CROSS_PLATFORM` continue seul de décider de l'assembleur. Rien ne
+ * change sur Apple, Linux ni Android, où `_WIN32` n'est pas défini. */
+#if !defined(BUILD_CROSS_PLATFORM) || defined(_WIN32)
     #ifndef NO_DEFINE_ENVIRONMENT_VARIABLES
         #include "WindowsEnvironment.h"
     #endif

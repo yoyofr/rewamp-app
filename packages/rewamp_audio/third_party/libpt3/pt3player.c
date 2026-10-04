@@ -742,7 +742,10 @@ int func_setup_music(uint8_t* music_ptr, int length, int chn, int first) {
 	//slot already belongs to another module.
 	int nameTS = 0;
 
-	TSData *tsd = (void*)music_ptr+length-sizeof(TSData);
+	/* YOYOFR (rewamp): l'arithmétique sur `void*` est une extension GNU que
+	 * MSVC refuse (« 'void *' : taille inconnue »). `char*` donne le même
+	 * octet, en C standard. */
+	TSData *tsd = (TSData*)((char*)music_ptr+length-sizeof(TSData));
 
 	if (length>65536) {
 		printf("The size is over 65536");

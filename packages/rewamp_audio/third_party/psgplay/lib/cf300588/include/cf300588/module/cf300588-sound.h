@@ -31,14 +31,14 @@ struct cf300588_sound_ctrl {
 	CF300588_BITFIELD(uint8_t : 6,
 	CF300588_BITFIELD(uint8_t play_repeat : 1,
 	CF300588_BITFIELD(uint8_t play : 1,
-	;)))
+	)))
 };
 
 struct cf300588_sound_mode {
 	CF300588_BITFIELD(uint8_t mono : 1,
 	CF300588_BITFIELD(uint8_t : 5,
 	CF300588_BITFIELD(uint8_t rate : 2,
-	;)))
+	)))
 };
 
 struct cf300588_sound_regs {

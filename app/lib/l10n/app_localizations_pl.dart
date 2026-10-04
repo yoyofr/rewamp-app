@@ -4197,24 +4197,56 @@ class AppLocalizationsPl extends AppLocalizations {
   String get releaseNotesTitle => 'Nowości';
 
   @override
-  String get releaseNotesV7Cpu =>
-      'Aplikacja nie pracuje już w tle, gdy nic nie gra: znacznie mniejsze zużycie procesora i baterii.';
+  String get releaseNotesV8Windows =>
+      'Rewamp działa teraz w systemie Windows, ze wszystkimi silnikami i wizualizacjami, łącznie z projectM.';
 
   @override
-  String get releaseNotesV7VizIdle =>
-      'Wizualizacje zatrzymują się, gdy odtwarzanie jest wstrzymane, i są ograniczone do 60 klatek na sekundę (regulowane).';
+  String get releaseNotesV8Linux =>
+      'Linux: wizualizacje działają teraz także pod X11 (tryb gry Steam Deck), opcja „Zawsze na wierzchu” wraca tam, a zamknięcie okna nie powoduje już awarii aplikacji.';
 
   @override
-  String get releaseNotesV7Subsongs =>
-      'Naprawiono: na PC Engine, Master System i Atari ST (.sndh) niektóre utwory uruchamiały sąsiednią piosenkę.';
+  String get releaseNotesV8Formats =>
+      'Odtwarzane są teraz pliki Game Boy .gbr i DefleMask .dmf.';
 
   @override
-  String get releaseNotesV7Piano =>
-      'Wizualizacja pianina pozostawała pusta przy muzyce z PC Engine.';
+  String get releaseNotesV8Smooth =>
+      'Płynniejszy odtwarzacz i wizualizacje: ekran nie jest już przerysowywany w całości przy każdej zmianie pozycji.';
 
   @override
-  String get releaseNotesV7Database =>
-      'Baza danych uszkodzona przez aktualizację naprawia się teraz sama, zamiast blokować dostęp do biblioteki.';
+  String get releaseNotesV8Scrolling =>
+      'Zbyt długi tytuł przewija się teraz w pętli, w jednym kierunku, zamiast tam i z powrotem.';
+
+  @override
+  String get releaseNotesV8MouseDrag =>
+      'Komputery: poziome rzędy można przewijać, klikając i przeciągając myszą.';
+
+  @override
+  String get releaseNotesV8Presets =>
+      'projectM: pakiety presetów instalują się nawet dziewięć razy szybciej, a duże foldery presetów nie są już obcinane.';
+
+  @override
+  String get releaseNotesV8Pause =>
+      'Naprawiono: wstrzymanie mogło przełączyć na następny utwór.';
+
+  @override
+  String get releaseNotesV8Psf =>
+      'Albumy PSF (PlayStation, Nintendo DS…) dostarczane jako jedno archiwum rozwijają się teraz w utwory, także po dodaniu do kolejki.';
+
+  @override
+  String get releaseNotesV8ArtistTracks =>
+      'Strony wykonawców: lista utworów znów pokazuje utwory, a nie archiwa całych albumów.';
+
+  @override
+  String get releaseNotesV8VizFixes =>
+      'Wizualizacje: głosy Nintendo 64 są poprawnie wyświetlane i wyciszane, pianino dopasowuje kadr do każdego utworu, a tło z okładką już nie znika.';
+
+  @override
+  String get releaseNotesV8ProjectMFixes =>
+      'projectM: presety podążają za rzeczywistą liczbą klatek (niektóre reagowały ospale), a dwa presety, które nigdy się nie pojawiały, są już dostępne.';
+
+  @override
+  String get releaseNotesV8Covers =>
+      'Okładki wczytują się znacznie szybciej: siatka albumów wypełnia się od razu, a nie po jednej okładce co półtorej sekundy.';
 
   @override
   String get releaseNotesDataReset =>
@@ -4641,46 +4673,6 @@ class AppLocalizationsPl extends AppLocalizations {
 
   @override
   String get miniWindowCoverFit => 'Pokaż całą okładkę';
-
-  @override
-  String get releaseNotesV7Mt32 =>
-      'Nowy silnik Roland MT-32 do muzyki MIDI z gier, z własnymi ROM-ami. Bez ROM-ów plik MIDI napisany dla MT-32 jest dostosowywany do General MIDI.';
-
-  @override
-  String get releaseNotesV7Xmp =>
-      'Odtwarzanych jest teraz dziesięć rzadkich formatów modułów (Archimedes Tracker .musx, .liq, .fnk…).';
-
-  @override
-  String get releaseNotesV7AmigaAdlib =>
-      'Muzyka AdLib Westwood (.adl) odtwarza wszystkie swoje utwory, a BP SoundMon V1 jest rozpoznawany na Amidze.';
-
-  @override
-  String get releaseNotesV7MiniPlayer =>
-      'Mac: miniodtwarzacz, kompaktowy lub z wizualizacją, oraz opcja „Zawsze na wierzchu”.';
-
-  @override
-  String get releaseNotesV7Instruments =>
-      'Oscyloskop, nuty i pianino mogą nazywać i kolorować każdy instrument, nie tylko każdy głos.';
-
-  @override
-  String get releaseNotesV7Podium =>
-      'Wyszukiwanie: filtruj utwory, które zajęły 1., 2. lub 3. miejsce w konkursie demosceny.';
-
-  @override
-  String get releaseNotesV7ShortSubsongs =>
-      'Zbyt krótkie podutwory (efekty dźwiękowe z gier) są pomijane w „Odtwórz wszystko” — próg w Ustawienia → Odtwarzanie.';
-
-  @override
-  String get releaseNotesV7LocalFolders =>
-      'Twoje importy: upuść cały folder (archiwa zostaną rozpakowane) oraz twórz, zmieniaj nazwy lub przenoś foldery.';
-
-  @override
-  String get releaseNotesV7Midi =>
-      'MIDI: perkusja nie brzmi już jak pianino, a głośność nie przesterowuje.';
-
-  @override
-  String get releaseNotesV7ProjectM =>
-      'projectM: presety nie powtarzają się już między kolejnymi uruchomieniami, a preset nie jest już błędnie odrzucany po pauzie.';
 
   @override
   String get libraryFileMissing => 'Brak pliku';

@@ -34,10 +34,10 @@ struct psgplay;		/* PSG play object */
  * @u8: 8-bit channel level
  */
 union psgplay_digital_level {
-	struct { PSGPLAY_BITFIELD(uint8_t u4 : 4, PSGPLAY_BITFIELD(uint8_t : 4, ;)) };
-	struct { PSGPLAY_BITFIELD(uint8_t u5 : 5, PSGPLAY_BITFIELD(uint8_t : 3, ;)) };
-	struct { PSGPLAY_BITFIELD(uint8_t u6 : 6, PSGPLAY_BITFIELD(uint8_t : 2, ;)) };
-	struct { PSGPLAY_BITFIELD(uint8_t u7 : 7, PSGPLAY_BITFIELD(uint8_t : 1, ;)) };
+	struct { PSGPLAY_BITFIELD(uint8_t u4 : 4, PSGPLAY_BITFIELD(uint8_t : 4, )) };
+	struct { PSGPLAY_BITFIELD(uint8_t u5 : 5, PSGPLAY_BITFIELD(uint8_t : 3, )) };
+	struct { PSGPLAY_BITFIELD(uint8_t u6 : 6, PSGPLAY_BITFIELD(uint8_t : 2, )) };
+	struct { PSGPLAY_BITFIELD(uint8_t u7 : 7, PSGPLAY_BITFIELD(uint8_t : 1, )) };
 	uint8_t u8;
 };
 

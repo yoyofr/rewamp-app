@@ -18,6 +18,11 @@ enum UADEPaulaEventType {
 	PET_MAX_ENUM,  /* This value may change */
 };
 
+/* rewamp: MSVC ignore __attribute__((packed)); #pragma pack donne la MÊME
+ * disposition que le packed de GCC sur ces structs d'échange. */
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#endif
 struct uade_paula_event_frame {
 	int8_t channel;
 	int8_t event_type;
@@ -36,5 +41,8 @@ struct uade_write_audio_frame {
 		struct uade_paula_event_frame paula_event_frame;
 	} data;
 } __attribute__((packed));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 
 #endif

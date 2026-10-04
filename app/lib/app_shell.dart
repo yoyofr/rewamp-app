@@ -991,6 +991,21 @@ class _AppShellState extends State<AppShell>
       {required bool atEnd, bool silent = false}) async {
     _exitRadio();
     final l10n = context.l10n;
+    // Album PSF/TXTP livré en ARCHIVE sans tracklist serveur (jw_psf…): une
+    // seule ligne, l'archive, et les vraies pistes n'existent qu'après
+    // extraction — même étape que _startAlbumQueue. Sans elle la ligne unique
+    // tombait dans la numérotation générique de _subsongEntries: « Album (1) »,
+    // « Album (2) »… qui désignent toutes le MÊME fichier, donc la même piste.
+    // Bornée à ce cas: les autres albums se résolvent piste par piste à la
+    // lecture, et un ajout en masse ne doit pas télécharger chaque zip.
+    if (RewampDb.isPsfArchiveAlbum(tracks)) {
+      try {
+        tracks = await RewampDb.ensureAlbumExtracted(tracks);
+      } on DownloadCancelledException {
+        return;
+      }
+      if (!mounted || tracks.isEmpty) return;
+    }
     await _seedQueueWithCurrent(); // playing outside an empty queue — see it
     // Expand each track into its subsongs (matches _startAlbumQueue) so a
     // multi-subsong file within the album queues every subsong, not just one.
@@ -2481,7 +2496,7 @@ class _AppShellState extends State<AppShell>
     // c'est le suspect n° 1 des estampillages parasites.
     if (kDebugMode && track.albumId == null && _queueAlbumId != null) {
       debugPrint('[stamp] REPLI _queueAlbumId=$_queueAlbumId '
-          'sur ${track.filePath.split('/').last} '
+          'sur ${p.basename(track.filePath)} '
           '(meta="${track.metaAlbum ?? ''}")');
     }
     _onFileReadyAsAlbum(

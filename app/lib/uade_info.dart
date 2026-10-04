@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 
 import 'formats.dart' show kUadeExts;
 import 'local_db.dart';
@@ -150,8 +151,10 @@ class UadeInfoService {
   /// hashing every opened file. (Prefix-form names like "mdat.x" are handled
   /// too — the suffix set below is a superset of what actually reaches uade.)
   static bool isUadePath(String path) {
-    final slash = path.lastIndexOf('/');
-    final name = slash >= 0 ? path.substring(slash + 1) : path;
+    // `p.basename`: les DEUX séparateurs sous Windows — un `lastIndexOf('/')`
+    // y rendait tout le chemin pour un nom en '\', et la forme PRÉFIXE
+    // (`mdat.x`) n'était plus reconnue.
+    final name = p.basename(path);
     // Prefix convention: "ahx.song", "mdat.name" → token before the dot.
     final firstDot = name.indexOf('.');
     if (firstDot > 0) {
@@ -201,10 +204,7 @@ class UadeInfoService {
   /// files, so it is the remainder that names the tune. Everything else keeps
   /// the usual basename-minus-extension.
   static String displayName(String path) {
-    final slash = path.lastIndexOf(Platform.pathSeparator);
-    var name = slash >= 0 ? path.substring(slash + 1) : path;
-    final unixSlash = name.lastIndexOf('/');
-    if (unixSlash >= 0) name = name.substring(unixSlash + 1);
+    final name = p.basename(path);
     final firstDot = name.indexOf('.');
     if (firstDot > 0 &&
         _kUadePrefixes.contains(name.substring(0, firstDot).toLowerCase())) {

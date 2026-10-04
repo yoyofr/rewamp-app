@@ -339,7 +339,11 @@ static RewampDecoder* uade_open(const char* path, RewampAudioFormat* outFormat) 
 
     // A dying uadecore write can raise SIGPIPE; ignore it process-wide (the
     // in-process build talks over a socketpair to the uadecore thread).
+    // Windows: deux tubes CRT, et une écriture dans un tube refermé y rend une
+    // ERREUR (EPIPE/EINVAL), jamais un signal — SIGPIPE n'existe pas.
+#ifdef SIGPIPE
     signal(SIGPIPE, SIG_IGN);
+#endif
 
     char clean[4096];
     int subsong = 0;
@@ -415,6 +419,27 @@ static RewampDecoder* uade_open(const char* path, RewampAudioFormat* outFormat) 
                     : uade_play(clean, sub, s);
     };
 
+    // Per-voice oscilloscope rings: Amiga Paula has 4 hardware voices.
+    //
+    // ⚠️ AVANT makeState(), pas après uade_play(). uadecore est un FIL, créé
+    // par uade_new_state (uade_arch_spawn), et il ÉMULE dès que uade_play lui a
+    // remis le module: audio.c::uade_capture_voices() écrit alors dans
+    // m_voice_buff[0..3], sans verrou. rewamp_channel_data_reset() LIBÈRE puis
+    // réalloue ces tampons — appelée après uade_play, elle tournait EN MÊME
+    // TEMPS que le fil, qui écrivait dans un tampon nul ou libéré. Plantage
+    // `uade_capture_voices+0x1ab`, écriture à 0x71a, reproduit au harnais en
+    // enchaînant les sous-chansons de « mdat.monkey island » (TFMX) avec un
+    // visualiseur qui lit les voies; signalé sous Windows, mais la course est la
+    // même sur toutes les plateformes. Ici aucun fil uadecore n'existe encore:
+    // le décodeur précédent a été fermé (fil rejoint) avant cet open().
+    rewamp_channel_data_reset(4);
+    rewamp_channel_data_set_ring_write_size(SOUND_BUFFER_SIZE_SAMPLE * 4 * 4);
+    // audio.c's uade_capture_voices() WRAPS m_voice_current_ptr modulo the
+    // ring size; without the circular flag ring_read() treats a just-wrapped
+    // pointer as "almost nothing written" → the voice scope flashes flat on
+    // every ring cycle (~every 0.3s).
+    rewamp_channel_data_set_ring_circular(1);
+
     struct uade_state* st = makeState(0);
     if (!st) { free(bpsm); return NULL; }
 
@@ -475,16 +500,8 @@ static RewampDecoder* uade_open(const char* path, RewampAudioFormat* outFormat) 
      * pipeline, so toggles take effect on the next chunk). */
     uade_apply_engine_params(st);
 
-    // Per-voice oscilloscope + note capture: Amiga Paula has 4 hardware voices.
-    // Set up the ring buffers + chip grouping BEFORE the first uade_read() so
-    // audio.c's uade_capture_voices() has allocated m_voice_buff[0..3] to write.
-    rewamp_channel_data_reset(4);
-    rewamp_channel_data_set_ring_write_size(SOUND_BUFFER_SIZE_SAMPLE * 4 * 4);
-    // audio.c's uade_capture_voices() WRAPS m_voice_current_ptr modulo the
-    // ring size; without the circular flag ring_read() treats a just-wrapped
-    // pointer as "almost nothing written" → the voice scope flashes flat on
-    // every ring cycle (~every 0.3s).
-    rewamp_channel_data_set_ring_circular(1);
+    // Chip grouping + voice names (the ring buffers were set up before
+    // makeState — see above; resetting them here would race uadecore).
     rewamp_voices_meta_reset();
     rewamp_voices_add_chip("Paula", 0, 4);
     for (int i = 0; i < 4; i++) {

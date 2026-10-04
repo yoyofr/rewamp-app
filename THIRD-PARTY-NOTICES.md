@@ -70,7 +70,7 @@ and for the two that constrain what may be redistributed.
 | [vio2sf (Cog / melonDS)](https://github.com/losnoco/Cog) | GPL-3.0 | Chris Moeller (kode54) ; melonDS : Arisotura | Nintendo DS .2sf/.mini2sf |
 | [ZXTune](https://zxtune.bitbucket.io/) | GPL-3.0 | Vitamin/CAIG | ZX Spectrum / AY (.ay/.vtx/.pt3/.stc/…) + .chp |
 
-## Bundled components (20)
+## Bundled components (21)
 
 Everything the binary redistributes that is not a decoder:
 archive handling, the visualizer, fonts, shaders, data sets.
@@ -97,6 +97,7 @@ archive handling, the visualizer, fonts, shaders, data sets.
 | [UnRAR](https://www.rarlab.com/license.htm) | licence UnRAR (décompression uniquement) | Alexander Roshal |
 | [unscii-16 (police bitmap)](http://viznut.fi/unscii/) | domaine public / CC0 | Viznut |
 | [webUADE (patches audio.device)](https://www.wothke.ch/) | GPL-2.0 | Jürgen Wothke |
+| [zlib (Windows)](https://zlib.net/) | Zlib | Jean-loup Gailly, Mark Adler |
 
 ## UnRAR — required notice
 

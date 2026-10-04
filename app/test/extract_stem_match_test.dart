@@ -49,8 +49,9 @@ void main() {
     // chaque lecture. Le NOM demandé est le bon: on choisit, à ordre stable.
     await put('track.ogg');
     await put('sub/track.flac');
+    // Le moins enfoui: celui à la RACINE du dossier (chemin natif).
     expect(await RewampDb.debugFindByStem(dir.path, 'track.wav'),
-        endsWith('/track.ogg'));
+        p.join(dir.path, 'track.ogg'));
   });
 
   test('un fichier non jouable au même nom ne compte pas', () async {

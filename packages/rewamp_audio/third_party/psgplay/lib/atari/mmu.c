@@ -101,12 +101,14 @@ void probe_copy_memory_16(struct machine *machine,
 {
 	uint8_t *b = buffer;
 
+	/* rewamp: `sizeof(uint16_t[i])` (sizeof d'un tableau de taille variable,
+	 * = 2*i) écrit en clair — MSVC n'a pas les VLA. */
 	for (size_t i = 0; i < word_count; i++) {
 		const uint16_t v = probe_read_memory_16(machine,
-			bus_address + sizeof(uint16_t[i]));
+			bus_address + i * sizeof(uint16_t));
 
-		b[sizeof(uint16_t[i]) + 0] = v >> 8;
-		b[sizeof(uint16_t[i]) + 1] = v & 0xff;
+		b[i * sizeof(uint16_t) + 0] = v >> 8;
+		b[i * sizeof(uint16_t) + 1] = v & 0xff;
 	}
 }
 

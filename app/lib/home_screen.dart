@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'app_snack.dart';
 
 import 'browse_screen.dart' show PlaylistTracksScreen;
@@ -553,9 +554,7 @@ class HomeScreen extends StatelessWidget {
                                       for (final t in dbTracks) t.subsongIdx: t
                                     };
                                     final ref      = dbTracks.first;
-                                    final baseName = fp
-                                        .split(Platform.pathSeparator)
-                                        .last
+                                    final baseName = p.basename(fp)
                                         .replaceAll(RegExp(r'\.\w+$'), '');
                                     // ⚠️ La POSITION n'est pas l'index: une
                                     // liste peut être CREUSE (`.adl`). Voir
@@ -626,9 +625,7 @@ class HomeScreen extends StatelessWidget {
                                     (await dir.list(recursive: true).toList())
                                     .whereType<File>()
                                     .where((f) {
-                                      final name = f.path
-                                          .split(Platform.pathSeparator)
-                                          .last
+                                      final name = p.basename(f.path)
                                           .toLowerCase();
                                       // Suffix OR Amiga prefix token: modland
                                       // names a module "mdat.NAME"/"han.NAME",
@@ -668,9 +665,7 @@ class HomeScreen extends StatelessWidget {
                                     if (dbByPath.containsKey(f.path)) {
                                       return dbByPath[f.path]!;
                                     }
-                                    final name = f.path
-                                        .split(Platform.pathSeparator)
-                                        .last
+                                    final name = p.basename(f.path)
                                         .replaceAll(RegExp(r'\.\w+$'), '');
                                     final ext = f.path.split('.').last;
                                     return TrackRecord(
@@ -820,9 +815,7 @@ class HomeScreen extends StatelessWidget {
                             for (final t in dbTracks) t.subsongIdx: t
                           };
                           final ref = dbTracks.isNotEmpty ? dbTracks.first : null;
-                          final baseName = entry.filePath
-                              .split(Platform.pathSeparator)
-                              .last
+                          final baseName = p.basename(entry.filePath)
                               .replaceAll(RegExp(r'\.\w+$'), '');
                           final ext =
                               entry.filePath.split('.').last.toLowerCase();

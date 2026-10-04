@@ -92,6 +92,147 @@ static int16_t* alist_s16(struct hle_t* hle, uint16_t dmem)
     return (int16_t*)(hle->alist_buffer + ((dmem ^ S16) & 0xfff));
 }
 
+//YOYOFR — données de voix (oscilloscope, notes, mute): tout se décide à
+// l'ENVMIXER, rien au RESAMPLE.
+//
+// Une voix N64 passe par RESAMPLE (hauteur) PUIS par ENVMIXER (enveloppe ×
+// dry/wet). Mais tout RESAMPLE n'est pas une voix: la chaîne d'EFFETS libultra
+// (bus aux, chorus/délai de la réverb) en fait un par trame, qu'aucun
+// ENVMIXER ne suit. Killer Instinct Gold (ABI « audio »): un RESAMPLE à
+// l'adresse 0012b810, pitch 1,0, jamais mixé — premier vu, il prenait le
+// SLOT 0, et le mute appliqué au RESAMPLE l'éteignait: tout solo d'une autre
+// voix coupait les effets, et avec eux quasi toute la sortie (RMS 0,0006),
+// tandis que « voix 0 » en solo ne jouait que la réverb d'un mix muet.
+//
+// D'où l'ordre: le RESAMPLE met la voix EN ATTENTE (échantillons bruts,
+// adresse, hauteur) sans rien toucher; l'ENVMIXER qui la consomme prouve que
+// c'est une voix — c'est LÀ qu'on lui attribue un slot, qu'on applique le
+// mute (gains à zéro, l'état d'enveloppe continuant d'avancer, sinon la voix
+// reprendrait faux au démute), et qu'on écrit l'oscillo avec le gain VRAIMENT
+// appliqué, échantillon par échantillon (le `mdz_cur_vol` lu au RESAMPLE
+// était celui du dernier SETVOL: une autre voix — Airboarder 64, voix 1 en
+// solo, oscillo plein sur une sortie muette). Une attente que rien ne
+// consomme n'est pas une voix: ni slot, ni mute, ni oscillo.
+#define LU_SCOPE_MAX 4096   /* DMEM = 4 Ko: un bloc ne dépasse pas 2048 échantillons */
+#define SOUND_MAXVOICES_BUFFER_FX_USF 32
+static bool     lu_pend = false;
+static uint32_t lu_pend_addr;      /* état RESAMPLE en RDRAM: identité de la voix */
+static uint32_t lu_pend_pcm;       /* dernier LOADADPCM: identité de l'instrument */
+static uint32_t lu_pend_pitch;
+static bool     lu_pend_init;
+static bool     lu_pend_silent;
+static int      lu_pend_n;
+static int64_t  lu_pend_incr;
+static int16_t  lu_pend_smp[LU_SCOPE_MAX];
+static int32_t  lu_scope_gain[LU_SCOPE_MAX];   /* Q15, somme des gains entendus */
+static int      lu_mix_slot = -1;
+
+/* Slot d'une voix, par l'adresse de son état RESAMPLE (le N64 n'a pas de
+ * voies fixes). Premier slot libre, sinon le moins récemment servi. */
+static int lu_voice_slot(uint32_t address)
+{
+    int i = 0, oldestUpd = 255, reuseIdx = 0;
+    while (i < SOUND_MAXVOICES_BUFFER_FX_USF) {
+        if (vgm_last_sample_address[i] == 0) vgm_last_sample_address[i] = address;
+        if (vgm_last_sample_address[i] == address) {
+            vgm_last_sample_address_lastupdate[i] = 255;
+            return i;
+        }
+        if (vgm_last_sample_address_lastupdate[i]) vgm_last_sample_address_lastupdate[i]--;
+        if (oldestUpd > vgm_last_sample_address_lastupdate[i]) {
+            oldestUpd = vgm_last_sample_address_lastupdate[i];
+            reuseIdx = i;
+        }
+        i++;
+    }
+    vgm_last_sample_address[reuseIdx] = address;
+    vgm_last_sample_address_lastupdate[reuseIdx] = 255;
+    return reuseIdx;
+}
+
+static int lu_instr_of(uint32_t pcm)
+{
+    int inst = 0;
+    while (inst < 256) {
+        if (vgm_last_sample_address_inst[inst] == 0) vgm_last_sample_address_inst[inst] = pcm;
+        if (vgm_last_sample_address_inst[inst] == pcm) break;
+        inst++;
+    }
+    return inst & 0xFF;
+}
+
+static void lu_scope_write(int slot, const int16_t* smp, int n,
+                           const int32_t* gain, int64_t incr)
+{
+    const int ring = SOUND_BUFFER_SIZE_SAMPLE * 4 * 2;
+    int64_t pos = m_voice_current_ptr[slot];
+    for (int k = 0; k < n; k++) {
+        const int32_t v = (((int32_t)smp[k] * gain[k]) >> 15) >> 8;
+        const int64_t end = pos + incr;
+        for (int64_t o = pos; o < end; o += 1 << MODIZER_OSCILLO_OFFSET_FIXEDPOINT)
+            m_voice_buff[slot][(o >> MODIZER_OSCILLO_OFFSET_FIXEDPOINT) & (ring - 1)] = LIMIT8(v);
+        pos = end;
+        while ((pos >> MODIZER_OSCILLO_OFFSET_FIXEDPOINT) >= ring)
+            pos -= (int64_t)ring << MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
+    }
+    m_voice_current_ptr[slot] = pos;
+}
+
+/* Début d'un ENVMIXER: la voix en attente EST une voix — slot attribué ici.
+ * Rend 1 si elle est mutée: le mixeur met alors ses gains à zéro. */
+static int lu_mix_begin(void)
+{
+    lu_mix_slot = -1;
+    if (!lu_pend) return 0;
+    lu_mix_slot = lu_voice_slot(lu_pend_addr);
+    return (int)((generic_mute_mask >> lu_mix_slot) & 1);
+}
+
+/* Fin d'un ENVMIXER: `n` gains Q15 relevés (un par échantillon mixé). */
+static void lu_mix_end(int n)
+{
+    const int slot = lu_mix_slot;
+    lu_mix_slot = -1;
+    if (!lu_pend || slot < 0) return;
+    lu_pend = false;
+    if ((generic_mute_mask >> slot) & 1) return;   /* muette: rien à montrer */
+    g_lazyusf_voice_last_touched_tick[slot] = g_lazyusf_read_tick;
+    if (n > LU_SCOPE_MAX) n = LU_SCOPE_MAX;
+    if (n <= 0) return;
+    for (int k = n; k < lu_pend_n; k++) lu_scope_gain[k] = lu_scope_gain[n - 1];
+    int32_t peak = 0;
+    for (int k = 0; k < lu_pend_n; k++)
+        if (lu_scope_gain[k] > peak) peak = lu_scope_gain[k];
+    lu_scope_write(slot, lu_pend_smp, lu_pend_n, lu_scope_gain, lu_pend_incr);
+    if (peak > 0 && !lu_pend_silent) {
+        vgm_last_instr[slot] = lu_instr_of(lu_pend_pcm);
+        vgm_last_note[slot]  = 440 * (uint64_t)lu_pend_pitch / 65536;
+        vgm_last_vol[slot]   = 1 + (lu_pend_init ? 1 : 0);
+    } else {
+        vgm_last_vol[slot] = 0;   /* mixée à zéro = inaudible */
+    }
+}
+
+static inline int32_t lu_abs32(int32_t v) { return v < 0 ? -v : v; }
+
+/* Gain ENTENDU d'un échantillon: dry gauche + droite; la part wet ne compte
+ * que pour une voix entièrement réverbérée (dry nul). */
+static inline int32_t lu_heard_gain(const int16_t* gains, size_t n)
+{
+    int32_t g = lu_abs32(gains[0]) + lu_abs32(gains[1]);
+    if (g == 0 && n >= 4) g = lu_abs32(gains[2]) + lu_abs32(gains[3]);
+    return g;
+}
+
+void lazyusf_scope_reset(void)
+{
+    lu_pend = false;
+    lu_mix_slot = -1;
+    memset(g_lazyusf_voice_last_touched_tick, 0,
+           sizeof(g_lazyusf_voice_last_touched_tick));
+}
+//YOYOFR
+
 
 static void sample_mix(int16_t* dst, int16_t src, int16_t gain)
 {
@@ -321,6 +462,7 @@ void alist_envmix_exp(
         const int32_t *rate,
         uint32_t address)
 {
+    const int lu_mute = lu_mix_begin(); //YOYOFR mute = gains à zéro, voir lu_mix_begin
     size_t n = (aux) ? 4 : 2;
 
     const int16_t* const in = (int16_t*)(hle->alist_buffer + dmemi);
@@ -393,8 +535,10 @@ void alist_envmix_exp(
             gains[1] = clamp_s16((r_vol * dry + 0x4000) >> 15);
             gains[2] = clamp_s16((l_vol * wet + 0x4000) >> 15);
             gains[3] = clamp_s16((r_vol * wet + 0x4000) >> 15);
+            if (lu_mute) gains[0] = gains[1] = gains[2] = gains[3] = 0; //YOYOFR
 
             alist_envmix_mix(n, buffers, gains, in[ptr^S]);
+            if (ptr < LU_SCOPE_MAX) lu_scope_gain[ptr] = lu_heard_gain(gains, n); //YOYOFR
             ++ptr;
         }
     }
@@ -410,6 +554,7 @@ void alist_envmix_exp(
     *(int32_t *)(save_buffer + 16) = (int32_t)ramps[0].value;    /* 12-13 */
     *(int32_t *)(save_buffer + 18) = (int32_t)ramps[1].value;    /* 14-15 */
     memcpy(hle->dram + address, (uint8_t *)save_buffer, sizeof(save_buffer));
+    lu_mix_end((int)ptr); //YOYOFR
     
 }
 
@@ -426,6 +571,7 @@ void alist_envmix_ge(
         const int32_t *rate,
         uint32_t address)
 {
+    const int lu_mute = lu_mix_begin(); //YOYOFR mute = gains à zéro, voir lu_mix_begin
     unsigned k;
     size_t n = (aux) ? 4 : 2;
 
@@ -475,8 +621,10 @@ void alist_envmix_ge(
         gains[1] = clamp_s16((r_vol * dry + 0x4000) >> 15);
         gains[2] = clamp_s16((l_vol * wet + 0x4000) >> 15);
         gains[3] = clamp_s16((r_vol * wet + 0x4000) >> 15);
+        if (lu_mute) gains[0] = gains[1] = gains[2] = gains[3] = 0; //YOYOFR
 
         alist_envmix_mix(n, buffers, gains, in[k^S]);
+        if (k < LU_SCOPE_MAX) lu_scope_gain[k] = lu_heard_gain(gains, n); //YOYOFR
     }
 
     *(int16_t *)(save_buffer +  0) = wet;               /* 0-1 */
@@ -490,6 +638,7 @@ void alist_envmix_ge(
     *(int32_t *)(save_buffer + 16) = (int32_t)ramps[0].value;    /* 12-13 */
     *(int32_t *)(save_buffer + 18) = (int32_t)ramps[1].value;    /* 14-15 */
     memcpy(hle->dram + address, (uint8_t *)save_buffer, 80);
+    lu_mix_end((int)count); //YOYOFR
     
 }
 
@@ -505,6 +654,7 @@ void alist_envmix_lin(
         const int32_t *rate,
         uint32_t address)
 {
+    const int lu_mute = lu_mix_begin(); //YOYOFR mute = gains à zéro, voir lu_mix_begin
     size_t k;
     struct ramp_t ramps[2];
     int16_t save_buffer[40];
@@ -551,8 +701,10 @@ void alist_envmix_lin(
         gains[1] = clamp_s16((r_vol * dry + 0x4000) >> 15);
         gains[2] = clamp_s16((l_vol * wet + 0x4000) >> 15);
         gains[3] = clamp_s16((r_vol * wet + 0x4000) >> 15);
+        if (lu_mute) gains[0] = gains[1] = gains[2] = gains[3] = 0; //YOYOFR
 
         alist_envmix_mix(4, buffers, gains, in[k^S]);
+        if (k < LU_SCOPE_MAX) lu_scope_gain[k] = lu_heard_gain(gains, 4); //YOYOFR
     }
 
     *(int16_t *)(save_buffer +  0) = wet;            /* 0-1 */
@@ -564,6 +716,7 @@ void alist_envmix_lin(
     *(int32_t *)(save_buffer + 16) = (int32_t)ramps[0].value; /* 16-17 */
     *(int32_t *)(save_buffer + 18) = (int32_t)ramps[1].value; /* 18-19 */
     memcpy(hle->dram + address, (uint8_t *)save_buffer, 80);
+    lu_mix_end((int)count); //YOYOFR
     
 }
 
@@ -580,6 +733,7 @@ void alist_envmix_nead(
         uint16_t *env_steps,
         const int16_t *xors)
 {
+    const int lu_mute = lu_mix_begin(); //YOYOFR mute = gains à zéro, voir lu_mix_begin
     int16_t *in = (int16_t*)(hle->alist_buffer + dmemi);
     int16_t *dl = (int16_t*)(hle->alist_buffer + dmem_dl);
     int16_t *dr = (int16_t*)(hle->alist_buffer + dmem_dr);
@@ -592,6 +746,7 @@ void alist_envmix_nead(
     if (swap_wet_LR)
         swap(&wl, &wr);
 
+    unsigned lu_k = 0; //YOYOFR
     while (count != 0) {
         size_t i;
         for(i = 0; i < 8; ++i) {
@@ -599,9 +754,13 @@ void alist_envmix_nead(
             int16_t r  = (((int32_t)in[i^S] * (uint32_t)env_values[1]) >> 16) ^ xors[1];
             int16_t l2 = (((int32_t)l * (uint32_t)env_values[2]) >> 16) ^ xors[2];
             int16_t r2 = (((int32_t)r * (uint32_t)env_values[2]) >> 16) ^ xors[3];
+            if (lu_mute) { l = r = l2 = r2 = 0; } //YOYOFR
 
             dl[i^S] = clamp_s16(dl[i^S] + l);
             dr[i^S] = clamp_s16(dr[i^S] + r);
+            //YOYOFR gain entendu (dry G+D, Q16 -> Q15)
+            if (lu_k < LU_SCOPE_MAX) lu_scope_gain[lu_k] = (env_values[0] >> 1) + (env_values[1] >> 1);
+            ++lu_k;
             wl[i^S] = clamp_s16(wl[i^S] + l2);
             wr[i^S] = clamp_s16(wr[i^S] + r2);
         }
@@ -617,6 +776,7 @@ void alist_envmix_nead(
         in += 8;
         count -= 8;
     }
+    lu_mix_end((int)lu_k); //YOYOFR
 }
 
 
@@ -713,57 +873,15 @@ void alist_resample(
     count >>= 1;
     ipos -= 4;
 
-//#define SOLO_VOICE 3
-    
-#define SOUND_MAXVOICES_BUFFER_FX_USF 32
-    //YOYOFR
-    //printf("resample %dbytes: %08X %d\n",count,address,pitch);
-    //check address
-    int i=0;
-    int inst=0;
-    int oldestUpd=255;
-    int reuseIdx=-1;
-    while (i<SOUND_MAXVOICES_BUFFER_FX_USF) {
-        if (vgm_last_sample_address[i]==0) vgm_last_sample_address[i]=address;
-        
-        if (vgm_last_sample_address[i]==address) {
-            vgm_last_sample_address_lastupdate[i]=255;
-            break;
-        }
-        
-        if (vgm_last_sample_address_lastupdate[i]) vgm_last_sample_address_lastupdate[i]--;
-        
-        if (oldestUpd>vgm_last_sample_address_lastupdate[i]) {
-            oldestUpd=vgm_last_sample_address_lastupdate[i];
-            reuseIdx=i;
-        }
-        
-        i++;
-    }
-    if (i==SOUND_MAXVOICES_BUFFER_FX_USF) {
-        i=reuseIdx;
-        vgm_last_sample_address[i]=address;
-        vgm_last_sample_address_lastupdate[i]=255;
-    }
-    
-    while (inst<256) {
-        if (vgm_last_sample_address_inst[inst]==0) vgm_last_sample_address_inst[inst]=mdz_last_pcm_address;
-        if (vgm_last_sample_address_inst[inst]==mdz_last_pcm_address) {
-            break;
-        }
-        inst++;
-    }
-    inst=inst&0xFF;
-    
-    int m_voice_ofs=-1;
+    //YOYOFR — mise en ATTENTE seulement (voir lu_mix_begin/lu_mix_end):
+    // ni slot, ni mute ici. Une attente précédente que rien n'a mixée n'était
+    // pas une voix (chaîne d'effets): elle s'efface.
+    lu_pend = false;
+    int scope_n=0;
     int lastSampleVal=1<<31;
     bool isSilent=true;
-    int64_t smplIncr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
-    if (i<SOUND_MAXVOICES_BUFFER_FX_USF) {
-        m_voice_ofs=i;
-    }
     //YOYOFR
-    
+
     if (flag2)
         HleWarnMessage(hle->user_defined, "alist_resample: flag2 is not implemented");
 
@@ -782,9 +900,6 @@ void alist_resample(
                                        (*sample(hle, ipos + 2) * lut[2]) +
                                        (*sample(hle, ipos + 3) * lut[3]) ) >> 15);
         
-        //if (i!=SOLO_VOICE) sampleVal=0;
-        if (generic_mute_mask&(1<<i)) sampleVal=0;
-        
         *sample(hle, opos++) = sampleVal;
         //YOYOFR
 
@@ -793,41 +908,24 @@ void alist_resample(
         pitch_accu &= 0xffff;
         --count;
         
-        //YOYOFR
-        if ( (m_voice_ofs>=0) && !(generic_mute_mask&(1<<i)) ) {
-            g_lazyusf_voice_last_touched_tick[m_voice_ofs]=g_lazyusf_read_tick;
-            int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+0];
-            int64_t ofs_end=(m_voice_current_ptr[m_voice_ofs+0]+smplIncr);
-            int32_t smplVal;
-            
-            smplVal=((int32_t)(sampleVal)*mdz_cur_vol>>15)>>8;
-            
-            if (lastSampleVal==1<<31) lastSampleVal=smplVal;
-            
-            
-            if (smplVal!=lastSampleVal) isSilent=false;
-            lastSampleVal=smplVal;
-            
-            if (ofs_end>ofs_start)
-            for (;;) {
-                m_voice_buff[m_voice_ofs+0][(ofs_start>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)]=LIMIT8((smplVal));
-                ofs_start+=1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
-                if (ofs_start>=ofs_end) break;
-            }
-            while ((ofs_end>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)>=SOUND_BUFFER_SIZE_SAMPLE*4*2) ofs_end-=(SOUND_BUFFER_SIZE_SAMPLE*4*2<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT);
-            m_voice_current_ptr[m_voice_ofs+0]=ofs_end;
-        }
+        //YOYOFR — échantillon BRUT: le gain et le mute viennent de l'ENVMIXER.
+        if (scope_n<LU_SCOPE_MAX) lu_pend_smp[scope_n++]=sampleVal;
+        if (lastSampleVal==1<<31) lastSampleVal=sampleVal;
+        if (sampleVal!=lastSampleVal) isSilent=false;
+        lastSampleVal=sampleVal;
         //YOYOFR
     }
-    
+
     //YOYOFR
-    if (i<SOUND_MAXVOICES_BUFFER_FX_USF) {
-        if (/*(i==SOLO_VOICE)*/!(generic_mute_mask&(1<<i)) && !isSilent) {
-            m_voice_ofs=i;
-            vgm_last_instr[i]=inst;
-            vgm_last_note[i]=440*(uint64_t)pitch/65536;
-            vgm_last_vol[i]=1+(init?1:0);
-        }
+    if (scope_n>0) {
+        lu_pend=true;
+        lu_pend_addr=address;
+        lu_pend_pcm=mdz_last_pcm_address;
+        lu_pend_pitch=pitch;
+        lu_pend_init=init;
+        lu_pend_silent=isSilent;
+        lu_pend_n=scope_n;
+        lu_pend_incr=(int64_t)44100*(1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT)/m_voice_current_samplerate;
     }
     //YOYOFR
     alist_resample_save(hle, address, ipos, pitch_accu);

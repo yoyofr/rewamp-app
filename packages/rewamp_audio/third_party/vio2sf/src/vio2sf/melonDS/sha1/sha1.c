@@ -63,6 +63,26 @@ A million repetitions of "a"
 #endif /* BSD */
 #endif /* BYTE_ORDER */
 
+/* YOYOFR (rewamp): cette cascade enumere des machines des annees 80 et 90
+ * (Cray, Apollo, HP 9000...) mais n'a aucune branche pour MSVC — et contrairement
+ * a tremor, elle ne tombe pas en silence: le `#error` plus bas est VOLONTAIRE,
+ * l'amont refuse de deviner. C'est la bonne facon de faire, et il ne manque que
+ * la reponse.
+ *
+ * Toutes les cibles Windows de ce projet sont petit-boutiennes (x64, ARM64).
+ * Ce fichier calcule un SHA-1, donc l'endianness y change le RESULTAT, pas
+ * seulement la performance: se tromper donnerait des empreintes fausses sans
+ * rien casser a la compilation. */
+#if defined(_MSC_VER) && !defined(BYTE_ORDER)
+#ifndef LITTLE_ENDIAN
+#define LITTLE_ENDIAN 1234
+#endif
+#ifndef BIG_ENDIAN
+#define BIG_ENDIAN    4321
+#endif
+#define BYTE_ORDER    LITTLE_ENDIAN
+#endif
+
 #if defined(__BYTE_ORDER) && !defined(BYTE_ORDER)
 #if (__BYTE_ORDER == __LITTLE_ENDIAN)
 #define BYTE_ORDER LITTLE_ENDIAN

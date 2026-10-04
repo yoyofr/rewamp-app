@@ -3915,20 +3915,49 @@ class AppLocalizationsZh extends AppLocalizations {
   String get releaseNotesTitle => '新功能';
 
   @override
-  String get releaseNotesV7Cpu => '没有播放时，应用不再在后台运行：大幅减少处理器和电池消耗。';
+  String get releaseNotesV8Windows =>
+      'Rewamp 现已支持 Windows，包含全部引擎和可视化效果，projectM 也不例外。';
 
   @override
-  String get releaseNotesV7VizIdle => '播放停止时可视化会静止，帧率上限为每秒 60 帧（可调）。';
+  String get releaseNotesV8Linux =>
+      'Linux：可视化效果现在也能在 X11 下运行（Steam Deck 游戏模式），“窗口置顶”在该环境下回归，关闭窗口也不再导致应用崩溃。';
 
   @override
-  String get releaseNotesV7Subsongs =>
-      '已修复：在 PC Engine、Master System 和 Atari ST（.sndh）上，部分曲目会播放相邻的歌曲。';
+  String get releaseNotesV8Formats =>
+      '现已支持播放 Game Boy .gbr 和 DefleMask .dmf 文件。';
 
   @override
-  String get releaseNotesV7Piano => '播放 PC Engine 音乐时，钢琴可视化曾保持空白。';
+  String get releaseNotesV8Smooth => '播放器和可视化效果更流畅：播放位置每次更新时不再重绘整个屏幕。';
 
   @override
-  String get releaseNotesV7Database => '被更新损坏的数据库现在会自动修复，不再导致资料库无法访问。';
+  String get releaseNotesV8Scrolling => '过长的标题现在会朝一个方向循环滚动，而不再来回滚动。';
+
+  @override
+  String get releaseNotesV8MouseDrag => '电脑：横向列表可用鼠标点击拖动来滚动。';
+
+  @override
+  String get releaseNotesV8Presets => 'projectM：预设包安装速度最高提升 9 倍，大型预设文件夹也不再被截断。';
+
+  @override
+  String get releaseNotesV8Pause => '已修复：暂停时可能会跳到下一首。';
+
+  @override
+  String get releaseNotesV8Psf =>
+      '以单个压缩包提供的 PSF 专辑（PlayStation、Nintendo DS 等）现在会展开为各个曲目，加入播放队列时也是如此。';
+
+  @override
+  String get releaseNotesV8ArtistTracks => '艺术家页面：曲目列表重新显示曲目，而不是整张专辑的压缩包。';
+
+  @override
+  String get releaseNotesV8VizFixes =>
+      '可视化：Nintendo 64 的各声部能正确显示和静音，钢琴视图会随每首曲目重新取景，封面背景也不再消失。';
+
+  @override
+  String get releaseNotesV8ProjectMFixes =>
+      'projectM：预设现在按实际帧率运行（部分预设之前反应迟缓），两个从未显示的预设现在也能出现了。';
+
+  @override
+  String get releaseNotesV8Covers => '封面加载快得多：专辑网格一次性填满，不再每隔一秒半才出现一张封面。';
 
   @override
   String get releaseNotesDataReset => '本次测试版已重置本地数据。媒体库和播放列表将从账号重建；下载需要重新进行。';
@@ -4324,42 +4353,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get miniWindowCoverFit => '显示完整封面';
-
-  @override
-  String get releaseNotesV7Mt32 =>
-      '新增 Roland MT-32 引擎，用于游戏 MIDI 音乐（需自备 ROM）。没有 ROM 时，为 MT-32 编写的 MIDI 会适配为 General MIDI 播放。';
-
-  @override
-  String get releaseNotesV7Xmp =>
-      '新增支持十种少见的模块格式（Archimedes Tracker .musx、.liq、.fnk 等）。';
-
-  @override
-  String get releaseNotesV7AmigaAdlib =>
-      'Westwood 的 AdLib 音乐（.adl）可播放全部曲目，Amiga 上的 BP SoundMon V1 也能识别了。';
-
-  @override
-  String get releaseNotesV7MiniPlayer => 'Mac：新增迷你播放器（紧凑模式或可视化模式），以及“窗口置顶”选项。';
-
-  @override
-  String get releaseNotesV7Instruments => '示波器、乐谱和钢琴视图可为每件乐器（而不仅是每个声部）标注名称和颜色。';
-
-  @override
-  String get releaseNotesV7Podium => '搜索：可筛选在演示场景比赛中获得第 1、2、3 名的曲目。';
-
-  @override
-  String get releaseNotesV7ShortSubsongs =>
-      '过短的子曲目（游戏音效）不再加入“全部播放”——阈值可在 设置 → 播放 中调整。';
-
-  @override
-  String get releaseNotesV7LocalFolders =>
-      '导入：可直接拖入整个文件夹（压缩包会自动解压），也可新建、重命名或移动文件夹。';
-
-  @override
-  String get releaseNotesV7Midi => 'MIDI：鼓声不再以钢琴音色播放，音量也不再失真。';
-
-  @override
-  String get releaseNotesV7ProjectM =>
-      'projectM：预设不再在每次启动时按相同顺序重复，暂停后也不会再误将预设排除。';
 
   @override
   String get libraryFileMissing => '文件缺失';

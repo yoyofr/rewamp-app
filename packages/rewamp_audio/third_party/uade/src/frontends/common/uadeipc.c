@@ -8,6 +8,7 @@
  */
 
 #include <uade/uade.h>
+#include <uade/sysincludes.h>  /* rewamp: htonl/ntohl (winsock2.h sous Windows) */
 #include <uade/uadeipc.h>
 #include <uade/ossupport.h>
 #include <uade/sysincludes.h>

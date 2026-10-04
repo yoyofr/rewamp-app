@@ -29,6 +29,7 @@ import 'picker_memory.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
+import 'portable_path.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'app_snack.dart';
@@ -102,7 +103,7 @@ Future<String?> androidPickerStartDir() async {
       root = root.parent;
     }
     for (final name in ['Music/Rewamp', 'Music', 'Download', 'Downloads']) {
-      final d = Directory('${root.path}/$name');
+      final d = Directory(p.join(root.path, name));
       if (await d.exists()) return d.path;
     }
     return root.path;
@@ -698,11 +699,11 @@ Future<LocalImportResult> _importLocalFilesInner(List<String> paths) async {
         res.skipped++; // compagnon (pochette, banque, notes): copié, pas une piste
         if (_isM3u(dest.path)) m3us.add(dest.path);
         others.add(LocalImportPendingTrack(dest.path,
-            p.relative(dest.path, from: root.path), 'picker',
+            portableRelative(dest.path, from: root.path), 'picker',
             p.extension(dest.path).replaceFirst('.', '').toLowerCase()));
       } else {
         pending.add(LocalImportPendingTrack(
-            dest.path, p.relative(dest.path, from: root.path), 'picker', fmt));
+            dest.path, portableRelative(dest.path, from: root.path), 'picker', fmt));
       }
     } catch (e) {
       res.errors.add('$src: $e');
@@ -772,12 +773,12 @@ Future<String?> _importArchive(File archive, Directory root,
       // Le M3U d'un rip vit DANS l'archive: c'est lui qui en fait un album.
       if (_isM3u(e.path)) m3us.add(e.path);
       others.add(LocalImportPendingTrack(
-          e.path, p.relative(e.path, from: rel.path), 'archive',
+          e.path, portableRelative(e.path, from: rel.path), 'archive',
           p.extension(e.path).replaceFirst('.', '').toLowerCase()));
       continue;                // autres compagnons, images, textes…
     }
     pending.add(LocalImportPendingTrack(
-        e.path, p.relative(e.path, from: rel.path), 'archive', fmt));
+        e.path, portableRelative(e.path, from: rel.path), 'archive', fmt));
   }
   return destDir.path;
 }
@@ -813,6 +814,7 @@ Future<LocalImportResult> _importLocalFolderInner(String folderPath) async {
   var copied = 0;
   await for (final e in src.list(recursive: true, followLinks: false)) {
     if (e is! File) continue;
+    // Copie disque: relatif NATIF (il ne quitte pas l'appareil).
     final rel = p.relative(e.path, from: src.path);
     if (p.basename(rel).startsWith('.')) continue;
     try {
@@ -883,11 +885,11 @@ Future<void> registerImportedFolder(
       res.skipped++; // images (pochettes), compagnons: copiés, pas des pistes
       if (_isM3u(e.path)) m3us.add(e.path);
       others.add(LocalImportPendingTrack(e.path,
-          p.relative(e.path, from: root.path), 'folder',
+          portableRelative(e.path, from: root.path), 'folder',
           p.extension(e.path).replaceFirst('.', '').toLowerCase()));
     } else {
       pending.add(LocalImportPendingTrack(
-          e.path, p.relative(e.path, from: root.path), 'folder', fmt));
+          e.path, portableRelative(e.path, from: root.path), 'folder', fmt));
     }
   }
   final plan = await applyM3uAlbums(pending, others, m3us,
@@ -1003,7 +1005,9 @@ Future<void> deleteLocalImportFolder(String childPrefix) async {
 
 Future<void> _deleteLocalImportFolderInner(String childPrefix, String rel) async {
   final root = await localImportsDir();
-  final dirPath = p.join(root.path, rel);
+  // [rel] est PORTABLE ('/'): le chemin absolu doit redevenir natif, sinon
+  // `handleDeletedAlbum` compare un préfixe mélangé à des chemins natifs.
+  final dirPath = joinPortable(root.path, rel);
   // ⚠️ UNE seule notification pour tout le sous-arbre, pas une par piste.
   //
   // `handleDeletedTrack` par fichier faisait, pour CHACUN: un parcours complet

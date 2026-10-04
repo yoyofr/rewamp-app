@@ -4102,24 +4102,56 @@ class AppLocalizationsFi extends AppLocalizations {
   String get releaseNotesTitle => 'Uutta';
 
   @override
-  String get releaseNotesV7Cpu =>
-      'Sovellus ei enää työskentele taustalla, kun mitään ei soi: paljon vähemmän suoritinta ja akkua.';
+  String get releaseNotesV8Windows =>
+      'Rewamp toimii nyt Windowsissa kaikkine moottoreineen ja visualisointeineen, projectM mukaan lukien.';
 
   @override
-  String get releaseNotesV7VizIdle =>
-      'Visualisoinnit pysähtyvät, kun toisto on pysäytetty, ja niiden kuvataajuus on rajattu 60 kuvaan sekunnissa (säädettävissä).';
+  String get releaseNotesV8Linux =>
+      'Linux: visualisoinnit toimivat nyt myös X11:ssä (Steam Deckin pelitila), ”Aina päällimmäisenä” on palannut sinne, eikä ikkunan sulkeminen enää kaada sovellusta.';
 
   @override
-  String get releaseNotesV7Subsongs =>
-      'Korjattu: PC Enginellä, Master Systemillä ja Atari ST:llä (.sndh) osa kappaleista käynnisti viereisen kappaleen.';
+  String get releaseNotesV8Formats =>
+      'Game Boyn .gbr- ja DefleMaskin .dmf-tiedostot soivat nyt.';
 
   @override
-  String get releaseNotesV7Piano =>
-      'Piano-visualisointi pysyi tyhjänä PC Engine -musiikilla.';
+  String get releaseNotesV8Smooth =>
+      'Sujuvampi soitin ja visualisoinnit: näyttöä ei enää piirretä kokonaan uudelleen jokaisella sijainnin päivityksellä.';
 
   @override
-  String get releaseNotesV7Database =>
-      'Päivityksen vahingoittama tietokanta korjaa nyt itsensä sen sijaan, että kirjasto jäisi saavuttamattomiin.';
+  String get releaseNotesV8Scrolling =>
+      'Liian pitkä nimi vierii nyt silmukassa yhteen suuntaan sen sijaan, että se kulkisi edestakaisin.';
+
+  @override
+  String get releaseNotesV8MouseDrag =>
+      'Tietokoneet: vaakarivejä voi vierittää napsauttamalla ja vetämällä hiirellä.';
+
+  @override
+  String get releaseNotesV8Presets =>
+      'projectM: esiasetuspaketit asentuvat jopa yhdeksän kertaa nopeammin, eikä suuria esiasetuskansioita enää katkaista.';
+
+  @override
+  String get releaseNotesV8Pause =>
+      'Korjattu: tauko saattoi siirtyä seuraavaan kappaleeseen.';
+
+  @override
+  String get releaseNotesV8Psf =>
+      'Yhtenä arkistona toimitetut PSF-albumit (PlayStation, Nintendo DS…) avautuvat nyt kappaleiksi, myös jonoon lisättäessä.';
+
+  @override
+  String get releaseNotesV8ArtistTracks =>
+      'Artistisivut: kappaleluettelo näyttää taas kappaleita eikä kokonaisten albumien arkistoja.';
+
+  @override
+  String get releaseNotesV8VizFixes =>
+      'Visualisoinnit: Nintendo 64:n äänet näytetään ja mykistetään oikein, piano rajaa näkymänsä uudelleen jokaiselle kappaleelle, eikä kansikuvatausta enää katoa.';
+
+  @override
+  String get releaseNotesV8ProjectMFixes =>
+      'projectM: esiasetukset seuraavat todellista kuvataajuutta (osa reagoi laiskasti), ja kaksi aiemmin näkymätöntä esiasetusta on nyt mukana.';
+
+  @override
+  String get releaseNotesV8Covers =>
+      'Kansikuvat latautuvat paljon nopeammin: albumiruudukko täyttyy kerralla eikä yksi kansi puolentoista sekunnin välein.';
 
   @override
   String get releaseNotesDataReset =>
@@ -4530,46 +4562,6 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get miniWindowCoverFit => 'Näytä koko kansi';
-
-  @override
-  String get releaseNotesV7Mt32 =>
-      'Uusi Roland MT-32 -moottori pelien MIDI-musiikille omilla ROM-tiedostoillasi. Ilman ROM-tiedostoja MT-32:lle kirjoitettu MIDI sovitetaan General MIDIin.';
-
-  @override
-  String get releaseNotesV7Xmp =>
-      'Kymmenen harvinaista moduulimuotoa soi nyt (Archimedes Tracker .musx, .liq, .fnk…).';
-
-  @override
-  String get releaseNotesV7AmigaAdlib =>
-      'Westwoodin AdLib-musiikki (.adl) soittaa kaikki kappaleensa, ja BP SoundMon V1 tunnistetaan Amigalla.';
-
-  @override
-  String get releaseNotesV7MiniPlayer =>
-      'Mac: minisoitin, kompakti tai visualisoinnilla, sekä asetus ”Aina päällimmäisenä”.';
-
-  @override
-  String get releaseNotesV7Instruments =>
-      'Oskilloskooppi, nuotit ja piano voivat nimetä ja värittää jokaisen soittimen, ei vain jokaista ääntä.';
-
-  @override
-  String get releaseNotesV7Podium =>
-      'Haku: suodata kappaleet, jotka sijoittuivat demoskene-kilpailussa 1., 2. tai 3. sijalle.';
-
-  @override
-  String get releaseNotesV7ShortSubsongs =>
-      'Liian lyhyet alikappaleet (pelien ääniefektit) jätetään pois toiminnosta ”Toista kaikki” — raja kohdassa Asetukset → Toisto.';
-
-  @override
-  String get releaseNotesV7LocalFolders =>
-      'Tuontisi: pudota kokonainen kansio (arkistot puretaan), ja luo, nimeä uudelleen tai siirrä kansioita.';
-
-  @override
-  String get releaseNotesV7Midi =>
-      'MIDI: rummut eivät enää soi pianona, eikä äänenvoimakkuus enää säröydy.';
-
-  @override
-  String get releaseNotesV7ProjectM =>
-      'projectM: esiasetukset eivät enää toistu käynnistyskerrasta toiseen, eikä esiasetusta enää hylätä virheellisesti tauon jälkeen.';
 
   @override
   String get libraryFileMissing => 'Tiedosto puuttuu';

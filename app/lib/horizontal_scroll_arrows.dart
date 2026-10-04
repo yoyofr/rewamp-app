@@ -2,6 +2,33 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RendererBinding;
 
+/// Fait glisser un défilement à la SOURIS (cliquer, garder appuyé, déplacer),
+/// pour les seuls descendants.
+///
+/// Flutter n'admet par défaut que le toucher, le stylet et le pavé tactile
+/// comme `dragDevices`: sur bureau, un rail ne se faisait glisser qu'à la
+/// molette horizontale (que beaucoup de souris n'ont pas) ou par les flèches.
+/// ⚠️ Pas dans le `scrollBehavior` de l'APP: la souris qui glisse partout
+/// heurterait la sélection de texte, le réordonnancement de la file et le
+/// glissement de fermeture du lecteur. Un clic simple sur une carte reste un
+/// clic — le glissement ne gagne l'arène qu'au-delà du seuil de déplacement.
+class MouseDragScrollConfiguration extends StatelessWidget {
+  final Widget child;
+  const MouseDragScrollConfiguration({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final behavior = ScrollConfiguration.of(context);
+    return ScrollConfiguration(
+      behavior: behavior.copyWith(dragDevices: {
+        ...behavior.dragDevices,
+        PointerDeviceKind.mouse,
+      }),
+      child: child,
+    );
+  }
+}
+
 /// Wraps a horizontally-scrolling child (built with the provided
 /// [ScrollController]) and overlays fade-in left/right arrow buttons on the
 /// edges that can still scroll. Clicking an arrow scrolls one page.
@@ -101,7 +128,10 @@ class _HorizontalScrollArrowsState extends State<HorizontalScrollArrows> {
           final show = _hasMouse && _hovering;
           return Stack(
             children: [
-              widget.builder(context, _controller),
+              // Le rail se fait aussi glisser à la souris (clic maintenu).
+              MouseDragScrollConfiguration(
+                child: widget.builder(context, _controller),
+              ),
               _arrow(cs, left: true,  visible: show && _canLeft),
               _arrow(cs, left: false, visible: show && _canRight),
             ],

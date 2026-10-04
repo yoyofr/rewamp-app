@@ -1,0 +1,13 @@
+{
+  "name": "rewamp-ffmpeg",
+  "version-string": "0",
+  "description": "FFmpeg minimal (décodage seul) pour le vgmstream de rewamp sous Windows — voir scripts/build_ffmpeg_windows.ps1",
+  "builtin-baseline": "a4d4f0d62ca4cbaf5dbf17a7e1455e00ec383cc8",
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": [ "avcodec", "avformat", "swresample" ]
+    }
+  ]
+}

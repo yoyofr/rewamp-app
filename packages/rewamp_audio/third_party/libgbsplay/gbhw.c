@@ -661,10 +661,16 @@ void gbhw_master_fade(struct gbhw* const gbhw, long millis, long dstvol)
 	else gbhw->master_fade = -(128 * 1024 * 1000 + millis - 1) / millis;
 }
 
-#define GET_NIBBLE(p, n) ({ \
-	long index = ((n) >> 1) & 0xf; \
-	long shift = (~(n) & 1) << 2; \
-	(((p)[index] >> shift) & 0xf); })
+/* rewamp: l'amont écrit GET_NIBBLE en EXPRESSION-INSTRUCTION (`({ ... })`),
+ * une extension GNU que MSVC n'a pas. Même calcul, en fonction: l'unique
+ * appelant passe un `uint8_t*` (ioregs) et un `long`. */
+static inline long gbhw_get_nibble(const uint8_t *p, long n)
+{
+	long index = (n >> 1) & 0xf;
+	long shift = (~n & 1) << 2;
+	return (p[index] >> shift) & 0xf;
+}
+#define GET_NIBBLE(p, n) gbhw_get_nibble((p), (n))
 
 void gbhw_flush_buffer(struct gbhw *gbhw)
 {

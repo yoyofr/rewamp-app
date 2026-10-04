@@ -5,7 +5,7 @@
 #include <sstream>
 #include <vector>
 
-extern int mdz_pmMilkPermissiveEvalCode;
+extern "C" int mdz_pmMilkPermissiveEvalCode;   // rewamp: liaison C, voir Shader.cpp
 
 namespace libprojectM {
 

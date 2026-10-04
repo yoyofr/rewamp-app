@@ -11,11 +11,17 @@
 #include <uade/options.h>
 #include <uade/rmc.h>
 
+#ifdef _WIN32  /* rewamp: ntohs */
+#include <uade/sysincludes.h>
+#else
 #include <arpa/inet.h>
+#endif
 #include <assert.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifndef _WIN32
 #include <sys/wait.h>
+#endif
 #include <unistd.h>
 #include <time.h>
 #include <dirent.h>

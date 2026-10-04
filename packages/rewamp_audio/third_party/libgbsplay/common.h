@@ -108,6 +108,16 @@ static inline void i18n_init(void) {}
 
 #endif
 
+/* rewamp: `__BYTE_ORDER__` et ses deux constantes sont des macros PRÉDÉFINIES
+ * par GCC et clang; MSVC n'en pose aucune, d'où le « Unsupported compiler »
+ * ci-dessous alors que le compilateur n'est pas en cause. Toutes les cibles
+ * Windows de MSVC (x86, x64, ARM64) sont petit-boutistes. */
+#if defined(_MSC_VER) && !defined(__BYTE_ORDER__)
+#  define __ORDER_LITTLE_ENDIAN__ 1234
+#  define __ORDER_BIG_ENDIAN__    4321
+#  define __BYTE_ORDER__          __ORDER_LITTLE_ENDIAN__
+#endif
+
 #if !defined(__BYTE_ORDER__) || !defined(__ORDER_LITTLE_ENDIAN__) || !defined(__ORDER_BIG_ENDIAN__)
 #error Unsupported compiler
 #endif

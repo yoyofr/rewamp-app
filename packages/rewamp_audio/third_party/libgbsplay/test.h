@@ -109,9 +109,17 @@ int main(int argc, char** argv)
 
 #ifndef TEST_EOF
 
+#if defined(_MSC_VER) && !defined(__clang__)
+/* rewamp: MSVC n'a pas `__attribute__`. `unused` ne fait que taire un
+ * avertissement, il n'y a donc rien à traduire. */
+#define test static
+#define TEST(func) static int test_ ## func
+#define TEST_EOF static int test_eof
+#else
 #define test static __attribute__((unused))
 #define TEST(func) static __attribute__((unused)) int test_ ## func
 #define TEST_EOF static __attribute__((unused)) int test_eof
+#endif
 
 #endif
 

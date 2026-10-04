@@ -6767,35 +6767,83 @@ abstract class AppLocalizations {
   /// **'What\'s new'**
   String get releaseNotesTitle;
 
-  /// Release note: no background CPU use when idle
+  /// Release note: first Windows version
   ///
   /// In en, this message translates to:
-  /// **'The app no longer works away in the background when nothing is playing: far less processor and battery.'**
-  String get releaseNotesV7Cpu;
+  /// **'Rewamp now runs on Windows, with every engine and the visualizers, projectM included.'**
+  String get releaseNotesV8Windows;
 
-  /// Release note: visualizers idle when stopped, frame-rate cap
+  /// Release note: Linux X11 visualizers, always-on-top under X11, no crash on window close
   ///
   /// In en, this message translates to:
-  /// **'Visualizers stand still while playback is stopped, and are capped at 60 frames per second (adjustable).'**
-  String get releaseNotesV7VizIdle;
+  /// **'Linux: visualizers now work under X11 too (Steam Deck game mode), “Always on top” is back there, and closing the window no longer crashes the app.'**
+  String get releaseNotesV8Linux;
 
-  /// Release note: fix, wrong song started in some multi-song files
+  /// Release note: .gbr and .dmf formats
   ///
   /// In en, this message translates to:
-  /// **'Fixed: on PC Engine, Master System and Atari ST (.sndh), some tracks started the song next to the right one.'**
-  String get releaseNotesV7Subsongs;
+  /// **'Game Boy .gbr and DefleMask .dmf files now play.'**
+  String get releaseNotesV8Formats;
 
-  /// Release note: piano visualizer empty on PC Engine music
+  /// Release note: player no longer rebuilds on every position tick
   ///
   /// In en, this message translates to:
-  /// **'The Piano visualizer stayed empty on PC Engine music.'**
-  String get releaseNotesV7Piano;
+  /// **'Smoother player and visualizers: the screen no longer redraws everything at every position update.'**
+  String get releaseNotesV8Smooth;
 
-  /// Release note: damaged database repairs itself
+  /// Release note: long labels scroll in a one-way loop
   ///
   /// In en, this message translates to:
-  /// **'A database left broken by an update now repairs itself, instead of making the library unreachable.'**
-  String get releaseNotesV7Database;
+  /// **'A title too long for its space now scrolls in a loop, in one direction, instead of going back and forth.'**
+  String get releaseNotesV8Scrolling;
+
+  /// Release note: horizontal rails scroll by mouse drag on desktop
+  ///
+  /// In en, this message translates to:
+  /// **'Computers: the horizontal rows scroll by click-and-drag with the mouse.'**
+  String get releaseNotesV8MouseDrag;
+
+  /// Release note: faster projectM preset pack install, large folders no longer truncated
+  ///
+  /// In en, this message translates to:
+  /// **'projectM: preset packs install up to nine times faster, and large preset folders are no longer cut short.'**
+  String get releaseNotesV8Presets;
+
+  /// Release note: pause no longer skips to next track
+  ///
+  /// In en, this message translates to:
+  /// **'Fixed: pausing could skip to the next track.'**
+  String get releaseNotesV8Pause;
+
+  /// Release note: single-archive PSF albums unfold into tracks
+  ///
+  /// In en, this message translates to:
+  /// **'PSF albums (PlayStation, Nintendo DS…) delivered as a single archive now unfold into their tracks, also when added to the queue.'**
+  String get releaseNotesV8Psf;
+
+  /// Release note: artist tracks tab lists tracks, not album archives
+  ///
+  /// In en, this message translates to:
+  /// **'Artist pages: the track list shows tracks again, not whole album archives.'**
+  String get releaseNotesV8ArtistTracks;
+
+  /// Release note: N64 voices, piano auto-frame, artwork background fixes
+  ///
+  /// In en, this message translates to:
+  /// **'Visualizers: Nintendo 64 voices are shown and muted correctly, the piano reframes itself for each song, and the artwork background no longer vanishes.'**
+  String get releaseNotesV8VizFixes;
+
+  /// Release note: projectM real frame rate, two hidden presets
+  ///
+  /// In en, this message translates to:
+  /// **'projectM: presets follow the real frame rate (some reacted sluggishly), and two presets that never showed up now appear.'**
+  String get releaseNotesV8ProjectMFixes;
+
+  /// Release note: much faster cover loading
+  ///
+  /// In en, this message translates to:
+  /// **'Covers load much faster: a grid of albums fills in at once instead of one cover every second and a half.'**
+  String get releaseNotesV8Covers;
 
   /// No description provided for @releaseNotesDataReset.
   ///
@@ -7432,66 +7480,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Show whole cover'**
   String get miniWindowCoverFit;
-
-  /// Release note: new Roland MT-32 engine for game MIDI files
-  ///
-  /// In en, this message translates to:
-  /// **'New Roland MT-32 engine for game MIDI music, with your own ROMs. Without ROMs, a MIDI written for the MT-32 is adapted to General MIDI.'**
-  String get releaseNotesV7Mt32;
-
-  /// Release note: ten rare module formats now playable
-  ///
-  /// In en, this message translates to:
-  /// **'Ten rare module formats now play (Archimedes Tracker .musx, .liq, .fnk…).'**
-  String get releaseNotesV7Xmp;
-
-  /// Release note: Westwood AdLib .adl subsongs + BP SoundMon V1
-  ///
-  /// In en, this message translates to:
-  /// **'Westwood AdLib music (.adl) plays all of its tracks, and BP SoundMon V1 is recognised on Amiga.'**
-  String get releaseNotesV7AmigaAdlib;
-
-  /// Release note: desktop mini player + always on top
-  ///
-  /// In en, this message translates to:
-  /// **'Mac: a mini player, compact or with the visualizer, and an “Always on top” option.'**
-  String get releaseNotesV7MiniPlayer;
-
-  /// Release note: visualizers can name and colour instruments
-  ///
-  /// In en, this message translates to:
-  /// **'Oscilloscope, notes and piano can name and colour each instrument, not just each voice.'**
-  String get releaseNotesV7Instruments;
-
-  /// Release note: search filter for competition winners
-  ///
-  /// In en, this message translates to:
-  /// **'Search: filter the tunes that placed 1st, 2nd or 3rd in a demoscene competition.'**
-  String get releaseNotesV7Podium;
-
-  /// Release note: too-short subsongs left out of Play all
-  ///
-  /// In en, this message translates to:
-  /// **'Subsongs that are too short (game sound effects) are left out of “Play all” — threshold in Settings → Playback.'**
-  String get releaseNotesV7ShortSubsongs;
-
-  /// Release note: importing and organising local folders
-  ///
-  /// In en, this message translates to:
-  /// **'Your imports: drop a whole folder (archives unpacked), and create, rename or move folders.'**
-  String get releaseNotesV7LocalFolders;
-
-  /// Release note: MIDI drum and volume fixes
-  ///
-  /// In en, this message translates to:
-  /// **'MIDI: drums no longer play as a piano, and the volume no longer clips.'**
-  String get releaseNotesV7Midi;
-
-  /// Release note: projectM preset randomness and false slow-device verdict
-  ///
-  /// In en, this message translates to:
-  /// **'projectM: presets no longer repeat from one launch to the next, and a preset is no longer set aside by mistake after a pause.'**
-  String get releaseNotesV7ProjectM;
 
   /// Library row: the file is not on this device and the account is anonymous, so it is nowhere — shown instead of 'On another device'
   ///

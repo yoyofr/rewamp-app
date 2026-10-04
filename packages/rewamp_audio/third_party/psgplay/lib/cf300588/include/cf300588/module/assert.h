@@ -59,10 +59,10 @@
 		}							\
 	} while (0)
 
-#define MODULE_WARN_ONCE(module, format...)				\
+#define MODULE_WARN_ONCE(module, ...)				\
 	do {								\
 		if (!(module)->debug.warned_once)			\
-			pr_warn(module, format);			\
+			pr_warn(module, __VA_ARGS__);			\
 		(module)->debug.warned_once = true;			\
 	} while (0)
 

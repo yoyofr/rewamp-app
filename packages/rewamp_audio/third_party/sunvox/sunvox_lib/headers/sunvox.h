@@ -75,7 +75,15 @@ typedef struct
 #if defined(_WIN32) || defined(_WIN32_WCE) || defined(__WIN32__) || defined(_WIN64)
     #define OS_WIN
     #define LIBNAME "sunvox.dll"
+    /* rewamp: LPCTSTR vient de <windows.h>, que cet en-tête n'inclut pas — il
+     * compte sur l'appelant. Le type ne sert qu'à sv_load_dll2(), qui n'existe
+     * pas en liaison statique: on n'impose donc pas windows.h à qui pose
+     * SUNVOX_STATIC_LIB. */
+    #ifdef SUNVOX_STATIC_LIB
+    typedef const char* LIBNAME_STR_TYPE;
+    #else
     typedef LPCTSTR LIBNAME_STR_TYPE;
+    #endif
 #else
     typedef const char* LIBNAME_STR_TYPE;
 #endif
@@ -97,7 +105,16 @@ typedef struct
     #define OS_UNIX
 #endif
 
-#ifdef OS_WIN
+/* YOYOFR (rewamp): cet en-tete place SUNVOX_FN_ATTR APRES la liste de
+ * parametres (`int sv_init( ... ) SUNVOX_FN_ATTR;`). MinGW l'accepte sous la
+ * forme `__attribute__((stdcall))`, mais MSVC refuse `__stdcall` dans CETTE
+ * position (verifie au compilateur: « absence de ';' avant '__cdecl' »).
+ *
+ * On le laisse VIDE sous MSVC, et ca n'est pas un contournement: en x64 il
+ * n'existe qu'une seule convention d'appel, donc `__stdcall` y est deja un
+ * no-op. La definition et la declaration restent donc d'accord — ce qui est le
+ * seul risque reel qu'un ecart de convention ferait courir. */
+#if defined(OS_WIN) && !defined(_MSC_VER)
     #ifdef __GNUC__
 	#define SUNVOX_FN_ATTR __attribute__((stdcall))
     #else

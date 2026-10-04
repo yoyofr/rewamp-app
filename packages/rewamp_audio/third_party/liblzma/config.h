@@ -630,3 +630,20 @@
 /* Define to the type of an unsigned integer type wide enough to hold a
    pointer, if such a type exists, and if the system does not define it. */
 /* #undef uintptr_t */
+
+/* ===== Overrides Windows/MSVC (ajoutés) =====
+   Même principe que le bloc _WIN32 de ../libarchive/config.h: ce config.h est
+   GÉNÉRÉ sur macOS et annonce donc le modèle de threads POSIX.
+
+   ⚠️ liblzma ne compile pas « sans threads » par omission: `mythread.h` exige
+   qu'EXACTEMENT un modèle soit choisi, et avec `MYTHREAD_POSIX` il inclut
+   <pthread.h> — l'erreur tombe dans mythread.h, pas dans un fichier dont le
+   nom parlerait de threads. `MYTHREAD_VISTA` est le modèle Windows de l'amont
+   (SRWLOCK + CONDITION_VARIABLE), et il n'a aucune dépendance externe.
+   ===== */
+#ifdef _WIN32
+#  undef MYTHREAD_POSIX
+#  undef HAVE_PTHREAD_PRIO_INHERIT
+#  undef HAVE_PTHREAD_CONDATTR_SETCLOCK
+#  define MYTHREAD_VISTA 1
+#endif

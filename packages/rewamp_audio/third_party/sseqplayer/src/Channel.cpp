@@ -68,7 +68,10 @@ inline int32_t sex(int32_t x)
     return z.s.hi;
 }
 
-inline int32_t abs(int32_t x)
+// rewamp: renommée — abs(int32_t) EST le abs(int) de la bibliothèque C
+// (int32_t = int), et MSVC refuse de redéfinir une fonction INTRINSÈQUE en
+// release (/Oi: C2169). Même code, mêmes résultats sur toutes les plateformes.
+inline int32_t sseq_abs(int32_t x)
 {
     return (x ^ sex(x)) - sex(x);
 }
@@ -163,7 +166,7 @@ void Channel::UpdatePorta(const Track &trk)
 	else
 	{
 		int sq_time = static_cast<uint32_t>(trk.portaTime) * static_cast<uint32_t>(trk.portaTime);
-        int abs_sp = ::abs(this->sweepPitch);
+        int abs_sp = sseq_abs(this->sweepPitch);
 		this->sweepLen = (abs_sp * sq_time) >> 11;
 	}
 }
@@ -664,7 +667,7 @@ int32_t Channel::Interpolate()
 		{
 			int pos = i * step;
 			int window_pos = i * window_step;
-			kernel_sum += kernel[i + SINC_WIDTH - 1] = this->sinc_lut[::abs(shift_adj - pos)] * this->window_lut[::abs(shift - window_pos)];
+			kernel_sum += kernel[i + SINC_WIDTH - 1] = this->sinc_lut[sseq_abs(shift_adj - pos)] * this->window_lut[sseq_abs(shift - window_pos)];
 		}
 		double sum = 0.0;
 		for (i = 0; i < static_cast<int>(SINC_WIDTH * 2); ++i)

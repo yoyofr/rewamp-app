@@ -48,7 +48,7 @@ struct cf68901_##type {							\
 	CF68901_BITFIELD(uint8_t gpip2 : 1,				\
 	CF68901_BITFIELD(uint8_t gpip1 : 1,				\
 	CF68901_BITFIELD(uint8_t gpip0 : 1,				\
-	;))))))))							\
+	))))))))							\
 }
 
 #define CF68901_DEFINE_IRA(type)					\
@@ -61,7 +61,7 @@ struct cf68901_##type {							\
 	CF68901_BITFIELD(uint8_t tx_buffer_empty : 1,			\
 	CF68901_BITFIELD(uint8_t tx_error : 1,				\
 	CF68901_BITFIELD(uint8_t timer_b : 1,				\
-	;))))))))							\
+	))))))))							\
 }
 
 #define CF68901_DEFINE_IRB(type)					\
@@ -74,7 +74,7 @@ struct cf68901_##type {							\
 	CF68901_BITFIELD(uint8_t gpip2 : 1,				\
 	CF68901_BITFIELD(uint8_t gpip1 : 1,				\
 	CF68901_BITFIELD(uint8_t gpip0 : 1,				\
-	;))))))))							\
+	))))))))							\
 }
 
 #define CF68901_CTRL_DIV(div)						\
@@ -99,7 +99,7 @@ struct cf68901_##type {							\
 	CF68901_BITFIELD(uint8_t reset : 1,				\
 	CF68901_BITFIELD(uint8_t event : 1,				\
 	CF68901_BITFIELD(uint8_t ctrl : 3,				\
-	;))))								\
+	))))								\
 }
 
 CF68901_DEFINE_PORT(gpdr);
@@ -118,7 +118,7 @@ struct cf68901_vr {
 	CF68901_BITFIELD(uint8_t base : 4,
 	CF68901_BITFIELD(uint8_t sei : 1,
 	CF68901_BITFIELD(uint8_t unused : 3,
-	;)))
+	)))
 };
 
 CF68901_DEFINE_TABCR(tacr);
@@ -129,13 +129,13 @@ struct cf68901_tcdcr {
 	CF68901_BITFIELD(uint8_t tc_ctrl : 3,
 	CF68901_BITFIELD(uint8_t td_unused : 1,
 	CF68901_BITFIELD(uint8_t td_ctrl : 3,
-	;))))
+	))))
 };
 
 struct cf68901_scr {
 	CF68901_BITFIELD(uint8_t reset : 1,
 	CF68901_BITFIELD(uint8_t data : 7,
-	;))
+	))
 };
 
 struct cf68901_ucr {
@@ -145,7 +145,7 @@ struct cf68901_ucr {
 	CF68901_BITFIELD(uint8_t parity_enable : 1,
 	CF68901_BITFIELD(uint8_t parity : 1,
 	CF68901_BITFIELD(uint8_t unused : 1,
-	;))))))
+	))))))
 };
 
 struct cf68901_rsr {
@@ -157,7 +157,7 @@ struct cf68901_rsr {
 	CF68901_BITFIELD(uint8_t match_char_in_progress : 1,
 	CF68901_BITFIELD(uint8_t synch_strip_enable : 1,
 	CF68901_BITFIELD(uint8_t receiver_enable : 1,
-	;))))))))
+	))))))))
 };
 
 enum cf68901_tsr_high_low {
@@ -175,7 +175,7 @@ struct cf68901_tsr {
 	CF68901_BITFIELD(uint8_t brk : 1,
 	CF68901_BITFIELD(uint8_t high_low : 2,
 	CF68901_BITFIELD(uint8_t transmitter_enable : 1,
-	;)))))))
+	)))))))
 };
 
 #define CF68901_DEFINE_TDR(type)					\

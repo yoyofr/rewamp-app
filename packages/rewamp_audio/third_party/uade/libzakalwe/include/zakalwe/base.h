@@ -28,21 +28,21 @@ extern "C" {
         const typeof( ((type *)0)->member ) *__member_ptr = (ptr);     \
         (type *) (((char *) __member_ptr) - offsetof(type, member));})
 
-#define z_die(fmt, args...) do { fprintf(stderr, "abort(): %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## args); abort(); } while(0)
+#define z_die(fmt, ...) do { fprintf(stderr, "abort(): %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## __VA_ARGS__); abort(); } while(0)
 
-#define z_log_info(fmt, args...) do { fprintf(stderr, "info: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## args); } while(0)
+#define z_log_info(fmt, ...) do { fprintf(stderr, "info: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## __VA_ARGS__); } while(0)
 
-#define z_log_error(fmt, args...) do { fprintf(stderr, "error: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## args); } while(0)
+#define z_log_error(fmt, ...) do { fprintf(stderr, "error: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## __VA_ARGS__); } while(0)
 
-#define z_log_fatal(fmt, args...) do { fprintf(stderr, "fatal error: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## args); abort(); } while(0)
+#define z_log_fatal(fmt, ...) do { fprintf(stderr, "fatal error: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## __VA_ARGS__); abort(); } while(0)
 
-#define z_log_warning(fmt, args...) do { fprintf(stderr, "warning: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## args); } while(0)
+#define z_log_warning(fmt, ...) do { fprintf(stderr, "warning: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## __VA_ARGS__); } while(0)
 
-#define z_log_info_every_n_secs(secs, fmt, args...) do { if (_z_every_n_secs((secs), (fmt))) { fprintf(stderr, "info: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## args); } } while (0)
+#define z_log_info_every_n_secs(secs, fmt, ...) do { if (_z_every_n_secs((secs), (fmt))) { fprintf(stderr, "info: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## __VA_ARGS__); } } while (0)
 
-#define z_log_warning_every_n_secs(secs, fmt, args...) do { if (_z_every_n_secs((secs), (fmt))) { fprintf(stderr, "warning: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## args); } } while (0)
+#define z_log_warning_every_n_secs(secs, fmt, ...) do { if (_z_every_n_secs((secs), (fmt))) { fprintf(stderr, "warning: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## __VA_ARGS__); } } while (0)
 
-#define z_log_error_every_n_secs(secs, fmt, args...) do { if (_z_every_n_secs((secs), (fmt))) { fprintf(stderr, "error: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## args); } } while (0)
+#define z_log_error_every_n_secs(secs, fmt, ...) do { if (_z_every_n_secs((secs), (fmt))) { fprintf(stderr, "error: %s %s:%d: " fmt, __FILE__, __func__, __LINE__, ## __VA_ARGS__); } } while (0)
 
 #define Z_MAX(a, b) (((a) >= (b)) ? (a) : (b))
 #define Z_MIN(a, b) (((a) <= (b)) ? (a) : (b))

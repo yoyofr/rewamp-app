@@ -4,7 +4,7 @@ publish_to: 'none'
 # The part after "+" is the build number. TestFlight and the Play Console both
 # refuse an upload whose build number is not strictly greater than the last one
 # they accepted — bump it on EVERY upload, even when 0.1.0 does not move.
-version: 0.6.2+14
+version: 0.7.0+15
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -60,7 +60,10 @@ dependencies:
   # vers le Kotlin intégré (retirer KGP de settings.gradle.kts ET du module
   # app: AGP 9 échoue durement si kotlin-android est appliqué en même temps).
   desktop_drop: ^0.7.1
-  liquid_glass_easy: ^4.2.0
+  # ⚠️ Plancher 4.3.3: la version où les shaders ont été réécrits pour
+  # Impeller sur ANGLE (Windows). En dessous, la première image attend ~25 s
+  # et la lentille perd sa réfraction — voir docs/BUILD_WINDOWS.md §5.10.
+  liquid_glass_easy: ^4.3.3
   window_manager: ^0.5.2
   audio_service_mpris: ^0.2.1
   dbus: ^0.7.15

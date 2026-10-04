@@ -7837,6 +7837,60 @@ class RewampDb {
     '7z', 'zip', 'rar', 'gz', 'tar', 'lha', 'lzh', 'xz',
   };
 
+  /// Ligne dont le FICHIER est l'archive entière d'un album (jw_psf, jw_gsf,
+  /// jw_nsf…): `browse_music` rend UNE ligne par archive, là où une liste de
+  /// MORCEAUX en attend une par piste. Critère sur l'URL et non sur l'album:
+  /// un module modland d'un album à plusieurs fichiers porte aussi un
+  /// album_id et plusieurs sous-chansons, mais ne désigne que LUI-MÊME.
+  static bool isArchiveAlbumRow(SearchResult r) {
+    if (r.albumId == null || r.albumId!.isEmpty) return false;
+    if (r.matchSubsongTitle != null) return false;   // désigne une piste
+    if (r.trackPosition != null || r.resolvedSubsong) return false;
+    if ((r.subsongCount ?? 0) < 2) return false;
+    final url = r.downloadUrl ?? r.mirrorUrl;
+    if (url == null) return false;
+    final ext = p.extension(Uri.decodeFull(url.split('?').first))
+        .replaceFirst('.', '')
+        .toLowerCase();
+    return _kAlbumRowArchiveExts.contains(ext);
+  }
+
+  /// Remplace chaque ligne d'archive d'album ([isArchiveAlbumRow]) par ses
+  /// PISTES, telles que la tracklist serveur les décrit (`get_album_tracks`,
+  /// qui porte le `tracks` JSONB que `browse_music` ne rend pas) — mêmes
+  /// lignes que l'écran d'album avant téléchargement, donc même lecture.
+  /// Rien n'est téléchargé. Une archive sans tracklist connue, ou un appel
+  /// qui échoue, garde sa ligne telle quelle: mieux vaut un album qu'un trou.
+  /// Un album présent deux fois n'est déplié qu'une fois.
+  static Future<List<SearchResult>> expandArchiveAlbumRows(
+      List<SearchResult> rows) async {
+    final ids = <String>{
+      for (final r in rows)
+        if (isArchiveAlbumRow(r)) r.albumId!,
+    };
+    if (ids.isEmpty) return rows;
+    final byId = <String, List<SearchResult>>{};
+    await Future.wait(ids.map((id) async {
+      try {
+        final t = await albumTracks(albumId: id, sortBy: 'position');
+        if (t.length == 1 && t.first.subsongs.isNotEmpty) {
+          byId[id] = subsongRowsFromServer(t.first);
+        }
+      } catch (_) {/* ligne d'archive gardée */}
+    }));
+    final out = <SearchResult>[];
+    final done = <String>{};
+    for (final r in rows) {
+      final tracks = isArchiveAlbumRow(r) ? byId[r.albumId!] : null;
+      if (tracks == null) {
+        out.add(r);
+      } else if (done.add(r.albumId!)) {
+        out.addAll(tracks);
+      }
+    }
+    return out;
+  }
+
   /// Résout une ligne dont le serveur a nommé la PISTE (`match_track_title`)
   /// vers cette piste précise — c'est elle qu'il faut jouer, pas le conteneur.
   ///
@@ -7974,8 +8028,20 @@ class RewampDb {
   // PSF/PSF2 archive formats — individual files, no subsongs, packaged in 7z.
   // Extensions that indicate an archive-album where each file = one track.
   // Includes vgmstream TXTP (text playlists that reference streaming audio).
+  //
+  // TOUTE la famille PSF, pas seulement PS1/PS2: jw_gsf/2sf/ssf/dsf/usf/qsf/
+  // ncsf/snsf ont exactement la même forme serveur (une ligne = l'archive .7z,
+  // aucune tracklist, `track_count` = nombre de fichiers). Limité à psf/psf2,
+  // un album dsf SANS M3U dans son archive (Time Stalkers) ne se dépliait pas:
+  // la ligne unique finissait numérotée « Album (1) », « Album (2) »… sur UN
+  // même fichier, qui jouait donc la même piste en boucle. Les `*lib` n'en
+  // sont PAS: ce sont des bibliothèques, jamais des pistes.
   static const kPsfFormats = {
     'psf', 'minipsf', 'psf2', 'minipsf2',
+    'gsf', 'minigsf', '2sf', 'mini2sf',
+    'ssf', 'minissf', 'dsf', 'minidsf',
+    'usf', 'miniusf', 'qsf', 'miniqsf',
+    'ncsf', 'minincsf', 'snsf', 'minisnsf',
     'txtp',
   };
 
@@ -8397,8 +8463,8 @@ class RewampDb {
     for (int i = 0; i < trackFiles.length; i++) {
       final ext = p.extension(trackFiles[i].path).replaceFirst('.', '').toLowerCase();
       var artists = tmpl.artistNames;
-      if (!albumHasArtist &&
-          const {'psf', 'minipsf', 'psf2', 'minipsf2'}.contains(ext)) {
+      // Même bloc [TAG] dans toute la famille PSF; seul le TXTP n'en a pas.
+      if (!albumHasArtist && ext != 'txtp' && kPsfFormats.contains(ext)) {
         final a = await _psfTagArtists(trackFiles[i].path);
         if (a.isNotEmpty) artists = a;
       }
@@ -9416,6 +9482,14 @@ class RewampDb {
     }
     final localPath = await downloadToLibrary(container);
     final subs      = await probeContainerFile(localPath);
+    // Archive PSF SANS M3U: la sonde ne voit que le fichier extrait choisi
+    // (une entrée), alors que l'album en compte des dizaines. Rendre la ligne
+    // telle quelle la laissait à la numérotation générique d'un appelant
+    // (« Album (n) » × le même fichier). La découverte par dossier est la
+    // seule source de la tracklist; l'archive est déjà extraite, pas de réseau.
+    if (subs.length <= 1 && isPsfArchiveAlbum([container])) {
+      return downloadPsfAlbum([container]);
+    }
     if (subs.isEmpty) return [container];
 
     // Derive artist and year from M3U header if present.
@@ -11318,7 +11392,20 @@ class _FileSink extends _FetchSink {
   Future<void> close() async {}
 
   /// Échec: on efface — un `.part` resté derrière ne sert à rien.
+  ///
+  /// ⚠️ Quelques tentatives espacées: sous Windows un fichier OUVERT ne
+  /// s'efface pas (l'isolate le referme désormais avant d'annoncer l'échec,
+  /// voir isolate_fetch.dart), et un antivirus garde souvent un fichier neuf
+  /// ouvert quelques millisecondes. Une seule tentative laissait le `.part`.
   Future<void> discard() async {
-    try { if (await _file.exists()) await _file.delete(); } catch (_) {}
+    for (var i = 0; i < 10; i++) {
+      try {
+        if (!await _file.exists()) return;
+        await _file.delete();
+        return;
+      } catch (_) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
   }
 }

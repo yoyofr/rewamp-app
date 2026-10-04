@@ -21,6 +21,7 @@
 #include <formats/packed.h>
 //std includes
 #include <cstring>
+#include <iterator>   // rewamp: std::back_inserter (MSVC ne l'apporte pas en transitif)
 //boost includes
 #include <boost/make_shared.hpp>
 //text includes

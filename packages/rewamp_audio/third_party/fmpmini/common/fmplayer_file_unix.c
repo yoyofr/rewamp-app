@@ -6,13 +6,19 @@
 #include <dirent.h>
 #include <string.h>
 #include <strings.h>
+#ifndef _WIN32
 #include <iconv.h>
+#endif
 #ifdef __APPLE__
 #include <xlocale.h>
 #else
 #include <locale.h>
 #endif
+/* rewamp: nl_langinfo_l() n'est appele que dans la branche iconv, que la
+ * garde _WIN32 ci-dessous ecarte. */
+#ifndef _WIN32
 #include <langinfo.h>
+#endif
 
 static void *fileread(const char *path, size_t maxsize, size_t *filesize, enum fmplayer_file_error *error) {
   FILE *f = 0;
@@ -141,7 +147,11 @@ char *fmplayer_path_filename_sjis(const void *pathptr) {
   } else {
     fname = path;
   }
-#if defined(__ANDROID__) && __ANDROID_API__ < 28
+/* rewamp: Windows n'a pas d'iconv, et le raisonnement de la branche
+ * Android ci-dessous s'applique MOT POUR MOT: on ne convertit ici que la
+ * page de code du NOM DE FICHIER pour un titre de REPLI — le vrai titre est
+ * dans les lignes de commentaire, et les noms FMP de modland sont en ASCII. */
+#if (defined(__ANDROID__) && __ANDROID_API__ < 28) || defined(_WIN32)
   // rewamp: bionic has no iconv before API 28. This only converts the on-disk
   // filename's charset to Shift-JIS for the (fallback) display title — the real
   // title lives in the comment lines, and modland FMP filenames are ASCII — so

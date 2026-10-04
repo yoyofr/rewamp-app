@@ -4,11 +4,13 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:rewamp_audio/rewamp_audio.dart';
 
 import 'download_cancel.dart';
+import 'portable_path.dart';
 import 'download_manager.dart';
 import 'local_db.dart';
 import 'rewamp_db.dart' show PresetInfo, PresetPack, PresetPlaylistInfo, RewampDb;
@@ -49,27 +51,36 @@ class PresetManager extends ChangeNotifier {
   String? lastError;
 
   void init(String dataDir, RewampAudio audio) {
-    _pmDir = '$dataDir/projectm';
+    _pmDir = p.join(dataDir, 'projectm');
     _audio = audio;
     _ready = true;
   }
 
   // ── Directories & path mapping ─────────────────────────────────────────────
 
-  String get bundledPresetsDir => '$_pmDir/presets';
-  String get bundledTexturesDir => '$_pmDir/textures';
-  String get userDir => '$_pmDir/user';
-  String get singleDir => '$_pmDir/single';
-  String packDir(String slug) => '$_pmDir/packs/$slug';
+  String get bundledPresetsDir => p.join(_pmDir, 'presets');
+  String get bundledTexturesDir => p.join(_pmDir, 'textures');
+  String get userDir => p.join(_pmDir, 'user');
+  String get singleDir => p.join(_pmDir, 'single');
+  String packDir(String slug) => p.join(_pmDir, 'packs', slug);
 
   String _urlKey(String url) => sha1.convert(url.codeUnits).toString();
-  String texturesDirFor(String url) => '$_pmDir/packtex/${_urlKey(url)}';
+  String texturesDirFor(String url) => p.join(_pmDir, 'packtex', _urlKey(url));
 
   /// Relative (to `<datadir>/projectm/`) form of an absolute preset path.
-  String relOf(String abs) =>
-      abs.startsWith('$_pmDir/') ? abs.substring(_pmDir.length + 1) : abs;
+  ///
+  /// ⚠️ PORTABLE ('/', portable_path.dart): c'est l'IDENTITÉ d'un preset en
+  /// base (playlists, favoris). Sous Linux/iOS/macOS le résultat est celui
+  /// d'avant à l'octet; sous Windows l'ancien `startsWith('$_pmDir/')` ne
+  /// reconnaissait AUCUN chemin réel (séparateur '\') et rendait l'absolu.
+  String relOf(String abs) => p.isWithin(_pmDir, abs)
+      ? portableRelative(abs, from: _pmDir)
+      : abs;
 
-  String absOf(String rel) => rel.startsWith('/') ? rel : '$_pmDir/$rel';
+  /// Inverse de [relOf]. Un ABSOLU (y compris `C:\…` stocké avant la règle)
+  /// traverse tel quel.
+  String absOf(String rel) =>
+      p.isAbsolute(rel) ? rel : joinPortable(_pmDir, rel);
 
   // ── Sources ────────────────────────────────────────────────────────────────
   //
@@ -108,7 +119,7 @@ class PresetManager extends ChangeNotifier {
         ...await _scanMilk(userDir),
         ...await _scanMilk(singleDir),
       ];
-      final packs = Directory('$_pmDir/packs');
+      final packs = Directory(p.join(_pmDir, 'packs'));
       if (packs.existsSync()) {
         for (final d in packs.listSync().whereType<Directory>()) {
           out.addAll(await _scanMilk(d.path));
@@ -239,7 +250,7 @@ class PresetManager extends ChangeNotifier {
 
   Future<void> _pushTextureDirs() async {
     final dirs = <String>[bundledTexturesDir];
-    final packtex = Directory('$_pmDir/packtex');
+    final packtex = Directory(p.join(_pmDir, 'packtex'));
     if (packtex.existsSync()) {
       for (final d in packtex.listSync().whereType<Directory>()) {
         dirs.add(d.path);
@@ -252,7 +263,7 @@ class PresetManager extends ChangeNotifier {
   // ── Pack install ───────────────────────────────────────────────────────────
 
   bool isPackInstalled(String slug) =>
-      File('${packDir(slug)}/.installed').existsSync();
+      File(p.join(packDir(slug), '.installed')).existsSync();
 
   /// What the catalogue said about a pack when it was installed. The marker
   /// file doubles as the signature; older installs wrote a bare URL there and
@@ -260,7 +271,7 @@ class PresetManager extends ChangeNotifier {
   /// 116 MB re-download on a guess is worse than missing one update).
   Map<String, dynamic>? _installedStamp(String slug) {
     try {
-      final f = File('${packDir(slug)}/.installed');
+      final f = File(p.join(packDir(slug), '.installed'));
       if (!f.existsSync()) return null;
       final txt = f.readAsStringSync().trim();
       if (!txt.startsWith('{')) return null;   // legacy: url or 'granular'
@@ -272,7 +283,7 @@ class PresetManager extends ChangeNotifier {
   }
 
   Future<void> _writeInstalledStamp(PresetPack pack) async {
-    await File('${packDir(pack.slug)}/.installed').writeAsString(
+    await File(p.join(packDir(pack.slug), '.installed')).writeAsString(
       jsonEncode({
         'content_hash': pack.contentHash,
         'textures_hash': pack.texturesHash,
@@ -318,14 +329,14 @@ class PresetManager extends ChangeNotifier {
 
   /// Installed packs from DISK (works offline): (slug, display name).
   List<(String, String)> installedPacks() {
-    final root = Directory('$_pmDir/packs');
+    final root = Directory(p.join(_pmDir, 'packs'));
     if (!root.existsSync()) return const [];
     final out = <(String, String)>[];
     for (final d in root.listSync().whereType<Directory>()) {
-      if (!File('${d.path}/.installed').existsSync()) continue;
+      if (!File(p.join(d.path, '.installed')).existsSync()) continue;
       final slug = d.uri.pathSegments.where((s) => s.isNotEmpty).last;
       var name = slug;
-      final nameFile = File('${d.path}/.packname');
+      final nameFile = File(p.join(d.path, '.packname'));
       if (nameFile.existsSync()) {
         final n = nameFile.readAsStringSync().trim();
         if (n.isNotEmpty) name = n;
@@ -440,7 +451,7 @@ class PresetManager extends ChangeNotifier {
   bool texturesNeedFetch(PresetPack pack) {
     final url = pack.texturesUrl;
     if (url == null || url.isEmpty) return false;
-    final marker = File('${texturesDirFor(url)}/.installed');
+    final marker = File(p.join(texturesDirFor(url), '.installed'));
     if (!marker.existsSync()) return true;
     final want = pack.texturesHash;
     if (want == null) return false;           // server publishes no hash
@@ -476,13 +487,13 @@ class PresetManager extends ChangeNotifier {
         _invalidateOrphanTexCache();
         if (dir.existsSync()) await dir.delete(recursive: true);
         await dir.create(recursive: true);
-        final tmp = File('${dir.path}/_tmp_textures');
+        final tmp = File(p.join(dir.path, '_tmp_textures'));
         await _downloadToFile(texUrl, tmp);
         await _extract(tmp.path, dir.path);
         await tmp.delete();
         // The marker IS the signature: the bundle's content hash when the
         // server publishes one, the url otherwise (older servers).
-        await File('${dir.path}/.installed')
+        await File(p.join(dir.path, '.installed'))
             .writeAsString(pack.texturesHash ?? texUrl);
       }
       // Claim the bundle even when it was already installed by another pack:
@@ -495,7 +506,7 @@ class PresetManager extends ChangeNotifier {
       if (dir.existsSync()) await dir.delete(recursive: true);
       await dir.create(recursive: true);
       if (archUrl != null && archUrl.isNotEmpty) {
-        final tmp = File('${dir.path}/_tmp_archive');
+        final tmp = File(p.join(dir.path, '_tmp_archive'));
         await _downloadToFile(archUrl, tmp,
             expectedSize: pack.totalBytes, progressKey: key);
         await _extract(tmp.path, dir.path);
@@ -511,7 +522,7 @@ class PresetManager extends ChangeNotifier {
       }
       // Display name for offline listings (the source menu can't reach the
       // server to turn a slug back into a name).
-      await File('${dir.path}/.packname').writeAsString(pack.name);
+      await File(p.join(dir.path, '.packname')).writeAsString(pack.name);
       await _absorbSinglesIntoPack(pack.slug);
       _invalidateSingleCache();
       await _pushTextureDirs();
@@ -532,19 +543,35 @@ class PresetManager extends ChangeNotifier {
     }
   }
 
+  /// Téléchargements en vol pendant une install granulaire (6 = la limite
+  /// par hôte des navigateurs; mesuré: 72 s → 8 s sur 188 presets).
+  static const _granularParallel = 6;
+
   /// Granular install: walk the pack's server tree and download every preset
   /// into `packs/<slug>/<server path>`. Structure preserved so the usage
   /// resolver's folder-level browse matches; ids cached along the way.
+  ///
+  /// ⚠️ Des centaines de fichiers de ~12 Ko: c'est la LATENCE par fichier qui
+  /// compte, pas le débit. Mesuré sous Windows sur martins-collection (188
+  /// presets, 2,7 Mo): un `http.Client` neuf par fichier, en série = 382
+  /// ms/fichier, 72 s. Il s'y ajoutait ~105 ms par `.part` → `rename` (scan
+  /// antivirus au renommage) contre 13 ms pour l'écriture seule. D'où UN client
+  /// (keep-alive) et [_granularParallel] téléchargements en vol: 8 s.
   Future<void> _installGranular(PresetPack pack, String progressKey) async {
     final root = packDir(pack.slug);
     final total = pack.presetCount;
     final idMap = <String, String>{};
     var done = 0;
 
+    // 1) L'inventaire: tout l'arbre, PAGINÉ — browse_presets plafonne à
+    //    `limit` entrées par appel, et un dossier de plus de 200 presets
+    //    était tronqué en silence.
+    final jobs = <(String url, String rel, String? sha, String? id)>[];
     Future<void> walk(String folder) async {
-      {
-        final page =
-            await RewampDb.browsePresets(pack: pack.slug, folder: folder);
+      const pageSize = 200;
+      for (var off = 0;; off += pageSize) {
+        final page = await RewampDb.browsePresets(
+            pack: pack.slug, folder: folder, limit: pageSize, offset: off);
         for (final d in page.dirs) {
           await walk(d.dirPath);
         }
@@ -557,21 +584,53 @@ class PresetManager extends ChangeNotifier {
           if (!rel.toLowerCase().endsWith('.milk')) rel = '$rel.milk';
           // Server paths are data, not instructions: never let one climb out.
           if (rel.split('/').any((s) => s == '..' || s.isEmpty)) continue;
-          final dest = File('$root/$rel');
-          await dest.parent.create(recursive: true);
-          final tmp = File('${dest.path}.part');
-          await _downloadToFile(url, tmp, sha256Hex: p.sha256);
-          await tmp.rename(dest.path);
-          if (p.presetId != null) {
-            idMap['packs/${pack.slug}/$rel'] = p.presetId!;
-          }
-          done++;
-          if (total > 0) _setProgress(progressKey, done / total);
+          jobs.add((url, rel, p.sha256, p.presetId));
         }
+        if (page.dirs.length + page.presets.length < pageSize) break;
       }
     }
 
     await walk('');
+
+    // 2) Les fichiers, sur un client partagé. Annulation: le jeton ferme ce
+    //    client, ce qui fait échouer chaque requête en vol.
+    final cancel = DownloadCancelToken.current;
+    final client = http.Client();
+    void closeClient() => client.close();
+    cancel?.register(closeClient);
+    Object? failure;
+    var next = 0;
+    Future<void> worker() async {
+      while (failure == null && next < jobs.length) {
+        final (url, rel, sha, id) = jobs[next++];
+        try {
+          // [rel] vient du SERVEUR, donc en '/': natif avant le disque.
+          final dest = File(joinPortable(root, rel));
+          await dest.parent.create(recursive: true);
+          final tmp = File('${dest.path}.part');
+          await _downloadToFile(url, tmp, sha256Hex: sha, client: client);
+          await tmp.rename(dest.path);
+        } catch (e) {
+          failure ??= e;   // les autres s'arrêtent au prochain tour
+          return;
+        }
+        if (id != null) idMap['packs/${pack.slug}/$rel'] = id;
+        done++;
+        if (total > 0) _setProgress(progressKey, done / total);
+      }
+    }
+
+    try {
+      await Future.wait(List.generate(_granularParallel, (_) => worker()));
+    } finally {
+      cancel?.unregister(closeClient);
+      client.close();
+    }
+    final f = failure;
+    if (f != null) {
+      if (cancel?.isCancelled ?? false) throw DownloadCancelledException(pack.slug);
+      throw f;
+    }
     if (idMap.isNotEmpty) await LocalDb.instance.cachePmPresetIds(idMap);
     if (done == 0) {
       throw Exception('granular install: no preset downloaded for ${pack.slug}');
@@ -583,12 +642,12 @@ class PresetManager extends ChangeNotifier {
   /// referenced it (playlist entries, the id cache) at the pack's — otherwise
   /// the preset sits on disk twice and plays twice in the "all" source.
   Future<void> _absorbSinglesIntoPack(String slug) async {
-    final root = Directory('$singleDir/$slug');
+    final root = Directory(p.join(singleDir, slug));
     if (!root.existsSync()) return;
     await for (final e in root.list(recursive: true, followLinks: false)) {
       if (e is! File || !e.path.toLowerCase().endsWith('.milk')) continue;
       final sub = e.path.substring(root.path.length + 1);
-      final inPack = File('${packDir(slug)}/$sub');
+      final inPack = File(p.join(packDir(slug), sub));
       if (!inPack.existsSync()) continue; // the pack does not ship it
       final oldRel = relOf(e.path);
       await LocalDb.instance.repathPmPreset(oldRel, relOf(inPack.path));
@@ -613,7 +672,7 @@ class PresetManager extends ChangeNotifier {
   // points at into single/<slug>/, and those still need the images. So the slug
   // only leaves the list when no single of that pack remains.
 
-  File _texUsersFile(String key) => File('$_pmDir/packtex/$key/.users');
+  File _texUsersFile(String key) => File(p.join(_pmDir, 'packtex', key, '.users'));
 
   Set<String> _texUsers(String key) {
     final f = _texUsersFile(key);
@@ -638,7 +697,7 @@ class PresetManager extends ChangeNotifier {
   }
 
   bool _hasSinglesOf(String slug) {
-    final d = Directory('$singleDir/$slug');
+    final d = Directory(p.join(singleDir, slug));
     if (!d.existsSync()) return false;
     return d
         .listSync(recursive: true)
@@ -676,7 +735,7 @@ class PresetManager extends ChangeNotifier {
   List<(String, int)> orphanTextureBundles() {
     final cached = _orphanTexCache;
     if (cached != null) return cached;
-    final root = Directory('$_pmDir/packtex');
+    final root = Directory(p.join(_pmDir, 'packtex'));
     if (!root.existsSync()) return _orphanTexCache = const [];
 
     final claimed = <String>{};
@@ -688,7 +747,7 @@ class PresetManager extends ChangeNotifier {
 
     final out = <(String, int)>[];
     for (final d in root.listSync().whereType<Directory>()) {
-      final key = d.path.split(Platform.pathSeparator).last;
+      final key = p.basename(d.path);
       if (claimed.contains(key)) continue;
       if (_texUsers(key).isNotEmpty) continue;
       out.add((key, _dirBytes(d)));
@@ -702,7 +761,7 @@ class PresetManager extends ChangeNotifier {
     final bundles = orphanTextureBundles();
     _invalidateOrphanTexCache();
     for (final (key, bytes) in bundles) {
-      final d = Directory('$_pmDir/packtex/$key');
+      final d = Directory(p.join(_pmDir, 'packtex', key));
       try {
         if (d.existsSync()) await d.delete(recursive: true);
         freed += bytes;
@@ -749,7 +808,7 @@ class PresetManager extends ChangeNotifier {
     if (texKey != null) {
       final users = _texUsers(texKey)..remove(pack.slug);
       final keep = users.isNotEmpty || _hasSinglesOf(pack.slug);
-      final bundle = Directory('$_pmDir/packtex/$texKey');
+      final bundle = Directory(p.join(_pmDir, 'packtex', texKey));
       if (keep) {
         try {
           await _texUsersFile(texKey)
@@ -791,9 +850,11 @@ class PresetManager extends ChangeNotifier {
   /// its sub-folders — the engine derives the displayed preset name from the
   /// basename, so the first design (`single/<uuid>.milk`, id-as-filename) put
   /// a raw uuid on screen and lost which pack the preset came from.
-  String singlePathFor(PresetInfo p) {
-    final pack = (p.pack == null || p.pack!.isEmpty) ? '_' : _sanitize(p.pack!);
-    var rel = (p.path != null && p.path!.isNotEmpty) ? p.path! : p.name;
+  String singlePathFor(PresetInfo preset) {
+    final pack = (preset.pack == null || preset.pack!.isEmpty)
+        ? '_' : _sanitize(preset.pack!);
+    var rel = (preset.path != null && preset.path!.isNotEmpty)
+        ? preset.path! : preset.name;
     if (!rel.toLowerCase().endsWith('.milk')) rel = '$rel.milk';
     // Server paths are data, not instructions: sanitize each segment and drop
     // anything that would climb out of the tree.
@@ -801,8 +862,11 @@ class PresetManager extends ChangeNotifier {
       for (final s in rel.split('/'))
         if (s.isNotEmpty && s != '.' && s != '..') _sanitize(s),
     ];
-    if (segs.isEmpty) return '$singleDir/$pack/${_sanitize(p.name)}.milk';
-    return '$singleDir/$pack/${segs.join('/')}';
+    // ⚠️ NATIF (p.join): [isSingleDownloaded] compare ce chemin à ceux que
+    // LISTE le disque. Construit avec '/', il ne coïncidait jamais sous Windows
+    // — un preset téléchargé y restait « absent » et se re-téléchargeait.
+    if (segs.isEmpty) return p.join(singleDir, pack, '${_sanitize(preset.name)}.milk');
+    return p.joinAll([singleDir, pack, ...segs]);
   }
 
   /// Absolute paths of every one-off download, cached in memory.
@@ -830,7 +894,7 @@ class PresetManager extends ChangeNotifier {
   /// A downloaded copy of [presetId], if any — the current layout via the
   /// path→id cache, plus the legacy `single/<id>.milk` form.
   Future<String?> pathForPresetIdAsync(String presetId) async {
-    final legacy = File('$singleDir/$presetId.milk');
+    final legacy = File(p.join(singleDir, '$presetId.milk'));
     if (legacy.existsSync()) return legacy.path;
     final rel = await LocalDb.instance.pmPathForPresetId(presetId);
     if (rel == null) return null;
@@ -841,12 +905,13 @@ class PresetManager extends ChangeNotifier {
   /// Where the INSTALLED pack would hold this preset — `single/<pack>/<path>`
   /// mirrors the pack layout on purpose, so the two forms map onto each other
   /// by a prefix swap (see [_absorbSinglesIntoPack]).
-  String? packPathFor(PresetInfo p) {
-    if (p.pack == null || p.pack!.isEmpty) return null;
-    final single = singlePathFor(p);
-    final prefix = '$singleDir/${_sanitize(p.pack!)}/';
-    if (!single.startsWith(prefix)) return null;
-    return '${packDir(_sanitize(p.pack!))}/${single.substring(prefix.length)}';
+  String? packPathFor(PresetInfo preset) {
+    if (preset.pack == null || preset.pack!.isEmpty) return null;
+    final single = singlePathFor(preset);
+    final pack = _sanitize(preset.pack!);
+    final from = p.join(singleDir, pack);
+    if (!p.isWithin(from, single)) return null;
+    return p.join(packDir(pack), p.relative(single, from: from));
   }
 
   /// Downloads [p] under `single/<pack>/<path>` (sha256-verified) and caches
@@ -894,7 +959,7 @@ class PresetManager extends ChangeNotifier {
 
   Map<String, String> _loadPackNames() {
     try {
-      final f = File('$_pmDir/packnames.json');
+      final f = File(p.join(_pmDir, 'packnames.json'));
       if (f.existsSync()) {
         final j = jsonDecode(f.readAsStringSync());
         if (j is Map) {
@@ -920,7 +985,7 @@ class PresetManager extends ChangeNotifier {
     }
     _packNames = map;
     try {
-      await File('$_pmDir/packnames.json')
+      await File(p.join(_pmDir, 'packnames.json'))
           .writeAsString(jsonEncode(map), flush: true);
     } catch (_) {}
     notifyListeners();
@@ -974,7 +1039,7 @@ class PresetManager extends ChangeNotifier {
       if (!f.existsSync()) continue;
       final name = _sanitize(f.uri.pathSegments.last);
       await Directory(userDir).create(recursive: true);
-      await f.copy('$userDir/$name');
+      await f.copy(p.join(userDir, name));
       n++;
     }
     if (n > 0) {
@@ -1006,12 +1071,12 @@ class PresetManager extends ChangeNotifier {
     if (milks.isEmpty) return 0;
     await Directory(userDir).create(recursive: true);
     for (final e in milks) {
-      await e.copy('$userDir/${_sanitize(e.uri.pathSegments.last)}');
+      await e.copy(p.join(userDir, _sanitize(e.uri.pathSegments.last)));
     }
     for (final e in textures) {
       // Textures ride along: a .milk names its bitmaps bare, and user/ is on
       // the texture search path.
-      await e.copy('$userDir/${_sanitize(e.uri.pathSegments.last)}');
+      await e.copy(p.join(userDir, _sanitize(e.uri.pathSegments.last)));
     }
     await _pushTextureDirs();
     await _reapplyIfCovers('user');
@@ -1020,7 +1085,7 @@ class PresetManager extends ChangeNotifier {
   }
 
   Future<void> deleteUserPreset(String absPath) async {
-    if (!absPath.startsWith('$userDir/')) return;
+    if (!p.isWithin(userDir, absPath)) return;
     final f = File(absPath);
     if (f.existsSync()) await f.delete();
     await _reapplyIfCovers('user');
@@ -1036,7 +1101,7 @@ class PresetManager extends ChangeNotifier {
   Future<int> deleteUserPresets(Iterable<String> absPaths) async {
     var removed = 0;
     for (final abs in absPaths) {
-      if (!abs.startsWith('$userDir/')) continue;
+      if (!p.isWithin(userDir, abs)) continue;
       final f = File(abs);
       try {
         if (f.existsSync()) {
@@ -1170,18 +1235,24 @@ class PresetManager extends ChangeNotifier {
 
   /// Streamed download to [dest] (packs can be tens of MB — no RAM copy),
   /// optional sha256 verification, per-chunk stall timeout.
+  /// [client]: fourni par l'appelant pour réutiliser la connexion (install
+  /// granulaire); c'est alors LUI qui le ferme et l'inscrit au jeton.
   Future<void> _downloadToFile(String url, File dest,
-      {int? expectedSize, String? sha256Hex, String? progressKey}) async {
+      {int? expectedSize,
+      String? sha256Hex,
+      String? progressKey,
+      http.Client? client}) async {
     // Same cancellation contract as RewampDb's fetch: the token comes from the
     // zone the queue job runs in, poll per chunk + force-close on a stall.
     final cancel = DownloadCancelToken.current;
     cancel?.throwIfCancelled(url);
-    final client = http.Client();
-    void closeClient() => client.close();
-    cancel?.register(closeClient);
+    final owned = client == null;
+    final c = client ?? http.Client();
+    void closeClient() => c.close();
+    if (owned) cancel?.register(closeClient);
     IOSink? sink;
     try {
-      final resp = await client
+      final resp = await c
           .send(http.Request('GET', Uri.parse(url)))
           .timeout(const Duration(seconds: 20));
       if (resp.statusCode != 200) {
@@ -1222,8 +1293,10 @@ class PresetManager extends ChangeNotifier {
       }
       rethrow;
     } finally {
-      cancel?.unregister(closeClient);
-      client.close();
+      if (owned) {
+        cancel?.unregister(closeClient);
+        c.close();
+      }
     }
   }
 

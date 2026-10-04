@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:path_provider/path_provider.dart';
 import 'package:rewamp_audio/rewamp_audio.dart';
@@ -1146,7 +1147,7 @@ class PlayerController extends ChangeNotifier {
     final ext = mime.contains('png') ? 'png' : 'jpg';
     final cacheDir = await getApplicationCacheDirectory();
     final name = audioPath.hashCode.toRadixString(16);
-    final f = File('${cacheDir.path}/artwork/embedded_$name.$ext');
+    final f = File(p.join(cacheDir.path, 'artwork', 'embedded_$name.$ext'));
     if (!await f.exists()) {
       await f.parent.create(recursive: true);
       await f.writeAsBytes(bytes);
@@ -1604,7 +1605,7 @@ class PlayerController extends ChangeNotifier {
         // the round trip then minted a row at the computed path
         // `local/Kingdom Baron` instead of finding the .spc already on disk,
         // and the tune appeared twice in the library.
-        fileName:   localFile.split(Platform.pathSeparator).last,
+        fileName:   p.basename(localFile),
         relPath:    await LocalDb.instance.relPathOf(localFile),
         value:      isFavorite,
         entryPath:  entryPath,
@@ -1650,7 +1651,7 @@ class PlayerController extends ChangeNotifier {
       unawaited(() async {
         try {
           await SyncService.recordExtPlay(
-            fileName:   path.split(Platform.pathSeparator).last,
+            fileName:   p.basename(path),
             relPath:    await LocalDb.instance.relPathOf(path),
             entryPath:  entryPath,
             subsongIdx: subsongIdx,

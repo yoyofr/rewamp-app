@@ -2734,7 +2734,7 @@ extern "C" int cpupercent;
 unsigned char cpupercentaverage[10];
 int cpuaveragepointer=0;
 
-extern int GSFshoudlReset;
+extern "C" int GSFshoudlReset;   /* rewamp: liaison C, voir gsf.cpp */
 
 
 

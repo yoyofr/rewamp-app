@@ -80,21 +80,26 @@ bool isValidLocalName(String name) {
 ///
 /// Pur. `p.isWithin` seul ne suffit pas: déplacer un dossier vers LUI-MÊME
 /// n'est pas « dedans » et doit quand même être refusé.
-bool movesIntoItself(String from, String to) =>
-    p.equals(from, to) || p.isWithin(from, to);
+bool movesIntoItself(String from, String to, {p.Context? ctx}) {
+  final c = ctx ?? p.context;
+  return c.equals(from, to) || c.isWithin(from, to);
+}
 
 /// Le chemin libre le plus proche de [target]: `nom`, puis `nom (2)`, `nom (3)`…
 ///
 /// Pur (l'existence est fournie), pour que la règle de nommage se teste sans
-/// disque.
-String freeName(String target, bool Function(String) exists) {
+/// disque — et sous les deux styles de chemin ([ctx], celui de la plateforme
+/// par défaut).
+String freeName(String target, bool Function(String) exists,
+    {p.Context? ctx}) {
+  final c = ctx ?? p.context;
   if (!exists(target)) return target;
-  final dir  = p.dirname(target);
-  final ext  = p.extension(target);
-  final stem = p.basenameWithoutExtension(target);
+  final dir  = c.dirname(target);
+  final ext  = c.extension(target);
+  final stem = c.basenameWithoutExtension(target);
   for (var n = 2; n < 1000; n++) {
-    final c = p.join(dir, '$stem ($n)$ext');
-    if (!exists(c)) return c;
+    final cand = c.join(dir, '$stem ($n)$ext');
+    if (!exists(cand)) return cand;
   }
   return target;
 }

@@ -41,6 +41,7 @@
 // is UP, from the key bottom) becomes ty = -k/keyH here.
 
 #include "rewamp_notes.h"
+#include "rewamp_audio.h"   // rewamp_track_generation: le cadre auto repart avec le morceau
 #include "ModizerVoicesData.h"   // generic_mute_mask: une voix coupée ne joue pas de touche
 #include "rewamp_gl.h"
 #include "rewamp_gl_orientation.h"
@@ -206,6 +207,14 @@ static float   g_pk_keypos[PK_MAXROWS][PK_NOTES];   /* 0 = up, 1 = fully down */
 static uint8_t g_pk_pressed[PK_MAXROWS][PK_NOTES];  /* this frame */
 static float   g_pk_keyr[PK_MAXROWS][PK_NOTES], g_pk_keyg[PK_MAXROWS][PK_NOTES], g_pk_keyb[PK_MAXROWS][PK_NOTES];
 static float   g_pk_spark[PK_MAXROWS][PK_NOTES];    /* 0..1 aura envelope, per keyboard */
+/* Réattaque d'une note DÉJÀ enfoncée (même touche, nouvel événement): sans
+ * rien, `pressed` restait à 1 d'une colonne à l'autre et la touche ne bougeait
+ * pas — deux notes identiques se lisaient comme une seule tenue. La touche
+ * REMONTE donc au moins jusqu'à PK_BOUNCE_LIFT, puis se renfonce. */
+static uint8_t g_pk_bounce[PK_MAXROWS][PK_NOTES];   /* 1 = remonte avant de se renfoncer */
+static int64_t g_pk_prev_played = -1;               /* tête de lecture de la trame précédente */
+#define PK_BOUNCE_LIFT  0.35f   /* hauteur (0 = haut) à atteindre avant de renfoncer */
+#define PK_BOUNCE_SPEED 3.0f    /* remontée d'un rebond: 1/3 par trame 60 Hz (plus vif que le relâché) */
 /* Manual view: a note sounding OFF-SCREEN flashes a small arrow on that side
  * of its keyboard (time of the last trigger; [r][0] = left, [r][1] = right),
  * in the note's colour. */
@@ -231,6 +240,15 @@ static int    g_pk_range_lo = 21, g_pk_range_hi = 49;   /* white keys, C2..C6 */
 static double g_pk_lo_seen[PK_WHITES + 1], g_pk_hi_seen[PK_WHITES + 1];
 static double g_pk_range_changed = 0.0;                 /* last grow or shrink */
 static int    g_pk_seen_ready = 0;
+/* Nouveau morceau: le cadre n'a plus rien vu. Les premières notes le posent
+ * SERRÉ d'emblée — sans ça il héritait du morceau précédent (ou du C2..C6 de
+ * départ), et un morceau plus étroit n'occupait que la moitié de l'écran
+ * jusqu'à ce qu'un rétrécissement passe (8 s au mieux). */
+static int     g_pk_range_unset = 1;
+static int64_t g_pk_track_gen = -1;
+/* Dernière valeur de l'horloge du rendu, JAMAIS remise à zéro (voir
+ * pk_rebase_clock) — g_pk_last_t l'est à chaque init. */
+static double  g_pk_clock_ref = -1.0;
 
 /* ── buffers (heap: only users of this viz pay for them) ────────────────── */
 static GLfloat* g_pk_sverts = NULL;
@@ -741,6 +759,8 @@ REWAMP_EXPORT int rewamp_pianoviz_init(int width, int height) {
 
     g_pk_static_dirty = 1;
     memset(g_pk_keypos, 0, sizeof(g_pk_keypos));
+    memset(g_pk_bounce, 0, sizeof(g_pk_bounce));
+    g_pk_prev_played = -1;
     memset(g_pk_spark, 0, sizeof(g_pk_spark));
     memset(g_pk_emit, 0, sizeof(g_pk_emit));
     memset(g_pk_arrow_t, 0, sizeof(g_pk_arrow_t));
@@ -751,6 +771,35 @@ REWAMP_EXPORT int rewamp_pianoviz_init(int width, int height) {
 }
 
 /* ── auto range → view target ────────────────────────────────────────────── */
+/* L'horloge du rendu est l'`elapsed` du Ticker du WIDGET (vizSetFrameTime):
+ * elle REPART DE ZÉRO à chaque nouveau widget, alors que les instants stockés
+ * ici sont statiques. Sans recalage, un fondu commencé sous l'ancienne horloge
+ * restait figé (`now - t0` négatif) jusqu'à ce que la nouvelle le rattrape, et
+ * « 8 s depuis le dernier changement » ne passait plus — l'auto ne cadrait
+ * plus rien, et repasser par le manuel (qui remet le fondu au repos) semblait
+ * le réparer. Un recul décale TOUS les instants du même écart: les durées
+ * écoulées sont conservées. */
+static void pk_rebase_clock(double now) {
+    if (g_pk_clock_ref >= 0.0 && now < g_pk_clock_ref) {
+        const double shift = now - g_pk_clock_ref;
+        g_pk_range_changed += shift;
+        for (int k = 0; k <= PK_WHITES; k++) {
+            if (g_pk_lo_seen[k] > -1e17) g_pk_lo_seen[k] += shift;
+            if (g_pk_hi_seen[k] > -1e17) g_pk_hi_seen[k] += shift;
+        }
+        if (g_pk_ease_t0 >= 0.0) g_pk_ease_t0 += shift;
+    }
+    g_pk_clock_ref = now;
+}
+
+static void pk_check_track_change(void) {
+    const int64_t gen = rewamp_track_generation();
+    if (gen == g_pk_track_gen) return;
+    g_pk_track_gen = gen;
+    g_pk_range_unset = 1;
+    g_pk_seen_ready = 0;   /* oublie les bords vus du morceau précédent */
+}
+
 static void pk_update_range(int n, int vc, double now) {
     int mn = 999, mx = -1;
     for (int c = 0; c < n; c++)
@@ -783,6 +832,12 @@ static void pk_update_range(int n, int vc, double now) {
     if (hi > PK_WHITES) { lo -= hi - PK_WHITES; hi = PK_WHITES; if (lo < 0) lo = 0; }
     g_pk_lo_seen[lo] = now;
     g_pk_hi_seen[hi] = now;
+    if (g_pk_range_unset) {   /* premier cadre du morceau: tel quel, serré */
+        g_pk_range_lo = lo; g_pk_range_hi = hi;
+        g_pk_range_changed = now;
+        g_pk_range_unset = 0;
+        return;
+    }
     /* Grow at once: a note outside the keyboard is unacceptable. */
     if (lo < g_pk_range_lo || hi > g_pk_range_hi) {
         if (lo > g_pk_range_lo) lo = g_pk_range_lo;
@@ -916,6 +971,22 @@ static void pk_particles_step(const PkLayout* L, float dt, float keyWpx) {
     }
 }
 
+/* Colonne c ouvre-t-elle un NOUVEAU run pour la voix v, par rapport à c-1 ?
+ * La règle de la notation (rewamp_notes_render.cpp), une seule fois ici pour
+ * les barres ET les rebonds de touche: note coupée, autre demi-ton (hystérésis
+ * ±0,75 autour du demi-ton de départ `sem0`), autre instrument, volume qui
+ * REMONTE (réattaque), trou dans la capture. */
+static inline int pk_run_breaks(int c, int vc, int v, float sem0) {
+    const int nidx = c * vc + v, cidx = (c - 1) * vc + v;
+    const float nhz = g_pk_hz[nidx];
+    if (nhz < 1.0f) return 1;
+    if (fabsf(12.0f * log2f(nhz / 440.0f) - sem0) > 0.75f) return 1;
+    if (g_pk_instr[nidx] != g_pk_instr[cidx]) return 1;
+    if (g_pk_vol[nidx] > g_pk_vol[cidx] + 2) return 1;
+    if ((double)(g_pk_pos[c] - g_pk_pos[c - 1]) > 512.0 * 3.0) return 1;
+    return 0;
+}
+
 /* ── frame ───────────────────────────────────────────────────────────────── */
 typedef struct { int note, voice; float y0, y1; int active; float r, g, b; } PkBar;
 static PkBar g_pk_bars[PK_MAXBARS];
@@ -971,6 +1042,8 @@ REWAMP_EXPORT void rewamp_pianoviz_render(void) {
         rewamp_gl_flush(); return;
     }
 
+    pk_rebase_clock(now);
+    pk_check_track_change();
     if (n > 0) pk_update_range(n, vc, now);
     pk_update_view(now);
     /* The zoom floor depends on the surface: re-clamp the live view against
@@ -1031,6 +1104,35 @@ REWAMP_EXPORT void rewamp_pianoviz_render(void) {
         }
     }
 
+    /* ── réattaques depuis la trame précédente ───────────────────────────────
+     * Parcours des colonnes ENTRE les deux têtes de lecture (pas seulement la
+     * colonne courante): une coupure plus courte qu'une trame — note off de
+     * 10 ms entre deux doubles croches — serait sinon invisible au rendu. */
+    if (nowCol >= 1 && g_pk_prev_played >= 0 && g_pk_prev_played < playedI) {
+        for (int v = 0; v < vc; v++) {
+            if (pk_voice_muted(v)) continue;
+            float hz = g_pk_hz[nowCol * vc + v];
+            if (hz < 1.0f) continue;
+            const float sem = roundf(12.0f * log2f(hz / 440.0f));
+            const int m = (int)sem + 69;
+            if (m < 0 || m >= PK_NOTES) continue;
+            const int r = (mode == 0) ? (v % rows) : 0;
+            if (g_pk_keypos[r][m] <= PK_BOUNCE_LIFT) continue;   /* déjà assez haute */
+            for (int c = nowCol; c >= 1 && g_pk_pos[c] > g_pk_prev_played; c--) {
+                /* La colonne c porte la même touche et ouvre un run neuf. */
+                const float chz = g_pk_hz[c * vc + v];
+                if (chz < 1.0f || roundf(12.0f * log2f(chz / 440.0f)) != sem) continue;
+                /* Colonne précédente coupée ou sur une autre note: la touche
+                 * est reprise (pk_run_breaks ne regarde que la colonne c). */
+                const float phz = g_pk_hz[(c - 1) * vc + v];
+                const int   fresh = phz < 1.0f ||
+                                    fabsf(12.0f * log2f(phz / 440.0f) - sem) > 0.75f;
+                if (fresh || pk_run_breaks(c, vc, v, sem)) { g_pk_bounce[r][m] = 1; break; }
+            }
+        }
+    }
+    g_pk_prev_played = playedI;
+
     /* ── falling bars (mode 1): merged runs, like the notation ───────────── */
     int nbars = 0;
     if (mode == 1 && n > 0) {
@@ -1044,16 +1146,7 @@ REWAMP_EXPORT void rewamp_pianoviz_render(void) {
                 if (val < 1.0f) { c++; continue; }
                 float sem0 = roundf(12.0f * log2f(val / 440.0f));
                 int cs = c, ce = c;
-                while (ce + 1 < n) {
-                    int nidx = (ce + 1) * vc + v, cidx = ce * vc + v;
-                    float nhz = g_pk_hz[nidx];
-                    if (nhz < 1.0f) break;
-                    if (fabsf(12.0f * log2f(nhz / 440.0f) - sem0) > 0.75f) break;
-                    if (g_pk_instr[nidx] != g_pk_instr[cidx]) break;
-                    if (g_pk_vol[nidx] > g_pk_vol[cidx] + 2) break;
-                    if ((double)(g_pk_pos[ce + 1] - g_pk_pos[ce]) > stepEst * 3.0) break;
-                    ce++;
-                }
+                while (ce + 1 < n && !pk_run_breaks(ce + 1, vc, v, sem0)) ce++;
                 double runStart = (double)g_pk_pos[cs];
                 double runEnd   = (ce + 1 < n) ? (double)g_pk_pos[ce + 1] : (double)g_pk_pos[ce] + stepEst;
                 int m = (int)sem0 + 69;
@@ -1079,8 +1172,16 @@ REWAMP_EXPORT void rewamp_pianoviz_render(void) {
     for (int r = 0; r < rows; r++)
         for (int m = 0; m < PK_NOTES; m++) {
             float* p = &g_pk_keypos[r][m];
-            if (g_pk_pressed[r][m]) { *p += step / 4.0f; if (*p > 1.0f) *p = 1.0f; }
-            else                    { *p -= step / 7.0f; if (*p < 0.0f) *p = 0.0f; }
+            if (g_pk_bounce[r][m]) {
+                /* Rebond: remonter jusqu'à PK_BOUNCE_LIFT, puis reprendre. */
+                *p -= step / PK_BOUNCE_SPEED;
+                if (*p <= PK_BOUNCE_LIFT || !g_pk_pressed[r][m]) {
+                    if (*p < 0.0f) *p = 0.0f;
+                    g_pk_bounce[r][m] = 0;
+                }
+            }
+            else if (g_pk_pressed[r][m]) { *p += step / 4.0f; if (*p > 1.0f) *p = 1.0f; }
+            else                         { *p -= step / 7.0f; if (*p < 0.0f) *p = 0.0f; }
         }
     for (int r = 0; r < rows; r++)
         for (int m = 0; m < PK_NOTES; m++) {

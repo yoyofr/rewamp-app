@@ -23,6 +23,8 @@
 /* Boucle forcée (rewamp_audio.c) — lus à l'open. */
 extern "C" int g_force_loop_mode;
 extern "C" int g_force_loop_native_veto;
+/* rsp_hle/alist.c: voix en attente d'oscillo + horloge de voix (voir là-bas). */
+extern "C" void lazyusf_scope_reset(void);
 #include "rewamp_channel_data.h"
 #include "rewamp_psf_fade.h"   // fondu de fin décrit par le tag `fade`
 #include "ModizerVoicesData.h"
@@ -117,6 +119,7 @@ static int lazyusf_probe(const char* ext, const uint8_t* header, size_t headerSi
     return extMatch ? 90 : 0;
 }
 
+extern "C" int64_t g_lazyusf_read_tick;
 static RewampDecoder* lazyusf_open(const char* path, RewampAudioFormat* outFormat) {
     /* Mode 1 (N boucles): pas de compte natif -> veto, le generique
      * Dart compte les passes (voir configure_loop). */
@@ -157,6 +160,10 @@ static RewampDecoder* lazyusf_open(const char* path, RewampAudioFormat* outForma
     rewamp_channel_data_set_ring_circular(1);
     rewamp_voices_meta_reset();
     rewamp_voices_add_chip("RSP Audio", 0, LAZYUSF_VOICES);
+    // Rien du morceau précédent: ni voix en attente d'oscillo, ni horloges de
+    // voix (qui décident quand un slot se tait, lazyusf_clear_stale_voices).
+    lazyusf_scope_reset();
+    g_lazyusf_read_tick = 0;
 
     int32_t sampleRate = 0;
     usf_render(dec->state, nullptr, 0, &sampleRate);   // prime + learn the real AI DAC rate

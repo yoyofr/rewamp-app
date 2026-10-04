@@ -3939,23 +3939,54 @@ class AppLocalizationsKo extends AppLocalizations {
   String get releaseNotesTitle => '새로운 기능';
 
   @override
-  String get releaseNotesV7Cpu =>
-      '아무것도 재생하지 않을 때 앱이 백그라운드에서 작업하지 않아 프로세서와 배터리 사용이 크게 줄었습니다.';
+  String get releaseNotesV8Windows =>
+      '이제 Windows에서도 Rewamp를 사용할 수 있습니다. 모든 엔진과 projectM을 포함한 시각화를 지원합니다.';
 
   @override
-  String get releaseNotesV7VizIdle =>
-      '재생이 멈춰 있으면 시각화도 멈추며, 초당 60프레임으로 제한됩니다(변경 가능).';
+  String get releaseNotesV8Linux =>
+      'Linux: 이제 X11(Steam Deck 게임 모드)에서도 시각화가 작동하고 \'항상 위에 표시\'가 다시 제공되며, 창을 닫아도 앱이 더 이상 충돌하지 않습니다.';
 
   @override
-  String get releaseNotesV7Subsongs =>
-      '수정: PC 엔진, 마스터 시스템, Atari ST(.sndh)에서 일부 트랙이 옆 곡을 재생하던 문제를 고쳤습니다.';
+  String get releaseNotesV8Formats =>
+      '이제 Game Boy .gbr 파일과 DefleMask .dmf 파일을 재생할 수 있습니다.';
 
   @override
-  String get releaseNotesV7Piano => 'PC 엔진 음악에서 피아노 시각화가 비어 있던 문제를 고쳤습니다.';
+  String get releaseNotesV8Smooth =>
+      '플레이어와 시각화가 더 부드러워졌습니다. 재생 위치가 바뀔 때마다 화면 전체를 다시 그리지 않습니다.';
 
   @override
-  String get releaseNotesV7Database =>
-      '업데이트로 손상된 데이터베이스가 이제 스스로 복구되어, 보관함에 접근하지 못하는 일이 없어졌습니다.';
+  String get releaseNotesV8Scrolling =>
+      '공간보다 긴 제목은 이제 왕복하지 않고 한 방향으로 반복해서 스크롤됩니다.';
+
+  @override
+  String get releaseNotesV8MouseDrag => '컴퓨터: 가로 행을 마우스로 클릭하고 끌어서 스크롤할 수 있습니다.';
+
+  @override
+  String get releaseNotesV8Presets =>
+      'projectM: 프리셋 팩 설치가 최대 9배 빨라졌고, 큰 프리셋 폴더가 더 이상 잘리지 않습니다.';
+
+  @override
+  String get releaseNotesV8Pause => '수정: 일시 정지하면 다음 트랙으로 넘어가는 문제가 있었습니다.';
+
+  @override
+  String get releaseNotesV8Psf =>
+      '하나의 압축 파일로 제공되는 PSF 앨범(PlayStation, Nintendo DS 등)이 이제 대기열에 추가할 때를 포함해 트랙별로 펼쳐집니다.';
+
+  @override
+  String get releaseNotesV8ArtistTracks =>
+      '아티스트 페이지: 트랙 목록에 앨범 전체 압축 파일이 아닌 트랙이 다시 표시됩니다.';
+
+  @override
+  String get releaseNotesV8VizFixes =>
+      '시각화: Nintendo 64 보이스가 올바르게 표시되고 음소거되며, 피아노가 곡마다 화면 범위를 다시 맞추고, 아트워크 배경이 더 이상 사라지지 않습니다.';
+
+  @override
+  String get releaseNotesV8ProjectMFixes =>
+      'projectM: 프리셋이 실제 프레임 속도를 따르며(일부는 반응이 느렸습니다), 표시되지 않던 프리셋 두 개가 이제 나타납니다.';
+
+  @override
+  String get releaseNotesV8Covers =>
+      '커버 로딩이 훨씬 빨라졌습니다. 1.5초마다 한 장씩이 아니라 앨범 격자가 한 번에 채워집니다.';
 
   @override
   String get releaseNotesDataReset =>
@@ -4354,46 +4385,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get miniWindowCoverFit => '커버 전체 보기';
-
-  @override
-  String get releaseNotesV7Mt32 =>
-      '게임 MIDI 음악을 위한 Roland MT-32 엔진이 추가되었습니다(ROM은 직접 준비). ROM이 없으면 MT-32용으로 작성된 MIDI를 General MIDI에 맞춰 재생합니다.';
-
-  @override
-  String get releaseNotesV7Xmp =>
-      '희귀한 모듈 형식 10가지를 새로 재생할 수 있습니다(Archimedes Tracker .musx, .liq, .fnk 등).';
-
-  @override
-  String get releaseNotesV7AmigaAdlib =>
-      'Westwood의 AdLib 음악(.adl)이 모든 트랙을 재생하며, Amiga의 BP SoundMon V1도 인식합니다.';
-
-  @override
-  String get releaseNotesV7MiniPlayer =>
-      'Mac: 간단한 모드나 시각화 모드의 미니 플레이어와 \'항상 위에 표시\' 옵션이 추가되었습니다.';
-
-  @override
-  String get releaseNotesV7Instruments =>
-      '오실로스코프, 악보, 피아노에서 성부뿐 아니라 악기마다 이름과 색을 표시할 수 있습니다.';
-
-  @override
-  String get releaseNotesV7Podium =>
-      '검색: 데모신 대회에서 1위, 2위, 3위에 오른 곡만 골라 볼 수 있습니다.';
-
-  @override
-  String get releaseNotesV7ShortSubsongs =>
-      '너무 짧은 서브송(게임 효과음)은 \'모두 재생\'에서 제외됩니다. 기준은 설정 → 재생에서 바꿀 수 있습니다.';
-
-  @override
-  String get releaseNotesV7LocalFolders =>
-      '가져오기: 폴더를 통째로 끌어다 놓을 수 있고(압축 파일은 풀림), 폴더를 만들고 이름을 바꾸고 옮길 수 있습니다.';
-
-  @override
-  String get releaseNotesV7Midi =>
-      'MIDI: 드럼이 더 이상 피아노 소리로 나지 않고, 음량이 찢어지지 않습니다.';
-
-  @override
-  String get releaseNotesV7ProjectM =>
-      'projectM: 실행할 때마다 같은 프리셋이 반복되지 않으며, 일시 정지 후 프리셋이 잘못 제외되는 일도 없어졌습니다.';
 
   @override
   String get libraryFileMissing => '파일 없음';

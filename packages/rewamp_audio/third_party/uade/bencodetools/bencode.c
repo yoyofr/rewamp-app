@@ -15,8 +15,8 @@
 #include <ctype.h>
 #include <stdarg.h>
 
-#define die(fmt, args...) do { fprintf(stderr, "bencode: fatal error: " fmt, ## args); abort(); } while (0)
-#define warn(fmt, args...) do { fprintf(stderr, "bencode: warning: " fmt, ## args); } while (0)
+#define die(fmt, ...) do { fprintf(stderr, "bencode: fatal error: " fmt, ## __VA_ARGS__); abort(); } while (0)
+#define warn(fmt, ...) do { fprintf(stderr, "bencode: warning: " fmt, ## __VA_ARGS__); } while (0)
 
 #define MAX_ALLOC (((size_t) -1) / sizeof(struct bencode *) / 2)
 #define DICT_MAX_ALLOC (((size_t) -1) / sizeof(struct bencode_dict_node) / 2)

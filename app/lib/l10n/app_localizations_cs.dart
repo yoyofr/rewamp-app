@@ -4178,24 +4178,56 @@ class AppLocalizationsCs extends AppLocalizations {
   String get releaseNotesTitle => 'Novinky';
 
   @override
-  String get releaseNotesV7Cpu =>
-      'Aplikace už nepracuje na pozadí, když nic nehraje: mnohem menší zátěž procesoru a baterie.';
+  String get releaseNotesV8Windows =>
+      'Rewamp nyní běží ve Windows, se všemi jádry a vizualizacemi včetně projectM.';
 
   @override
-  String get releaseNotesV7VizIdle =>
-      'Vizualizace se zastaví, když je přehrávání zastaveno, a jsou omezeny na 60 snímků za sekundu (nastavitelné).';
+  String get releaseNotesV8Linux =>
+      'Linux: vizualizace nyní fungují i pod X11 (herní režim Steam Decku), volba „Vždy navrchu“ se tam vrací a zavření okna už aplikaci neshodí.';
 
   @override
-  String get releaseNotesV7Subsongs =>
-      'Opraveno: na PC Engine, Master System a Atari ST (.sndh) některé skladby spouštěly vedlejší píseň.';
+  String get releaseNotesV8Formats =>
+      'Nově se přehrávají soubory Game Boy .gbr a DefleMask .dmf.';
 
   @override
-  String get releaseNotesV7Piano =>
-      'Vizualizace Klavír zůstávala u hudby z PC Engine prázdná.';
+  String get releaseNotesV8Smooth =>
+      'Plynulejší přehrávač i vizualizace: obrazovka se už nepřekresluje celá při každé změně pozice.';
 
   @override
-  String get releaseNotesV7Database =>
-      'Databáze poškozená aktualizací se nyní opraví sama, místo aby knihovna zůstala nepřístupná.';
+  String get releaseNotesV8Scrolling =>
+      'Příliš dlouhý název se nyní posouvá dokola jedním směrem, místo aby jezdil tam a zpět.';
+
+  @override
+  String get releaseNotesV8MouseDrag =>
+      'Počítače: vodorovné řady lze posouvat kliknutím a tažením myší.';
+
+  @override
+  String get releaseNotesV8Presets =>
+      'projectM: balíčky předvoleb se instalují až devětkrát rychleji a velké složky předvoleb už nejsou oříznuté.';
+
+  @override
+  String get releaseNotesV8Pause =>
+      'Opraveno: pozastavení mohlo přeskočit na další skladbu.';
+
+  @override
+  String get releaseNotesV8Psf =>
+      'Alba PSF (PlayStation, Nintendo DS…) dodaná jako jediný archiv se nyní rozbalí na jednotlivé skladby, i při přidání do fronty.';
+
+  @override
+  String get releaseNotesV8ArtistTracks =>
+      'Stránky interpretů: seznam skladeb opět ukazuje skladby, ne archivy celých alb.';
+
+  @override
+  String get releaseNotesV8VizFixes =>
+      'Vizualizace: hlasy Nintenda 64 se správně zobrazují i ztlumují, piano si u každé skladby znovu upraví výřez a pozadí s obalem už nemizí.';
+
+  @override
+  String get releaseNotesV8ProjectMFixes =>
+      'projectM: předvolby sledují skutečnou snímkovou frekvenci (některé reagovaly líně) a dvě předvolby, které se nikdy neobjevily, jsou nyní k dispozici.';
+
+  @override
+  String get releaseNotesV8Covers =>
+      'Obaly se načítají mnohem rychleji: mřížka alb se zaplní najednou, ne po jednom obalu každou sekundu a půl.';
 
   @override
   String get releaseNotesDataReset =>
@@ -4622,46 +4654,6 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get miniWindowCoverFit => 'Zobrazit celý obal';
-
-  @override
-  String get releaseNotesV7Mt32 =>
-      'Nový engine Roland MT-32 pro MIDI hudbu ze her, s vašimi vlastními ROM. Bez ROM se MIDI napsané pro MT-32 přizpůsobí standardu General MIDI.';
-
-  @override
-  String get releaseNotesV7Xmp =>
-      'Nově se přehrává deset vzácných formátů modulů (Archimedes Tracker .musx, .liq, .fnk…).';
-
-  @override
-  String get releaseNotesV7AmigaAdlib =>
-      'Hudba AdLib od Westwoodu (.adl) přehraje všechny své skladby a BP SoundMon V1 je na Amize rozpoznán.';
-
-  @override
-  String get releaseNotesV7MiniPlayer =>
-      'Mac: minipřehrávač, kompaktní nebo s vizualizací, a volba „Vždy navrchu“.';
-
-  @override
-  String get releaseNotesV7Instruments =>
-      'Osciloskop, noty a klavír umí pojmenovat a obarvit každý nástroj, nejen každý hlas.';
-
-  @override
-  String get releaseNotesV7Podium =>
-      'Hledání: filtrujte skladby, které se v soutěži demoscény umístily na 1., 2. nebo 3. místě.';
-
-  @override
-  String get releaseNotesV7ShortSubsongs =>
-      'Příliš krátké podskladby (zvukové efekty her) se vynechávají z „Přehrát vše“ — práh v Nastavení → Přehrávání.';
-
-  @override
-  String get releaseNotesV7LocalFolders =>
-      'Vaše importy: přetáhněte celou složku (archivy se rozbalí) a vytvářejte, přejmenovávejte nebo přesouvejte složky.';
-
-  @override
-  String get releaseNotesV7Midi =>
-      'MIDI: bicí už nehrají jako klavír a hlasitost už se nepřebuzuje.';
-
-  @override
-  String get releaseNotesV7ProjectM =>
-      'projectM: předvolby se už neopakují od jednoho spuštění k dalšímu a po pauze už není žádná předvolba chybně vyřazena.';
 
   @override
   String get libraryFileMissing => 'Soubor chybí';

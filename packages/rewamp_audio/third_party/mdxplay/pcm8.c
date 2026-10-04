@@ -23,7 +23,12 @@
 # include <time.h>
 # include <unistd.h>
 
+/* YOYOFR (rewamp): les ioctl de ce fichier visaient le peripherique OSS
+ * (/dev/dsp), que rewamp n'ouvre JAMAIS — la sortie passe par miniaudio.
+ * Absent chez MSVC. */
+#ifndef _WIN32
 # include <sys/ioctl.h>
+#endif
 
 
 #include "mdx.h"

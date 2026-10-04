@@ -26,12 +26,16 @@ import 'user_settings.dart';
 ///
 /// Portée GELÉE le 2026-09-19, toujours en **7**: la beta 6.1 (`0.6.1+13`)
 /// n'avait été ni bâtie ni envoyée, donc personne n'a vu cette note — elle
-/// s'élargit à dix jours de plus au lieu de passer à 8. Quinze puces: les
-/// nouveautés d'abord, puis les correctifs, les gains de ressources en
-/// dernier (juste avant l'éventuel avertissement d'effacement).
-const kReleaseNotesVersion = 7;
+/// s'élargit à dix jours de plus au lieu de passer à 8.
+///
+/// **8 = beta 7** (`0.7.0+15`, 2026-10-04). La 6.1 a été PUBLIÉE, donc ses
+/// quinze puces sont vues et RETIRÉES. Treize puces neuves, même ordre: les
+/// nouveautés (Windows, Linux X11, formats, fluidité, défilement, souris,
+/// presets), puis les correctifs, le gain de chargement des pochettes en
+/// dernier.
+const kReleaseNotesVersion = 8;
 
-const kReleaseNotesLabel = 'Beta 6.1';
+const kReleaseNotesLabel = 'Beta 7';
 
 /// Les points de la note, dans l'ordre d'affichage. Une note SYNTHÉTIQUE: ce
 /// que l'utilisateur verra changer, pas le journal des commits. Le dernier
@@ -39,21 +43,19 @@ const kReleaseNotesLabel = 'Beta 6.1';
 /// délibérément en dernier et signalé, c'est la seule ligne qui demande
 /// quelque chose au lecteur plutôt que de lui annoncer un gain.
 List<String> releaseNotesBullets(AppLocalizations l10n) => [
-      l10n.releaseNotesV7Mt32,
-      l10n.releaseNotesV7Xmp,
-      l10n.releaseNotesV7AmigaAdlib,
-      l10n.releaseNotesV7MiniPlayer,
-      l10n.releaseNotesV7Instruments,
-      l10n.releaseNotesV7Podium,
-      l10n.releaseNotesV7ShortSubsongs,
-      l10n.releaseNotesV7LocalFolders,
-      l10n.releaseNotesV7Subsongs,
-      l10n.releaseNotesV7Midi,
-      l10n.releaseNotesV7ProjectM,
-      l10n.releaseNotesV7Piano,
-      l10n.releaseNotesV7VizIdle,
-      l10n.releaseNotesV7Cpu,
-      l10n.releaseNotesV7Database,
+      l10n.releaseNotesV8Windows,
+      l10n.releaseNotesV8Linux,
+      l10n.releaseNotesV8Formats,
+      l10n.releaseNotesV8Smooth,
+      l10n.releaseNotesV8Scrolling,
+      l10n.releaseNotesV8MouseDrag,
+      l10n.releaseNotesV8Presets,
+      l10n.releaseNotesV8Pause,
+      l10n.releaseNotesV8Psf,
+      l10n.releaseNotesV8ArtistTracks,
+      l10n.releaseNotesV8VizFixes,
+      l10n.releaseNotesV8ProjectMFixes,
+      l10n.releaseNotesV8Covers,
     ];
 
 /// L'écran lui-même: fond du splash, logo réduit, la note, un bouton.

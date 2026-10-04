@@ -4,9 +4,14 @@
 #ifndef TJH__EUP_H
 #define TJH__EUP_H
 
-#if defined ( __GNUC__ )
+/* YOYOFR (rewamp): la garde était `__GNUC__`, c'est-à-dire le COMPILATEUR,
+ * alors que ce qui est en jeu est la présence d'un en-tête. Sous MSVC
+ * l'include était donc sauté et `struct timeval` — utilisé juste en dessous
+ * comme MEMBRE de PolyphonicAudioDevice — restait inconnu. `<sys/time.h>` est
+ * fourni par src/windows/compat/ pour cette cible. */
+#if defined ( __GNUC__ ) || defined ( _MSC_VER )
 #include <sys/time.h>
-#endif // __GNUC__
+#endif
 #include <sys/types.h>
 #include <iostream>
 

@@ -1,0 +1,9 @@
+{
+  "name": "rewamp-angle",
+  "version-string": "0",
+  "description": "ANGLE (GLES 3.0 sur Direct3D 11) pour les visualiseurs de rewamp sous Windows — voir scripts/build_angle_windows.ps1",
+  "builtin-baseline": "a4d4f0d62ca4cbaf5dbf17a7e1455e00ec383cc8",
+  "dependencies": [
+    "angle"
+  ]
+}

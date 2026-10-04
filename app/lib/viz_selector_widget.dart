@@ -1104,7 +1104,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
       if (name == null || name.isEmpty || !mounted) return;
       playlistId = await LocalDb.instance.createPmPlaylist(name);
     }
-    final base = abs.split('/').last;
+    final base = p.basename(abs);
     final display =
         base.toLowerCase().endsWith('.milk') ? base.substring(0, base.length - 5) : base;
     final ids = await LocalDb.instance.pmPresetIdsForPaths([rel]);

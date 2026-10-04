@@ -69,6 +69,20 @@
 #include <libgen.h>
 #endif
 
+#ifdef _MSC_VER
+/* rewamp: basename() vient de <libgen.h>, que MSVC n'a pas. Un seul appelant
+ * (appname_from_path), qui ne veut que le dernier composant du chemin; les
+ * deux séparateurs comptent sur Windows. */
+static char * rewamp_basename(char * path)
+{
+  char * s = path, * p;
+  for (p = path; *p; ++p)
+    if (*p == '/' || *p == '\\') s = p + 1;
+  return s;
+}
+#define basename rewamp_basename
+#endif
+
 #define MK4CC(A,B,C,D) (((int)(A)<<24)|((int)(B)<<16)|((int)(C)<<8)|((int)(D)))
 
 

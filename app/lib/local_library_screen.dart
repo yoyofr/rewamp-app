@@ -11,6 +11,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show mapEquals, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'portable_path.dart';
 
 import 'artwork_image.dart' show ArtworkCache, RailArtwork;
 import 'cancel_field.dart';
@@ -152,7 +153,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
     // le résultat n'apparaissait nulle part.
     final diskFolders = <String>{};
     try {
-      final dir = Directory(p.join(await _rootPath(), widget.prefix));
+      final dir = Directory(joinPortable(await _rootPath(), widget.prefix));
       if (await dir.exists()) {
         await for (final e in dir.list(followLinks: false)) {
           if (e is Directory) {
@@ -206,7 +207,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
     await Future.wait([
       for (final n in names)
         ArtworkCache.instance
-            .findFolderArtwork(p.join(root, widget.prefix, n))
+            .findFolderArtwork(p.join(joinPortable(root, widget.prefix), n))
             .then((a) {
           if (a != null) art[n] = a;
         }),
@@ -364,7 +365,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
         final rel = childPrefix.endsWith('/')
             ? childPrefix.substring(0, childPrefix.length - 1)
             : childPrefix;
-        await deleteDownloadedFolder(p.join(await _rootPath(), rel));
+        await deleteDownloadedFolder(joinPortable(await _rootPath(), rel));
       } else {
         await deleteLocalImportFolder(childPrefix);
       }
@@ -416,7 +417,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
     for (final d in dirs) {
       if (_isDownloads) {
         final rel = d.endsWith('/') ? d.substring(0, d.length - 1) : d;
-        await deleteDownloadedFolder(p.join(root, rel));
+        await deleteDownloadedFolder(joinPortable(root, rel));
       } else {
         await deleteLocalImportFolder(d);
       }
@@ -490,7 +491,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
     if (name == null || !mounted) return;
     try {
       await createLocalFolder(
-          p.join(await _rootPath(), widget.prefix), name);
+          joinPortable(await _rootPath(), widget.prefix), name);
       await _load();
     } catch (e) {
       _manageFailed(e);
@@ -503,7 +504,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
     final k = _selected.first;
     if (k.startsWith('dir:')) {
       final rel = k.substring(4);
-      return p.join(await _rootPath(),
+      return joinPortable(await _rootPath(),
           rel.endsWith('/') ? rel.substring(0, rel.length - 1) : rel);
     }
     return k.substring('track:'.length);
@@ -549,7 +550,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
     // suppression).
     String abs(String key) {
       final rel = key.substring(4);
-      return p.join(
+      return joinPortable(
           root, rel.endsWith('/') ? rel.substring(0, rel.length - 1) : rel);
     }
 

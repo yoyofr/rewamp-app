@@ -48,6 +48,11 @@ enum uade_msgtype {
 	UADE_MSG_LAST
 };
 
+/* rewamp: MSVC ignore __attribute__((packed)); #pragma pack donne la MÊME
+ * disposition que le packed de GCC sur ces structs d'échange. */
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#endif
 struct uade_msg {
 	uint32_t msgtype;
 	uint32_t size;
@@ -70,6 +75,9 @@ struct uade_msg_file_data {
 	uint32_t size;
 	uint8_t data[4096];
 } __attribute__((packed));
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 
 enum uade_control_state {
 	UADE_INITIAL_STATE = 0,

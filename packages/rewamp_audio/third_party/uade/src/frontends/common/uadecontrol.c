@@ -22,7 +22,9 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <unistd.h>
+#ifndef _WIN32  /* rewamp: aucun appel de socket ici */
 #include <sys/socket.h>
+#endif
 
 /* Sends a byte request and returns the number of bytes requested */
 int uade_read_request(struct uade_state *state)

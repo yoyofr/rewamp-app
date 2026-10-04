@@ -198,7 +198,16 @@ void listenForOpenedFiles() {
   // Linux/Windows n'ont pas de canal natif, mais peuvent avoir des chemins
   // semés par la ligne de commande: on tente le drain quand même.
   if (!_hasNativeOpen) {
-    if (_awaitingShell.isNotEmpty) drainOpenedFiles();
+    // ⚠️ Au tour de boucle SUIVANT, jamais ici: cet appel vient de
+    // `_AppShellState.initState`, et sans canal natif `drainOpenedFiles` ne
+    // rencontre aucun `await` avant de remettre le lot au shell — donc
+    // `_openLocalPaths` lisait `context.l10n` DANS initState. Flutter le
+    // refuse (« dependOnInheritedWidgetOfExactType… called before
+    // initState() completed »): lancer l'app avec un fichier en argument
+    // levait une exception et rien ne jouait. Mesuré sur Windows le
+    // 2026-10-03; Apple et Android y échappaient par accident, leur
+    // `await takePending` rendant la main avant.
+    if (_awaitingShell.isNotEmpty) Future<void>(drainOpenedFiles);
     return;
   }
   _openFilesChannel.setMethodCallHandler((call) async {
@@ -355,7 +364,7 @@ bool midiIsSysexOnly(List<int> d) {
 /// PSF est un conteneur valide que le registre accepterait, alors qu'elle n'a
 /// pas de musique à elle.
 bool isBulkQueueCandidate(String path, {bool Function(String)? canPlay}) {
-  final b = path.split(Platform.pathSeparator).last;
+  final b = p.basename(path);
   if (b.startsWith('.')) return false;
   // Un dossier de COMPAGNONS ne contient pas de pistes, quelles que soient les
   // extensions qu'on y trouve — et elles sont jouables par ailleurs (`.ss` est
@@ -402,11 +411,11 @@ Future<List<TrackRecord>?> m3uSubsongsFor(
     return null;
   }
   if (subs == null || subs.isEmpty) return null;
-  final name = path.split(Platform.pathSeparator).last;
+  final name = p.basename(path);
   final want = name.toLowerCase();
   final mine = [
     for (final s in subs)
-      if (s.filePath.split(Platform.pathSeparator).last.toLowerCase() == want) s
+      if (p.basename(s.filePath).toLowerCase() == want) s
   ];
   if (mine.isEmpty) return null;
   // Un M3U d'ALBUM — plusieurs fichiers DISTINCTS, chacun listé une fois —
@@ -417,7 +426,7 @@ Future<List<TrackRecord>?> m3uSubsongsFor(
   // lignes) ou que le M3U ne parle que de lui.
   final distinctFiles = {
     for (final s in subs)
-      s.filePath.split(Platform.pathSeparator).last.toLowerCase()
+      p.basename(s.filePath).toLowerCase()
   };
   if (mine.length == 1 && distinctFiles.length > 1) return null;
   final ext  = name.split('.').last.toLowerCase();
@@ -514,7 +523,7 @@ List<TrackRecord>? subsongRecordsFrom(
   final sparse = subs.any((s) => s.subsongIdx != s.index);
   if (!sparse && !subs.any((s) => (s.title ?? '').trim().isNotEmpty)) return null;
 
-  final name = path.split(Platform.pathSeparator).last;
+  final name = p.basename(path);
   final ext  = name.split('.').last.toLowerCase();
   final base = name.replaceAll(RegExp(r'\.\w+$'), '');
   return [
@@ -647,7 +656,7 @@ Future<List<TrackRecord>> _tracksForLocalPathInner(
       (batch != null && batch.covers(f))
           ? (batch.known[f] ?? const <TrackRecord>[])
           : await LocalDb.instance.getTracksForFile(f);
-  final name = path.split(Platform.pathSeparator).last;
+  final name = p.basename(path);
   final ext  = name.split('.').last.toLowerCase();
   final base = name.replaceAll(RegExp(r'\.\w+$'), '');
 
@@ -952,7 +961,7 @@ Future<List<TrackRecord>> expandLocalModules(
   for (final r in recs) {
     final path = r.filePath;
     final ext  = (r.formatExt ?? '').toLowerCase();
-    final name = r.title ?? path.split(Platform.pathSeparator).last;
+    final name = r.title ?? p.basename(path);
     // Song base name for the "<base> – N" subsong titles. Amiga prefix-form
     // ("mdat.Turrican_2") → the part AFTER the format token; suffix-form
     // ("song.tfmx") → the part before the extension.

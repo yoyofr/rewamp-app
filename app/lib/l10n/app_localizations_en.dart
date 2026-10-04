@@ -4080,24 +4080,56 @@ class AppLocalizationsEn extends AppLocalizations {
   String get releaseNotesTitle => 'What\'s new';
 
   @override
-  String get releaseNotesV7Cpu =>
-      'The app no longer works away in the background when nothing is playing: far less processor and battery.';
+  String get releaseNotesV8Windows =>
+      'Rewamp now runs on Windows, with every engine and the visualizers, projectM included.';
 
   @override
-  String get releaseNotesV7VizIdle =>
-      'Visualizers stand still while playback is stopped, and are capped at 60 frames per second (adjustable).';
+  String get releaseNotesV8Linux =>
+      'Linux: visualizers now work under X11 too (Steam Deck game mode), “Always on top” is back there, and closing the window no longer crashes the app.';
 
   @override
-  String get releaseNotesV7Subsongs =>
-      'Fixed: on PC Engine, Master System and Atari ST (.sndh), some tracks started the song next to the right one.';
+  String get releaseNotesV8Formats =>
+      'Game Boy .gbr and DefleMask .dmf files now play.';
 
   @override
-  String get releaseNotesV7Piano =>
-      'The Piano visualizer stayed empty on PC Engine music.';
+  String get releaseNotesV8Smooth =>
+      'Smoother player and visualizers: the screen no longer redraws everything at every position update.';
 
   @override
-  String get releaseNotesV7Database =>
-      'A database left broken by an update now repairs itself, instead of making the library unreachable.';
+  String get releaseNotesV8Scrolling =>
+      'A title too long for its space now scrolls in a loop, in one direction, instead of going back and forth.';
+
+  @override
+  String get releaseNotesV8MouseDrag =>
+      'Computers: the horizontal rows scroll by click-and-drag with the mouse.';
+
+  @override
+  String get releaseNotesV8Presets =>
+      'projectM: preset packs install up to nine times faster, and large preset folders are no longer cut short.';
+
+  @override
+  String get releaseNotesV8Pause =>
+      'Fixed: pausing could skip to the next track.';
+
+  @override
+  String get releaseNotesV8Psf =>
+      'PSF albums (PlayStation, Nintendo DS…) delivered as a single archive now unfold into their tracks, also when added to the queue.';
+
+  @override
+  String get releaseNotesV8ArtistTracks =>
+      'Artist pages: the track list shows tracks again, not whole album archives.';
+
+  @override
+  String get releaseNotesV8VizFixes =>
+      'Visualizers: Nintendo 64 voices are shown and muted correctly, the piano reframes itself for each song, and the artwork background no longer vanishes.';
+
+  @override
+  String get releaseNotesV8ProjectMFixes =>
+      'projectM: presets follow the real frame rate (some reacted sluggishly), and two presets that never showed up now appear.';
+
+  @override
+  String get releaseNotesV8Covers =>
+      'Covers load much faster: a grid of albums fills in at once instead of one cover every second and a half.';
 
   @override
   String get releaseNotesDataReset =>
@@ -4508,46 +4540,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get miniWindowCoverFit => 'Show whole cover';
-
-  @override
-  String get releaseNotesV7Mt32 =>
-      'New Roland MT-32 engine for game MIDI music, with your own ROMs. Without ROMs, a MIDI written for the MT-32 is adapted to General MIDI.';
-
-  @override
-  String get releaseNotesV7Xmp =>
-      'Ten rare module formats now play (Archimedes Tracker .musx, .liq, .fnk…).';
-
-  @override
-  String get releaseNotesV7AmigaAdlib =>
-      'Westwood AdLib music (.adl) plays all of its tracks, and BP SoundMon V1 is recognised on Amiga.';
-
-  @override
-  String get releaseNotesV7MiniPlayer =>
-      'Mac: a mini player, compact or with the visualizer, and an “Always on top” option.';
-
-  @override
-  String get releaseNotesV7Instruments =>
-      'Oscilloscope, notes and piano can name and colour each instrument, not just each voice.';
-
-  @override
-  String get releaseNotesV7Podium =>
-      'Search: filter the tunes that placed 1st, 2nd or 3rd in a demoscene competition.';
-
-  @override
-  String get releaseNotesV7ShortSubsongs =>
-      'Subsongs that are too short (game sound effects) are left out of “Play all” — threshold in Settings → Playback.';
-
-  @override
-  String get releaseNotesV7LocalFolders =>
-      'Your imports: drop a whole folder (archives unpacked), and create, rename or move folders.';
-
-  @override
-  String get releaseNotesV7Midi =>
-      'MIDI: drums no longer play as a piano, and the volume no longer clips.';
-
-  @override
-  String get releaseNotesV7ProjectM =>
-      'projectM: presets no longer repeat from one launch to the next, and a preset is no longer set aside by mistake after a pause.';
 
   @override
   String get libraryFileMissing => 'File missing';

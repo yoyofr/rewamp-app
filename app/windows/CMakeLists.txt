@@ -43,6 +43,13 @@ function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_options(${TARGET} PRIVATE /EHsc)
   target_compile_definitions(${TARGET} PRIVATE "_HAS_EXCEPTIONS=0")
   target_compile_definitions(${TARGET} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")
+  # permission_handler_windows inclut <experimental/coroutine>, que la STL de
+  # MSVC 14.51 (Visual Studio 2026) transforme en ERREUR de compilation
+  # (STL1011) au lieu d'un avertissement. Le greffon est amont, on ne le patche
+  # pas: ce define est l'échappatoire que le message lui-même indique. À
+  # retirer quand le greffon passera au <coroutine> de C++20.
+  target_compile_definitions(${TARGET} PRIVATE
+    "_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS")
 endfunction()
 
 # Flutter library and tool build rules.
@@ -109,3 +116,16 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# rewamp: le runtime C++ de Visual Studio (msvcp140, vcruntime140,
+# vcruntime140_1) voyage À CÔTÉ de rewamp.exe — déploiement « app-local »,
+# autorisé par Microsoft. Sans lui, l'app ne démarre pas sur un Windows neuf
+# sans le « Visual C++ Redistributable », et le message (« VCRUNTIME140_1.dll
+# introuvable ») ne parle pas de l'app. Relevé par
+# packages/rewamp_audio/scripts/verify_windows_bundle.ps1, qui lit les
+# dépendances de chaque binaire du dossier. L'UCRT, elle, fait partie de
+# Windows 10/11: on ne la livre pas.
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION "${INSTALL_BUNDLE_LIB_DIR}")
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT Runtime)
+set(CMAKE_INSTALL_UCRT_LIBRARIES FALSE)
+include(InstallRequiredSystemLibraries)

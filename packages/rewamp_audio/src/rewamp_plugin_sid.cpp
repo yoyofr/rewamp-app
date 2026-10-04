@@ -456,10 +456,11 @@ static uint64_t sid_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     return rendered;
 }
 
-// Shared seek-state globals defined in rewamp_audio.c.
-extern volatile int    g_seek_cancel;
-extern volatile int    g_is_seeking;
-extern volatile double g_seek_progress_s;
+// Shared seek-state globals defined in rewamp_audio.c — liaison C comme dans
+// les autres greffons: MSVC décore le nom d'une variable C++, GCC/clang non.
+extern "C" volatile int    g_seek_cancel;
+extern "C" volatile int    g_is_seeking;
+extern "C" volatile double g_seek_progress_s;
 
 static void sid_seek(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec || !dec->engine || !dec->tune) return;

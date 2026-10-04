@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -30,7 +31,7 @@ class TokenFile {
 
   static Future<File> _file() async {
     final dir = dirOverride ?? await getApplicationSupportDirectory();
-    return File('${dir.path}/$_name');
+    return File(p.join(dir.path, _name));
   }
 
   static Future<String?> read() async {

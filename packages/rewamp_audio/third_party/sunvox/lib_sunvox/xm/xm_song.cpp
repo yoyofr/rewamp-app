@@ -28,10 +28,19 @@ IN THE SOFTWARE.
 
 #include "sundog.h"
 #include "xm.h"
+/* YOYOFR (rewamp): `ARGS...` est la forme variadique NOMMEE de GNU, et
+ * `, ## ARGS` son avaleur de virgule. Ni l'une ni l'autre n'est standard:
+ * MSVC refuse la definition (« jeton '...' non valide »), puis chaque APPEL
+ * ressort en « pas assez d'arguments » — vingt erreurs qui ne nomment jamais
+ * la vraie cause, qui est la ligne de definition.
+ *
+ * `...`/`__VA_ARGS__` est la forme standard et dit exactement la meme chose
+ * ici: `fmt` n'etait pas utilise separement, il partait en tete de `slog`.
+ * La branche muette ignore ses arguments de toute facon. */
 #ifdef SHOW_DEBUG_MESSAGES
-    #define DPRINT( fmt, ARGS... ) slog( fmt, ## ARGS )
+    #define DPRINT( ... ) slog( __VA_ARGS__ )
 #else
-    #define DPRINT( fmt, ARGS... ) {}
+    #define DPRINT( ... ) {}
 #endif
 void xm_remove_song( xm_song* song )
 {

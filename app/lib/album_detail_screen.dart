@@ -298,7 +298,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         songId:       t.onlineId ?? t.id,
         collection:   widget.collectionSlug ?? '',
         title:        t.displayTitle,
-        filename:     t.filePath.split(Platform.pathSeparator).last,
+        filename:     p.basename(t.filePath),
         album:        t.metaAlbum ?? widget.albumName,
         formatExt:    t.formatExt ?? '',
         downloadUrl:  null,

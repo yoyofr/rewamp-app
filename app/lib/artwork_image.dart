@@ -90,7 +90,7 @@ class ArtworkCache {
     _pending.clear();
     _pendingPriority.clear();
     final cacheDir = await getApplicationCacheDirectory();
-    final dir = Directory('${cacheDir.path}/artwork');
+    final dir = Directory(p.join(cacheDir.path, 'artwork'));
     if (!await dir.exists()) return 0;
     var removed = 0;
     await for (final e in dir.list()) {
@@ -529,7 +529,7 @@ class ArtworkCache {
   /// the DB row is written, so `tracks.artwork_url` stays null.
   Future<String?> findEmbeddedArtwork(String audioFilePath) async {
     final cacheDir = await getApplicationCacheDirectory();
-    return _scanDir('${cacheDir.path}/artwork',
+    return _scanDir(p.join(cacheDir.path, 'artwork'),
         'embedded_${audioFilePath.hashCode.toRadixString(16)}');
   }
 
@@ -640,12 +640,12 @@ class ArtworkCache {
     // qu'on voyait dépendait de l'ÉCRAN (selon qu'il passe `targetDir` ou
     // `localFilePath`).
     if (targetDir != null && album != null && album.isNotEmpty) {
-      return '$targetDir/artwork.$ext';
+      return p.join(targetDir, 'artwork.$ext');
     }
 
     if (localFilePath != null) {
       final dir = targetDir ?? p.dirname(localFilePath);
-      return '$dir/${artBasenameFor(localFilePath)}.$ext';
+      return p.join(dir, '${artBasenameFor(localFilePath)}.$ext');
     }
 
     // Fallback: app cache directory, keyed by a hash of the FULL url. Many
@@ -657,14 +657,14 @@ class ArtworkCache {
     // "/cover.jpg" served one album's cover). Hash the whole URL instead.
     final cacheDir = await getApplicationCacheDirectory();
     final digest   = sha1.convert(utf8.encode(url)).toString();
-    return '${cacheDir.path}/artwork/$digest.$ext';
+    return p.join(cacheDir.path, 'artwork', '$digest.$ext');
   }
 
   /// Scans [dir] for `<basename>.<ext>` across all supported image extensions.
   Future<String?> _scanDir(String dir, String basename) async {
     if (!await Directory(dir).exists()) return null;
     for (final ext in _kArtExts) {
-      final f = File('$dir/$basename.$ext');
+      final f = File(p.join(dir, '$basename.$ext'));
       if (await f.exists()) return f.path;
     }
     return null;

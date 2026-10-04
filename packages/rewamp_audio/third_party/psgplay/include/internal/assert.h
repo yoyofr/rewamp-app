@@ -21,16 +21,16 @@
 		pr_bug(__FILE__, __LINE__, __func__, "fatal error");	\
 	} while (0)
 
-#define WARN(format...)							\
+#define WARN(...)							\
 	do {								\
-		pr_bug_warn(__FILE__, __LINE__, __func__, format);	\
+		pr_bug_warn(__FILE__, __LINE__, __func__, __VA_ARGS__);	\
 	} while (0)
 
-#define WARN_ONCE(format...)						\
+#define WARN_ONCE(...)						\
 	do {								\
 		static bool warned__;					\
 		if (!warned__)						\
-			WARN(format);					\
+			WARN(__VA_ARGS__);					\
 		warned__ = true;					\
 	} while (0)
 

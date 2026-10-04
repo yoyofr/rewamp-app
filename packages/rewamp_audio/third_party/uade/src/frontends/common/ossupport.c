@@ -19,18 +19,55 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#ifndef _WIN32
 #include <libgen.h>
+#endif
 #include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#ifndef _WIN32
 #include <sys/socket.h>
+#endif
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifndef _WIN32
 #include <sys/wait.h>
+#endif
 #include <unistd.h>
+
+#ifdef _WIN32
+/* rewamp: Windows n'a ni <libgen.h> ni socketpair(). Voir uade_dirname et
+   uade_arch_spawn ci-dessous; docs/BUILD_WINDOWS.md §6.3. */
+#include <io.h>
+#ifndef PATH_MAX
+#define PATH_MAX 260
+#endif
+
+/* dirname() POSIX, en place, pour les DEUX séparateurs: « a/b/c » → « a/b »,
+   « c » → « . », « / » → « / », « C:\x » → « C: ». */
+static char *rewamp_win_dirname(char *path)
+{
+	char *end;
+	if (path == NULL || path[0] == '\0')
+		return ".";
+	end = path + strlen(path) - 1;
+	while (end > path && (*end == '/' || *end == '\\'))
+		end--;
+	while (end > path && *end != '/' && *end != '\\')
+		end--;
+	if (end == path)
+		return (*path == '/' || *path == '\\') ? (path[1] = '\0', path) : ".";
+	while (end > path && (*end == '/' || *end == '\\'))
+		end--;
+	end[1] = '\0';
+	return path;
+}
+#define dirname(p) rewamp_win_dirname(p)
+#define realpath(p, r) _fullpath((r), (p), PATH_MAX)
+#endif
 
 int uade_filesize(size_t *size, const char *pathname)
 {
@@ -366,13 +403,22 @@ extern int uadecore_main(int argc, char **argv);
 static pthread_t uadecore_thread;
 static int       uadecore_thread_active;
 static int       uadecore_thread_fd;
+#ifdef _WIN32
+/* Windows: deux tubes au lieu d'un socketpair — le fil lit sur l'un et écrit
+   sur l'autre (uadecore reçoit déjà -i et -o séparément). */
+static int       uadecore_thread_out_fd;
+#endif
 
 static void *uadecore_thread_entry(void *arg)
 {
 	char in[16], out[16];
 	(void) arg;
 	snprintf(in,  sizeof in,  "%d", uadecore_thread_fd);
+#ifdef _WIN32
+	snprintf(out, sizeof out, "%d", uadecore_thread_out_fd);
+#else
 	snprintf(out, sizeof out, "%d", uadecore_thread_fd);
+#endif
 	char *argv[] = {"uadecore", "-i", in, "-o", out, NULL};
 	uadecore_main(5, argv);
 	return NULL;
@@ -392,6 +438,12 @@ void uade_arch_kill_and_wait_uadecore(struct uade_ipc *ipc, pid_t *uadepid)
 	if (uadecore_thread_active) {
 		pthread_join(uadecore_thread, NULL);
 		uadecore_thread_active = 0;
+#ifdef _WIN32
+		/* Les extrémités du FIL: personne d'autre ne les ferme, et sans ça
+		   chaque morceau ferait fuir deux descripteurs CRT. */
+		uade_atomic_close(uadecore_thread_fd);
+		uade_atomic_close(uadecore_thread_out_fd);
+#endif
 	}
 #else
 	/*
@@ -408,6 +460,41 @@ void uade_arch_kill_and_wait_uadecore(struct uade_ipc *ipc, pid_t *uadepid)
 int uade_arch_spawn(struct uade_ipc *ipc, pid_t *uadepid, const char *uadename,
 		    const int *keep_fds)
 {
+#if defined(_WIN32) && defined(UADE_IN_PROCESS)
+	/* rewamp: deux tubes anonymes CRT, BLOQUANTS, un par sens:
+	     to_core:   nous écrivons [1] → le fil lit   [0]
+	     from_core: le fil écrit [1]  → nous lisons  [0]
+	   Fermer to_core[1] donne EOF au fil, qui sort de uadecore_main — même
+	   contrat que la fermeture du socketpair. Tampon de 1 Mo: un message
+	   d'IPC fait au plus 8 + 4096 octets, et les deux côtés alternent requête
+	   et réponse; le tampon n'est qu'une marge. _O_BINARY: pas de
+	   traduction CR/LF sur des octets d'IPC. */
+	int to_core[2], from_core[2];
+	(void) uadename; (void) keep_fds;
+	if (_pipe(to_core, 1 << 20, _O_BINARY | _O_NOINHERIT)) {
+		uade_warning("Can not create pipe: %s\n", strerror(errno));
+		return -1;
+	}
+	if (_pipe(from_core, 1 << 20, _O_BINARY | _O_NOINHERIT)) {
+		uade_warning("Can not create pipe: %s\n", strerror(errno));
+		_close(to_core[0]);
+		_close(to_core[1]);
+		return -1;
+	}
+	uadecore_thread_fd     = to_core[0];
+	uadecore_thread_out_fd = from_core[1];
+	uadecore_thread_active = 1;
+	if (pthread_create(&uadecore_thread, NULL, uadecore_thread_entry, NULL)) {
+		uade_warning("Can not create uadecore thread: %s\n", strerror(errno));
+		uadecore_thread_active = 0;
+		_close(to_core[0]); _close(to_core[1]);
+		_close(from_core[0]); _close(from_core[1]);
+		return -1;
+	}
+	*uadepid = 1; /* non-zero: frontend treats uadecore as running */
+	uade_set_peer(ipc, 1, from_core[0], to_core[1]);
+	return 0;
+#else
 	int fds[2];
 	char input[32], output[32];
 
@@ -492,6 +579,7 @@ int uade_arch_spawn(struct uade_ipc *ipc, pid_t *uadepid, const char *uadename,
 	uade_set_peer(ipc, 1, fds[0], fds[0]);
 	return 0;
 #endif
+#endif /* _WIN32 && UADE_IN_PROCESS */
 }
 #include <limits.h>
 #include <stdlib.h>

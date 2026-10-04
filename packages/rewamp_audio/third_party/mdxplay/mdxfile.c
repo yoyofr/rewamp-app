@@ -18,7 +18,14 @@
 # include <unistd.h>
 # include <sys/types.h>
 
+/* YOYOFR (rewamp): le SEUL appelant d'iconv dans ce fichier
+ * (`mdx_make_sjis_to_syscharset`) a son corps entier sous `#if 0`, donc
+ * cet en-tete ne sert plus a rien — et MSVC ne l'a pas. On le garde sous
+ * garde plutot que de le retirer, pour que le jour ou ce code mort est
+ * reveille sur une plateforme POSIX, il retrouve son en-tete. */
+#ifndef _WIN32
 # include <iconv.h>
+#endif
 # include <locale.h>
 
 #include "version.h"

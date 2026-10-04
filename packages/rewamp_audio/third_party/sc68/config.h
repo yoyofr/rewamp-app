@@ -56,3 +56,25 @@
 /* No libao (audio out — miniaudio's job), no curl (no remote VFS). */
 
 #endif /* REWAMP_SC68_CONFIG_H */
+
+/* ===== Overrides Windows/MSVC (ajoutés) =====
+   Ce config.h est écrit à la main pour des cibles POSIX. Sur Windows,
+   `src/windows/compat/` fournit <unistd.h> (d'où HAVE_UNISTD_H qui RESTE), mais
+   trois entrées n'ont pas d'équivalent et doivent partir:
+
+   * <libgen.h> et `basename()` — api68.c les prend sous HAVE_LIBGEN_H.
+   * `fsync()` — l'UCRT a `_commit()`, qui n'est pas le même nom; sc68 ne s'en
+     sert que pour forcer l'écriture d'un fichier de config, donc son absence
+     ne coûte qu'un flush différé.
+
+   ⚠️ HAVE_ZLIB_H, FILE68_Z et FILE68_UNICE68 restent ACTIFS, et c'est
+   important: le commentaire ci-dessus explique que sans FILE68_Z les replays
+   68k intégrés ne se décompressent pas et tout .sc68 à replay externe sort
+   MUET, avec pour seul indice « inflated size of built-in replay differs -1 ».
+   La zlib vendorée (third_party/zlib) est liée à rewamp_sc68 pour ça.
+   ===== */
+#ifdef _WIN32
+#  undef HAVE_LIBGEN_H
+#  undef HAVE_BASENAME
+#  undef HAVE_FSYNC
+#endif

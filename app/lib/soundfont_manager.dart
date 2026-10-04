@@ -32,11 +32,11 @@ class SoundfontManager {
   /// pas là dans l'hôte de test Dart (le seul lookup FFI ferait échouer la
   /// construction), et rien ici n'en a besoin avant une sélection.
   void init(String dataDir, RewampAudio? audio) {
-    _dir   = '$dataDir/soundfonts';
+    _dir   = p.join(dataDir, 'soundfonts');
     _audio = audio;
   }
 
-  String pathFor(String slug) => '$_dir/$slug.sf2';
+  String pathFor(String slug) => p.join(_dir, '$slug.sf2');
 
   /// Préfixe des soundfonts IMPORTÉES par l'utilisateur. Il les sépare des
   /// slugs du catalogue serveur, qui vivent dans le même dossier et se
@@ -49,7 +49,7 @@ class SoundfontManager {
   /// Le NOM affiché d'une importation vit dans un fichier voisin: un slug est
   /// aplati (ascii, minuscules) et ne peut pas rendre « Arachno SoundFont
   /// – Version 1.0 ».
-  String _namePathFor(String slug) => '$_dir/$slug.name';
+  String _namePathFor(String slug) => p.join(_dir, '$slug.name');
 
   bool isInstalled(String slug) => File(pathFor(slug)).existsSync();
 

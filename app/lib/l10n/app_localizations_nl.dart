@@ -4108,24 +4108,56 @@ class AppLocalizationsNl extends AppLocalizations {
   String get releaseNotesTitle => 'Nieuw';
 
   @override
-  String get releaseNotesV7Cpu =>
-      'De app werkt niet meer op de achtergrond als er niets speelt: veel minder processor en batterij.';
+  String get releaseNotesV8Windows =>
+      'Rewamp draait nu op Windows, met alle engines en de visualisaties, projectM inbegrepen.';
 
   @override
-  String get releaseNotesV7VizIdle =>
-      'Visualisaties staan stil zolang het afspelen gestopt is, en zijn begrensd op 60 beelden per seconde (instelbaar).';
+  String get releaseNotesV8Linux =>
+      'Linux: visualisaties werken nu ook onder X11 (gamemodus van de Steam Deck), ‘Altijd op voorgrond’ is daar terug, en het venster sluiten laat de app niet meer crashen.';
 
   @override
-  String get releaseNotesV7Subsongs =>
-      'Opgelost: op PC Engine, Master System en Atari ST (.sndh) startten sommige nummers het liedje ernaast.';
+  String get releaseNotesV8Formats =>
+      'Game Boy-bestanden (.gbr) en DefleMask-bestanden (.dmf) worden nu afgespeeld.';
 
   @override
-  String get releaseNotesV7Piano =>
-      'De pianovisualisatie bleef leeg bij PC Engine-muziek.';
+  String get releaseNotesV8Smooth =>
+      'Vloeiendere speler en visualisaties: het scherm wordt niet meer volledig opnieuw getekend bij elke positie-update.';
 
   @override
-  String get releaseNotesV7Database =>
-      'Een database die door een update beschadigd raakte, herstelt zichzelf nu in plaats van de bibliotheek onbereikbaar te maken.';
+  String get releaseNotesV8Scrolling =>
+      'Een titel die te lang is voor zijn ruimte scrolt nu in een lus, in één richting, in plaats van heen en weer.';
+
+  @override
+  String get releaseNotesV8MouseDrag =>
+      'Computers: de horizontale rijen scrollen door met de muis te klikken en te slepen.';
+
+  @override
+  String get releaseNotesV8Presets =>
+      'projectM: presetpakketten installeren tot negen keer sneller, en grote presetmappen worden niet meer afgekapt.';
+
+  @override
+  String get releaseNotesV8Pause =>
+      'Opgelost: pauzeren kon naar het volgende nummer springen.';
+
+  @override
+  String get releaseNotesV8Psf =>
+      'PSF-albums (PlayStation, Nintendo DS…) die als één archief worden geleverd, klappen nu uit in hun nummers, ook bij toevoegen aan de wachtrij.';
+
+  @override
+  String get releaseNotesV8ArtistTracks =>
+      'Artiestpagina\'s: de nummerlijst toont weer nummers, geen archieven van hele albums.';
+
+  @override
+  String get releaseNotesV8VizFixes =>
+      'Visualisaties: Nintendo 64-stemmen worden correct getoond en gedempt, de piano past zijn uitsnede per nummer aan, en de hoesachtergrond verdwijnt niet meer.';
+
+  @override
+  String get releaseNotesV8ProjectMFixes =>
+      'projectM: presets volgen de echte framerate (sommige reageerden traag), en twee presets die nooit verschenen zijn er nu.';
+
+  @override
+  String get releaseNotesV8Covers =>
+      'Hoezen laden veel sneller: een raster met albums vult zich in één keer, in plaats van één hoes per anderhalve seconde.';
 
   @override
   String get releaseNotesDataReset =>
@@ -4537,46 +4569,6 @@ class AppLocalizationsNl extends AppLocalizations {
 
   @override
   String get miniWindowCoverFit => 'Hele hoes tonen';
-
-  @override
-  String get releaseNotesV7Mt32 =>
-      'Nieuwe Roland MT-32-engine voor MIDI-gamemuziek, met je eigen ROM\'s. Zonder ROM\'s wordt een MIDI die voor de MT-32 is geschreven aangepast aan General MIDI.';
-
-  @override
-  String get releaseNotesV7Xmp =>
-      'Tien zeldzame moduleformaten worden nu afgespeeld (Archimedes Tracker .musx, .liq, .fnk…).';
-
-  @override
-  String get releaseNotesV7AmigaAdlib =>
-      'AdLib-muziek van Westwood (.adl) speelt al haar nummers af, en BP SoundMon V1 wordt herkend op de Amiga.';
-
-  @override
-  String get releaseNotesV7MiniPlayer =>
-      'Mac: een minispeler, compact of met de visualisatie, en de optie ‘Altijd op voorgrond’.';
-
-  @override
-  String get releaseNotesV7Instruments =>
-      'Oscilloscoop, noten en piano kunnen elk instrument benoemen en kleuren, niet alleen elke stem.';
-
-  @override
-  String get releaseNotesV7Podium =>
-      'Zoeken: filter de nummers die 1e, 2e of 3e werden in een demoscenewedstrijd.';
-
-  @override
-  String get releaseNotesV7ShortSubsongs =>
-      'Te korte subsongs (geluidseffecten van games) blijven buiten ‘Alles afspelen’ — drempel in Instellingen → Afspelen.';
-
-  @override
-  String get releaseNotesV7LocalFolders =>
-      'Je imports: sleep een hele map erin (archieven uitgepakt), en maak, hernoem of verplaats mappen.';
-
-  @override
-  String get releaseNotesV7Midi =>
-      'MIDI: de drums klinken niet meer als een piano, en het volume vervormt niet meer.';
-
-  @override
-  String get releaseNotesV7ProjectM =>
-      'projectM: presets herhalen zich niet meer van de ene start naar de volgende, en na een pauze wordt een preset niet meer onterecht uitgesloten.';
 
   @override
   String get libraryFileMissing => 'Bestand ontbreekt';

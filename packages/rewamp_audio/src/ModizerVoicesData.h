@@ -17,6 +17,16 @@
 #define MAXVAL(a, b) ((a) > (b) ? (a) : (b))
 #define LIMIT8(a)    ((a) > 127 ? 127 : ((a) < -128 ? -128 : (a)))
 
+/* ⚠️ Liaison C, OBLIGATOIRE: ces globales sont DÉFINIES dans un fichier C
+ * (rewamp_channel_data.c) et lues depuis des dizaines de TU C++. GCC et clang
+ * ne décorent pas le nom d'une VARIABLE globale, donc l'oubli y passe inaperçu;
+ * MSVC, lui, encode son type dans le nom (`?m_voice_current_system@@3CA`) et
+ * la référence C++ ne trouve plus la définition C — mesuré: 23 globales non
+ * résolues à l'édition de liens de la DLL, demandées par 44 objets. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ── oscilloscope ring buffers (written per-channel by chip emulators) ─── */
 extern signed char      *m_voice_buff[SOUND_MAXVOICES_BUFFER_FX];
 extern int64_t           m_voice_current_ptr[SOUND_MAXVOICES_BUFFER_FX];
@@ -86,5 +96,9 @@ extern int               pmBufferPosWrite, pmBufferPosRead;
 /* ── MIDI channel mappings (unused in rewamp) ─────────────────────────── */
 extern unsigned char     m_voice_channel_mapping[256];
 extern unsigned char     m_channel_voice_mapping[256];
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* ModizerVoicesData_h */

@@ -47,7 +47,10 @@ void main() {
     // La ligne telle que l'app l'écrit sur iOS.
     await db.insert('tracks', {
       'id': 't1',
-      'file_path': '{sandbox}/Documents/online/jw_spc/uuid/a.spc',
+      // Le séparateur est celui de la PLATEFORME: l'app écrit `{sandbox}` +
+      // le reste du chemin natif (sous iOS, toujours '/').
+      'file_path': '{sandbox}${p.separator}'
+          '${p.join('Documents', 'online', 'jw_spc', 'uuid', 'a.spc')}',
       'entry_path': '',
       'subsong_idx': 0,
       'title': 'a',
@@ -76,7 +79,9 @@ void main() {
   test('une ligne {sandbox} est LISTÉE, chemin absolu', () async {
     final rows = await LocalDb.instance.getDownloadedTracks();
     expect(rows.length, 1);
-    expect(rows.first.$1, p.join('jw_spc', 'uuid', 'a.spc'));
+    // Le relatif est PORTABLE ('/') sur toutes les plateformes: le navigateur
+    // le découpe sur '/' (portable_path.dart).
+    expect(rows.first.$1, 'jw_spc/uuid/a.spc');
     expect(rows.first.$2.filePath,
         p.join(base, 'online', 'jw_spc', 'uuid', 'a.spc'));
   });

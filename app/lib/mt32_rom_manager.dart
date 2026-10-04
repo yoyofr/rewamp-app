@@ -23,7 +23,7 @@ class Mt32RomManager {
   /// [audio] nullable pour être testable hors de l'app (même raison que
   /// SoundfontManager: le natif n'est pas là dans l'hôte de test Dart).
   void init(String dataDir, RewampAudio? audio) {
-    _dir = '$dataDir/mt32';
+    _dir = p.join(dataDir, 'mt32');
     _audio = audio;
   }
 

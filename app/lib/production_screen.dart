@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'album_detail_screen.dart';
 import 'artwork_image.dart';
+import 'horizontal_scroll_arrows.dart' show MouseDragScrollConfiguration;
 import 'l10n.dart';
 import 'note_markdown.dart' show openExternalLink;
 import 'player_controller.dart';
@@ -296,7 +297,8 @@ class _ProductionScreenState extends State<ProductionScreen> {
           const SizedBox(height: 6),
           SizedBox(
             height: 132,
-            child: ListView.separated(
+            // Rail sans flèches: il se fait au moins glisser à la souris.
+            child: MouseDragScrollConfiguration(child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.only(right: 16),
               itemCount: _albums.length,
@@ -330,7 +332,7 @@ class _ProductionScreenState extends State<ProductionScreen> {
                   ),
                 );
               },
-            ),
+            )),
           ),
         ],
       ),

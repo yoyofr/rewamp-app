@@ -50,6 +50,19 @@ extern void _VDBG_free(void *ptr,char *file,long line);
 #ifdef __ANDROID__
     #include <endian.h>
 #endif
+/* YOYOFR (rewamp): piege de preprocesseur, et il ne ressemble pas a ce qu'il
+ * est. MSVC n'a pas <endian.h>, donc `BYTE_ORDER`, `LITTLE_ENDIAN` et
+ * `BIG_ENDIAN` sont tous les trois INDEFINIS — et dans un `#if`, un
+ * identificateur inconnu vaut ZERO. Les deux tests ci-dessous deviennent donc
+ * `0 == 0`, VRAI tous les deux, et `union magic` est definie DEUX fois. Le
+ * message parle d'une redefinition d'union, jamais d'endianness.
+ *
+ * Toutes les cibles Windows de ce projet sont petit-boutiennes (x64, ARM64). */
+#if defined(_MSC_VER) && !defined(BYTE_ORDER)
+    #define LITTLE_ENDIAN 1234
+    #define BIG_ENDIAN    4321
+    #define BYTE_ORDER    LITTLE_ENDIAN
+#endif
 
 #if BYTE_ORDER==LITTLE_ENDIAN
 union magic {

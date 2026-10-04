@@ -160,11 +160,18 @@ Future<void> initLibraryRoots() async {
   } catch (_) {}
 }
 
-bool _under(String path, String? root) {
+/// [path] est-il [root] ou sous [root] ?
+///
+/// ⚠️ Par `isWithin`, pas par « préfixe + `Platform.pathSeparator` »: ce
+/// dernier exigeait le séparateur NATIF juste après la racine, donc sous
+/// Windows un chemin MÉLANGÉ (`C:\…\Rewamp\local/x.mid`, que l'app fabriquait
+/// avant portable_path.dart) n'était sous AUCUNE racine — classé jetable, et
+/// le nettoyage l'aurait PURGÉ DU COMPTE. `isWithin` accepte les deux
+/// séparateurs sous Windows et reste un test de PRÉFIXE DE CHEMIN (un dossier
+/// `local2/` n'est pas sous `local/`).
+bool _under(String path, String? root, p.Context c) {
   if (root == null || root.isEmpty) return false;
-  if (!path.startsWith(root)) return false;
-  return path.length == root.length ||
-      path[root.length] == Platform.pathSeparator;
+  return c.equals(path, root) || c.isWithin(root, path);
 }
 
 /// Le refId est-il un CHEMIN (par opposition à un uuid de catalogue) ?
@@ -182,7 +189,11 @@ LibraryRefKind libraryRefKind(
   String? importsAlt,
   String? downloads,
   String? archiveCache,
+  /// Style de chemin — celui de la plateforme; les tests passent p.posix ou
+  /// p.windows pour exercer les deux sur toute machine.
+  p.Context? ctx,
 }) {
+  final c = ctx ?? p.context;
   final base = splitLibraryRefId(refId).$1;
   if (base.isEmpty || !libraryRefIsPath(base)) return LibraryRefKind.catalogue;
 
@@ -193,11 +204,11 @@ LibraryRefKind libraryRefKind(
 
   // Le cache d'archives d'abord: sur certaines plateformes il vit SOUS la même
   // racine que les imports, et c'est le cas jetable qui doit gagner.
-  if (_under(base, arcRoot) || _pathHasSegment(base, 'local_archives')) {
+  if (_under(base, arcRoot, c) || _pathHasSegment(base, 'local_archives')) {
     return LibraryRefKind.ephemeral;
   }
-  if (_under(base, dlRoot)) return LibraryRefKind.download;
-  if (_under(base, impRoot) || _under(base, impAlt)) {
+  if (_under(base, dlRoot, c)) return LibraryRefKind.download;
+  if (_under(base, impRoot, c) || _under(base, impAlt, c)) {
     return LibraryRefKind.durableImport;
   }
 
@@ -451,13 +462,14 @@ Future<String?> ensureLibraryRefForAdd(
 /// archive, donc la même arborescence.
 @visibleForTesting
 String? movedImportPath(LocalImportResult res,
-    {required String path, required String source}) {
+    {required String path, required String source, p.Context? ctx}) {
+  final c = ctx ?? p.context;
   final dest = res.destinations[source];
   if (dest == null) return null;
   if (source == path) return dest;
-  final parts = p.split(path);
+  final parts = c.split(path);
   final i = parts.indexOf('local_archives');
   if (i < 0 || i + 1 >= parts.length) return null;
-  final cacheDir = p.joinAll(parts.sublist(0, i + 2));
-  return p.join(dest, p.relative(path, from: cacheDir));
+  final cacheDir = c.joinAll(parts.sublist(0, i + 2));
+  return c.join(dest, c.relative(path, from: cacheDir));
 }

@@ -320,7 +320,7 @@ Future<void> downloadAndPlay(
           // instead of the album link.
           albumId:      r.albumId ?? cached.albumId,
           title:        exact?.title ?? r.title,
-          filename:     cached.filePath.split('/').last,
+          filename:     p.basename(cached.filePath),
           album:        r.album,
           formatExt:    cached.formatExt ?? r.formatExt,
           downloadUrl:  r.downloadUrl,
@@ -3711,8 +3711,13 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
   final Set<String> _optPlatforms   = {};
 
   // Songs — first page on open, then lazy scroll
-  int    _total       = 0;
-  int    _offset      = 0;
+  int    _total       = 0;   // lignes SERVEUR (browse_music.total_count)
+  int    _offset      = 0;   // décalage SERVEUR, jamais la longueur affichée
+  // Pistes gagnées en dépliant les archives d'album (une ligne serveur → N
+  // pistes, voir RewampDb.expandArchiveAlbumRows): le compte affiché les
+  // ajoute au total serveur. Exact une fois toutes les pages chargées.
+  int    _archiveExtra = 0;
+  int get _songTotal => _total + _archiveExtra;
   bool   _hasMore     = false;
   bool   _songsLoading  = true;
   bool   _loadingMore   = false;
@@ -3885,9 +3890,14 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
       );
       if (!mounted) return;
       _accumulateOpts(res);
-      _notifier.value = res;
+      // Une liste de MORCEAUX: une archive d'album (jw_psf…) y devient ses
+      // pistes, sinon l'onglet répète l'onglet Albums ligne pour ligne.
+      final shown = await RewampDb.expandArchiveAlbumRows(res);
+      if (!mounted) return;
+      _notifier.value = shown;
       _total  = res.isEmpty ? 0 : res.first.totalCount;
       _offset = res.length;
+      _archiveExtra = shown.length - res.length;
       _hasMore = _offset < _total;
       setState(() => _songsLoading = false);
     } catch (e) {
@@ -3913,8 +3923,11 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
       );
       if (!mounted) return;
       _accumulateOpts(more);
-      _notifier.value = [..._notifier.value, ...more];
+      final shown = await RewampDb.expandArchiveAlbumRows(more);
+      if (!mounted) return;
+      _notifier.value = [..._notifier.value, ...shown];
       _offset  += more.length;
+      _archiveExtra += shown.length - more.length;
       _hasMore  = _offset < _total;
       setState(() => _loadingMore = false);
     } catch (_) {
@@ -3957,15 +3970,26 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
     final albumLabel = albumsShown.isNotEmpty
         ? l10n.searchTabWithCount(l10n.tabAlbums, '${albumsShown.length}')
         : l10n.tabAlbums;
-    final songsLabel = _total > 0
-        ? l10n.searchTabWithCount(l10n.tabAll, '$_total')
+    final songsLabel = _songTotal > 0
+        ? l10n.searchTabWithCount(l10n.tabAll, '$_songTotal')
         : l10n.tabAll;
 
     // Counts ride ALONG the name in the app bar rather than under it: the
     // header, the action bar and the filter bar were three separate strips
     // above the list, and the counts are the one line that never needed a strip
     // of its own.
-    final songN = (_details?.songCount ?? 0) > 0 ? _details!.songCount : _total;
+    // `get_artist_details.song_count` compte TOUTE l'œuvre de l'artiste, toutes
+    // collections confondues. Dès que la liste est restreinte (écran ouvert
+    // depuis une collection, ou filtre posé), l'en-tête doit dire ce que la
+    // liste montre — sinon « 1845 morceaux » au-dessus des 8 archives jw_psf.
+    final scoped = widget.collection != null ||
+        _fCollection != null ||
+        _fFormat != null ||
+        _fPlatform != null ||
+        _fPodium != null;
+    final songN = (!scoped && (_details?.songCount ?? 0) > 0)
+        ? _details!.songCount
+        : _songTotal;
     final headCounts = <String>[
       if (songN > 0) l10n.searchSongsCount(songN),
       if (albumsShown.isNotEmpty) l10n.searchAlbumsCount(albumsShown.length),
@@ -4301,6 +4325,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
       _songsLoading = true;
       _total   = 0;
       _offset  = 0;
+      _archiveExtra = 0;
       _hasMore = false;
       _notifier.value = const [];
     });
@@ -4586,7 +4611,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
           children: [
             _CountBar(
               loaded:  results.length,
-              total:   '$_total',
+              total:   '$_songTotal',
               loading: _loadingMore,
               hasMore: _hasMore,
               // Pas de « Tout lire » ici: il vit dans la rangée de filtres,

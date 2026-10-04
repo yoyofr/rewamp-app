@@ -20,11 +20,20 @@ void main() {
     expect(PickerMemory.usableDir(''), isNull);
   });
 
-  test('un DOSSIER choisi se retient par son parent', () {
-    expect(PickerMemory.folderStartDir('/Users/x/Music/sid'), '/Users/x/Music');
-    expect(PickerMemory.folderStartDir('/Users/x/Music/sid/'), '/Users/x/Music');
-    expect(PickerMemory.folderStartDir('/'), '/');
-    expect(PickerMemory.folderStartDir(null), isNull);
+  // Sous les DEUX styles de chemin, sur n'importe quelle machine.
+  test('un DOSSIER choisi se retient par son parent (POSIX)', () {
+    String? f(String? d) => PickerMemory.folderStartDir(d, ctx: p.posix);
+    expect(f('/Users/x/Music/sid'), '/Users/x/Music');
+    expect(f('/Users/x/Music/sid/'), '/Users/x/Music');
+    expect(f('/'), '/');
+    expect(f(null), isNull);
+  });
+
+  test('un DOSSIER choisi se retient par son parent (Windows)', () {
+    String? f(String? d) => PickerMemory.folderStartDir(d, ctx: p.windows);
+    expect(f(r'C:\Users\x\Music\sid'), r'C:\Users\x\Music');
+    expect(f(r'C:\Users\x\Music\sid\'), r'C:\Users\x\Music');
+    expect(f(r'C:\'), r'C:\');
   });
 
   test('aller-retour par usage, puis repli quand le dossier disparaît', () async {

@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart' show kIsWeb, listEquals, setEquals;
 import 'package:flutter/gestures.dart'
     show kTouchSlop, PointerPanZoomStartEvent, PointerPanZoomUpdateEvent;
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import 'favorite_color.dart';
 import 'fullscreen_progress_line.dart';
@@ -2041,7 +2042,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         final f = File(path);
         if (!await f.exists()) return '';
         files = [
-          (name: path.split(Platform.pathSeparator).last, size: await f.length())
+          (name: p.basename(path), size: await f.length())
         ];
       } catch (_) {
         return '';

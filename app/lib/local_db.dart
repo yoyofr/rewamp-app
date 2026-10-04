@@ -6,6 +6,7 @@ import 'library_identity.dart'
     show libraryRefIsDeadIdentity, libraryRefIsPhantomImport;
 import 'library_presence.dart'
     show presentPaths, invalidateLocalPresence;
+import 'portable_path.dart';
 import 'rewamp_db.dart' show catalogueSongId;
 import 'uade_info.dart';
 import 'user_settings.dart';
@@ -2971,7 +2972,7 @@ class LocalDb extends ChangeNotifier {
         ((albumId ?? '').isNotEmpty || (collectionSlug ?? '').isNotEmpty)) {
       debugPrint('[stamp] upsert album=$albumId meta="${metaAlbum ?? ''}" '
           'col=$collectionSlug plat=$platformName '
-          'sur ${filePath.split('/').last}');
+          'sur ${p.basename(filePath)}');
     }
     await d.execute('''
       INSERT OR IGNORE INTO tracks
@@ -3125,8 +3126,12 @@ class LocalDb extends ChangeNotifier {
       final row = await _database.rawQuery(
           'SELECT file_path FROM tracks WHERE id = ? LIMIT 1', [trackId]);
       final fp = row.isEmpty ? '?' : (row.first['file_path'] as String);
+      // Les DEUX séparateurs: sous Windows un chemin n'a pas de « / », la
+      // liste avait UN élément et `skip(-2)` levait un RangeError — qui, levé
+      // AVANT l'UPDATE, empêchait l'écriture elle-même (debug seulement).
+      final parts = fp.split(RegExp(r'[\\/]'));
       debugPrint('[stamp] origine -> $collectionSlug/$platformName/$year '
-          'sur ${fp.split('/').skip(fp.split('/').length - 3).join('/')}');
+          'sur ${parts.skip(parts.length > 3 ? parts.length - 3 : 0).join('/')}');
     }
     await _database.rawUpdate(
       'UPDATE tracks SET collection_slug = COALESCE(?, collection_slug), '
@@ -3233,7 +3238,7 @@ class LocalDb extends ChangeNotifier {
     final nfp = _norm(filePath);
     if (kDebugMode && (albumId ?? '').isNotEmpty) {
       debugPrint('[stamp] backfill album_id=$albumId '
-          'sur ${filePath.split('/').last} (metaAlbum="${metaAlbum ?? ''}")');
+          'sur ${p.basename(filePath)} (metaAlbum="${metaAlbum ?? ''}")');
     }
     await _database.rawUpdate(
       'UPDATE tracks SET album_id = COALESCE(album_id, ?), '
@@ -3412,11 +3417,13 @@ class LocalDb extends ChangeNotifier {
     }
     if (nearFilePath != null && nearFilePath.isNotEmpty) {
       final dir = p.dirname(_norm(nearFilePath));
+      // Séparateur NATIF (échappé comme le reste): sous Windows file_path porte
+      // des '\', et un motif `dossier/%` n'y trouvait jamais rien.
       final rows = await _database.rawQuery('''
         SELECT * FROM tracks
         WHERE  meta_album = ? AND file_path LIKE ? ESCAPE '\\'
         $order
-      ''', [metaAlbum, '${_likeEscape(dir)}/%']);
+      ''', [metaAlbum, '${_likeEscape('$dir${p.separator}')}%']);
       if (rows.isNotEmpty) return rows.map(TrackRecord.fromMap).toList();
     }
     final rows = await _database.rawQuery('''
@@ -3813,9 +3820,7 @@ class LocalDb extends ChangeNotifier {
             if (count > known.length) {
               final byIdx = {for (final t in known) t.subsongIdx: t};
               final ref = known.isNotEmpty ? known.first : null;
-              final baseName = fp
-                  .split(Platform.pathSeparator)
-                  .last
+              final baseName = p.basename(fp)
                   .replaceAll(RegExp(r'\.\w+$'), '');
               for (var i = 0; i < count; i++) {
                 final t = byIdx[i] ??
@@ -3897,9 +3902,7 @@ class LocalDb extends ChangeNotifier {
           if (count > known.length) {
             final byIdx = {for (final t in known) t.subsongIdx: t};
             final ref = known.first;
-            final baseName = fp
-                .split(Platform.pathSeparator)
-                .last
+            final baseName = p.basename(fp)
                 .replaceAll(RegExp(r'\.\w+$'), '');
             for (var i = 0; i < count; i++) {
               final t = byIdx[i] ??
@@ -4077,7 +4080,8 @@ class LocalDb extends ChangeNotifier {
         final name = names[t.albumId!];
         if (name != null) t = t.copyWith(metaAlbum: name);
       }
-      out.add((p.relative(t.filePath, from: root), t));
+      // PORTABLE ('/'): le navigateur découpe ce relatif sur '/'.
+      out.add((portableRelative(t.filePath, from: root), t));
     }
     out.sort((a, b) => a.$1.toLowerCase().compareTo(b.$1.toLowerCase()));
     return out;
@@ -5453,9 +5457,11 @@ class LocalDb extends ChangeNotifier {
     // Le relatif peut valoir dans L'UNE OU L'AUTRE racine (voir [_relPathOf]):
     // celle où le fichier EXISTE gagne, sinon la base historique.
     if (relPath != null && relPath.isNotEmpty) {
-      final a = p.join(base, relPath);
+      // Le relatif arrive du COMPTE, donc PORTABLE ('/'), et a pu être écrit
+      // par un autre appareil: on le rend natif avant de le joindre.
+      final a = joinPortable(base, relPath);
       if (File(a).existsSync()) return a;
-      final b = p.join(support, relPath);
+      final b = joinPortable(support, relPath);
       if (File(b).existsSync()) return b;
       return a;
     }
@@ -6288,13 +6294,15 @@ class LocalDb extends ChangeNotifier {
         v.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_');
     {
       /// Réécrit une colonne pour UNE graphie de chemin.
-      Future<void> col(String table, String column, String f, String t) async {
+      Future<void> col(String table, String column, String f, String t,
+          {String? separator}) async {
+        final s = separator ?? sep;
         if (isDirectory) {
           // Le dossier lui-même ne porte pas de ligne; son SOUS-ARBRE si.
           await txn.rawUpdate(
             'UPDATE $table SET $column = ? || substr($column, ?) '
             "WHERE $column LIKE ? ESCAPE '\\'",
-            ['$t$sep', '$f$sep'.length + 1, '${esc('$f$sep')}%'],
+            ['$t$s', '$f$s'.length + 1, '${esc('$f$s')}%'],
           );
         } else {
           await txn.rawUpdate(
@@ -6315,10 +6323,12 @@ class LocalDb extends ChangeNotifier {
 
       // Les relatifs: une seule graphie (pas de préfixe de bac à sable).
       if (rewriteRelative) {
-        final fromRel = p.relative(from, from: importsRoot);
-        final toRel   = p.relative(to,   from: importsRoot);
-        await col('tracks', 'local_rel_path', fromRel, toRel);
-        await col('playlist_tracks', 'rel_path', fromRel, toRel);
+        // ⚠️ Les relatifs sont PORTABLES ('/', voir portable_path.dart): leur
+        // préfixe de sous-arbre se cherche avec '/', pas le séparateur natif.
+        final fromRel = portableRelative(from, from: importsRoot);
+        final toRel   = portableRelative(to,   from: importsRoot);
+        await col('tracks', 'local_rel_path', fromRel, toRel, separator: '/');
+        await col('playlist_tracks', 'rel_path', fromRel, toRel, separator: '/');
       }
 
       // `library_items.ref_id`: le CHEMIN change, le `?subsong=N` reste. Fait
@@ -6498,7 +6508,11 @@ class LocalDb extends ChangeNotifier {
       (await _appBaseDir()).path,
       (await _appSupportDir()).path,
     ]) {
-      if (p.isWithin(root, absolute)) return p.relative(absolute, from: root);
+      // PORTABLE ('/'): ce relatif voyage (compte, hash ext_key, playlists) —
+      // voir portable_path.dart.
+      if (p.isWithin(root, absolute)) {
+        return portableRelative(absolute, from: root);
+      }
     }
     return null;
   }
@@ -6581,7 +6595,7 @@ class LocalDb extends ChangeNotifier {
         (await _appBaseDir()).path,
         (await _appSupportDir()).path,
       ]) {
-        final abs = p.join(root, relPath);
+        final abs = joinPortable(root, relPath);   // relatif PORTABLE
         final t = await byQuery(
             'file_path = ? AND entry_path = ? AND subsong_idx = ?',
             [abs, entryPath, subsongIdx]);
@@ -6691,7 +6705,7 @@ class LocalDb extends ChangeNotifier {
     for (final cand in <String>[
       if (filePath != null && filePath.isNotEmpty) filePath,
       if (relPath != null && relPath.isNotEmpty)
-        p.join((await _appBaseDir()).path, relPath),
+        joinPortable((await _appBaseDir()).path, relPath),
     ]) {
       if (!await File(cand).exists()) continue;
       final t = await adoptAt(cand);
@@ -7644,7 +7658,17 @@ class LocalDb extends ChangeNotifier {
 
   Future<int> deleteEntriesUnderPath(String pathPrefix,
       {DatabaseExecutor? db, bool notify = true, bool keepUserState = false}) async {
-    final like = '${pathPrefix.replaceAll('%', r'\%')}%';
+    // ⚠️ Motif échappé EN ENTIER (`\`, `%`, `_`) et borné par le séparateur:
+    //  * sous Windows, chaque `\` du chemin était lu comme un ÉCHAPPEMENT
+    //    (`ESCAPE '\'`) et disparaissait du motif — supprimer un album
+    //    téléchargé laissait toutes ses lignes en base;
+    //  * partout, un `_` non échappé (`jw_psf`) valait n'importe quel
+    //    caractère, et sans séparateur final `…/album%` prenait aussi
+    //    `…/album2/`. Un FICHIER reste trouvé par `file_path = ?`.
+    final dirPrefix = pathPrefix.endsWith(p.separator)
+        ? pathPrefix
+        : '$pathPrefix${p.separator}';
+    final like = '${_likeEscape(dirPrefix)}%';
     const underPath = kUnderPathClause;
     Future<int> work(DatabaseExecutor txn) async {
       // ⚠️ Le marqueur `album_materialised` dit « la liste complète de cet

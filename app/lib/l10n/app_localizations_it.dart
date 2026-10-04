@@ -4104,24 +4104,56 @@ class AppLocalizationsIt extends AppLocalizations {
   String get releaseNotesTitle => 'Novità';
 
   @override
-  String get releaseNotesV7Cpu =>
-      'L\'app non lavora più in background quando non suona nulla: molto meno processore e batteria.';
+  String get releaseNotesV8Windows =>
+      'Rewamp ora funziona su Windows, con tutti i motori e i visualizzatori, projectM compreso.';
 
   @override
-  String get releaseNotesV7VizIdle =>
-      'I visualizzatori restano fermi quando la riproduzione è interrotta e sono limitati a 60 fotogrammi al secondo (regolabile).';
+  String get releaseNotesV8Linux =>
+      'Linux: i visualizzatori funzionano anche sotto X11 (modalità gioco di Steam Deck), «Sempre in primo piano» vi ritorna, e chiudere la finestra non manda più in crash l\'app.';
 
   @override
-  String get releaseNotesV7Subsongs =>
-      'Corretto: su PC Engine, Master System e Atari ST (.sndh), alcuni brani avviavano la canzone accanto.';
+  String get releaseNotesV8Formats =>
+      'Ora vengono riprodotti i file Game Boy .gbr e DefleMask .dmf.';
 
   @override
-  String get releaseNotesV7Piano =>
-      'Il visualizzatore Pianoforte restava vuoto con la musica PC Engine.';
+  String get releaseNotesV8Smooth =>
+      'Lettore e visualizzatori più fluidi: lo schermo non ridisegna più tutto a ogni avanzamento della posizione.';
 
   @override
-  String get releaseNotesV7Database =>
-      'Un database danneggiato da un aggiornamento ora si ripara da solo, invece di rendere inaccessibile la libreria.';
+  String get releaseNotesV8Scrolling =>
+      'Un titolo troppo lungo per il suo spazio ora scorre in loop, in un solo verso, invece di andare avanti e indietro.';
+
+  @override
+  String get releaseNotesV8MouseDrag =>
+      'Computer: le righe orizzontali scorrono con clic e trascinamento del mouse.';
+
+  @override
+  String get releaseNotesV8Presets =>
+      'projectM: i pacchetti di preset si installano fino a nove volte più velocemente, e le cartelle di preset grandi non vengono più troncate.';
+
+  @override
+  String get releaseNotesV8Pause =>
+      'Corretto: mettere in pausa poteva passare al brano successivo.';
+
+  @override
+  String get releaseNotesV8Psf =>
+      'Gli album PSF (PlayStation, Nintendo DS…) forniti come un unico archivio si espandono nelle loro tracce, anche quando li aggiungi alla coda.';
+
+  @override
+  String get releaseNotesV8ArtistTracks =>
+      'Pagine artista: l\'elenco dei brani mostra di nuovo tracce, non archivi di album interi.';
+
+  @override
+  String get releaseNotesV8VizFixes =>
+      'Visualizzatori: le voci del Nintendo 64 vengono mostrate e silenziate correttamente, il piano si reinquadra a ogni brano e lo sfondo con la copertina non scompare più.';
+
+  @override
+  String get releaseNotesV8ProjectMFixes =>
+      'projectM: i preset seguono la frequenza dei fotogrammi reale (alcuni reagivano lentamente), e due preset che non comparivano mai ora ci sono.';
+
+  @override
+  String get releaseNotesV8Covers =>
+      'Le copertine si caricano molto più in fretta: una griglia di album si riempie subito, invece di una copertina ogni secondo e mezzo.';
 
   @override
   String get releaseNotesDataReset =>
@@ -4532,46 +4564,6 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get miniWindowCoverFit => 'Mostra la copertina intera';
-
-  @override
-  String get releaseNotesV7Mt32 =>
-      'Nuovo motore Roland MT-32 per la musica MIDI dei giochi, con le tue ROM. Senza ROM, un MIDI scritto per l\'MT-32 viene adattato al General MIDI.';
-
-  @override
-  String get releaseNotesV7Xmp =>
-      'Ora vengono riprodotti dieci formati di modulo rari (Archimedes Tracker .musx, .liq, .fnk…).';
-
-  @override
-  String get releaseNotesV7AmigaAdlib =>
-      'La musica AdLib di Westwood (.adl) riproduce tutti i suoi brani, e BP SoundMon V1 è riconosciuto su Amiga.';
-
-  @override
-  String get releaseNotesV7MiniPlayer =>
-      'Mac: un mini lettore, compatto o con il visualizzatore, e l\'opzione «Sempre in primo piano».';
-
-  @override
-  String get releaseNotesV7Instruments =>
-      'Oscilloscopio, note e pianoforte possono nominare e colorare ogni strumento, non solo ogni voce.';
-
-  @override
-  String get releaseNotesV7Podium =>
-      'Ricerca: filtra i brani arrivati 1°, 2° o 3° in una competizione della demoscene.';
-
-  @override
-  String get releaseNotesV7ShortSubsongs =>
-      'Le sottocanzoni troppo brevi (effetti sonori dei giochi) restano fuori da «Riproduci tutto»: soglia in Impostazioni → Riproduzione.';
-
-  @override
-  String get releaseNotesV7LocalFolders =>
-      'Le tue importazioni: trascina un\'intera cartella (archivi estratti) e crea, rinomina o sposta cartelle.';
-
-  @override
-  String get releaseNotesV7Midi =>
-      'MIDI: la batteria non suona più come un pianoforte e il volume non satura più.';
-
-  @override
-  String get releaseNotesV7ProjectM =>
-      'projectM: i preset non si ripetono più da un avvio all\'altro, e un preset non viene più scartato per errore dopo una pausa.';
 
   @override
   String get libraryFileMissing => 'File mancante';

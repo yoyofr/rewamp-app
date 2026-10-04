@@ -44,6 +44,98 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 get_filename_component(REWAMP_SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/../src" ABSOLUTE)
 get_filename_component(REWAMP_THIRD_PARTY_DIR "${CMAKE_CURRENT_LIST_DIR}/../third_party" ABSOLUTE)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# zlib — SYSTÈME partout sauf sur Windows, qui n'en a aucune
+#
+# ⚠️ zlib est la seule dépendance que ce dépôt attendait du SYSTÈME sans jamais
+# le dire: macOS/iOS la portent dans la libSystem, glibc la trouve en
+# `/usr/lib`, le NDK l'embarque — et DOUZE sites écrivent `PRIVATE z` en dur.
+# Windows n'a ni `zlib.h` ni `z.lib`, donc ces douze sites tombent, et ils
+# tombent en CASCADE: libgme, libvgm (.vgz), libarchive, furnace, lazyusf, gsf,
+# vio2sf, sc68, libpsflib (donc TOUTE la famille PSF: gsf/2sf/ncsf/usf/qsf/
+# ssf/dsf/snsf), highlyquixotic et highlytheoritical.
+#
+# On la VENDORE (third_party/zlib, amont 1.3.1 non modifié) et on nomme la
+# cible `z`, exactement comme la bibliothèque système: les douze sites
+# existants résolvent alors sans être touchés, et l'include dir est PUBLIC donc
+# `zlib.h` suit le lien. Les deux sites qui passent par `find_package(ZLIB)`
+# (libvgm, libgme) préfèrent cette cible quand elle existe — voir leur bloc.
+#
+# ⚠️ Vendorée, elle est liée STATIQUEMENT dans la DLL, donc REDISTRIBUÉE: elle
+# a donc droit à sa ligne de crédits (`kComponents` dans app/lib/engines.dart +
+# THIRD-PARTY-NOTICES.md), ce qu'une zlib système ne demandait pas. Licence
+# zlib, permissive, texte dans third_party/zlib/LICENSE.
+if(WIN32 AND NOT TARGET z)
+  file(GLOB _rewamp_zlib_srcs "${REWAMP_THIRD_PARTY_DIR}/zlib/*.c")
+  if(NOT _rewamp_zlib_srcs)
+    message(FATAL_ERROR
+      "Windows: zlib est absente de ${REWAMP_THIRD_PARTY_DIR}/zlib.\n"
+      "Elle n'est pas fournie par le système sur cette plateforme.")
+  endif()
+  add_library(z STATIC ${_rewamp_zlib_srcs})
+  set_target_properties(z PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(z PUBLIC "${REWAMP_THIRD_PARTY_DIR}/zlib")
+  # L'amont suppose `unistd.h` dès que HAVE_UNISTD_H est posé; MSVC ne l'a pas,
+  # et zconf.h ne le pose pas tout seul. Les avertissements de conversion de
+  # l'amont sont connus et sans objet ici.
+  target_compile_definitions(z PRIVATE _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_DEPRECATE)
+  target_compile_options(z PRIVATE /w)
+endif()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# rewamp_win_compat(target) — les en-têtes POSIX que MSVC n'a pas
+#
+# Plusieurs arbres vendorés incluent <unistd.h>, <sys/time.h> ou <strings.h>
+# SANS garde, et attendent `u_char` du système. src/windows/compat/ les fournit
+# — au strict minimum de ce qui est réellement demandé, voir son README.
+#
+# ⚠️ Appelé PAR CIBLE, jamais posé sur le chemin global. Deux raisons, et la
+# seconde est la vraie: sur le chemin global, une source NOUVELLE qui inclurait
+# <unistd.h> par accident compilerait sans un mot (le compilateur est le seul
+# détecteur qu'on ait), et surtout la couche intercepterait aussi les
+# inclusions faites par du code qui a, lui, un vrai chemin Windows — libopenmpt
+# et libarchive en ont un, et le leur est meilleur que le nôtre.
+#
+# No-op hors MSVC: sur toute autre plateforme ces en-têtes sont ceux du
+# système, et c'est ceux-là qu'on veut.
+function(rewamp_win_compat target)
+  if(NOT MSVC)
+    return()
+  endif()
+  target_include_directories(${target} PRIVATE
+    "${REWAMP_SRC_DIR}/windows/compat")
+  # /FI = force-include, l'équivalent MSVC de `-include` (déjà utilisé pour
+  # projectM sur Linux). Les typedefs doivent précéder les en-têtes du moteur,
+  # qui s'en servent dans leurs déclarations.
+  target_compile_options(${target} PRIVATE
+    "/FIrewamp_posix_types.h"
+    "/FIrewamp_win_builtins.h"
+    "/FIrewamp_win_posix_fns.h")
+endfunction()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# rewamp_force_include_option(<out> <header>) — force-include, PORTABLE
+#
+# ⚠️ `-include` est une option de GCC/clang. cl.exe ne la connaît pas et ne
+# s'arrête pas pour autant: il avertit (D9002, que `flutter build` filtre) et
+# compile SANS l'en-tête. Or ici un force-include porte presque toujours un
+# RENOMMAGE de symboles (furnace, libxmp, nsfplay), donc l'oubli ne casse pas
+# la compilation — il laisse deux arbres vendorés exporter les mêmes noms, ou
+# une moitié des TU voir les noms renommés et l'autre non. Mesuré le
+# 2026-10-02: 398 fonctions C++ non résolues à l'édition de liens de la DLL,
+# toutes dans furnace, pour ce seul motif.
+#
+# Rend une LISTE (`-include;<h>` ou `/FI<h>`), à passer telle quelle à
+# COMPILE_OPTIONS ou à target_compile_options. Tout nouveau force-include passe
+# par ici.
+function(rewamp_force_include_option out header)
+  if(MSVC)
+    set(${out} "/FI${header}" PARENT_SCOPE)
+  else()
+    set(${out} "-include;${header}" PARENT_SCOPE)
+  endif()
+endfunction()
+
 set(REWAMP_CORE_SOURCES
   "${REWAMP_SRC_DIR}/rewamp_audio.c"
   "${REWAMP_SRC_DIR}/rewamp_assets.c"
@@ -116,9 +208,18 @@ rewamp_option(REWAMP_WITH_VGMSTREAM "Build the vgmstream decoder plugin (200+ ga
 rewamp_option(REWAMP_WITH_ARCHIVE  "Build vendored liblzma+libarchive (zip/7z/tar/gz/xz extraction)" ON)
 rewamp_option(REWAMP_WITH_FURNACE  "Build the Furnace (DivEngine) tracker plugin (.fur/.dmf/.dmp)" ON)
 # Default OFF until the 237-file engine build is validated; enabled per-platform.
-rewamp_option(REWAMP_WITH_ZXTUNE   "Build the libzxtune ZX Spectrum/AY chiptune plugin" OFF)
-# Default OFF until the UADE engine build is validated on each platform; flip ON once green.
-rewamp_option(REWAMP_WITH_UADE     "Build the UADE Amiga custom-chip plugin (.ahx/.tfmx/.cust/.fc/…)" ON)
+# Windows: validé le 2026-10-03 (MSVC, deux retouches de l'arbre vendoré — voir
+# docs/BUILD_WINDOWS.md §6.5 — et aucun doublon de symbole de plus au lien).
+# Android le force dans android/CMakeLists.txt, Apple par les podspecs.
+if(WIN32)
+  rewamp_option(REWAMP_WITH_ZXTUNE "Build the libzxtune ZX Spectrum/AY chiptune plugin" ON)
+else()
+  rewamp_option(REWAMP_WITH_ZXTUNE "Build the libzxtune ZX Spectrum/AY chiptune plugin" OFF)
+endif()
+# Windows: porté le 2026-10-04 (docs/BUILD_WINDOWS.md §6.3) et VÉRIFIÉ À
+# L'OCTET — 5 formats à player custom (TFMX à compagnon compris) × 10 s, PCM
+# MSVC (arbre retouché) identique à GCC/WSL (arbre d'origine) à chemins égaux.
+rewamp_option(REWAMP_WITH_UADE   "Build the UADE Amiga custom-chip plugin (.ahx/.tfmx/.cust/.fc/…)" ON)
 rewamp_option(REWAMP_WITH_NEZ      "Build the NEZplug++ plugin (.hes HuC6280 / .sgc SN76489+YM2413)" ON)
 rewamp_option(REWAMP_WITH_KSS      "Build the libkss MSX plugin (.kss/.mgs/.bgm/.mpk/.mbm/.opx/.mus)" ON)
 rewamp_option(REWAMP_WITH_MAC      "Build the Monkey's Audio decoder plugin (.ape)" ON)
@@ -135,7 +236,11 @@ rewamp_option(REWAMP_WITH_PROJECTM "Build the projectM (Milkdrop) visualizer —
 rewamp_option(REWAMP_PM_PROFILE    "projectM: log preset-load CPU/GL timings (adds a link sync point)" OFF)
 rewamp_option(REWAMP_WITH_ADPLUG   "Build the AdPlug plugin (AdLib OPL2/OPL3 .d00/.hsc/.cmf/.imf/.rol/.a2m/…)" ON)
 rewamp_option(REWAMP_WITH_SNDH     "Build the SNDH plugin (Atari ST .sndh via AtariAudio/Musashi)" ON)
-rewamp_option(REWAMP_WITH_PSGPLAY  "Build the PSG play plugin (2nd .sndh engine: Atari ST machine + LMC1992)" ON)
+# psgplay est écrit en C GNU (macros du noyau Linux). Porté sous MSVC le
+# 2026-10-04 (les 972 erreurs du 2026-10-02 avaient six causes, toutes réglées:
+# docs/BUILD_WINDOWS.md §6.4) et VÉRIFIÉ À L'OCTET: 12 .sndh × 10 s rendus par
+# MSVC (arbre retouché) et par GCC (arbre d'origine) donnent le même PCM.
+rewamp_option(REWAMP_WITH_PSGPLAY "Build the PSG play plugin (2nd .sndh engine: Atari ST machine + LMC1992)" ON)
 rewamp_option(REWAMP_WITH_LAZYUSF  "Build the libLazyusf plugin (N64 .usf/.miniusf, R4300 interpreter)" ON)
 rewamp_option(REWAMP_WITH_WONDERSWAN "Build the WonderSwan plugin (.wsr rip, beetle-wswan/Mednafen V30MZ core)" ON)
 rewamp_option(REWAMP_WITH_HIGHLYQUIXOTIC "Build the HighlyQuixotic plugin (Capcom QSound .qsf/.qsflib)" ON)
@@ -167,11 +272,12 @@ else()
 endif()
 # Échappatoire pour construire sur Linux sans FFmpeg (scope vgmstream réduit).
 # Sans ça, l'absence de FFmpeg est une ERREUR de configuration — voir le bloc
-# vgmstream. Ne concerne QUE Linux: Android pose lui-même REWAMP_FFMPEG_DIR par
+# vgmstream. Ne concerne que Linux et Windows (qui prend windows/Libs/ffmpeg,
+# scripts/build_ffmpeg_windows.ps1): Android pose lui-même REWAMP_FFMPEG_DIR par
 # ABI dans android/CMakeLists.txt, depuis le ffmpeg-kit vendoré, et le seul
 # risque de perte silencieuse y est l'ABI 32 bits sans tranche vendorée — déjà
 # fermé par l'exclusion 64-bit-only d'android/build.gradle.
-rewamp_option(REWAMP_ALLOW_NO_FFMPEG "Linux: autoriser un vgmstream sans FFmpeg" OFF)
+rewamp_option(REWAMP_ALLOW_NO_FFMPEG "Linux/Windows: autoriser un vgmstream sans FFmpeg" OFF)
 
 # Builds libopenmpt as a static library from vendored source (git submodule),
 # self-contained with no external dependencies. See PLUGINS.md.
@@ -372,6 +478,11 @@ function(rewamp_add_libvgm target)
   if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     # Android NDK bundles zlib; link by name
     target_link_libraries(${target} PRIVATE z)
+  elseif(TARGET z)
+    # Windows: notre zlib vendorée (voir le bloc en tête de ce module). Elle
+    # doit passer AVANT find_package, qui ne trouverait rien et laisserait
+    # `.vgz` muet sans un mot.
+    target_link_libraries(${target} PRIVATE z)
   else()
     find_package(ZLIB QUIET)
     if(ZLIB_FOUND)
@@ -401,6 +512,7 @@ function(rewamp_add_libgme target)
   file(GLOB _gme_ext_c "${_root}/gme/ext/*.c")
 
   add_library(gme STATIC ${_gme_srcs} ${_gme_ext_c})
+  rewamp_win_compat(gme)   # MSVC: strcasecmp, en-tetes POSIX
   target_compile_features(gme PRIVATE cxx_std_11)
   set_target_properties(gme PROPERTIES POSITION_INDEPENDENT_CODE ON)
   set_source_files_properties(${_gme_ext_c} PROPERTIES LANGUAGE C)
@@ -415,6 +527,8 @@ function(rewamp_add_libgme target)
   # zlib for transparent decompression (HAVE_ZLIB_H in blargg_config.h)
   if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     target_link_libraries(gme PRIVATE z)
+  elseif(TARGET z)
+    target_link_libraries(gme PRIVATE z)   # Windows: zlib vendorée
   else()
     find_package(ZLIB QUIET)
     if(ZLIB_FOUND)
@@ -514,6 +628,7 @@ function(rewamp_add_libsidplayfp target)
   )
 
   add_library(sidplayfp STATIC ${_sid_srcs} ${_resid_srcs} ${_resid_extra})
+  rewamp_win_compat(sidplayfp)   # MSVC: __builtin_expect dans libresidfp
   target_compile_features(sidplayfp PRIVATE cxx_std_17)
   set_target_properties(sidplayfp PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
@@ -581,11 +696,38 @@ function(rewamp_add_libarchive target)
   if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(FILTER _arc_srcs EXCLUDE REGEX
       "archive_(disk_acl_(darwin|freebsd|sunos)|read_disk_(windows|posix|entry_from_file|set_standard_lookup))\\.c$")
+  elseif(WIN32)
+    # Windows: le glob ramène l'ENSEMBLE des variantes de plateforme, et sur
+    # cette plateforme-ci la bonne moitié est l'autre. On garde les trois
+    # sources Windows de l'amont — `archive_windows.c` (les wrappers __la_read/
+    # __la_write/__la_waitpid que archive_windows.h déclare),
+    # `archive_write_disk_windows.c` (rewamp_extract.c ÉCRIT sur le disque) et
+    # `filter_fork_windows.c` — et on écarte tout le reste: les quatre backends
+    # ACL (aucun n'est Windows; `archive_write_disk_windows.c` porte le sien),
+    # les variantes `*_posix.c`, et les lecteurs de DISQUE (on lit des
+    # ARCHIVES, jamais l'arborescence).
+    #
+    # ⚠️ `rewamp_acl_stub.c` reste dans la liste et c'est voulu: son contenu
+    # entier est sous `#ifdef __linux__`, donc il compile VIDE ici. Le retirer
+    # demanderait de distinguer un fichier à nous d'un fichier amont dans un
+    # filtre déjà long, pour exactement zéro objet.
+    list(FILTER _arc_srcs EXCLUDE REGEX
+      "(archive_disk_acl_(darwin|freebsd|linux|sunos)|archive_read_disk_(posix|windows|entry_from_file|set_standard_lookup)|archive_write_disk_posix|filter_fork_posix)\\.c$")
   endif()
 
   add_library(rewamp_archive STATIC ${_lzma_srcs} ${_arc_srcs})
   target_compile_definitions(rewamp_archive PRIVATE
     HAVE_CONFIG_H=1 TUKLIB_SYMBOL_PREFIX=lzma_)
+  # ⚠️ Windows: archive.h et archive_entry.h déclarent tout en
+  # `__declspec(dllimport)` tant que LIBARCHIVE_STATIC n'est pas posé. PUBLIC,
+  # parce que c'est l'APPELANT (rewamp_extract.c) qui en a besoin: sans lui il
+  # réclame `__imp_archive_*` à une bibliothèque statique.
+  # Même mécanisme pour liblzma, vue depuis libarchive (lzma.h →
+  # LZMA_API_STATIC): les deux sont dans CETTE cible, donc PRIVATE suffit.
+  if(WIN32)
+    target_compile_definitions(rewamp_archive PUBLIC LIBARCHIVE_STATIC)
+    target_compile_definitions(rewamp_archive PRIVATE LZMA_API_STATIC)
+  endif()
   target_include_directories(rewamp_archive PRIVATE
     "${_arc}"                               # merged config.h (must be first)
     "${_lzma}"                              # liblzma config.h
@@ -605,6 +747,13 @@ function(rewamp_add_libarchive target)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID)
     target_link_libraries(rewamp_archive PRIVATE bz2)
     target_link_libraries(${target} PRIVATE bz2)
+  elseif(WIN32)
+    # Les cinq backends de digest passés en ARCHIVE_CRYPTO_*_WIN par le bloc
+    # _WIN32 de config.h appellent CryptAcquireContext/CryptHashData, qui
+    # vivent dans advapi32. Rien ne les tire autrement, et l'échec serait un
+    # symbole non résolu à l'édition de liens de la DLL ENTIÈRE, loin d'ici.
+    target_link_libraries(rewamp_archive PRIVATE advapi32)
+    target_link_libraries(${target} PRIVATE advapi32)
   endif()
 
   target_link_libraries(${target} PRIVATE rewamp_archive z)
@@ -637,9 +786,18 @@ function(rewamp_add_furnace target)
   else()
     list(APPEND _furnace_defs HAVE_LOCALE=1 HAVE_MOMO=1)
   endif()
+  # Windows: configEngine.cpp appelle getWinConfigPath() sous `#ifdef _WIN32`,
+  # et sa définition vit dans un fichier que la liste curée (reprise du projet
+  # Xcode de Modizer) n'a jamais eu de raison de contenir. Ajouté AVANT
+  # add_library pour recevoir le même force-include que le reste.
+  # ⚠️ Effet de bord amont, conservé: cette fonction CRÉE `%APPDATA%\furnace`.
+  if(WIN32)
+    list(APPEND FURNACE_SOURCES "${FURNACE_ROOT}/src/engine/winStuff.cpp")
+  endif()
 
   add_library(rewamp_furnace STATIC ${FURNACE_SOURCES})
   set_target_properties(rewamp_furnace PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON)
+  rewamp_win_compat(rewamp_furnace)   # MSVC: __builtin_* et en-tetes POSIX
   target_compile_definitions(rewamp_furnace PRIVATE ${_furnace_defs})
   target_include_directories(rewamp_furnace PRIVATE
     "${FURNACE_ROOT}/extern/fmt/include"
@@ -648,8 +806,10 @@ function(rewamp_add_furnace target)
     "${FURNACE_ROOT}/extern/IconFontCppHeaders"
     "${FURNACE_ROOT}/extern/blip_buf"
     "${FURNACE_ROOT}/src/icon")
+  rewamp_force_include_option(_furnace_fi
+    "${FURNACE_ROOT}/src/modizer/furnace_chip_rename.h")
   set_source_files_properties(${FURNACE_SOURCES} PROPERTIES
-    COMPILE_OPTIONS "-include;${FURNACE_ROOT}/src/modizer/furnace_chip_rename.h")
+    COMPILE_OPTIONS "${_furnace_fi}")
   target_link_libraries(rewamp_furnace PRIVATE z)
   # FurnacePlayer.h for the plugin TU.
   target_include_directories(rewamp_furnace PUBLIC "${FURNACE_ROOT}/src/modizer")
@@ -657,6 +817,11 @@ function(rewamp_add_furnace target)
   target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_furnace.cpp")
   target_compile_definitions(${target} PRIVATE REWAMP_WITH_FURNACE=1)
   target_link_libraries(${target} PRIVATE rewamp_furnace z)
+  if(WIN32)
+    # winStuff.cpp: SHGetFolderPathW/SHCreateDirectoryExW (shell32) et
+    # PathIsDirectoryW (shlwapi).
+    target_link_libraries(${target} PRIVATE shell32 shlwapi)
+  endif()
 endfunction()
 
 # Builds libzxtune (ZX Spectrum / AY chiptune engine) as an isolated static lib and
@@ -675,6 +840,7 @@ function(rewamp_add_zxtune target)
     "${REWAMP_SRC_DIR}/rewamp_zxtune_stubs.cpp"
     "${CHPCONV_DIR}/chp2ym.c")
   set_target_properties(rewamp_zxtune PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON)
+  rewamp_win_compat(rewamp_zxtune)   # MSVC: en-tetes POSIX manquants
   target_compile_definitions(rewamp_zxtune PRIVATE
     REWAMP_WITH_ZXTUNE=1
     BOOST_ERROR_CODE_HEADER_ONLY MODIZER BOOST_NO_RTTI BOOST_SYSTEM_NO_DEPRECATED
@@ -749,6 +915,17 @@ function(rewamp_add_uade target)
   add_library(rewamp_uade STATIC
     ${_zak_srcs} ${_ben_srcs} ${_libuade_srcs} ${_core_srcs} ${_cpuemu_parts})
   set_target_properties(rewamp_uade PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  rewamp_win_compat(rewamp_uade)   # MSVC: en-tetes POSIX manquants
+  if(MSVC)
+    # uadecore est un FIL chez nous (UADE_IN_PROCESS): <pthread.h> vient de la
+    # couche du coeur (src/windows/posix, corps dans rewamp_win_posix.c, lié
+    # dans rewamp_audio). Cible tout en C: /std:clatest atteint tout.
+    target_include_directories(rewamp_uade PRIVATE "${REWAMP_SRC_DIR}/windows/posix")
+    target_compile_options(rewamp_uade PRIVATE /std:clatest
+      "/FI${REWAMP_SRC_DIR}/windows/compat/rewamp_uade_msvc.h")
+    # htonl/ntohl de winsock2.h (voir le force-include).
+    target_link_libraries(rewamp_uade PRIVATE ws2_32)
+  endif()
 
   # -D_DARWIN_C_SOURCE is macOS/iOS-only (the cmake path is Linux/Windows/Android).
   set(_uade_defs UADE_IN_PROCESS _DEFAULT_SOURCE)
@@ -777,8 +954,9 @@ function(rewamp_add_uade target)
 
   # Force-include the exit()→longjmp shim on the uadecore emulator TUs ONLY
   # (uademain.c defines uadecore_exit/jmp_buf there); NOT on libuade/zakalwe/bencode.
+  rewamp_force_include_option(_uade_fi "${_s}/uade_inprocess.h")
   set_source_files_properties(${_core_srcs} ${_cpuemu_parts} PROPERTIES
-    COMPILE_OPTIONS "-include;${_s}/uade_inprocess.h")
+    COMPILE_OPTIONS "${_uade_fi}")
 
   find_package(Threads REQUIRED)
   target_link_libraries(rewamp_uade PRIVATE Threads::Threads)
@@ -860,6 +1038,7 @@ function(rewamp_add_kss target)
 
   add_library(rewamp_kss STATIC ${KSS_SOURCES})
   set_target_properties(rewamp_kss PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  rewamp_win_compat(rewamp_kss)   # MSVC: strcasecmp (mus2kss.c)
   target_compile_definitions(rewamp_kss PRIVATE REWAMP_WITH_KSS=1)
   # mus2kss porte un `main()` sous `#ifndef MUS2KSS_LIBRARY`: sans ce define, un
   # SECOND point d'entrée entre dans le binaire.
@@ -915,7 +1094,21 @@ function(rewamp_add_mac target)
 
   add_library(rewamp_mac STATIC ${MAC_SOURCES})
   set_target_properties(rewamp_mac PROPERTIES POSITION_INDEPENDENT_CODE ON)
-  target_compile_definitions(rewamp_mac PRIVATE MACLIB_COMPILE=1)
+  # ⚠️ `NO_DEFINE_ENVIRONMENT_VARIABLES` est la poignée de l'amont, et elle
+  # devient NÉCESSAIRE à cause de notre propre correctif dans All.h: en faisant
+  # entrer `windows.h` sur cette plateforme, on fait aussi entrer
+  # `WindowsEnvironment.h` — qui `#define UNICODE` et `_UNICODE` LUI-MÊME.
+  #
+  # Autrement dit le `remove_definitions(-DUNICODE)` de windows/CMakeLists.txt
+  # ne pouvait rien contre lui: la définition ne venait plus de la ligne de
+  # commande mais d'un en-tête. Symptôme résiduel: `FindFirstFile` restait la
+  # variante W et recevait un `CSmartPtr<char>`, plus un avertissement de
+  # redéfinition de `_CRT_SECURE_NO_WARNINGS` qui en était l'indice.
+  #
+  # Cette macro saute l'en-tête ENTIER, `windows.h` restant inclus — c'est
+  # exactement ce qu'on veut, et c'est prévu pour.
+  target_compile_definitions(rewamp_mac PRIVATE MACLIB_COMPILE=1
+    NO_DEFINE_ENVIRONMENT_VARIABLES=1)
   target_include_directories(rewamp_mac PUBLIC
     "${MAC_ROOT}/src/Shared"
     "${MAC_ROOT}/src/MACLib")
@@ -981,7 +1174,16 @@ function(rewamp_add_v2m target)
   # Contrat de déterminisme du moteur: pas de contraction FMA, jamais de
   # fast-math. Le Ronan (synthé de parole) est ON, sinon la voie 15 des morceaux
   # parlés (candytron, kkrieger) laisse fuir sa source glottale en bruit.
-  target_compile_options(rewamp_v2m PRIVATE -ffp-contract=off)
+  # ⚠️ MSVC: `-ffp-contract=off` y est une option INCONNUE, ignorée avec un
+  # simple avertissement. Le plus proche est `/fp:precise`, qui depuis VS 2022
+  # 17.0 ne contracte plus (la contraction y est un drapeau à part,
+  # `/fp:contract`, qu'on ne pose pas). C'est déjà le défaut: on le DIT plutôt
+  # que d'en dépendre. Non vérifié à l'oreille ni au binaire.
+  if(MSVC)
+    target_compile_options(rewamp_v2m PRIVATE /fp:precise)
+  else()
+    target_compile_options(rewamp_v2m PRIVATE -ffp-contract=off)
+  endif()
   # V2MPLAYER_SYNC_FUNCTIONS ouvre CalcPositions, dont on tire l'instant du
   # DERNIER événement — lengthMs() rend la fin de la SÉQUENCE, très loin après
   # la dernière note sur certains fichiers (fr019: 4 min de musique, 67 min
@@ -1075,6 +1277,14 @@ function(rewamp_add_psgplay target)
   endforeach()
   target_compile_definitions(rewamp_psgplay PUBLIC ${_psg_defs})
   target_compile_options(rewamp_psgplay PRIVATE -w)
+  if(MSVC)
+    rewamp_win_compat(rewamp_psgplay)
+    # Cible tout en C: l'option n'atteint pas de C++ (voir rewamp_fmp).
+    # /std:clatest: `typeof` (C23). Le force-include pose l'ordre des octets et
+    # neutralise les attributs GNU — voir son en-tête.
+    target_compile_options(rewamp_psgplay PRIVATE /std:clatest
+      "/FI${REWAMP_SRC_DIR}/windows/compat/rewamp_psgplay_msvc.h")
+  endif()
   target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_psgplay.cpp")
   target_compile_definitions(${target} PRIVATE REWAMP_WITH_PSGPLAY=1)
   target_link_libraries(${target} PRIVATE rewamp_psgplay)
@@ -1429,6 +1639,16 @@ function(rewamp_add_sc68 target)
   list(TRANSFORM _sc68_srcs PREPEND "${SC68_ROOT}/")
   add_library(rewamp_sc68 STATIC ${_sc68_srcs})
   set_target_properties(rewamp_sc68 PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  rewamp_win_compat(rewamp_sc68)   # MSVC: en-tetes POSIX manquants
+  if(TARGET z)
+    # ⚠️ `z` était lié au greffon mais PAS à cette statique, alors que c'est
+    # ELLE qui compile `gzip68.c` et `vfs68_z.c`. Sur un système où zlib est
+    # installée, `zlib.h` est trouvée dans /usr/include et le manque ne se voit
+    # pas; avec une zlib vendorée, l'include dir arrive PAR le lien, donc
+    # l'omission devient une erreur. Les deux liens sont nécessaires: l'un pour
+    # compiler, l'autre pour résoudre les symboles dans la DLL finale.
+    target_link_libraries(rewamp_sc68 PRIVATE z)
+  endif()
   target_compile_definitions(rewamp_sc68 PRIVATE
     HAVE_CONFIG_H EMU68_MONOLITIC REWAMP_SC68)
   target_include_directories(rewamp_sc68 PRIVATE
@@ -1485,6 +1705,7 @@ function(rewamp_add_sunvox target)
   endif()
 
   add_library(rewamp_sunvox STATIC ${SV_SOURCES})
+  rewamp_win_compat(rewamp_sunvox)   # MSVC: en-tetes POSIX manquants
   set_target_properties(rewamp_sunvox PROPERTIES
     POSITION_INDEPENDENT_CODE ON CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
   # Headless SunDog defines (HOW_TO_MAKE.txt + make/Makefile), encoders off.
@@ -1492,6 +1713,18 @@ function(rewamp_add_sunvox target)
     NOMAIN NOGUI NDEBUG MIN_SAMPLE_RATE=44100 SUNVOX_LIB
     NOVIDEO NOVCAP NOLIST NOFILEUTILS NOIMAGEFORMATS NOMIDI
     PS_STYPE_FLOAT32 COLOR16BITS NOOGGENC NOFLACENC)
+  if(WIN32)
+    # ⚠️ Sur Windows, `sound_win.hpp` active ASIO PAR DÉFAUT et inclut alors
+    # `iasiodrv.h` — un en-tête du SDK ASIO de Steinberg, qui n'est pas
+    # redistribuable et n'est pas dans cet arbre. L'amont a prévu la garde
+    # (`NOASIO`), elle n'était simplement jamais posée faute de build Windows.
+    #
+    # Rien à regretter: ce backend-ci ne sert à RIEN ici. SunVox n'est utilisé
+    # que comme décodeur hors ligne — `sound.cpp` est compilé pour ses types,
+    # et c'est miniaudio qui parle au périphérique (même raison que les
+    # `NOGUI`/`NOVIDEO`/`NOMIDI` ci-dessus).
+    target_compile_definitions(rewamp_sunvox PRIVATE NOASIO)
+  endif()
   target_compile_options(rewamp_sunvox PRIVATE -w)   # vendored tree is noisy
   if(ANDROID)
     # sundog_bridge.h (pulled in by file.cpp/misc.cpp/thread.cpp under
@@ -1567,6 +1800,7 @@ function(rewamp_add_pmd target)
     "${PMD_ROOT}/ymfm/*.cpp")
   add_library(rewamp_pmd STATIC ${PMD_SOURCES})
   set_target_properties(rewamp_pmd PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  rewamp_win_compat(rewamp_pmd)   # MSVC: en-tetes POSIX manquants
   # ymfm needs C++17 or later (if constexpr, structured bindings); Modizer's own
   # project builds this tree at gnu++20.
   target_compile_features(rewamp_pmd PRIVATE cxx_std_20)
@@ -1618,6 +1852,7 @@ function(rewamp_add_mdx target)
     "${MDX_ROOT}/freeverb/freeverb.cpp"
     "${MDX_ROOT}/freeverb/revmodel.cpp")
   set_target_properties(rewamp_mdx PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  rewamp_win_compat(rewamp_mdx)   # MSVC: en-tetes POSIX manquants
   target_include_directories(rewamp_mdx
     PRIVATE "${REWAMP_SRC_DIR}"          # ModizerVoicesData.h / ModizerConstants.h
     PRIVATE "${MDX_ROOT}"
@@ -1670,6 +1905,20 @@ function(rewamp_add_fmp target)
     "${FMP_ROOT}/common/fmplayer_drumrom_unix.c"
     "${FMP_ROOT}/common/fmplayer_file_unix.c")
   set_target_properties(rewamp_fmp PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  rewamp_win_compat(rewamp_fmp)   # MSVC: en-tetes POSIX manquants
+  if(MSVC)
+    # ⚠️ Un des .c de cet arbre inclut <stdatomic.h>, et la STL de MSVC y pose
+    # un `#error "C atomics require C11 or later"` — l'erreur ne vient donc PAS
+    # du code mais du niveau de langage: cl.exe compile le C en C11 seulement
+    # si on le DEMANDE (son défaut est un C89/90 étendu). `C_STANDARD 11` ne
+    # touche que le C de cette cible; le C++ garde celui du projet.
+    set_target_properties(rewamp_fmp PROPERTIES C_STANDARD 11)
+    # ⚠️ `/std:c11` ne SUFFIT PAS: MSVC garde les atomiques C derrière un
+    # drapeau à part, et son message le dit à peine (« C atomic support is not
+    # enabled », depuis vcruntime_c11_stdatomic.h, pas depuis notre code).
+    target_compile_options(rewamp_fmp PRIVATE
+      "$<$<COMPILE_LANGUAGE:C>:/experimental:c11atomics>")
+  endif()
   target_include_directories(rewamp_fmp
     PRIVATE "${REWAMP_SRC_DIR}"          # ModizerVoicesData.h (voice patches)
     PRIVATE "${FMP_ROOT}"
@@ -1708,6 +1957,7 @@ function(rewamp_add_eup target)
     "${EUP_ROOT}/Nuked-OPN2/ym3438.c"
     "${EUP_ROOT}/mame/fmopn.c")
   set_target_properties(rewamp_eup PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  rewamp_win_compat(rewamp_eup)   # MSVC: en-tetes POSIX manquants
   target_include_directories(rewamp_eup
     PRIVATE "${REWAMP_SRC_DIR}"          # ModizerVoicesData.h (voice patches)
     PRIVATE "${EUP_ROOT}/eupmini"
@@ -1908,6 +2158,12 @@ function(rewamp_add_unrar)
   foreach(_n IN LISTS _unrar_names)
     list(APPEND _unrar_srcs "${UNRAR_ROOT}/${_n}.cpp")
   endforeach()
+  # Windows: WinNT() et IsWindows11OrGreater() sont appelés depuis pathfn,
+  # timefn, file et extract sous `#ifdef _WIN_ALL`; leur fichier n'est dans la
+  # liste d'aucune autre plateforme parce qu'il n'y compile pas.
+  if(WIN32)
+    list(APPEND _unrar_srcs "${UNRAR_ROOT}/isnt.cpp")
+  endif()
   add_library(rewamp_unrar STATIC ${_unrar_srcs})
   set_target_properties(rewamp_unrar PROPERTIES POSITION_INDEPENDENT_CODE ON)
   target_compile_features(rewamp_unrar PRIVATE cxx_std_11)
@@ -1935,6 +2191,7 @@ function(rewamp_add_gsf target)
     "${GSF_ROOT}/libresample/src/resample.c"
     "${GSF_ROOT}/libresample/src/resamplesubs.c")
   add_library(rewamp_gsf STATIC ${_gsf_srcs})
+  rewamp_win_compat(rewamp_gsf)   # MSVC: strcasecmp
   set_target_properties(rewamp_gsf PROPERTIES POSITION_INDEPENDENT_CODE ON)
   target_compile_definitions(rewamp_gsf PRIVATE REWAMP_WITH_GSF=1 LINUX=1)
   target_include_directories(rewamp_gsf PRIVATE
@@ -1946,6 +2203,8 @@ function(rewamp_add_gsf target)
     "${GSF_ROOT}/VBA/memgzio.c" PROPERTIES LANGUAGE C)
   if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     target_link_libraries(rewamp_gsf PRIVATE z)
+  elseif(TARGET z)
+    target_link_libraries(rewamp_gsf PRIVATE z)   # Windows: zlib vendoree
   else()
     find_package(ZLIB QUIET)
     if(ZLIB_FOUND)
@@ -1986,7 +2245,16 @@ function(rewamp_add_vio2sf target)
   include("${VIO2SF_ROOT}/vio2sf_sources.cmake")   # → VIO2SF_SOURCES
 
   add_library(rewamp_vio2sf STATIC ${VIO2SF_SOURCES})
-  set_target_properties(rewamp_vio2sf PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  rewamp_win_compat(rewamp_vio2sf)   # MSVC: en-tetes POSIX manquants
+  # ⚠️ C++20 sur MSVC, 17 ailleurs: melonDS utilise des initialiseurs DÉSIGNÉS
+  # (`.champ = valeur`), que GCC et clang acceptent en C++17 comme extension et
+  # que MSVC refuse (« nécessite au moins /std:c++20 »). On monte le standard
+  # plutôt que de patcher l'arbre: c'est du C++20 valide, et l'amont le sait.
+  if(MSVC)
+    set_target_properties(rewamp_vio2sf PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+  else()
+    set_target_properties(rewamp_vio2sf PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  endif()
   # REWAMP_WITH_VIO2SF enables the scope/mute capture patch in SPU.cpp.
   target_compile_definitions(rewamp_vio2sf PRIVATE REWAMP_WITH_VIO2SF=1)
   # melonDS bundles Shay Green's blip_buf; its symbols collide with furnace's copy
@@ -2018,6 +2286,8 @@ function(rewamp_add_vio2sf target)
   # zlib for the compressed 2sf save-map path (uncompress/crc32).
   if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     target_link_libraries(rewamp_vio2sf PRIVATE z)
+  elseif(TARGET z)
+    target_link_libraries(rewamp_vio2sf PRIVATE z)   # Windows: zlib vendoree
   else()
     find_package(ZLIB QUIET)
     if(ZLIB_FOUND)
@@ -2201,6 +2471,29 @@ function(rewamp_add_projectm target)
     PROJECTM_FILESYSTEM_NAMESPACE=std
     "PROJECTM_FILESYSTEM_INCLUDE=<filesystem>")
   target_compile_options(rewamp_projectm PRIVATE -w)   # vendored tree is noisy
+  if(MSVC)
+    # Windows = GLES sur NOTRE ANGLE (windows/CMakeLists.txt pose
+    # REWAMP_ANGLE_DIR avant d'arriver ici). Quatre choses que la liste des
+    # autres plateformes n'a pas à dire:
+    #   * les en-têtes GLES3 ne sont pas ceux du système, il faut les donner;
+    #   * projectM_export.h et projectM_playlist_export.h ont été GÉNÉRÉS sur
+    #     une machine GNU et écrivent `__attribute__((visibility))` en dur. Ils
+    #     prévoient chacun une porte, `*_STATIC_DEFINE`, et laissent
+    #     `*_DEPRECATED` redéfinissable: on passe par là plutôt que de retoucher
+    #     des fichiers générés. PUBLIC, parce que notre TU de rendu inclut les
+    #     mêmes en-têtes. Mesuré: 1 047 erreurs de syntaxe ramenées à 1;
+    #   * Shader.cpp inclut <pthread.h> pour sa garde mdzMainThreadId: il prend
+    #     le nôtre (src/windows/posix), comme rewamp_projectm_render.cpp qui
+    #     DÉFINIT cette variable;
+    #   * la couche compat (strcasecmp & co).
+    target_include_directories(rewamp_projectm PRIVATE
+      "${REWAMP_ANGLE_DIR}/include"
+      "${REWAMP_SRC_DIR}/windows/posix")
+    target_compile_definitions(rewamp_projectm PUBLIC
+      PROJECTM_STATIC_DEFINE PROJECTM_PLAYLIST_STATIC_DEFINE
+      "PROJECTM_DEPRECATED=" "PROJECTM_PLAYLIST_DEPRECATED=")
+    rewamp_win_compat(rewamp_projectm)
+  endif()
   # ⚠️ `size_t` NU, sans `#include <cstddef>`: l'arbre amont s'en remet à une
   # fuite transitive de la bibliothèque standard. Elle EXISTE avec libstdc++ 13
   # et 14 (d'où un build vert sur la machine de dev, Ubuntu 24.04/clang 18) et
@@ -2210,8 +2503,19 @@ function(rewamp_add_projectm target)
   # dans le même cas, donc on ne les corrige pas un par un: l'en-tête est forcé
   # en tête de chaque TU C++ de CETTE cible. Rien d'autre n'est touché, et un
   # resync de l'arbre vendoré ne le perd pas.
-  target_compile_options(rewamp_projectm PRIVATE
-    "$<$<COMPILE_LANGUAGE:CXX>:-include;cstddef>")
+  if(MSVC)
+    # Par FICHIER: les générateurs Visual Studio ne distinguent pas C et C++
+    # dans les options d'une cible mixte (13 des 107 sources sont du C), et
+    # `-include` n'est pas une option de cl.exe — voir rewamp_force_include_option.
+    set(_pm_cxx ${PM_SOURCES})
+    list(FILTER _pm_cxx INCLUDE REGEX "\\.(cpp|cc|cxx)$")
+    # rewamp_win_posix.h: Shader.cpp chronomètre par clock_gettime(CLOCK_MONOTONIC).
+    set_source_files_properties(${_pm_cxx} PROPERTIES
+      COMPILE_OPTIONS "/FIcstddef;/FIrewamp_win_posix.h")
+  else()
+    target_compile_options(rewamp_projectm PRIVATE
+      "$<$<COMPILE_LANGUAGE:CXX>:-include;cstddef>")
+  endif()
   target_include_directories(rewamp_projectm PRIVATE
     "${PM_ROOT}/src/api/include"
     "${PM_ROOT}/src/playlist/api"
@@ -2255,7 +2559,11 @@ function(rewamp_add_adplug target)
 
   add_library(rewamp_adplug STATIC ${ADPLUG_SRC})
   set_target_properties(rewamp_adplug PROPERTIES POSITION_INDEPENDENT_CODE ON)
-  target_compile_definitions(rewamp_adplug PRIVATE stricmp=strcasecmp)
+  # MSVC a `stricmp` et pas `strcasecmp`: le renommage y enverrait vers un nom
+  # qui n'existe pas (non résolu au lien, `__imp_strcasecmp`).
+  if(NOT MSVC)
+    target_compile_definitions(rewamp_adplug PRIVATE stricmp=strcasecmp)
+  endif()
   target_include_directories(rewamp_adplug PRIVATE
     "${ADPLUG_ROOT}/src"
     "${ADPLUG_ROOT}/libbinio"
@@ -2289,10 +2597,17 @@ function(rewamp_add_libxmp target)
   file(GLOB _xmp_src "${_x}/src/*.c" "${_x}/src/loaders/*.c")
   add_library(rewamp_xmp STATIC ${_xmp_src})
   set_target_properties(rewamp_xmp PROPERTIES POSITION_INDEPENDENT_CODE ON)
-  target_compile_options(rewamp_xmp PRIVATE -w
-    "-include" "${_x}/rewamp_xmp_rename.h")
+  rewamp_force_include_option(_xmp_fi "${_x}/rewamp_xmp_rename.h")
+  target_compile_options(rewamp_xmp PRIVATE -w ${_xmp_fi})
   target_compile_definitions(rewamp_xmp PRIVATE
     LIBXMP_STATIC LIBXMP_NO_DEPACKERS LIBXMP_NO_PROWIZARD)
+  # ⚠️ Windows: xmp.h déclare chaque fonction `__declspec(dllimport)` tant que
+  # LIBXMP_STATIC n'est pas posé — chez l'APPELANT aussi (rewamp_plugin_xmp.c,
+  # compilé dans ${target}), sans quoi il réclame `__imp_xmp_*` à une
+  # bibliothèque statique qui n'exporte que `xmp_*`.
+  if(WIN32)
+    target_compile_definitions(${target} PRIVATE LIBXMP_STATIC)
+  endif()
   # REWAMP_SRC_DIR: mixer.c's scope capture includes ModizerVoicesData.h.
   target_include_directories(rewamp_xmp PRIVATE
     "${_x}/src" "${_x}/include" "${REWAMP_SRC_DIR}")
@@ -2391,11 +2706,14 @@ function(rewamp_configure_decoders target)
 
   # projectM a besoin d'une couche GL. Il en existe une pour Android
   # (src/android/rewamp_gl_android.cpp), pour Apple (podspecs) et désormais pour
-  # Linux (src/linux/rewamp_gl_linux.cc, EGL/Mesa natif). Windows n'en a
-  # toujours pas: y compiler rewamp_projectm_render.cpp échouerait sur des
+  # Linux (src/linux/rewamp_gl_linux.cc, EGL/Mesa natif) et pour Windows
+  # (src/windows/rewamp_gl_windows.cc, sur notre ANGLE) — cette dernière
+  # seulement si REWAMP_WINDOWS_VIZ est resté à ON (windows/CMakeLists.txt).
+  # Ailleurs, compiler rewamp_projectm_render.cpp échouerait sur des
   # GLuint/glGenTextures non déclarés, et le TU ne trouverait aucun contexte à
   # l'édition de liens.
-  if(REWAMP_WITH_PROJECTM AND NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  if(REWAMP_WITH_PROJECTM AND NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux"
+     AND NOT (WIN32 AND REWAMP_WINDOWS_VIZ))
     message(STATUS "rewamp: projectM désactivé — pas de couche GL pour cette plateforme")
   else()
     if(REWAMP_WITH_PROJECTM)
@@ -2526,11 +2844,13 @@ function(rewamp_configure_decoders target)
     # The OPLL_*/PSG_* symbol rename must apply to EVERY nsfplay translation unit
     # (not just the legacy C): the C++ devices (nes_vrc7/nes_fme7) reference those
     # symbols and must see the same renamed names as the legacy C that defines them.
+    rewamp_force_include_option(_nsfplay_fi
+      "${REWAMP_SRC_DIR}/nsfplay_symbol_rename.h")
     set_source_files_properties(
       ${_nsfplay_srcs} ${_nsfplay_legacy_c}
       "${REWAMP_SRC_DIR}/rewamp_plugin_nsfplay.cpp"
       PROPERTIES
-      COMPILE_OPTIONS "-include;${REWAMP_SRC_DIR}/nsfplay_symbol_rename.h")
+      COMPILE_OPTIONS "${_nsfplay_fi}")
     target_compile_definitions(${target} PRIVATE REWAMP_WITH_NSFPLAY=1 REWAMP_NSF_OSCILLO_SIZE=4096)
   endif()
 
@@ -2660,6 +2980,19 @@ function(rewamp_configure_decoders target)
           "Pour construire sans (scope vgmstream réduit): "
           "-DREWAMP_ALLOW_NO_FFMPEG=ON")
       endif()
+    elseif(WIN32 AND NOT REWAMP_ALLOW_NO_FFMPEG)
+      # Windows: même perte silencieuse que Linux, même règle — mais ni
+      # pkg-config ni FFmpeg système. windows/CMakeLists.txt pose
+      # REWAMP_FFMPEG_DIR sur windows/Libs/ffmpeg quand le script l'a produit;
+      # arriver ici veut dire qu'il ne l'a pas été.
+      message(FATAL_ERROR
+        "vgmstream: FFmpeg introuvable (REWAMP_FFMPEG_DIR='${REWAMP_FFMPEG_DIR}').\n"
+        "Les formats qui passent par ffmpeg_decoder.c (Vorbis, Opus, AAC, "
+        "ATRAC3…) seraient absents, et l'échec ne se verrait qu'à la lecture, "
+        "fichier par fichier.\n"
+        "Le bâtir une fois par checkout:\n"
+        "  powershell -File packages/rewamp_audio/scripts/build_ffmpeg_windows.ps1\n"
+        "Pour construire sans (scope vgmstream réduit): REWAMP_ALLOW_NO_FFMPEG=1")
     endif()
     # vgmstream's own optional codec libs (built separately, off here).
     set(USE_MPEG OFF CACHE BOOL "" FORCE)
@@ -2671,6 +3004,16 @@ function(rewamp_configure_decoders target)
     set(USE_G7221 OFF CACHE BOOL "" FORCE)
     set(BUILD_CLI OFF CACHE BOOL "" FORCE)
     set(BUILD_AUDACIOUS OFF CACHE BOOL "" FORCE)
+    # ⚠️ vgmstream construit AUSSI des greffons d'HÔTE, et les trois qu'il
+    # active par défaut le sont sous `if(WIN32)` — invisibles partout ailleurs.
+    # `BUILD_FB2K` est une ERREUR FATALE de configuration tant que
+    # `FB2K_SDK_PATH` et `WTL_INCLUDE_PATH` ne sont pas posés, donc la build
+    # Windows s'arrête AVANT de compiler une seule ligne du moteur. Nous ne
+    # voulons aucun des trois: nous lions `libvgmstream`, pas un composant
+    # foobar2000, un greffon Winamp ou un greffon XMPlay.
+    set(BUILD_FB2K OFF CACHE BOOL "" FORCE)
+    set(BUILD_WINAMP OFF CACHE BOOL "" FORCE)
+    set(BUILD_XMPLAY OFF CACHE BOOL "" FORCE)
 
     # vgmstream's base/codec_info.c declares codec externs directly after `case`
     # labels (a C23 construct). Apple clang (podspec builds) accepts it, but the
@@ -2718,7 +3061,13 @@ function(rewamp_configure_decoders target)
       else()
         target_include_directories(libvgmstream PRIVATE "${REWAMP_FFMPEG_DIR}/include")
         foreach(_ff avcodec avformat avutil swresample avfilter swscale avdevice)
-          set(_ff_so "${REWAMP_FFMPEG_DIR}/lib/lib${_ff}.so")
+          if(WIN32)
+            # Bibliothèques d'IMPORT; les DLL voyagent par
+            # rewamp_audio_bundled_libraries (windows/CMakeLists.txt).
+            set(_ff_so "${REWAMP_FFMPEG_DIR}/lib/${_ff}.lib")
+          else()
+            set(_ff_so "${REWAMP_FFMPEG_DIR}/lib/lib${_ff}.so")
+          endif()
           if(EXISTS "${_ff_so}")
             target_link_libraries(${target} PRIVATE "${_ff_so}")
           endif()

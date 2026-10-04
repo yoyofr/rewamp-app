@@ -18,6 +18,12 @@
 
 #include <stdlib.h>
 #include <setjmp.h>
+#ifdef _WIN32
+/* rewamp: l'UCRT redéclare exit() dans <process.h> (tiré par windows.h); il
+ * doit être vu AVANT la macro, sinon la redéclaration devient celle de
+ * uadecore_exit avec une liaison dllimport — C2375. */
+#include <process.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {

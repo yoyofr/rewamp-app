@@ -499,7 +499,23 @@ error:
 }
 
 /////////////////////////////////////////////////////////////////////////////
+#ifdef _MSC_VER
+/* rewamp: truncate() est POSIX, l'UCRT ne l'a pas — et en C l'appel compilait
+ * quand même (la déclaration ci-dessous suffit), pour échouer au LIEN. */
+#include <io.h>
+#include <fcntl.h>
+static int rewamp_truncate(const char *path, long size) {
+  int fd = _open(path, _O_RDWR | _O_BINARY);
+  int rc;
+  if (fd < 0) return -1;
+  rc = _chsize_s(fd, size);
+  _close(fd);
+  return rc == 0 ? 0 : -1;
+}
+#define truncate rewamp_truncate
+#else
 int	 truncate(const char *, off_t);
+#endif
 int psftag_writetofile(void *psftag, const char *path) {
   struct PSFTAG *t = (struct PSFTAG*)psftag;
   FILE *f = NULL;

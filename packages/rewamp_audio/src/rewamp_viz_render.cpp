@@ -175,6 +175,12 @@ static GLint   g_art_sampLoc  = -1;
 static int     g_art_tw     = 1;
 static int     g_art_th     = 1;
 static float   g_art_opacity = 0.0f;
+/* Contexte sur lequel les objets ci-dessus ont été créés. Le fond pochette sert
+ * TOUS les viz, mais seuls le stéréo et le spectre appelaient art_invalidate()
+ * sur un changement de génération: sur le piano (notes, motifs, voies), un
+ * contexte recréé laissait g_art_tex périmé et g_art_dirty à 0 — pochette
+ * absente jusqu'au retour sur le stéréo. Le module vérifie donc lui-même. */
+static unsigned g_art_gen   = 0;
 
 static uint8_t* g_art_pending = nullptr;
 static int      g_art_pending_w = 0;
@@ -281,10 +287,15 @@ static void art_init_gl(void)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, 0);
+    g_art_gen = rewamp_gl_generation();
 }
+
+static void art_invalidate(void);
 
 static void art_upload_if_dirty(void)
 {
+    // AVANT le verrou: art_invalidate le prend aussi.
+    if (g_art_prog && g_art_gen != rewamp_gl_generation()) art_invalidate();
     // Hold the lock across the glTexImage2D read so set_artwork can't free/rewrite
     // g_art_pending mid-upload (glTexImage2D copies synchronously, so the buffer is
     // fully consumed before we release). set_artwork is rare → no real contention.

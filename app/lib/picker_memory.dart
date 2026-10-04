@@ -56,10 +56,11 @@ class PickerMemory {
       (stored != null && stored.isNotEmpty && Directory(stored).existsSync()) ? stored : null;
 
   @visibleForTesting
-  static String? folderStartDir(String? folder) {
+  static String? folderStartDir(String? folder, {p.Context? ctx}) {
+    final c = ctx ?? p.context;
     if (folder == null || folder.isEmpty) return null;
-    final norm = p.normalize(folder);
-    final parent = p.dirname(norm);
+    final norm = c.normalize(folder);
+    final parent = c.dirname(norm);
     return parent == norm ? norm : parent;   // la racine se retient elle-même
   }
 

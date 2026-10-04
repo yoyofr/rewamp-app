@@ -1,6 +1,7 @@
 import 'dart:async' show unawaited;
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show MethodChannel, rootBundle;
 
@@ -400,7 +401,7 @@ class RewampAudioHandler extends BaseAudioHandler {
   Future<void> _warmupPlaceholders() async {
     try {
       final dir = await getApplicationSupportDirectory();
-      final artDir = Directory('${dir.path}/media_art');
+      final artDir = Directory(p.join(dir.path, 'media_art'));
       await artDir.create(recursive: true);
       for (final p in allSoundPlatforms) {
         final asset = platformAssetForPlatform(p);

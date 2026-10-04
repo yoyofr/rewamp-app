@@ -81,9 +81,13 @@ Future<IsolateFetchResult> isolateFetch(
   registerCancel(() {
     cancelRequested = true;
     control?.send('cancel');
-    // Pas de réponse attendue: l'appelant sait déjà POURQUOI ça s'arrête
-    // (son jeton), il lui faut seulement que l'attente finisse.
-    fail(const FetchTransferException('transfert annulé'));
+    // ⚠️ On rend la main quand l'isolate est SORTI (voir `exits` plus bas),
+    // pas tout de suite: c'est lui qui tient le `.part` ouvert, et sous
+    // Windows un fichier ouvert ne s'efface pas — l'appelant, qui efface le
+    // `.part` dès qu'on lui rend la main, le laissait derrière (en silence).
+    // Filet: au plus 2 s, au cas où l'isolate ne sortirait pas.
+    Timer(const Duration(seconds: 2),
+        () => fail(const FetchTransferException('transfert annulé')));
   });
 
   inbox.listen((msg) {
@@ -126,9 +130,11 @@ Future<IsolateFetchResult> isolateFetch(
   });
   errors.listen((e) => fail(FetchTransferException('isolate: $e')));
   // Un isolate qui meurt sans rien dire ne doit pas laisser l'appelant
-  // attendre pour toujours.
-  exits.listen((_) => fail(
-      const FetchTransferException('isolate de téléchargement terminé')));
+  // attendre pour toujours. Après une annulation, sa sortie EST le signal
+  // attendu: le fichier est refermé, l'appelant peut l'effacer.
+  exits.listen((_) => fail(FetchTransferException(cancelRequested
+      ? 'transfert annulé'
+      : 'isolate de téléchargement terminé')));
 
   try {
     await Isolate.spawn(
@@ -171,6 +177,17 @@ Future<void> _worker(_Job job) async {
   });
 
   RandomAccessFile? raf;
+  // ⚠️ Le fichier se REFERME avant d'annoncer un échec, comme avant le
+  // succès: l'appelant efface le `.part` dès qu'il reçoit le message, et sous
+  // Windows un fichier encore ouvert ne s'efface pas.
+  Future<void> closeFile() async {
+    final r = raf;
+    raf = null;
+    try {
+      await r?.close();
+    } catch (_) {}
+  }
+
   try {
     http.Request req() {
       final r = http.Request('GET', Uri.parse(job.url));
@@ -224,13 +241,15 @@ Future<void> _worker(_Job job) async {
           head.add(chunk.length <= need ? chunk : chunk.sublist(0, need));
         }
         n += chunk.length;
-        if (raf != null) {
-          await raf.writeFrom(chunk);
+        final file = raf;
+        if (file != null) {
+          await file.writeFrom(chunk);
         } else {
           mem!.add(chunk);
         }
         final now = DateTime.now();
         if (now.isAfter(deadline)) {
+          await closeFile();
           out.send({'t': 'cap'});
           return;
         }
@@ -240,12 +259,14 @@ Future<void> _worker(_Job job) async {
         }
       }
     } on TimeoutException {
+      await closeFile();
       out.send({'t': 'stall'});
       return;
     }
-    if (raf != null) {
-      await raf.flush();
-      await raf.close();
+    final file = raf;
+    if (file != null) {
+      await file.flush();
+      await file.close();
       raf = null;
     }
     out.send({
@@ -257,11 +278,10 @@ Future<void> _worker(_Job job) async {
           : TransferableTypedData.fromList([mem.takeBytes()]),
     });
   } catch (e) {
+    await closeFile();
     out.send({'t': 'err', 'msg': e.toString()});
   } finally {
-    try {
-      await raf?.close();
-    } catch (_) {}
+    await closeFile();
     client.close();
     control.close();
   }

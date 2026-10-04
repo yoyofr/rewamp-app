@@ -466,8 +466,10 @@ static void digital_to_stereo_downsample(struct psgplay *pp,
 	}
 }
 
+/* rewamp: do/while au lieu d'une expression-instruction GNU `({ })` — la
+ * valeur n'était jamais utilisée, et MSVC ne connaît pas la forme GNU. */
 #define RECORD(type)							\
-({									\
+do {									\
 	if (pp->record.type + count <= pp->record.play) {		\
 		pp->record.type += count;				\
 		return;							\
@@ -478,7 +480,7 @@ static void digital_to_stereo_downsample(struct psgplay *pp,
 		sample = &sample[offset];				\
 		count -= offset;					\
 	}								\
-})
+} while (0)
 
 static void psg_digital(const struct cf2149_ac *sample,
 	size_t count, void *arg)
@@ -570,10 +572,12 @@ struct psgplay *psgplay_init(const void *data, size_t size,
 
 	pp->record.play = RECORD_PLAY_DEFAULT;
 	pp->downsample.stereo_frequency = stereo_frequency;
-	pp->machine = (struct machine) {
-		.init = atari_st_init,
-		.run = atari_st_run,
-	};
+	/* rewamp: champ par champ, pas `pp->machine = (struct machine) { ... }`.
+	 * struct machine porte les 4 Mo de RAM émulée; GCC écrit le littéral en
+	 * place, MSVC le construit d'abord SUR LA PILE (1 Mo sous Windows) —
+	 * débordement au premier .sndh. Équivalent: calloc a déjà tout mis à 0. */
+	pp->machine.init = atari_st_init;
+	pp->machine.run = atari_st_run;
 	pp->machine.init(&pp->machine, data, size, offset, &regs, &ports);
 
 	psgplay_digital_to_stereo_callback(pp,
