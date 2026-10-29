@@ -18,22 +18,31 @@ class TextMeasureMemo {
   String? _text;
   TextStyle? _style;
   TextDirection? _dir;
+  TextScaler? _scaler;
   int? _maxLines;
   double? _maxWidth;
   Size _size = Size.zero;
 
   /// Taille du texte mis en page sous ces paramètres — recalculée seulement
   /// si l'un d'eux a changé depuis l'appel précédent.
+  ///
+  /// ⚠️ [textScaler] doit être celui avec lequel le texte sera DESSINÉ
+  /// (`MediaQuery.textScalerOf`). Un `Text` applique la taille de police du
+  /// système, un `TextPainter` nu non: avec une police agrandie (Android,
+  /// rewamp-app#2) le libellé était mesuré trop COURT, la boîte `shrinkWrap`
+  /// le coupait à cette largeur et, ne « débordant » pas, il ne défilait pas.
   Size measure(
     String text,
     TextStyle style,
     TextDirection dir, {
+    required TextScaler textScaler,
     int? maxLines,
     double maxWidth = double.infinity,
   }) {
     if (text == _text &&
         style == _style &&
         dir == _dir &&
+        textScaler == _scaler &&
         maxLines == _maxLines &&
         maxWidth == _maxWidth) {
       return _size;
@@ -42,12 +51,14 @@ class TextMeasureMemo {
       text: TextSpan(text: text, style: style),
       maxLines: maxLines,
       textDirection: dir,
+      textScaler: textScaler,
     )..layout(minWidth: 0, maxWidth: maxWidth);
     _size = tp.size;
     tp.dispose();
     _text = text;
     _style = style;
     _dir = dir;
+    _scaler = textScaler;
     _maxLines = maxLines;
     _maxWidth = maxWidth;
     return _size;

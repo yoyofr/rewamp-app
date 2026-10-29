@@ -1125,6 +1125,16 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '짧은 곡 $count개 제외',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => '정보 불러오는 중…';
 
   @override
@@ -1384,6 +1394,15 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get queueClear => '대기열 비우기';
+
+  @override
+  String get queueAutoplayOn => '자동 재생 켬: 대기열 다음에 비슷한 곡이 이어집니다';
+
+  @override
+  String get queueAutoplayOff => '자동 재생 끔';
+
+  @override
+  String get queueAutoplayRow => '자동 재생으로 추가됨';
 
   @override
   String get queueClearConfirmTitle => '대기열을 비울까요?';
@@ -2399,6 +2418,77 @@ class AppLocalizationsKo extends AppLocalizations {
   String get localOpsPhaseDeleting => '파일 제거';
 
   @override
+  String localOpsScanning(String name) {
+    return '$name 스캔 중…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => '파일 목록 작성 중';
+
+  @override
+  String get linkedRootsSection => '연결된 폴더';
+
+  @override
+  String get linkedRootAppFolder => 'Rewamp 폴더(파일 앱)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      '파일 앱 › 나의 iPhone › Rewamp에 파일을 넣거나 컴퓨터에서 Finder로 복사하십시오. 그 위치에서 바로 재생되며 아무것도 복사되지 않습니다.';
+
+  @override
+  String get linkedRootsLink => '폴더 연결…';
+
+  @override
+  String get linkedRootsLinkSubtitle => '원래 위치에서 재생하며 복사하지 않습니다';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '파일 $count개',
+      zero: '아직 목록에 파일이 없습니다',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => '현재 접근할 수 없음';
+
+  @override
+  String get linkedRootRescan => '새로 고침';
+
+  @override
+  String get linkedRootRename => '이름 변경';
+
+  @override
+  String get linkedRootUnlink => '연결 해제';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => '이 폴더의 연결을 해제할까요?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      '디스크에서는 아무것도 삭제되지 않습니다. 즐겨찾기와 재생목록 항목은 유지되며, 다시 연결할 때까지 흐리게 표시됩니다.';
+
+  @override
+  String get linkedRootEmpty => '이 폴더에 재생할 수 있는 파일이 없습니다.';
+
+  @override
+  String get linkedRootSearchHint => '이 폴더에서 검색';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '일치 항목 $count개',
+      zero: '일치 항목 없음',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => '파일 가져오기';
 
   @override
@@ -2517,6 +2607,54 @@ class AppLocalizationsKo extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return '대기열에 넣지 않음: $seconds초 미만 (설정 → 재생)';
   }
+
+  @override
+  String get settingsAutoplaySection => '자동 재생';
+
+  @override
+  String get settingsAutoplayTitle => '대기열이 끝나도 계속 재생';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      '대기열이 끝에 가까워지면 비슷한 곡이 자동으로 추가됩니다. 대기열의 ∞ 버튼은 이 설정과 같습니다.';
+
+  @override
+  String get settingsAutoplaySize => '한 번에 추가되는 곡 수';
+
+  @override
+  String get settingsAutoplayMode => '곡 선택 방식';
+
+  @override
+  String get settingsAutoplayModeAuto => '자동';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      '같은 아티스트, 그다음 소속 그룹, 그다음 같은 컬렉션 순으로 선택합니다.';
+
+  @override
+  String get settingsAutoplayModeArtist => '같은 아티스트';
+
+  @override
+  String get settingsAutoplayModeArtistHint => '방금 재생된 아티스트의 곡만 선택합니다.';
+
+  @override
+  String get settingsAutoplayModeGroup => '같은 그룹';
+
+  @override
+  String get settingsAutoplayModeGroupHint => '해당 아티스트가 속한 그룹의 곡을 선택합니다.';
+
+  @override
+  String get settingsAutoplayModeCollection => '같은 컬렉션';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      '같은 컬렉션에서 무작위로 선택하며 같은 플랫폼을 우선합니다.';
+
+  @override
+  String get settingsAutoplayModeRecent => '최근 들은 곡';
+
+  @override
+  String get settingsAutoplayModeRecentHint => '대기열뿐 아니라 최근에 들은 곡에서도 선택합니다.';
 
   @override
   String get settingsQueuePrefetchSection => '대기열 다운로드';
@@ -4524,4 +4662,40 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get libraryFileMissing => '파일 없음';
+
+  @override
+  String get settingsPlayStartSection => '재생 시작';
+
+  @override
+  String get settingsPlayStartInApp => '앱에서 트랙을 탭할 때';
+
+  @override
+  String get settingsPlayStartInAppHint => '길게 누르기(오른쪽 클릭)는 항상 선택지를 보여 줍니다.';
+
+  @override
+  String get settingsPlayStartExternal => '시스템에서 연 파일';
+
+  @override
+  String get settingsPlayStartExternalHint => '더블 클릭, ‘다음으로 열기’, 앱 아이콘에 놓기.';
+
+  @override
+  String get settingsPlayStartAsk => '묻기';
+
+  @override
+  String get settingsLaunchWindow => '시작할 때';
+
+  @override
+  String get settingsLaunchWindowNormal => '일반 창';
+
+  @override
+  String get settingsLaunchWindowMini => '미니 플레이어';
+
+  @override
+  String get settingsLaunchWindowLast => '종료할 때와 같이';
+
+  @override
+  String get miniWindowQuit => 'Rewamp 종료';
+
+  @override
+  String get miniWindowCompact => '간단한 미니 플레이어';
 }

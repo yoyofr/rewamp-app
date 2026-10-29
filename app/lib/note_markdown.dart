@@ -44,7 +44,7 @@ Future<void> showSongNotesSheet(BuildContext context, List<SongNote> notes) {
           ),
           child: ListView(
             shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            padding: const EdgeInsetsDirectional.fromSTEB(20, 0, 20, 16),
             children: [
               Text(l10n.contextNotes, style: tt.titleMedium),
               const SizedBox(height: 8),

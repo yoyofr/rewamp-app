@@ -1167,6 +1167,17 @@ class AppLocalizationsHu extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count rövid kihagyva',
+      one: '$count rövid kihagyva',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => 'Részletek betöltése…';
 
   @override
@@ -1432,6 +1443,16 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get queueClear => 'Várólista ürítése';
+
+  @override
+  String get queueAutoplayOn =>
+      'Automatikus lejátszás be: a lejátszási lista után hasonló számok jönnek';
+
+  @override
+  String get queueAutoplayOff => 'Automatikus lejátszás ki';
+
+  @override
+  String get queueAutoplayRow => 'Automatikus lejátszás adta hozzá';
 
   @override
   String get queueClearConfirmTitle => 'Üríti a várólistát?';
@@ -2484,6 +2505,80 @@ class AppLocalizationsHu extends AppLocalizations {
   String get localOpsPhaseDeleting => 'fájlok eltávolítása';
 
   @override
+  String localOpsScanning(String name) {
+    return '$name átvizsgálása…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'fájlok listázása';
+
+  @override
+  String get linkedRootsSection => 'Csatolt mappák';
+
+  @override
+  String get linkedRootAppFolder => 'Rewamp mappa (Fájlok app)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'Tedd a fájljaidat a Fájlok appba › Az iPhone-omon › Rewamp, vagy másold át őket egy számítógépről a Finderrel. Onnan szólnak, semmi sem másolódik.';
+
+  @override
+  String get linkedRootsLink => 'Mappa csatolása…';
+
+  @override
+  String get linkedRootsLinkSubtitle =>
+      'A helyéről játssza le, semmi nem lesz átmásolva';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count fájl',
+      one: '$count fájl',
+      zero: 'Még nincs listázott fájl',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => 'Jelenleg nem érhető el';
+
+  @override
+  String get linkedRootRescan => 'Frissítés';
+
+  @override
+  String get linkedRootRename => 'Átnevezés';
+
+  @override
+  String get linkedRootUnlink => 'Leválasztás';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => 'Leválasztod ezt a mappát?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'Semmi nem törlődik a lemezről. A kedvencei és a lejátszásilista-bejegyzései megmaradnak, kiszürkítve, amíg újra nem csatolod.';
+
+  @override
+  String get linkedRootEmpty => 'Nincs lejátszható fájl ebben a mappában.';
+
+  @override
+  String get linkedRootSearchHint => 'Keresés ebben a mappában';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count találat',
+      one: '$count találat',
+      zero: 'Nincs találat',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'Fájlok importálása';
 
   @override
@@ -2604,6 +2699,57 @@ class AppLocalizationsHu extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'Nem kerül a sorba: $seconds s alatt (Beállítások → Lejátszás)';
   }
+
+  @override
+  String get settingsAutoplaySection => 'Automatikus lejátszás';
+
+  @override
+  String get settingsAutoplayTitle => 'Lejátszás folytatása a lista után';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'Amikor a lejátszási lista a végéhez közeledik, hasonló számok kerülnek a végére. A lista ∞ gombja ugyanezt a beállítást kapcsolja.';
+
+  @override
+  String get settingsAutoplaySize => 'Egyszerre hozzáadott számok';
+
+  @override
+  String get settingsAutoplayMode => 'A számok kiválasztása';
+
+  @override
+  String get settingsAutoplayModeAuto => 'Automatikus';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      'Először ugyanazok az előadók, majd a csoportjaik, végül ugyanaz a gyűjtemény.';
+
+  @override
+  String get settingsAutoplayModeArtist => 'Ugyanazok az előadók';
+
+  @override
+  String get settingsAutoplayModeArtistHint =>
+      'Csak az imént hallott előadók számai.';
+
+  @override
+  String get settingsAutoplayModeGroup => 'Ugyanazok a csoportok';
+
+  @override
+  String get settingsAutoplayModeGroupHint =>
+      'Azoknak a csoportoknak a számai, amelyekhez ezek az előadók tartoznak.';
+
+  @override
+  String get settingsAutoplayModeCollection => 'Ugyanaz a gyűjtemény';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      'Véletlenszerű számok ugyanabból a gyűjteményből, először ugyanarról a platformról.';
+
+  @override
+  String get settingsAutoplayModeRecent => 'Nemrég hallgatott';
+
+  @override
+  String get settingsAutoplayModeRecentHint =>
+      'A nemrég hallgatott zenék alapján, nem csak a lejátszási listából.';
 
   @override
   String get settingsQueuePrefetchSection => 'A sor letöltései';
@@ -4704,4 +4850,42 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'Hiányzó fájl';
+
+  @override
+  String get settingsPlayStartSection => 'Lejátszás indítása';
+
+  @override
+  String get settingsPlayStartInApp => 'Szám koppintása az alkalmazásban';
+
+  @override
+  String get settingsPlayStartInAppHint =>
+      'A hosszú nyomás (jobb klikk) mindig felkínálja a választást.';
+
+  @override
+  String get settingsPlayStartExternal => 'A rendszerből megnyitott fájl';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'Dupla kattintás, „Megnyitás ezzel”, ráejtés az alkalmazás ikonjára.';
+
+  @override
+  String get settingsPlayStartAsk => 'Kérdezzen';
+
+  @override
+  String get settingsLaunchWindow => 'Indításkor';
+
+  @override
+  String get settingsLaunchWindowNormal => 'Normál ablak';
+
+  @override
+  String get settingsLaunchWindowMini => 'Minilejátszó';
+
+  @override
+  String get settingsLaunchWindowLast => 'Ahogy bezáráskor volt';
+
+  @override
+  String get miniWindowQuit => 'Kilépés a Rewampból';
+
+  @override
+  String get miniWindowCompact => 'Kompakt minilejátszó';
 }

@@ -144,6 +144,19 @@ class MainActivity : AudioServiceActivity() {
         // entre autres) reçoivent LEURS résultats par ce même point d'entrée.
         super.onActivityResult(requestCode, resultCode, data)
         SafFolderImport.onActivityResult(requestCode, resultCode, data)
+        SafLinkedRoots.onActivityResult(this, requestCode, resultCode, data)
+    }
+
+    /** Travail SAF hors du fil principal (une requête par dossier: un arbre
+     *  entier bloquerait l'UI jusqu'à l'ANR), réponse sur le fil principal. */
+    private fun safBackground(result: MethodChannel.Result, work: () -> Any?) {
+        Thread {
+            val out = try { Result.success(work()) } catch (e: Exception) { Result.failure(e) }
+            mainHandler.post {
+                out.fold({ result.success(it) },
+                         { result.error("saf", it.toString(), null) })
+            }
+        }.start()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -183,6 +196,48 @@ class MainActivity : AudioServiceActivity() {
         }
         openFilesChannel = openCh
         if (pendingOpen.isNotEmpty()) openCh.invokeMethod("filesAvailable", null)
+
+        // Dossiers LIÉS (local_roots.dart): permission d'arbre PERSISTÉE,
+        // parcours, listing d'un dossier, mise en scène dans le cache.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger,
+                SafLinkedRoots.CHANNEL)
+            .setMethodCallHandler { call, result ->
+                val uri = call.argument<String>("uri")?.let { Uri.parse(it) }
+                when (call.method) {
+                    "pick" -> SafLinkedRoots.pick(this, result)
+                    "hasPermission" -> result.success(
+                        uri != null && SafLinkedRoots.hasPermission(this, uri))
+                    "release" -> {
+                        if (uri != null) SafLinkedRoots.release(this, uri)
+                        result.success(null)
+                    }
+                    "walk" -> {
+                        val exts = call.argument<List<String>>("exts")?.toSet()
+                        if (uri == null || exts == null) {
+                            result.error("bad_args", "uri/exts", null)
+                        } else safBackground(result) {
+                            SafLinkedRoots.walk(this, uri, exts)
+                        }
+                    }
+                    "listDir" -> {
+                        val rel = call.argument<String>("rel") ?: ""
+                        if (uri == null) result.error("bad_args", "uri", null)
+                        else safBackground(result) {
+                            SafLinkedRoots.listDir(this, uri, rel)
+                        }
+                    }
+                    "copy" -> {
+                        val rels = call.argument<List<String>>("rels")
+                        val dest = call.argument<String>("dest")
+                        if (uri == null || rels == null || dest == null) {
+                            result.error("bad_args", "uri/rels/dest", null)
+                        } else safBackground(result) {
+                            SafLinkedRoots.copy(this, uri, rels, dest)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
 
         // Import d'un DOSSIER par le Storage Access Framework — voir
         // SafFolderImport pour pourquoi le sélecteur du greffon ne peut pas

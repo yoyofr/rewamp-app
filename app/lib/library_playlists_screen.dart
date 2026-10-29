@@ -546,7 +546,7 @@ class _LibraryPlaylistsScreenState extends State<LibraryPlaylistsScreen> {
           : ListView(
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 4),
                   child: CancelField(
                     controller: _searchCtrl,
                     onCleared: (_) => _load(),
@@ -925,7 +925,7 @@ class _FavoritesPlaylistScreenState extends State<_FavoritesPlaylistScreen> {
                     ),
                   // Header: play the whole playlist + entry count.
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
                     child: Row(children: [
                       FilledButton.icon(
                         // La playlist ENTIÈRE, filtre ou pas: le bouton dit

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'artwork_image.dart';
 import 'l10n.dart';
 import 'local_db.dart';
+import 'play_start.dart';
 import 'shell_insets.dart';
 import 'sync_service.dart';
 import 'competition_screen.dart' show globalOnPlayOnlineSong;
@@ -242,7 +243,7 @@ class _StatsScreenState extends State<StatsScreen> {
         return SafeArea(
           child: ListView(
             shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 16),
             children: [
               Text(l10n.statsByYear,
                   style: Theme.of(ctx).textTheme.titleSmall
@@ -310,7 +311,7 @@ class _StatsScreenState extends State<StatsScreen> {
           // ── Period chips ─────────────────────────────────────────────
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 0),
             child: Row(children: [
               for (final p in presets) ...[
                 ChoiceChip(
@@ -337,7 +338,7 @@ class _StatsScreenState extends State<StatsScreen> {
           else if (o != null) ...[
             // ── Headline numbers (restricted to the chart bucket if any) ─
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 0),
               child: Row(children: [
                 _StatCard(label: l10n.statsPlaysLabel,   value: '${o.plays}',   cs: cs),
                 const SizedBox(width: 8),
@@ -352,7 +353,7 @@ class _StatsScreenState extends State<StatsScreen> {
             // ── Cumulated listening time ────────────────────────────────
             if (o.listenedMs >= 60000)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 0),
                 child: Row(children: [
                   _StatCard(
                       label: l10n.statsListenTime,
@@ -364,7 +365,7 @@ class _StatsScreenState extends State<StatsScreen> {
             // ── Chart (always the full period; tap a bar to drill) ─────
             if (_timeline.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 0),
                 child: _BarChart(
                   points:        _filledTimeline(),
                   byMonth:       _period.byMonth,
@@ -378,9 +379,9 @@ class _StatsScreenState extends State<StatsScreen> {
             // Selected-bucket chip — makes the restriction visible + clearable.
             if (_bucket != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 0),
                 child: Align(
-                  alignment: Alignment.centerLeft,
+                  alignment: AlignmentDirectional.centerStart,
                   child: InputChip(
                     label: Text(_bucket!.label(l10n)),
                     selected: true,
@@ -495,7 +496,7 @@ class _StatsScreenState extends State<StatsScreen> {
           if (_libOverview != null) ...[
             _PlainHeader(title: l10n.navLibrary),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 0),
               child: Row(children: [
                 _StatCard(
                     label: l10n.statsTracksLabel,
@@ -511,7 +512,7 @@ class _StatsScreenState extends State<StatsScreen> {
               ]),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 0),
               child: Row(children: [
                 _StatCard(
                     label: l10n.statsAlbumsLabel,
@@ -526,7 +527,7 @@ class _StatsScreenState extends State<StatsScreen> {
           if (_files != null) ...[
             _PlainHeader(title: l10n.statsLocalFilesSection),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 0),
               child: Row(children: [
                 _StatCard(
                     label: l10n.statsFilesLabel,
@@ -914,7 +915,7 @@ class _PlainHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 24, 16, 4),
       child: Text(title,
           style: Theme.of(context).textTheme.titleMedium
               ?.copyWith(fontWeight: FontWeight.w600)),
@@ -992,7 +993,7 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 8, 0),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 24, 8, 0),
       child: Row(children: [
         Expanded(
           child: Text(title,
@@ -1048,7 +1049,7 @@ class _TrackRow extends StatelessWidget {
     final title = t.displayTitle.isNotEmpty
         ? t.displayTitle
         : (t.onlineId ?? '?');
-    return ListTile(
+    return PlayChoiceHold(onTap: onTap, child: ListTile(
       dense: true,
       leading: Row(mainAxisSize: MainAxisSize.min, children: [
         _RankBadge(rank: rank, cs: cs),
@@ -1083,7 +1084,7 @@ class _TrackRow extends StatelessWidget {
             style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
       ]),
       onTap: onTap,
-    );
+    ));
   }
 }
 

@@ -230,7 +230,85 @@ import UniformTypeIdentifiers
       }
       self.folderChannel = channel
     }
+
+    // Dossiers LIÉS (local_roots.dart): même contrat que sur macOS
+    // (AppDelegate.swift côté macOS), adapté à iOS — pas d'option
+    // `.withSecurityScope` ici, un signet iOS d'une URL choisie dans Fichiers
+    // emporte sa portée tout seul. Il se crée PENDANT la portée du sélecteur
+    // (`pick` … `release`), et `resolve` la rouvre pour de bon.
+    if let registrar = engineBridge.pluginRegistry.registrar(
+        forPlugin: "RewampBookmarks") {
+      let channel = FlutterMethodChannel(
+        name: "rewamp/bookmarks", binaryMessenger: registrar.messenger())
+      channel.setMethodCallHandler { [weak self] call, result in
+        guard let self = self else { result(nil); return }
+        let args = call.arguments as? [String: Any]
+        switch call.method {
+        case "create":
+          guard let path = args?["path"] as? String else { result(nil); return }
+          do {
+            let data = try URL(fileURLWithPath: path).bookmarkData(
+              options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+            result(FlutterStandardTypedData(bytes: data))
+          } catch {
+            result(FlutterError(code: "bookmark", message: "\(error)", details: nil))
+          }
+        case "resolve":
+          guard let data = (args?["bookmark"] as? FlutterStandardTypedData)?.data
+          else { result(nil); return }
+          var stale = false
+          do {
+            let url = try URL(resolvingBookmarkData: data, options: [],
+                              relativeTo: nil, bookmarkDataIsStale: &stale)
+            // `false` n'est pas un échec (voir documentPicker ci-dessous):
+            // l'URL est gardée quoi qu'il arrive.
+            _ = url.startAccessingSecurityScopedResource()
+            self.linkedScopes[url.path] = url
+            result(["path": url.path, "stale": stale])
+          } catch {
+            result(FlutterError(code: "bookmark", message: "\(error)", details: nil))
+          }
+        case "release":
+          if let path = args?["path"] as? String,
+             let url = self.linkedScopes.removeValue(forKey: path) {
+            url.stopAccessingSecurityScopedResource()
+          }
+          result(nil)
+        case "download":
+          // Un fichier iCloud pas encore descendu n'existe que sous la forme
+          // d'un espace réservé `.nom.icloud`: on demande sa descente et on
+          // attend qu'il soit là (borné — un nuage hors ligne ne doit pas
+          // bloquer la lecture pour toujours).
+          guard let path = args?["path"] as? String else { result(false); return }
+          let url = URL(fileURLWithPath: path)
+          let fm = FileManager.default
+          if fm.fileExists(atPath: path) { result(true); return }
+          do { try fm.startDownloadingUbiquitousItem(at: url) } catch {
+            result(false); return
+          }
+          let deadline = Date().addingTimeInterval(60)
+          DispatchQueue.global(qos: .userInitiated).async {
+            while Date() < deadline {
+              if fm.fileExists(atPath: path) {
+                DispatchQueue.main.async { result(true) }
+                return
+              }
+              Thread.sleep(forTimeInterval: 0.25)
+            }
+            DispatchQueue.main.async { result(false) }
+          }
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+      self.bookmarksChannel = channel
+    }
   }
+
+  private var bookmarksChannel: FlutterMethodChannel?
+  /// Les URL dont la portée reste ouverte tant que la racine liée est en
+  /// service — `release` la referme au délien.
+  private var linkedScopes: [String: URL] = [:]
 
   // ── Sélecteur de dossier (portée de sécurité) ─────────────────────────────
 

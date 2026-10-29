@@ -21,8 +21,10 @@ import 'playlist_picker.dart';
 import 'default_subsong.dart' show defaultSubsongFromHeader;
 import 'sap_info.dart' show SapInfoService;
 import 'app_snack.dart';
+import 'play_start.dart';
 import 'track_options_sheet.dart'
-    show globalOnAlbumQueueAdd, globalOnPlayAlbum, showTrackOptions;
+    show globalOnAlbumQueueAdd, globalOnPlayAlbum, holdTrackChoice,
+        showTrackOptions;
 
 const _kSidExts = {'sid', 'psid', 'rsid', 'mus'};
 
@@ -129,9 +131,21 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
   // ref id as optional, so keep the nullable type.
   /// Réécriture consultée: un ajout passé par l'import a posé la ligne sous la
   /// clé pérenne (voir library_identity.dart).
-  String? get _songRefId => widget.result.songId.isEmpty
-      ? widget.result.songId
-      : libraryRefRewrite(widget.result.songId);
+  ///
+  /// ⚠️ Un conteneur LOCAL arrive avec `songId` VIDE (convention « purement
+  /// local », voir AppShell._openSubsongListForTrack): sa clé est son CHEMIN
+  /// — la forme que tout le reste de l'app lit comme « local » (un ref_id qui
+  /// commence par un séparateur). La chaîne vide écrivait une entrée de
+  /// bibliothèque sans identité, jamais marquée « local ». Le chemin nu (sans
+  /// `?subsong=`) est le FICHIER ENTIER, distinct de chaque sous-chanson.
+  String? get _songRefId {
+    final r = widget.result;
+    if (r.songId.isEmpty) {
+      final lp = r.localPath;
+      return (lp == null || lp.isEmpty) ? null : libraryRefRewrite(lp);
+    }
+    return libraryRefRewrite(r.songId);
+  }
 
   @override
   void initState() {
@@ -576,6 +590,11 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
     await _resolveDeletable();
   }
 
+  /// Appui long: la feuille de choix, que le tap ne montre jamais ici (voir
+  /// _play) — pour CETTE sous-chanson.
+  Future<void> _hold(SubsongInfo sub) =>
+      holdTrackChoice(context, _resultFor(sub), playNow: () => _play(sub));
+
   Future<void> _playAll() async {
     final subs = _subsongs;
     if (subs == null || subs.isEmpty) return;
@@ -605,7 +624,7 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
         title: Text(_containerName, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsetsDirectional.only(end: 12),
             child: Chip(
               label: Text(r.formatExt.toUpperCase(),
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
@@ -670,7 +689,9 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                               // premier morceau: la pastille le dit, et
                               // « tout lire » démarre là (rotation).
                               final isDefault = _defaultRow == i;
-                              return ListTile(
+                              return PlayChoiceHold(
+                                onTap: () => _hold(sub),
+                                child: ListTile(
                                 subtitle: isSkipped
                                     ? Text(
                                         l10n.subsongSkippedShort(
@@ -745,8 +766,8 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                                       return <Widget>[
                                         if (sc.rating != null)
                                           Padding(
-                                            padding: const EdgeInsets.only(
-                                                right: 6),
+                                            padding: const EdgeInsetsDirectional.only(
+                                                end: 6),
                                             child: Text(
                                                 '★ ${sc.rating!.toStringAsFixed(1)}',
                                                 style: const TextStyle(
@@ -754,8 +775,8 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                                           ),
                                         if ((sc.popularity ?? 0) >= 50)
                                           Padding(
-                                            padding: const EdgeInsets.only(
-                                                right: 6),
+                                            padding: const EdgeInsetsDirectional.only(
+                                                end: 6),
                                             child: Text(
                                               context.l10n.statsTopPercent(
                                                   (100 - sc.popularity!)
@@ -771,7 +792,7 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                                     if (dur != null)
                                       Padding(
                                         padding:
-                                            const EdgeInsets.only(right: 4),
+                                            const EdgeInsetsDirectional.only(end: 4),
                                         child: Text(dur,
                                             style: TextStyle(
                                                 color: cs.onSurfaceVariant,
@@ -803,7 +824,7 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                                   ],
                                 ),
                                 onTap: () => _play(sub),
-                              );
+                              ));
                             },
                             );
                           }),
@@ -841,7 +862,7 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
     ].join(' · ');
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

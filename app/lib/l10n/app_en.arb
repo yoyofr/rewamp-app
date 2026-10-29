@@ -808,6 +808,15 @@
   "albumDownloadToSeeTracks": "Download the album to see its tracks",
   "albumNotDownloadedHint": "Album not downloaded — start playback to download it",
   "albumTrackCount": "{count, plural, =1{{count} track} other{{count} tracks}}",
+  "playChoiceSkippedShort": "{count, plural, =1{{count} short one skipped} other{{count} short ones skipped}}",
+  "@playChoiceSkippedShort": {
+    "description": "After the track count in the play sheet: subsongs left out by the Settings > Playback 'too short' threshold.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "@albumTrackCount": {
     "placeholders": {
       "count": {
@@ -1014,6 +1023,9 @@
     "description": "Button leaving the queue edit mode"
   },
   "queueClear": "Clear queue",
+  "queueAutoplayOn": "Autoplay on: similar tracks follow the queue",
+  "queueAutoplayOff": "Autoplay off",
+  "queueAutoplayRow": "Added by autoplay",
   "@queueClear": {
     "description": "Queue panel: empty the queue and stop playback"
   },
@@ -1603,6 +1615,44 @@
   "localOpsPhaseExtracting": "extracting",
   "localOpsPhaseRegistering": "adding to library",
   "localOpsPhaseDeleting": "removing files",
+  "localOpsScanning": "Scanning {name}…",
+  "@localOpsScanning": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "localOpsPhaseScanning": "listing files",
+  "linkedRootsSection": "Linked folders",
+  "linkedRootAppFolder": "Rewamp folder (Files app)",
+  "linkedRootAppFolderHint": "Put your files in the Files app › On My iPhone › Rewamp, or copy them from a computer with the Finder. They play from there, nothing is copied.",
+  "linkedRootsLink": "Link a folder…",
+  "linkedRootsLinkSubtitle": "Played from where it is, nothing is copied",
+  "linkedRootsSubtitle": "{count, plural, =0{No file listed yet} one{{count} file} other{{count} files}}",
+  "@linkedRootsSubtitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "linkedRootUnavailable": "Not reachable right now",
+  "linkedRootRescan": "Refresh",
+  "linkedRootRename": "Rename",
+  "linkedRootUnlink": "Unlink",
+  "linkedRootUnlinkConfirmTitle": "Unlink this folder?",
+  "linkedRootUnlinkConfirmBody": "Nothing is deleted from the disk. Its favourites and playlist entries stay, greyed out until it is linked again.",
+  "linkedRootEmpty": "No playable file in this folder.",
+  "linkedRootSearchHint": "Search in this folder",
+  "linkedRootSearchResults": "{count, plural, =0{No match} one{{count} match} other{{count} matches}}",
+  "@linkedRootSearchResults": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "localImportFiles": "Import files",
   "storageLocalImports": "Local imports",
   "settingsVgmJapaneseTags": "Japanese tags (GD3)",
@@ -1696,6 +1746,21 @@
       }
     }
   },
+  "settingsAutoplaySection": "Autoplay",
+  "settingsAutoplayTitle": "Keep playing after the queue",
+  "settingsAutoplaySubtitle": "When the queue nears its end, similar tracks are added to it. The ∞ button in the queue is the same setting.",
+  "settingsAutoplaySize": "Tracks added each time",
+  "settingsAutoplayMode": "How tracks are chosen",
+  "settingsAutoplayModeAuto": "Automatic",
+  "settingsAutoplayModeAutoHint": "Same artists first, then their groups, then the same collection.",
+  "settingsAutoplayModeArtist": "Same artists",
+  "settingsAutoplayModeArtistHint": "Only tracks by the artists that just played.",
+  "settingsAutoplayModeGroup": "Same groups",
+  "settingsAutoplayModeGroupHint": "Tracks by the groups those artists belong to.",
+  "settingsAutoplayModeCollection": "Same collection",
+  "settingsAutoplayModeCollectionHint": "Random tracks from the same collection, same platform first.",
+  "settingsAutoplayModeRecent": "Recent listens",
+  "settingsAutoplayModeRecentHint": "Picked from what you listened to lately, not only from the queue.",
   "settingsQueuePrefetchSection": "Queue downloads",
   "settingsQueuePrefetchTitle": "Download the whole queue",
   "settingsQueuePrefetchSubtitle": "One file at a time; the next missing track starts as soon as the previous one lands. Off: only the next track is fetched.",
@@ -2871,5 +2936,17 @@
   "libraryFileMissing": "File missing",
   "@libraryFileMissing": {
     "description": "Library row: the file is not on this device and the account is anonymous, so it is nowhere — shown instead of 'On another device'"
-  }
+  },
+  "settingsPlayStartSection": "Starting playback",
+  "settingsPlayStartInApp": "Tapping a track in the app",
+  "settingsPlayStartInAppHint": "A long press (right-click) always offers the choice.",
+  "settingsPlayStartExternal": "File opened from the system",
+  "settingsPlayStartExternalHint": "Double-click, “Open with”, drop on the app icon.",
+  "settingsPlayStartAsk": "Ask",
+  "settingsLaunchWindow": "At startup",
+  "settingsLaunchWindowNormal": "Normal window",
+  "settingsLaunchWindowMini": "Mini player",
+  "settingsLaunchWindowLast": "As when last closed",
+  "miniWindowQuit": "Quit Rewamp",
+  "miniWindowCompact": "Compact mini player"
 }

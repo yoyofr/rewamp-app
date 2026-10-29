@@ -62,7 +62,7 @@ class AudioRoute {
             padding: const EdgeInsets.only(bottom: 8),
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                padding: const EdgeInsetsDirectional.fromSTEB(20, 0, 20, 8),
                 child: Text(l10n.audioOutput,
                     style: Theme.of(ctx).textTheme.titleMedium),
               ),

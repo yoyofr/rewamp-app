@@ -1210,6 +1210,19 @@ class AppLocalizationsCs extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count krátkých vynecháno',
+      many: '$count krátké vynecháno',
+      few: '$count krátké vynechány',
+      one: '$count krátká vynechána',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => 'Načítání podrobností…';
 
   @override
@@ -1477,6 +1490,16 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get queueClear => 'Vyprázdnit frontu';
+
+  @override
+  String get queueAutoplayOn =>
+      'Automatické přehrávání zapnuto: po frontě budou hrát podobné skladby';
+
+  @override
+  String get queueAutoplayOff => 'Automatické přehrávání vypnuto';
+
+  @override
+  String get queueAutoplayRow => 'Přidáno automatickým přehráváním';
 
   @override
   String get queueClearConfirmTitle => 'Vyprázdnit frontu?';
@@ -2546,6 +2569,85 @@ class AppLocalizationsCs extends AppLocalizations {
   String get localOpsPhaseDeleting => 'odstraňování souborů';
 
   @override
+  String localOpsScanning(String name) {
+    return 'Prohledávání složky $name…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'načítání seznamu souborů';
+
+  @override
+  String get linkedRootsSection => 'Propojené složky';
+
+  @override
+  String get linkedRootAppFolder => 'Složka Rewamp (aplikace Soubory)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'Vložte soubory do aplikace Soubory › Na mém iPhonu › Rewamp, nebo je zkopírujte z počítače pomocí Finderu. Přehrávají se odtamtud, nic se nekopíruje.';
+
+  @override
+  String get linkedRootsLink => 'Propojit složku…';
+
+  @override
+  String get linkedRootsLinkSubtitle =>
+      'Přehrává se z původního umístění, nic se nekopíruje';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count souborů',
+      many: '$count souboru',
+      few: '$count soubory',
+      one: '$count soubor',
+      zero: 'Zatím žádné soubory',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => 'Momentálně nedostupná';
+
+  @override
+  String get linkedRootRescan => 'Obnovit';
+
+  @override
+  String get linkedRootRename => 'Přejmenovat';
+
+  @override
+  String get linkedRootUnlink => 'Odpojit';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => 'Odpojit tuto složku?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'Z disku se nic nesmaže. Oblíbené položky a záznamy v playlistech zůstanou, zešedlé, dokud složku znovu nepropojíte.';
+
+  @override
+  String get linkedRootEmpty =>
+      'V této složce nejsou žádné přehratelné soubory.';
+
+  @override
+  String get linkedRootSearchHint => 'Hledat v této složce';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count shod',
+      many: '$count shody',
+      few: '$count shody',
+      one: '$count shoda',
+      zero: 'Žádné shody',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'Importovat soubory';
 
   @override
@@ -2668,6 +2770,58 @@ class AppLocalizationsCs extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'Nepřidává se do fronty: méně než $seconds s (Nastavení → Přehrávání)';
   }
+
+  @override
+  String get settingsAutoplaySection => 'Automatické přehrávání';
+
+  @override
+  String get settingsAutoplayTitle =>
+      'Pokračovat v přehrávání po skončení fronty';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'Když se fronta blíží ke konci, přidají se do ní podobné skladby. Tlačítko ∞ ve frontě je totéž nastavení.';
+
+  @override
+  String get settingsAutoplaySize => 'Počet skladeb přidaných najednou';
+
+  @override
+  String get settingsAutoplayMode => 'Způsob výběru skladeb';
+
+  @override
+  String get settingsAutoplayModeAuto => 'Automaticky';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      'Nejprve stejní interpreti, pak jejich skupiny, potom stejná kolekce.';
+
+  @override
+  String get settingsAutoplayModeArtist => 'Stejní interpreti';
+
+  @override
+  String get settingsAutoplayModeArtistHint =>
+      'Pouze skladby interpretů, kteří právě hráli.';
+
+  @override
+  String get settingsAutoplayModeGroup => 'Stejné skupiny';
+
+  @override
+  String get settingsAutoplayModeGroupHint =>
+      'Skladby skupin, do kterých tito interpreti patří.';
+
+  @override
+  String get settingsAutoplayModeCollection => 'Stejná kolekce';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      'Náhodné skladby ze stejné kolekce, nejprve ze stejné platformy.';
+
+  @override
+  String get settingsAutoplayModeRecent => 'Nedávno poslouchané';
+
+  @override
+  String get settingsAutoplayModeRecentHint =>
+      'Vybrané z toho, co jste nedávno poslouchali, nejen z fronty.';
 
   @override
   String get settingsQueuePrefetchSection => 'Stahování fronty';
@@ -4797,4 +4951,42 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'Soubor chybí';
+
+  @override
+  String get settingsPlayStartSection => 'Spuštění přehrávání';
+
+  @override
+  String get settingsPlayStartInApp => 'Klepnutí na skladbu v aplikaci';
+
+  @override
+  String get settingsPlayStartInAppHint =>
+      'Dlouhé stisknutí (pravé tlačítko) vždy nabídne volbu.';
+
+  @override
+  String get settingsPlayStartExternal => 'Soubor otevřený ze systému';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'Dvojklik, „Otevřít v“, přetažení na ikonu aplikace.';
+
+  @override
+  String get settingsPlayStartAsk => 'Zeptat se';
+
+  @override
+  String get settingsLaunchWindow => 'Při spuštění';
+
+  @override
+  String get settingsLaunchWindowNormal => 'Normální okno';
+
+  @override
+  String get settingsLaunchWindowMini => 'Minipřehrávač';
+
+  @override
+  String get settingsLaunchWindowLast => 'Jako při zavření';
+
+  @override
+  String get miniWindowQuit => 'Ukončit Rewamp';
+
+  @override
+  String get miniWindowCompact => 'Kompaktní minipřehrávač';
 }

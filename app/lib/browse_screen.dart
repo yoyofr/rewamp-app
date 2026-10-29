@@ -21,6 +21,7 @@ import 'hover_grow.dart';
 import 'entity_play_actions.dart';
 import 'radio_surprise_buttons.dart';
 import 'song_tile.dart';
+import 'play_start.dart';
 import 'track_options_sheet.dart';
 import 'user_settings.dart';
 import 'shell_insets.dart';
@@ -272,7 +273,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
     Widget? chipRow;
     if (chipAxis.isNotEmpty) {
       chipRow = Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 12, 0),
         child: Wrap(
           spacing: 8,
           children: [
@@ -298,7 +299,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
       children: [
         if (widget.showFilter)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 4),
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
@@ -479,7 +480,7 @@ class _ActionsBar extends StatelessWidget {
       return const SizedBox.shrink();
     }
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 4),
       child: Row(children: [
         const Spacer(),
         RadioSurpriseButtons(
@@ -828,7 +829,7 @@ class _FacetValuesScreenState extends State<FacetValuesScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 4),
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
@@ -1046,7 +1047,7 @@ class _PartyDetailScreenState extends State<PartyDetailScreen> {
                       ),
                     for (final y in years) ...[
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                        padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 4),
                         child: Text(
                           y == '—' ? l10n.browseOthers : y,
                           style: tt.titleSmall
@@ -1142,7 +1143,7 @@ class _PlaylistHeader extends StatelessWidget {
     final desc = playlist.description;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1323,7 +1324,7 @@ class _PlaylistTracksScreenState extends State<PlaylistTracksScreen> {
                       // commonPlayAll used by the local-playlist and subsong
                       // screens (was a divergent bold ListTile).
                       return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
                         child: Row(children: [
                           FilledButton.icon(
                             onPressed:
@@ -1393,7 +1394,19 @@ class _PlaylistTracksScreenState extends State<PlaylistTracksScreen> {
                         color: cs.onSurfaceVariant,
                       ),
                     );
-                    return ListTile(
+                    // Le tap lance la playlist entière depuis ici sans
+                    // demander: l'appui long rend la feuille pour CETTE piste.
+                    Future<void> play() async {
+                      if (widget.onPlayAlbum != null) {
+                        await widget.onPlayAlbum!(context, List.of(_tracks!),
+                            startIndex: i);
+                      } else {
+                        await widget.onTap(context, r);
+                      }
+                    }
+                    return PlayChoiceHold(
+                      onTap: () => holdTrackChoice(context, r, playNow: play),
+                      child: ListTile(
                       // Small album/file artwork when the row has one, with the
                       // rank as a badge over its corner; plain rank otherwise.
                       leading: hasArt
@@ -1452,7 +1465,7 @@ class _PlaylistTracksScreenState extends State<PlaylistTracksScreen> {
                         // that carries videos[] today.
                         if (r.hasVideo)
                           Padding(
-                            padding: const EdgeInsets.only(left: 6),
+                            padding: const EdgeInsetsDirectional.only(start: 6),
                             child: Icon(Icons.ondemand_video,
                                 size: 14, color: cs.primary),
                           ),
@@ -1473,15 +1486,8 @@ class _PlaylistTracksScreenState extends State<PlaylistTracksScreen> {
                       // Tapping an entry starts the WHOLE playlist as a
                       // queue, positioned on the tapped entry (containers
                       // expand to their subsongs inside the queue).
-                      onTap: () {
-                        if (widget.onPlayAlbum != null) {
-                          widget.onPlayAlbum!(context, List.of(_tracks!),
-                              startIndex: i);
-                        } else {
-                          widget.onTap(context, r);
-                        }
-                      },
-                    );
+                      onTap: play,
+                    ));
                   },
                 )),
                 ]);
@@ -1815,7 +1821,7 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
           if (widget.onPlayAlbum != null) ...[
             if (_queueBusy)
               const Padding(
-                padding: EdgeInsets.only(right: 12),
+                padding: EdgeInsetsDirectional.only(end: 12),
                 child: Center(
                     child: SizedBox(
                         width: 18, height: 18,
@@ -1823,7 +1829,7 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
               )
             else
               Padding(
-                padding: const EdgeInsets.only(right: 4),
+                padding: const EdgeInsetsDirectional.only(end: 4),
                 child: RadioSurpriseButtons(
                   onPlayAll: () => _playSubtree(shuffle: false),
                   onRadio: () => _playSubtree(shuffle: true),
@@ -1837,7 +1843,7 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 0),
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
@@ -1859,11 +1865,11 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
           // subtree, folders vs songs only) — spell it out rather than let the
           // field silently do the second one.
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerStart,
             child: InkWell(
               onTap: () => _setRecursive(!_recursive),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 16, 0),
+                padding: const EdgeInsetsDirectional.fromSTEB(8, 0, 16, 0),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1885,7 +1891,7 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
               child: Align(
-                alignment: Alignment.centerLeft,
+                alignment: AlignmentDirectional.centerStart,
                 child: Text(
                   _displayName(widget.folder).replaceAll('/', ' › '),
                   style: Theme.of(context).textTheme.bodySmall,
@@ -2287,7 +2293,7 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
       children: [
         if (chipAxis.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 12, 0),
             child: Wrap(
               spacing: 8,
               children: [
@@ -2306,7 +2312,7 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
             ),
           ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 4),
           child: Row(children: [
             Expanded(
               child: CancelField(
@@ -2355,7 +2361,7 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
       final selected = current != null;
       final cs = Theme.of(context).colorScheme;
       return Padding(
-        padding: const EdgeInsets.only(right: 6),
+        padding: const EdgeInsetsDirectional.only(end: 6),
         child: ActionChip(
           avatar: Icon(selected ? Icons.check : Icons.expand_more, size: 14),
           label: Text(selected ? current : label,
@@ -2388,7 +2394,7 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 4),
       child: Row(children: [
         if (showPlat)
           chip(l10n.searchPlatform, _selPlatform, _platFacets,
@@ -2831,7 +2837,7 @@ class _CollectionArtistsScreenState extends State<CollectionArtistsScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 4),
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
@@ -3177,7 +3183,7 @@ class _CollectionHubScreenState extends State<CollectionHubScreen> {
     final children = <Widget>[
       // Header: size of the collection + radio/surprise on the whole of it.
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 4),
         child: Row(
           children: [
             Expanded(
@@ -3282,7 +3288,7 @@ class _CollectionHubScreenState extends State<CollectionHubScreen> {
       ),
       if (_topArtists.isNotEmpty) ...[
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 8),
           child: Text(l10n.statsTopArtists,
               style: Theme.of(context).textTheme.titleMedium),
         ),
@@ -3312,7 +3318,7 @@ class _CollectionHubScreenState extends State<CollectionHubScreen> {
       ],
       if (_topSongs.isNotEmpty) ...[
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 0),
           child: Text(l10n.statsTopTracks,
               style: Theme.of(context).textTheme.titleMedium),
         ),
@@ -3455,7 +3461,7 @@ class _CollectionGroupsScreenState extends State<CollectionGroupsScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 4),
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
@@ -3707,7 +3713,7 @@ class _CollectionFormatsScreenState extends State<_CollectionFormatsScreen> {
       appBar: AppBar(title: Text('${widget.title} · ${l10n.browseByFormat}')),
       body: Column(children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 12, 4),
           child: CancelField(
             controller: _filterCtrl,
             onCleared: (_) => setState(() {}),

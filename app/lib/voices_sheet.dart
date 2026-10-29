@@ -173,7 +173,7 @@ class _VoicesSheetState extends State<VoicesSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 12, 2),
+              padding: const EdgeInsetsDirectional.fromSTEB(20, 0, 12, 2),
               child: Row(
                 children: [
                   Text(l10n.voicesTitle, style: tt.titleMedium),
@@ -225,7 +225,7 @@ class _VoicesSheetState extends State<VoicesSheet> {
     final fmt = NumberFormat('0.0#', Localizations.localeOf(context).toString());
     final mode = (v - 1.0).abs() < 1e-6 ? 0 : a.playbackSpeedMode;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 12, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(20, 4, 12, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -264,7 +264,7 @@ class _VoicesSheetState extends State<VoicesSheet> {
           ),
           if (mode != 0)
             Padding(
-              padding: const EdgeInsets.only(left: 26, bottom: 2),
+              padding: const EdgeInsetsDirectional.only(start: 26, bottom: 2),
               child: Text(
                 mode == 1 ? l10n.voicesSpeedNative : l10n.voicesSpeedResampled,
                 style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
@@ -293,7 +293,7 @@ class _VoicesSheetState extends State<VoicesSheet> {
       }
     }
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

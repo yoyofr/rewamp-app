@@ -7,6 +7,7 @@ import 'library_identity.dart'
     show libraryRefIsDeadIdentity, libraryRefIsPhantomImport;
 import 'library_presence.dart'
     show presentPaths, invalidateLocalPresence;
+import 'local_roots.dart' show LocalRoots, LinkedEntry;
 import 'portable_path.dart';
 import 'rewamp_db.dart' show catalogueSongId;
 import 'uade_info.dart';
@@ -1105,7 +1106,7 @@ class LocalDb extends ChangeNotifier {
 
     _db = await openDatabase(
       path,
-      version: 78,
+      version: 79,
       onCreate:  _onCreate,
       onUpgrade: _onUpgrade,
       // PRAGMAs must be re-applied on every connection, not just at creation.
@@ -1139,6 +1140,12 @@ class LocalDb extends ChangeNotifier {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 79) {
+      // Table des NOMS des dossiers liés (local_roots.dart) — chemin, nom,
+      // taille, mtime, rien d'autre: « parcouru, pas indexé ».
+      await db.execute(kLinkedEntriesSchema);
+      await db.execute(kLinkedEntriesIndex);
+    }
     if (oldVersion < 78) {
       // Empreinte du FICHIER d'une ligne hors catalogue (voir
       // stampFileFingerprint / _forgetStaleFileFacts). Gardée par table_info:
@@ -3762,6 +3769,20 @@ class LocalDb extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// L'entrée de BIBLIOTHÈQUE d'un album récent (`ra`, `li`), dans
+  /// [getRecentEntries]. ⚠️ L'uuid DÉCIDE quand l'album en a un; le nom ne
+  /// rattache qu'un album SANS uuid (import local) à une entrée sans uuid.
+  /// Par « uuid OU nom », les trois « Dune » du catalogue prenaient l'étoile
+  /// de l'import local homonyme, et celui qui avait AUSSI la sienne sortait
+  /// en DEUX lignes (une par entrée jointe) — d'où des clés dupliquées dans
+  /// la rangée animée de l'accueil. Lu en sous-requêtes, jamais en jointure:
+  /// une ligne par album par construction.
+  static const kRecentAlbumLibraryMatch = '''
+    li.type = 'album'
+    AND CASE WHEN ra.album_id IS NOT NULL
+             THEN li.album_id = ra.album_id OR li.ref_id = ra.album_id
+             ELSE li.album_id IS NULL AND li.ref_id = ra.meta_album END''';
+
   Future<List<RecentEntry>> getRecentEntries({int limit = 50}) async {
     final rows = await _database.rawQuery('''
       SELECT
@@ -3817,13 +3838,12 @@ class LocalDb extends ChangeNotifier {
                 AND t2.format_ext IS NOT NULL LIMIT 1) END
         ) AS format_ext,
         ra.last_played_at,
-        COALESCE(li.is_favorite, 0) AS is_favorite,
-        CASE WHEN li.ref_id IS NOT NULL THEN 1 ELSE 0 END AS in_library
+        COALESCE((SELECT MAX(COALESCE(li.is_favorite, 0))
+                    FROM library_items li
+                   WHERE $kRecentAlbumLibraryMatch), 0) AS is_favorite,
+        EXISTS (SELECT 1 FROM library_items li
+                 WHERE $kRecentAlbumLibraryMatch) AS in_library
       FROM recent_albums ra
-      LEFT JOIN library_items li
-        ON li.type = 'album'
-       AND ( (ra.album_id IS NOT NULL AND li.album_id = ra.album_id)
-             OR li.ref_id = ra.meta_album )
 
       UNION ALL
 
@@ -3882,11 +3902,25 @@ class LocalDb extends ChangeNotifier {
           -- Le sens de l'échec compte: montrer un morceau à part alors qu'il
           -- appartenait à un album est bénin, le faire disparaître ne l'est
           -- pas.
+          --
+          -- ⚠️ Et le NOM seul ne rattache pas: « Dune » nomme trois albums du
+          -- catalogue et un import local, et jouer l'un cachait les pistes
+          -- des autres. Le nom compte avec le même DOSSIER (celui d'un album
+          -- est dédié: `online/<collection>/<uuid>/`), ce qui rattrape aussi
+          -- une piste dont l'uuid d'album a CHANGÉ côté serveur entre deux
+          -- téléchargements (mesuré: 2 pistes sur 19 d'un album vgmrips). Le
+          -- dossier = le chemin moins son dernier composant (rtrim des
+          -- caractères qui ne sont PAS des séparateurs, `/` comme l'antislash
+          -- de Windows, écrit `char(92)`: aucun échappement à tromper).
           AND NOT EXISTS (
             SELECT 1 FROM recent_albums ra2
             WHERE t.meta_album IS NOT NULL AND t.meta_album != ''
-              AND ((t.album_id IS NOT NULL AND ra2.album_id = t.album_id)
-                   OR ra2.meta_album = t.meta_album)
+              AND ( (t.album_id IS NOT NULL AND ra2.album_id = t.album_id)
+                    OR (ra2.meta_album = t.meta_album
+                        AND rtrim(ra2.file_path, replace(replace(
+                              ra2.file_path, '/', ''), char(92), ''))
+                          = rtrim(t.file_path, replace(replace(
+                              t.file_path, '/', ''), char(92), ''))) )
           )
       ) WHERE rn = 1
 
@@ -6851,8 +6885,161 @@ class LocalDb extends ChangeNotifier {
         return portableRelative(absolute, from: root);
       }
     }
-    return null;
+    // Dossier LIÉ: le relatif à SA racine, sans la nommer — c'est ce qui rend
+    // identiques les ♥ du même dossier Dropbox lié sur deux appareils (voir
+    // local_roots.dart).
+    return LocalRoots.instance.relPathOf(absolute)?.$2;
   }
+
+  // ── Dossiers liés: la table des noms ───────────────────────────────────────
+
+  /// Remplace la table d'une racine par [entries] (un parcours entier), en
+  /// une transaction — un lecteur ne voit jamais une racine à moitié vide.
+  Future<void> replaceLinkedEntries(
+      String rootId, List<LinkedEntry> entries) async {
+    await replaceLinkedEntriesOn(_database, rootId, entries);
+    notifyListeners();
+  }
+
+  Future<void> deleteLinkedEntries(String rootId) async {
+    await _database
+        .delete('linked_entries', where: 'root_id = ?', whereArgs: [rootId]);
+    notifyListeners();
+  }
+
+  Future<int> countLinkedEntries(String rootId) =>
+      countLinkedEntriesOn(_database, rootId);
+
+  Future<(Map<String, int> folders, List<LinkedEntry> files)>
+      linkedEntriesUnder(String rootId, String relDir) =>
+          linkedEntriesUnderOn(_database, rootId, relDir);
+
+  Future<List<LinkedEntry>> linkedSubtree(String rootId, String relDir,
+          {int limit = 5000}) =>
+      linkedSubtreeOn(_database, rootId, relDir, limit: limit);
+
+  Future<List<LinkedEntry>> searchLinkedEntries(String query,
+          {String? rootId, int limit = 200}) =>
+      searchLinkedEntriesOn(_database, query, rootId: rootId, limit: limit);
+
+  // Le SQL vit dans des fonctions STATIQUES sur un DatabaseExecutor, comme
+  // rewriteLocalPaths: c'est ce qui les rend testables sur une base en
+  // mémoire (linked_entries_db_test.dart) sans l'instance.
+
+  @visibleForTesting
+  static Future<void> replaceLinkedEntriesOn(
+      Database db, String rootId, List<LinkedEntry> entries) async {
+    await db.transaction((txn) async {
+      await txn.delete('linked_entries',
+          where: 'root_id = ?', whereArgs: [rootId]);
+      var batch = txn.batch();
+      var n = 0;
+      for (final e in entries) {
+        batch.insert('linked_entries', {
+          'root_id': rootId,
+          'rel_path': e.relPath,
+          'name': e.name,
+          'size': e.size,
+          'mtime_ms': e.mtimeMs,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        if (++n % 2000 == 0) {
+          await batch.commit(noResult: true);
+          batch = txn.batch();
+        }
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  @visibleForTesting
+  static Future<int> countLinkedEntriesOn(
+      DatabaseExecutor db, String rootId) async {
+    final r = await db.rawQuery(
+        'SELECT count(*) AS n FROM linked_entries WHERE root_id = ?', [rootId]);
+    return (r.first['n'] as int?) ?? 0;
+  }
+
+  /// Le NIVEAU [relDir] ('' = racine, sinon terminé par '/') d'une racine:
+  /// ses sous-dossiers avec leur compte de fichiers, et ses fichiers. Tout
+  /// se décide en SQL — à la racine d'un arbre de 500 000 fichiers, ramener
+  /// les lignes pour les trier en Dart serait l'écran le plus lent de l'app.
+  @visibleForTesting
+  static Future<(Map<String, int> folders, List<LinkedEntry> files)>
+      linkedEntriesUnderOn(
+          DatabaseExecutor db, String rootId, String relDir) async {
+    final len = relDir.length;
+    final like = '${_likeEscape(relDir)}%';
+    final rest = 'substr(rel_path, ${len + 1})';
+    final folderRows = await db.rawQuery('''
+      SELECT substr($rest, 1, instr($rest, '/') - 1) AS d, count(*) AS n
+      FROM   linked_entries
+      WHERE  root_id = ? AND rel_path LIKE ? ESCAPE '\\'
+             AND instr($rest, '/') > 0
+      GROUP BY d
+      ORDER BY d COLLATE NOCASE
+    ''', [rootId, like]);
+    final fileRows = await db.rawQuery('''
+      SELECT rel_path, size, mtime_ms
+      FROM   linked_entries
+      WHERE  root_id = ? AND rel_path LIKE ? ESCAPE '\\'
+             AND instr($rest, '/') = 0
+      ORDER BY name COLLATE NOCASE
+    ''', [rootId, like]);
+    return (
+      {for (final r in folderRows) r['d'] as String: (r['n'] as int?) ?? 0},
+      [for (final r in fileRows) _linkedEntryOf(rootId, r)],
+    );
+  }
+
+  /// Tout le sous-arbre de [relDir], dans l'ordre des chemins — « tout lire ».
+  @visibleForTesting
+  static Future<List<LinkedEntry>> linkedSubtreeOn(
+      DatabaseExecutor db, String rootId, String relDir,
+      {int limit = 5000}) async {
+    final rows = await db.rawQuery('''
+      SELECT rel_path, size, mtime_ms FROM linked_entries
+      WHERE  root_id = ? AND rel_path LIKE ? ESCAPE '\\'
+      ORDER BY rel_path COLLATE NOCASE
+      LIMIT ?
+    ''', [rootId, '${_likeEscape(relDir)}%', limit]);
+    return [for (final r in rows) _linkedEntryOf(rootId, r)];
+  }
+
+  /// Recherche sur le NOM et le CHEMIN, toutes racines ou une seule. Classée:
+  /// nom exact, nom commençant par, nom contenant, puis chemin contenant.
+  @visibleForTesting
+  static Future<List<LinkedEntry>> searchLinkedEntriesOn(
+      DatabaseExecutor db, String query,
+      {String? rootId, int limit = 200}) async {
+    final q = query.trim();
+    if (q.isEmpty) return const [];
+    final esc = _likeEscape(q);
+    final rows = await db.rawQuery('''
+      SELECT root_id, rel_path, size, mtime_ms,
+             CASE WHEN name LIKE ? ESCAPE '\\' THEN 0
+                  WHEN name LIKE ? ESCAPE '\\' THEN 1
+                  WHEN name LIKE ? ESCAPE '\\' THEN 2
+                  ELSE 3 END AS rank
+      FROM   linked_entries
+      WHERE  ${rootId != null ? 'root_id = ? AND ' : ''}
+             (name LIKE ? ESCAPE '\\' OR rel_path LIKE ? ESCAPE '\\')
+      ORDER BY rank, name COLLATE NOCASE, rel_path COLLATE NOCASE
+      LIMIT ?
+    ''', [
+      esc, '$esc%', '%$esc%',
+      if (rootId != null) rootId,
+      '%$esc%', '%$esc%',
+      limit,
+    ]);
+    return [
+      for (final r in rows) _linkedEntryOf(r['root_id'] as String, r),
+    ];
+  }
+
+  static LinkedEntry _linkedEntryOf(String rootId, Map<String, Object?> r) =>
+      LinkedEntry(rootId, r['rel_path'] as String,
+          size: r['size'] as int?, mtimeMs: r['mtime_ms'] as int?);
+
 
   Future<String?> _relPathOfTrack(DatabaseExecutor db, String trackId) async {
     final rows = await db.query('tracks',
@@ -8362,8 +8549,26 @@ const _kPlaylistTracksDdl = '''CREATE TABLE IF NOT EXISTS playlist_tracks (
     duration_s  REAL
   )''';
 
+/// Dossiers liés (local_roots.dart, mig 79): la table des NOMS d'une racine,
+/// REMPLACÉE à chaque parcours. `rel_path` est portable ('/'), relatif à la
+/// racine; `name` est le dernier segment, gardé en colonne pour l'index de
+/// recherche. Aucune métadonnée musicale: ce n'est pas `tracks`.
+const kLinkedEntriesSchema = '''CREATE TABLE IF NOT EXISTS linked_entries (
+    root_id   TEXT    NOT NULL,
+    rel_path  TEXT    NOT NULL,
+    name      TEXT    NOT NULL,
+    size      INTEGER,
+    mtime_ms  INTEGER,
+    PRIMARY KEY (root_id, rel_path)
+  )''';
+const kLinkedEntriesIndex =
+    'CREATE INDEX IF NOT EXISTS idx_linked_entries_name '
+    'ON linked_entries(name COLLATE NOCASE)';
+
 const _kSchemaStatements = [
   _kUadeCacheSchema,
+  kLinkedEntriesSchema,
+  kLinkedEntriesIndex,
   '''CREATE TABLE IF NOT EXISTS tracks (
     id               TEXT    PRIMARY KEY,
     -- Server album_id (rewamp_db), stored verbatim like recent_albums.album_id

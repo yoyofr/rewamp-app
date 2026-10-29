@@ -23,6 +23,7 @@ import 'release_notes.dart';
 import 'preset_manager.dart';
 import 'soundfont_manager.dart';
 import 'mt32_rom_manager.dart';
+import 'launch_window.dart';
 import 'mini_window.dart';
 import 'user_settings.dart';
 import 'app_shell.dart';
@@ -32,6 +33,7 @@ import 'system_ui.dart';
 import 'splash_intro.dart';
 import 'artwork_image.dart';
 import 'library_identity.dart';
+import 'local_roots.dart';
 import 'local_open.dart';
 import 'opened_files.dart';
 import 'portable_path.dart';
@@ -238,6 +240,8 @@ void main([List<String> args = const []]) async {
   // d'identité de bibliothèque les compare en PRÉFIXE plutôt qu'en
   // sous-chaîne — un dossier `local/` de l'utilisateur n'est pas le nôtre.
   await initLibraryRoots();
+  // Dossiers liés (bureau): relit la liste et rouvre les signets macOS.
+  await LocalRoots.instance.init();
   // Tampon d'archives d'album (partagé entre les chemins de téléchargement le
   // temps d'un geste): un kill pendant une extraction y laisse des centaines
   // de mégaoctets. Rien n'en dépend au lancement — on n'attend pas.
@@ -349,7 +353,18 @@ void main([List<String> args = const []]) async {
   // ignore: invalid_use_of_internal_member
   await LiquidGlassShaders.ensureLensLoaded();
 
-  runApp(RewampApp(splashImage: splashImage, splashEffect: splashEffect));
+  // Lancé par une ligne de commande qui dit sur QUOI s'ouvrir (`rewamp --mini
+  // --play x.mod`): ni intro ni note de version, qui recouvriraient ce qu'on a
+  // demandé (le mini lecteur est DANS AppShell, sous elles).
+  final skipIntro = (await planLaunch(
+          prefersMini: MiniWindow.instance.available &&
+              launchPrefersMini(UserSettings.instance)))
+      .skipIntro;
+
+  runApp(RewampApp(
+      splashImage: splashImage,
+      splashEffect: splashEffect,
+      skipIntro: skipIntro));
   // Display metrics may not be ready before the first frame (the early lock
   // above is then a no-op) — re-assert once the view has a size.
   WidgetsBinding.instance.addPostFrameCallback((_) => OrientationLock.lock());
@@ -358,7 +373,12 @@ void main([List<String> args = const []]) async {
 class RewampApp extends StatefulWidget {
   final ui.Image? splashImage;
   final SplashEffect splashEffect;
-  const RewampApp({super.key, this.splashImage, required this.splashEffect});
+  final bool skipIntro;
+  const RewampApp(
+      {super.key,
+      this.splashImage,
+      required this.splashEffect,
+      this.skipIntro = false});
 
   @override
   State<RewampApp> createState() => _RewampAppState();
@@ -419,6 +439,7 @@ class _RewampAppState extends State<RewampApp> {
       home: SplashGate(
         image: widget.splashImage,
         effect: widget.splashEffect,
+        skipIntro: widget.skipIntro,
       ),
     );
   }
@@ -431,18 +452,26 @@ class _RewampAppState extends State<RewampApp> {
 class SplashGate extends StatefulWidget {
   final ui.Image? image;
   final SplashEffect effect;
-  const SplashGate({super.key, required this.image, required this.effect});
+  const SplashGate(
+      {super.key,
+      required this.image,
+      required this.effect,
+      this.skipIntro = false});
+
+  /// Ni intro ni note de version (voir launchCommandSkipsIntro). La note
+  /// n'est pas marquée vue: elle sortira au prochain lancement ordinaire.
+  final bool skipIntro;
 
   @override
   State<SplashGate> createState() => _SplashGateState();
 }
 
 class _SplashGateState extends State<SplashGate> {
-  bool _introDone = false;
+  late bool _introDone = widget.skipIntro;
 
   /// Lu UNE fois, au montage: marquer la note comme vue changerait la réponse
   /// en cours de route et la ferait disparaître avant le fondu.
-  late bool _showNotes = releaseNotesPending();
+  late bool _showNotes = !widget.skipIntro && releaseNotesPending();
 
   /// L'effet joué. Il part du tirage au sort fait dans main(), et un doigt
   /// MAINTENU au démarrage peut l'écraser une fois: l'écran est une grille
@@ -458,7 +487,11 @@ class _SplashGateState extends State<SplashGate> {
     // avant le lancement n'atteint jamais Dart (le système livre le geste à la
     // fenêtre qui a pris son `down`), donc le seul moment où l'appui est
     // livrable est pendant que le soleil est à l'écran.
-    listenLaunchTouch(_onLaunchTouch);
+    if (widget.skipIntro) {
+      stopLaunchTouchProbe();
+    } else {
+      listenLaunchTouch(_onLaunchTouch);
+    }
   }
 
   @override

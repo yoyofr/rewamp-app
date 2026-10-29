@@ -12,6 +12,7 @@ import 'app_localizations_en.dart';
 import 'app_localizations_es.dart';
 import 'app_localizations_fi.dart';
 import 'app_localizations_fr.dart';
+import 'app_localizations_hi.dart';
 import 'app_localizations_hu.dart';
 import 'app_localizations_it.dart';
 import 'app_localizations_ja.dart';
@@ -117,6 +118,7 @@ abstract class AppLocalizations {
     Locale('es'),
     Locale('fi'),
     Locale('fr'),
+    Locale('hi'),
     Locale('hu'),
     Locale('it'),
     Locale('ja'),
@@ -1877,6 +1879,12 @@ abstract class AppLocalizations {
   /// **'{count, plural, =1{{count} track} other{{count} tracks}}'**
   String albumTrackCount(int count);
 
+  /// After the track count in the play sheet: subsongs left out by the Settings > Playback 'too short' threshold.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{{count} short one skipped} other{{count} short ones skipped}}'**
+  String playChoiceSkippedShort(int count);
+
   /// No description provided for @albumLoadingInfo.
   ///
   /// In en, this message translates to:
@@ -2332,6 +2340,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Clear queue'**
   String get queueClear;
+
+  /// No description provided for @queueAutoplayOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Autoplay on: similar tracks follow the queue'**
+  String get queueAutoplayOn;
+
+  /// No description provided for @queueAutoplayOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Autoplay off'**
+  String get queueAutoplayOff;
+
+  /// No description provided for @queueAutoplayRow.
+  ///
+  /// In en, this message translates to:
+  /// **'Added by autoplay'**
+  String get queueAutoplayRow;
 
   /// Queue panel: empty the queue and stop playback
   ///
@@ -4079,6 +4105,108 @@ abstract class AppLocalizations {
   /// **'removing files'**
   String get localOpsPhaseDeleting;
 
+  /// No description provided for @localOpsScanning.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanning {name}…'**
+  String localOpsScanning(String name);
+
+  /// No description provided for @localOpsPhaseScanning.
+  ///
+  /// In en, this message translates to:
+  /// **'listing files'**
+  String get localOpsPhaseScanning;
+
+  /// No description provided for @linkedRootsSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Linked folders'**
+  String get linkedRootsSection;
+
+  /// No description provided for @linkedRootAppFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Rewamp folder (Files app)'**
+  String get linkedRootAppFolder;
+
+  /// No description provided for @linkedRootAppFolderHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Put your files in the Files app › On My iPhone › Rewamp, or copy them from a computer with the Finder. They play from there, nothing is copied.'**
+  String get linkedRootAppFolderHint;
+
+  /// No description provided for @linkedRootsLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Link a folder…'**
+  String get linkedRootsLink;
+
+  /// No description provided for @linkedRootsLinkSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Played from where it is, nothing is copied'**
+  String get linkedRootsLinkSubtitle;
+
+  /// No description provided for @linkedRootsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No file listed yet} one{{count} file} other{{count} files}}'**
+  String linkedRootsSubtitle(int count);
+
+  /// No description provided for @linkedRootUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Not reachable right now'**
+  String get linkedRootUnavailable;
+
+  /// No description provided for @linkedRootRescan.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get linkedRootRescan;
+
+  /// No description provided for @linkedRootRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get linkedRootRename;
+
+  /// No description provided for @linkedRootUnlink.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlink'**
+  String get linkedRootUnlink;
+
+  /// No description provided for @linkedRootUnlinkConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlink this folder?'**
+  String get linkedRootUnlinkConfirmTitle;
+
+  /// No description provided for @linkedRootUnlinkConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing is deleted from the disk. Its favourites and playlist entries stay, greyed out until it is linked again.'**
+  String get linkedRootUnlinkConfirmBody;
+
+  /// No description provided for @linkedRootEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No playable file in this folder.'**
+  String get linkedRootEmpty;
+
+  /// No description provided for @linkedRootSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search in this folder'**
+  String get linkedRootSearchHint;
+
+  /// No description provided for @linkedRootSearchResults.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No match} one{{count} match} other{{count} matches}}'**
+  String linkedRootSearchResults(int count);
+
   /// No description provided for @localImportFiles.
   ///
   /// In en, this message translates to:
@@ -4270,6 +4398,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Not queued: under {seconds} s (Settings → Playback)'**
   String subsongSkippedShort(int seconds);
+
+  /// No description provided for @settingsAutoplaySection.
+  ///
+  /// In en, this message translates to:
+  /// **'Autoplay'**
+  String get settingsAutoplaySection;
+
+  /// No description provided for @settingsAutoplayTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep playing after the queue'**
+  String get settingsAutoplayTitle;
+
+  /// No description provided for @settingsAutoplaySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'When the queue nears its end, similar tracks are added to it. The ∞ button in the queue is the same setting.'**
+  String get settingsAutoplaySubtitle;
+
+  /// No description provided for @settingsAutoplaySize.
+  ///
+  /// In en, this message translates to:
+  /// **'Tracks added each time'**
+  String get settingsAutoplaySize;
+
+  /// No description provided for @settingsAutoplayMode.
+  ///
+  /// In en, this message translates to:
+  /// **'How tracks are chosen'**
+  String get settingsAutoplayMode;
+
+  /// No description provided for @settingsAutoplayModeAuto.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic'**
+  String get settingsAutoplayModeAuto;
+
+  /// No description provided for @settingsAutoplayModeAutoHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Same artists first, then their groups, then the same collection.'**
+  String get settingsAutoplayModeAutoHint;
+
+  /// No description provided for @settingsAutoplayModeArtist.
+  ///
+  /// In en, this message translates to:
+  /// **'Same artists'**
+  String get settingsAutoplayModeArtist;
+
+  /// No description provided for @settingsAutoplayModeArtistHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Only tracks by the artists that just played.'**
+  String get settingsAutoplayModeArtistHint;
+
+  /// No description provided for @settingsAutoplayModeGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Same groups'**
+  String get settingsAutoplayModeGroup;
+
+  /// No description provided for @settingsAutoplayModeGroupHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Tracks by the groups those artists belong to.'**
+  String get settingsAutoplayModeGroupHint;
+
+  /// No description provided for @settingsAutoplayModeCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Same collection'**
+  String get settingsAutoplayModeCollection;
+
+  /// No description provided for @settingsAutoplayModeCollectionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Random tracks from the same collection, same platform first.'**
+  String get settingsAutoplayModeCollectionHint;
+
+  /// No description provided for @settingsAutoplayModeRecent.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent listens'**
+  String get settingsAutoplayModeRecent;
+
+  /// No description provided for @settingsAutoplayModeRecentHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Picked from what you listened to lately, not only from the queue.'**
+  String get settingsAutoplayModeRecentHint;
 
   /// No description provided for @settingsQueuePrefetchSection.
   ///
@@ -7750,6 +7968,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'File missing'**
   String get libraryFileMissing;
+
+  /// No description provided for @settingsPlayStartSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting playback'**
+  String get settingsPlayStartSection;
+
+  /// No description provided for @settingsPlayStartInApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Tapping a track in the app'**
+  String get settingsPlayStartInApp;
+
+  /// No description provided for @settingsPlayStartInAppHint.
+  ///
+  /// In en, this message translates to:
+  /// **'A long press (right-click) always offers the choice.'**
+  String get settingsPlayStartInAppHint;
+
+  /// No description provided for @settingsPlayStartExternal.
+  ///
+  /// In en, this message translates to:
+  /// **'File opened from the system'**
+  String get settingsPlayStartExternal;
+
+  /// No description provided for @settingsPlayStartExternalHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Double-click, “Open with”, drop on the app icon.'**
+  String get settingsPlayStartExternalHint;
+
+  /// No description provided for @settingsPlayStartAsk.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask'**
+  String get settingsPlayStartAsk;
+
+  /// No description provided for @settingsLaunchWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'At startup'**
+  String get settingsLaunchWindow;
+
+  /// No description provided for @settingsLaunchWindowNormal.
+  ///
+  /// In en, this message translates to:
+  /// **'Normal window'**
+  String get settingsLaunchWindowNormal;
+
+  /// No description provided for @settingsLaunchWindowMini.
+  ///
+  /// In en, this message translates to:
+  /// **'Mini player'**
+  String get settingsLaunchWindowMini;
+
+  /// No description provided for @settingsLaunchWindowLast.
+  ///
+  /// In en, this message translates to:
+  /// **'As when last closed'**
+  String get settingsLaunchWindowLast;
+
+  /// No description provided for @miniWindowQuit.
+  ///
+  /// In en, this message translates to:
+  /// **'Quit Rewamp'**
+  String get miniWindowQuit;
+
+  /// No description provided for @miniWindowCompact.
+  ///
+  /// In en, this message translates to:
+  /// **'Compact mini player'**
+  String get miniWindowCompact;
 }
 
 class _AppLocalizationsDelegate
@@ -7770,6 +8060,7 @@ class _AppLocalizationsDelegate
         'es',
         'fi',
         'fr',
+        'hi',
         'hu',
         'it',
         'ja',
@@ -7804,6 +8095,8 @@ AppLocalizations lookupAppLocalizations(Locale locale) {
       return AppLocalizationsFi();
     case 'fr':
       return AppLocalizationsFr();
+    case 'hi':
+      return AppLocalizationsHi();
     case 'hu':
       return AppLocalizationsHu();
     case 'it':

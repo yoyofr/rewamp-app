@@ -590,6 +590,7 @@ static void _pick_next_and_preload(void);
 static void _preload_kick_tick(void);
 static void _warm_transitions(void); // defined with the PSO warm code below
 static void _warm_rt_forget(void);   // idem — drops handles after a context rebuild
+static void _warm_pl_forget(void);   // idem, the worker's set
 static bool _playlist_swap_if_pending(void);   // defined with the navigation code
 // App went background → foreground (iOS): restart the preload worker on the
 // NEXT render tick, on the render thread. See rewamp_projectm_set_active.
@@ -618,20 +619,32 @@ extern "C" REWAMP_EXPORT int rewamp_projectm_init(int width, int height) {
     // and buffer inside the instance is now a dangling handle. It cannot be
     // salvaged, so drop the instance and build a fresh one. The preset history
     // and index are session state and survive (see rewamp_projectm_uninit).
-    if (g_pm && g_pm_gl_gen != rewamp_gl_generation()) {
-        _preload_stop();   // worker dereferences g_pm — must be gone first
-        projectm_destroy(g_pm);
-        g_pm = nullptr;
-        g_pm_preset_loaded = false;
+    //
+    // ⚠️ The generation test does NOT depend on g_pm: after rewamp_projectm_
+    // uninit (player closed) the instance is already gone but the warm objects
+    // are not — they are module statics, and the context they lived in died
+    // with the player. Guarded on g_pm, this branch was skipped at the reopen,
+    // _warm_objects_ensure saw non-zero ids and bound names that do not exist
+    // in the new context: no transition PSO warmed, no preset PSO warmed.
+    if (g_pm_gl_gen != rewamp_gl_generation()) {
+        if (g_pm) {
+            _preload_stop();   // worker dereferences g_pm — must be gone first
+            projectm_destroy(g_pm);
+            g_pm = nullptr;
+            g_pm_preset_loaded = false;
+        }
         // Our own render target went with the context too. Forget the handles
         // WITHOUT deleting them — the objects are already gone, and _ensure_pm_
         // target() would otherwise reuse a stale-but-non-zero FBO id because the
         // dimensions still match.
         g_pmFbo = g_pmTex = g_pmDepth = 0;
         g_pmW = g_pmH = 0;
-        // Same for the render-context warm objects: gone with the context, so
-        // forget the handles rather than delete or (worse) reuse them.
+        // Same for the warm objects of BOTH contexts: the preload context is
+        // in the main one's share group and is torn down with it
+        // (rewamp_gl_uninit), so its set is just as dead. Forget the handles
+        // rather than delete or (worse) reuse them.
         _warm_rt_forget();
+        _warm_pl_forget();
     }
     mdzMainThreadId = pthread_self();
     g_w = width; g_h = height;
@@ -895,7 +908,7 @@ static uint32_t         g_pl_warp = 0, g_pl_comp = 0;
 // its own random textures, as before.
 static uint64_t         g_pl_seed = 0;
 static size_t           g_next_idx = 0;       // predicted next preset
-static bool             g_pl_enabled = false; // preload ctx created OK
+static std::atomic<bool> g_pl_enabled{false}; // preload ctx created OK — written by the worker too
 
 // ── Worker-side pipeline warm-up (iOS/ANGLE-Metal) ───────────────────────────
 //
@@ -1057,8 +1070,10 @@ static void _warm_pipeline(WarmSet& w, uint32_t program, int layout) {
 // Six 4x4 draws cost nothing worth guarding.
 // The render context was rebuilt: its warm objects died with it. Forget the
 // handles WITHOUT deleting (the names are gone) so the next warm recreates them
-// instead of binding stale ids.
+// instead of binding stale ids. Same for the worker's set: the preload context
+// shares the render context's group and is destroyed with it.
 static void _warm_rt_forget(void) { g_warm_rt = WarmSet{}; }
+static void _warm_pl_forget(void) { g_warm_pl = WarmSet{}; }
 
 static void _warm_transitions(void) {
     if (!g_pm) return;
@@ -1080,6 +1095,13 @@ static void _warm_transitions(void) {
 static void* _preload_thread_main(void*) {
     if (rewamp_gl_preload_make_current() != 0) {
         PM_PROF("preload worker: make_current failed — worker exiting");
+        // Say so to the render thread: with the flag left up, every switch
+        // took the preload path, found no result, and fell back to the
+        // synchronous load — the slow path, with nothing in the logs naming
+        // the cause. (The thread stays joinable; _preload_stop reaps it.)
+        pthread_mutex_lock(&g_pl_mtx);
+        g_pl_enabled = false;
+        pthread_mutex_unlock(&g_pl_mtx);
         return nullptr;
     }
     pthread_mutex_lock(&g_pl_mtx);

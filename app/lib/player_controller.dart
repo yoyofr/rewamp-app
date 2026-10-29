@@ -49,6 +49,10 @@ class QueueEntry {
   /// for the stand-in entries a caller synthesizes (a single-track play).
   final Object? id;
 
+  /// Ajoutée par la lecture automatique (∞), pas par un geste: le panneau la
+  /// marque, et couper le ∞ retire celles qui n'ont pas encore joué.
+  final bool autoplay;
+
   const QueueEntry({
     required this.title,
     this.artist,
@@ -60,6 +64,7 @@ class QueueEntry {
     this.formatHint,
     this.id,
     this.subsongIdx,
+    this.autoplay = false,
   });
 
   /// N'énonce que la DIFFÉRENCE. Recopier dix champs à la main en perd en
@@ -76,6 +81,7 @@ class QueueEntry {
         platformName: platformName,
         formatHint: formatHint,
         subsongIdx: subsongIdx,
+        autoplay: autoplay,
       );
 }
 
@@ -149,6 +155,34 @@ bool silenceCanMeanEnd({
   if (nominalSeconds == null || nominalSeconds <= 0) return true;
   return decoderPositionSeconds >= nominalSeconds - _kSilenceEndMarginSecs;
 }
+
+/// Boucle infinie NATIVE: faut-il relancer le morceau depuis le début ?
+///
+/// Un greffon qui boucle « nativement » en infini peut seulement LEVER sa fin
+/// (vio2sf: plus de troncature, l'émulation continue): si le morceau n'a pas
+/// de point de boucle, l'émulateur joue du SILENCE après la dernière note, et
+/// le seul filet était le saut sur silence du réglage — plusieurs secondes,
+/// puis une fin de piste. Même règle que la relance générique: un silence
+/// n'est une fin que passé la durée nominale ([silenceCanMeanEnd]), et ici
+/// cette durée doit être CONNUE — sans elle on ne peut pas distinguer la fin
+/// d'un blanc au milieu d'un morceau qui reboucle tout seul (libopenmpt).
+bool nativeInfiniteShouldRestart({
+  required double silentSeconds,
+  required double decoderPositionSeconds,
+  required double? nominalSeconds,
+}) {
+  if (nominalSeconds == null || nominalSeconds <= 0) return false;
+  if (silentSeconds < kNativeInfiniteRestartSilence) return false;
+  return silenceCanMeanEnd(
+    decoderPositionSeconds: decoderPositionSeconds,
+    nominalSeconds: nominalSeconds,
+  );
+}
+
+/// Plus long que la relance générique (1,2 s): un moteur natif qui reboucle
+/// VRAIMENT peut marquer une pause avant son point de boucle, et une relance
+/// à tort rejouerait l'intro.
+const double kNativeInfiniteRestartSilence = 2.0;
 
 /// Marge sous la durée nominale: un décodeur peut s'arrêter quelques dixièmes
 /// avant le total annoncé (fondu, padding de fin), et le curseur est échantillonné
@@ -584,6 +618,12 @@ class PlayerController extends ChangeNotifier {
       'on'       => 1,
       _          => 0,
     };
+    // ⚠️ Une boucle armée EN COURS de lecture doit désarmer le suivant: il
+    // avait été mis en scène pour le relais quand rien ne bouclait, et le
+    // PRODUCTEUR enchaînait dessus à la fin de la passe — l'infini affiché,
+    // la piste suivante jouée. armNextTrack refuse déjà d'armer sous boucle;
+    // ceci couvre le cas où la boucle arrive APRÈS l'armement.
+    if (loopModeCode != 0 && _nextArmed) clearNextTrack();
     audio.setForcedLoop(
       loopModeCode,
       UserSettings.instance.loopCount,
@@ -591,6 +631,17 @@ class PlayerController extends ChangeNotifier {
       fadeoutSeconds: UserSettings.instance.fadeoutSeconds,
       baseDurationSeconds: base,
     );
+    // Infini armé EN COURS de lecture: la boucle générique ne sait que
+    // relancer du DÉBUT à la fin de la passe. Un greffon qui ne fait que
+    // lever sa troncature (famille PSF) peut le faire en vol — la musique
+    // continue alors par son propre point de boucle, sans couture.
+    if (loopModeCode == 2 && hasFile && !_loadInFlight &&
+        !_nativeLoopHandled && audio.liftEndForInfinite()) {
+      _nativeLoopHandled = true;
+      audio.setTrackEndSeconds(_producerTrackEndSecs);
+      logTransport('boucle', source: 'infini armé en vol',
+          detail: 'fin levée par le greffon (${audio.backendName})');
+    }
   }
 
   /// The app's single live controller — lets delete flows (album options,
@@ -921,7 +972,12 @@ class PlayerController extends ChangeNotifier {
         if (t.isNotEmpty) currentAlbum = t;
       }
       currentAlbumId           = metaAlbumId;
-      currentOnlineId          = onlineId;
+      // Vide = PAS d'identité catalogue, comme null: les lignes d'un conteneur
+      // local portent `songId: ''` (convention « purement local ») et le
+      // lecteur décide « local » sur `currentOnlineId == null`. Sans cette
+      // normalisation, une sous-chanson lancée depuis l'écran des
+      // sous-chansons d'un fichier LOCAL perdait son étiquette « local ».
+      currentOnlineId          = (onlineId?.isEmpty ?? true) ? null : onlineId;
       currentSubsongCount      = subsongCount;
       currentFormatExt         = formatExt;
       currentCollectionSlug    = null;
@@ -988,22 +1044,40 @@ class PlayerController extends ChangeNotifier {
       // un VGM à boucle, Réglages → libvgm): sa longueur le compte, la durée
       // catalogue non — la prendre coupait le fondu ~2 s après son début (la
       // marge de reachedKnownEnd), puis passait au suivant.
-      final engineEndFade = audio.trackEndFadeSeconds > 0 &&
+      // ⚠️ Ce n'est pas « il y a un fondu » mais « la longueur du greffon fait
+      // foi »: sous fondu croisé le greffon coupe son fondu et joue TOUJOURS
+      // ses passes de boucle — tester le fondu reprenait le catalogue (une
+      // passe) et coupait la boucle, crossfade compris.
+      final engineEndFade = audio.trackLengthAuthoritative &&
           audio.durationSeconds > 0;
+      // ⚠️ Sous boucle infinie un greffon peut LEVER sa fin (vio2sf) et sa
+      // longueur tombe à 0: on reprend celle qu'il donnait AVANT la boucle
+      // (`nominalDurationSeconds`), sinon la durée PAR DÉFAUT s'affichait à
+      // la place de celle du fichier, et la relance sur silence ne savait plus
+      // où la musique devait finir.
+      final engineLen = audio.durationSeconds > 0
+          ? audio.durationSeconds
+          : audio.nominalDurationSeconds;
       final baseSingle = engineEndFade
           ? audio.durationSeconds
           : (durationS != null && durationS > 0)
               ? durationS
-              : (audio.durationSeconds > 0 ? audio.durationSeconds : null);
+              : (engineLen > 0 ? engineLen : null);
       final passes = UserSettings.instance.loopCount + 1;
       _forceBaseSecs = baseSingle;
       if (_nativeLoopHandled) {
         // Native plugin reports its own looped length. Only override the
         // DISPLAY with base×passes when we have a clean catalogue base; for
         // infinite / embedded-only / plain-default, trust the native value.
+        // ⚠️ En INFINI la longueur du greffon peut être 0 (vio2sf lève sa
+        // fin): null ici faisait tomber sur la durée PAR DÉFAUT juste après.
+        // On montre UNE passe, celle du fichier (baseSingle, qui lit la
+        // longueur nominale d'avant la boucle).
         _knownDuration = (loopModeCode == 1 && durationS != null && durationS > 0)
             ? durationS * passes
-            : null;
+            : loopModeCode == 2
+                ? baseSingle
+                : null;
       } else if (_forceLoopActive && loopModeCode == 1 && baseSingle != null) {
         // Generic forced loop ('on'): the whole run is base×passes, played on
         // the elapsed-time timeline (_tickForceLoop) with restart-on-silence.
@@ -2052,7 +2126,7 @@ class PlayerController extends ChangeNotifier {
     }
     // Fondu de fin ajouté par le greffon: sa longueur le compte, une durée
     // externe (catalogue, corrections asynchrones) non — voir loadFile.
-    if (audio.trackEndFadeSeconds > 0 && audio.durationSeconds > 0) {
+    if (audio.trackLengthAuthoritative && audio.durationSeconds > 0) {
       return audio.durationSeconds;
     }
     return baseSeconds;
@@ -2232,7 +2306,7 @@ class PlayerController extends ChangeNotifier {
     // the album name as an inert label (the link needs a real albumId and a
     // non-local onlineId) until playback was actually restarted.
     currentAlbumId        = albumId;
-    currentOnlineId       = onlineId;
+    currentOnlineId       = (onlineId?.isEmpty ?? true) ? null : onlineId;
     this.artworkUrl       = artworkUrl;
     this.artworkTargetDir = artworkTargetDir;
     this.subsongIdx       = subsongIdx;
@@ -2422,6 +2496,28 @@ class PlayerController extends ChangeNotifier {
         Future.delayed(const Duration(milliseconds: 60), () {
           if (!isPlaying && !audio.isPlaying) audio.deviceSuspend();
         });
+      }
+    }
+    // Boucle infinie NATIVE sans point de boucle: le silence passé la durée
+    // nominale relance le morceau du début (voir nativeInfiniteShouldRestart),
+    // AVANT que le saut sur silence n'y voie une fin de piste.
+    else if (pl && isPlaying && !isSeeking && !_loadInFlight &&
+        effectiveForceLoopMode == 'infinite' && _nativeLoopHandled &&
+        nativeInfiniteShouldRestart(
+          silentSeconds: audio.silentSeconds,
+          decoderPositionSeconds: audio.positionSeconds,
+          nominalSeconds: _forceBaseSecs,
+        )) {
+      if (nowMs - _lastLoopRestartMs >= _kForceLoopRestartCooldownMs) {
+        _lastLoopRestartMs = nowMs;
+        logTransport('relance', source: 'boucle infinie (silence)',
+            detail: 'silence=${audio.silentSeconds.toStringAsFixed(1)}s '
+                'pos=${p.toStringAsFixed(1)}s '
+                'nominal=${_forceBaseSecs!.toStringAsFixed(1)}s');
+        audio.resetSilence();
+        // Un rechargement et pas un seek(0): le greffon a levé sa fin, son
+        // état d'émulation n'est pas fait pour revenir en arrière.
+        unawaited(replayCurrent());
       }
     }
     // Silence auto-skip: if the output has been silent past the configured
@@ -2730,6 +2826,10 @@ class PlayerController extends ChangeNotifier {
   /// par le même relais que les deux ci-dessus: [clearQueue] ne touche que le
   /// MIROIR de présentation, la vraie file appartient à AppShell.
   VoidCallback? onClearQueue;
+
+  /// Bascule la lecture automatique (∞) — posé par AppShell, qui possède la
+  /// file et le réglage. Null = pas de bouton.
+  VoidCallback? onToggleAutoplay;
 
   bool get canEditQueue => onReorderQueue != null && onRemoveFromQueue != null;
 

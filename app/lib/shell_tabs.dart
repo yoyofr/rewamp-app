@@ -146,7 +146,7 @@ class _ShellTabsOrderScreenState extends State<ShellTabsOrderScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
             child: Text(l10n.settingsTabsOrderSubtitle,
                 style: Theme.of(context).textTheme.bodySmall),
           ),

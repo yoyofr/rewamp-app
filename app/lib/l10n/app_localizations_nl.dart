@@ -1168,6 +1168,17 @@ class AppLocalizationsNl extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count korte overgeslagen',
+      one: '$count korte overgeslagen',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => 'Details laden…';
 
   @override
@@ -1431,6 +1442,16 @@ class AppLocalizationsNl extends AppLocalizations {
 
   @override
   String get queueClear => 'Wachtrij wissen';
+
+  @override
+  String get queueAutoplayOn =>
+      'Automatisch afspelen aan: vergelijkbare nummers volgen op de wachtrij';
+
+  @override
+  String get queueAutoplayOff => 'Automatisch afspelen uit';
+
+  @override
+  String get queueAutoplayRow => 'Toegevoegd door automatisch afspelen';
 
   @override
   String get queueClearConfirmTitle => 'Wachtrij wissen?';
@@ -2486,6 +2507,80 @@ class AppLocalizationsNl extends AppLocalizations {
   String get localOpsPhaseDeleting => 'bestanden verwijderen';
 
   @override
+  String localOpsScanning(String name) {
+    return '$name wordt gescand…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'bestanden inventariseren';
+
+  @override
+  String get linkedRootsSection => 'Gekoppelde mappen';
+
+  @override
+  String get linkedRootAppFolder => 'Rewamp-map (Bestanden-app)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'Zet je bestanden in de Bestanden-app › Op mijn iPhone › Rewamp, of kopieer ze vanaf een computer met de Finder. Ze worden daar afgespeeld, er wordt niets gekopieerd.';
+
+  @override
+  String get linkedRootsLink => 'Map koppelen…';
+
+  @override
+  String get linkedRootsLinkSubtitle =>
+      'Wordt afgespeeld vanaf de huidige locatie, er wordt niets gekopieerd';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count bestanden',
+      one: '$count bestand',
+      zero: 'Nog geen bestanden in de lijst',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => 'Momenteel niet bereikbaar';
+
+  @override
+  String get linkedRootRescan => 'Vernieuwen';
+
+  @override
+  String get linkedRootRename => 'Naam wijzigen';
+
+  @override
+  String get linkedRootUnlink => 'Ontkoppelen';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => 'Deze map ontkoppelen?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'Er wordt niets van de schijf verwijderd. De favorieten en afspeellijstitems blijven bewaard, grijs weergegeven tot de map opnieuw wordt gekoppeld.';
+
+  @override
+  String get linkedRootEmpty => 'Geen afspeelbaar bestand in deze map.';
+
+  @override
+  String get linkedRootSearchHint => 'Zoeken in deze map';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count resultaten',
+      one: '$count resultaat',
+      zero: 'Geen resultaten',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'Bestanden importeren';
 
   @override
@@ -2606,6 +2701,57 @@ class AppLocalizationsNl extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'Niet in de wachtrij: korter dan $seconds s (Instellingen → Afspelen)';
   }
+
+  @override
+  String get settingsAutoplaySection => 'Automatisch afspelen';
+
+  @override
+  String get settingsAutoplayTitle => 'Doorspelen na de wachtrij';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'Als de wachtrij bijna leeg is, worden er vergelijkbare nummers aan toegevoegd. De ∞-knop in de wachtrij is dezelfde instelling.';
+
+  @override
+  String get settingsAutoplaySize => 'Nummers per keer toegevoegd';
+
+  @override
+  String get settingsAutoplayMode => 'Hoe nummers worden gekozen';
+
+  @override
+  String get settingsAutoplayModeAuto => 'Automatisch';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      'Eerst dezelfde artiesten, dan hun groepen, dan dezelfde collectie.';
+
+  @override
+  String get settingsAutoplayModeArtist => 'Dezelfde artiesten';
+
+  @override
+  String get settingsAutoplayModeArtistHint =>
+      'Alleen nummers van de artiesten die net hebben gespeeld.';
+
+  @override
+  String get settingsAutoplayModeGroup => 'Dezelfde groepen';
+
+  @override
+  String get settingsAutoplayModeGroupHint =>
+      'Nummers van de groepen waar die artiesten bij horen.';
+
+  @override
+  String get settingsAutoplayModeCollection => 'Dezelfde collectie';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      'Willekeurige nummers uit dezelfde collectie, eerst hetzelfde platform.';
+
+  @override
+  String get settingsAutoplayModeRecent => 'Recent beluisterd';
+
+  @override
+  String get settingsAutoplayModeRecentHint =>
+      'Gekozen uit wat je onlangs hebt beluisterd, niet alleen uit de wachtrij.';
 
   @override
   String get settingsQueuePrefetchSection => 'Downloads van de wachtrij';
@@ -4714,4 +4860,42 @@ class AppLocalizationsNl extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'Bestand ontbreekt';
+
+  @override
+  String get settingsPlayStartSection => 'Afspelen starten';
+
+  @override
+  String get settingsPlayStartInApp => 'Een nummer in de app aantikken';
+
+  @override
+  String get settingsPlayStartInAppHint =>
+      'Lang drukken (rechtsklik) biedt altijd de keuze.';
+
+  @override
+  String get settingsPlayStartExternal => 'Bestand geopend vanuit het systeem';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'Dubbelklikken, ‘Openen met’, neerzetten op het app-pictogram.';
+
+  @override
+  String get settingsPlayStartAsk => 'Vragen';
+
+  @override
+  String get settingsLaunchWindow => 'Bij het opstarten';
+
+  @override
+  String get settingsLaunchWindowNormal => 'Normaal venster';
+
+  @override
+  String get settingsLaunchWindowMini => 'Minispeler';
+
+  @override
+  String get settingsLaunchWindowLast => 'Zoals bij het afsluiten';
+
+  @override
+  String get miniWindowQuit => 'Rewamp afsluiten';
+
+  @override
+  String get miniWindowCompact => 'Compacte minispeler';
 }

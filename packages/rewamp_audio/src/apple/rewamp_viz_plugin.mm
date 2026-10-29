@@ -128,15 +128,19 @@ REWAMP_EXPORT void rewamp_scope_render_and_notify(void) {
 
 REWAMP_EXPORT void rewamp_viz_unregister(void) {
     if (g_vizTexture) { [g_vizTexture unregister]; g_vizTexture = nil; }
+#if defined(REWAMP_WITH_PROJECTM)
+    // FIRST: it stops the preload worker, which releases the preload context
+    // from its thread. rewamp_viz_uninit() below tears the GL world down
+    // (rewamp_gl_uninit), preload context included — same order as the Linux
+    // and Windows plugins.
+    rewamp_projectm_uninit();
+#endif
     rewamp_viz_uninit();
     rewamp_scope_uninit();
     rewamp_noteviz_uninit();
     rewamp_patternviz_uninit();
     rewamp_spectrum_uninit();
     rewamp_pianoviz_uninit();
-#if defined(REWAMP_WITH_PROJECTM)
-    rewamp_projectm_uninit();
-#endif
 }
 
 @interface RewampVizFlutterPlugin : NSObject <FlutterPlugin>

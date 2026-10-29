@@ -9,6 +9,8 @@
 // re-téléchargent, et leur suppression est un geste de place disque, dans
 // Réglages → Données → Stockage).
 
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 
 import 'l10n.dart';
@@ -16,6 +18,10 @@ import 'local_db.dart';
 import 'local_ops.dart' show LocalOpsBanner;
 import 'local_import.dart' show showLocalImportSheet;
 import 'local_library_screen.dart';
+import 'folder_picker.dart' show withPickedFolder;
+import 'linked_root_screen.dart';
+import 'local_roots.dart';
+import 'picker_memory.dart' show PickerSlot;
 
 class LocalTabScreen extends StatefulWidget {
   /// « Lire des fichiers » / « Lire un dossier » — les sélecteurs d'OUVERTURE
@@ -34,6 +40,8 @@ class LocalTabScreen extends StatefulWidget {
 class _LocalTabScreenState extends State<LocalTabScreen> {
   int? _imports;
   int? _downloads;
+  /// Compte de la table des noms, par racine liée (null = pas encore lu).
+  Map<String, int> _linkedCounts = const {};
 
   @override
   void initState() {
@@ -41,11 +49,14 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     _load();
     // Un import, une suppression ou un téléchargement changent les comptes.
     LocalDb.instance.addListener(_load);
+    // Lier, délier, finir un parcours: la liste des dossiers liés bouge.
+    LocalRoots.instance.addListener(_load);
   }
 
   @override
   void dispose() {
     LocalDb.instance.removeListener(_load);
+    LocalRoots.instance.removeListener(_load);
     super.dispose();
   }
 
@@ -56,10 +67,15 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     // LocalDb.countDownloadedTracks).
     final imports   = await LocalDb.instance.countLocalImports();
     final downloads = await LocalDb.instance.countDownloadedTracks();
+    final linked = <String, int>{
+      for (final r in LocalRoots.instance.roots)
+        r.id: await LocalDb.instance.countLinkedEntries(r.id),
+    };
     if (!mounted) return;
     setState(() {
       _imports = imports;
       _downloads = downloads;
+      _linkedCounts = linked;
     });
   }
 
@@ -162,8 +178,67 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
             onTap: () =>
                 _open(LocalBrowseSource.imports, l10n.storageLocalImports),
           ),
+          // Dossiers LIÉS (bureau): lus là où ils sont, voir local_roots.dart.
+          if (LocalRoots.supported) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
+              child: Text(l10n.linkedRootsSection,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelLarge
+                      ?.copyWith(color: cs.onSurfaceVariant)),
+            ),
+            for (final r in LocalRoots.instance.roots)
+              ListTile(
+                leading: Icon(
+                    r.available ? Icons.folder_open : Icons.link_off,
+                    color: r.available ? cs.primary : cs.outline),
+                title: Text(LocalRoots.instance.isAppFolder(r.id)
+                    ? l10n.linkedRootAppFolder
+                    : r.label),
+                subtitle: Text(
+                  (LocalRoots.instance.isAppFolder(r.id) &&
+                          (_linkedCounts[r.id] ?? 0) == 0 &&
+                          !LocalRoots.instance.isScanning(r.id))
+                      ? l10n.linkedRootAppFolderHint
+                      : !r.available
+                      ? l10n.linkedRootUnavailable
+                      : r.scanError != null
+                          ? r.scanError!
+                      : LocalRoots.instance.isScanning(r.id)
+                          ? l10n.localOpsScanning(r.label)
+                          : l10n.linkedRootsSubtitle(_linkedCounts[r.id] ?? 0),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => LinkedRootScreen(rootId: r.id),
+                )),
+              ),
+            ListTile(
+              leading: Icon(Icons.add_link, color: cs.primary),
+              title: Text(l10n.linkedRootsLink),
+              subtitle: Text(l10n.linkedRootsLinkSubtitle),
+              onTap: _linkFolder,
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  Future<void> _linkFolder() async {
+    // Android: le sélecteur d'ARBRE du système (permission persistée), pas un
+    // chemin — voir LocalRoots.linkSaf.
+    if (Platform.isAndroid) {
+      await LocalRoots.instance.linkSaf();
+      return;
+    }
+    await withPickedFolder<void>(
+      (path) => LocalRoots.instance.link(path),
+      slot: PickerSlot.music,
     );
   }
 

@@ -197,6 +197,10 @@ ma_result rewamp_data_source_init(RewampDataSource* ds,
 // ── Gapless handoff plumbing ────────────────────────────────────────────────
 // rewamp_handoff_attempt (rewamp_datasource.c): close the current decoder,
 // open the staged next track and swap it into `ds` — same ring, same sound.
+// Drops the producer's end of track (trackLenRing, read from vt->length at
+// init): an infinite loop armed mid-track has none. Caller holds decodeLock.
+void rewamp_data_source_clear_end_locked(RewampDataSource* ds);
+
 // Returns 1 on success. Producer thread only, called WITHOUT decodeLock held.
 int rewamp_handoff_attempt(RewampDataSource* ds);
 // rewamp_handoff_open_next (rewamp_audio.c, which owns the open

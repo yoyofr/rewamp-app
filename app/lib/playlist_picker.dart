@@ -286,7 +286,7 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
               maxHeight: MediaQuery.of(context).size.height * 0.75),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 8, 4),
               child: Row(children: [
                 Expanded(
                   child: Text(l10n.playlistAddTo,
@@ -321,9 +321,9 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
             // Breadcrumb (folder navigation).
             if (!_searching && _crumbs.isNotEmpty)
               Align(
-                alignment: Alignment.centerLeft,
+                alignment: AlignmentDirectional.centerStart,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                  padding: const EdgeInsetsDirectional.fromSTEB(8, 4, 8, 0),
                   child: Row(children: [
                     IconButton(
                       icon: const Icon(Icons.arrow_back, size: 18),

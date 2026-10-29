@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:rewamp_audio/rewamp_audio.dart';
+import 'launch_window.dart';
 import 'user_settings.dart';
 
 /// Mode « mini lecteur » du bureau (macOS, Linux, Windows) + « toujours au
@@ -19,7 +22,7 @@ import 'user_settings.dart';
 /// donc la file et l'état de navigation survivent) le temps du mode. En
 /// sortir restaure la géométrie: on « revient sur la fenêtre principale »
 /// exactement où on l'avait laissée.
-class MiniWindow extends ChangeNotifier {
+class MiniWindow extends ChangeNotifier with WindowListener {
   MiniWindow._();
   static final MiniWindow instance = MiniWindow._();
 
@@ -46,16 +49,26 @@ class MiniWindow extends ChangeNotifier {
 
   /// Mode visualiseur du mini lecteur (retenu d'une fois sur l'autre).
   bool get vizMode => UserSettings.instance.miniWindowVizMode;
+
+  /// Largeur du panneau de FILE ouvert à droite du mini lecteur. Ce n'est pas
+  /// une seconde fenêtre — elle voudrait un second moteur, comme le mini
+  /// lecteur lui-même —, c'est la MÊME fenêtre élargie d'autant, à hauteur
+  /// égale. Les tailles RETENUES par mode n'incluent jamais cette largeur:
+  /// elle s'ajoute à l'application et se retranche à la mémorisation.
+  static const double kQueueWidth = 300;
+
+  bool get queueOpen => UserSettings.instance.miniWindowQueueOpen;
+  double get _queueExtra => queueOpen ? kQueueWidth : 0;
   /// Taille à (r)ouvrir: la DERNIÈRE que l'utilisateur a donnée à ce mode,
   /// jamais sous son plancher (un plancher relevé par une mise à jour ne doit
   /// pas rouvrir une fenêtre trop petite pour sa mise en page).
   Size get _modeSize {
     final def = vizMode ? kVizSize : kMiniSize;
     final saved = UserSettings.instance.miniWindowSize(viz: vizMode);
-    if (saved == null) return def;
+    if (saved == null) return Size(def.width + _queueExtra, def.height);
     final min = _modeMinSize;
     return Size(
-      saved.$1 < min.width ? min.width : saved.$1,
+      saved.$1 + _queueExtra < min.width ? min.width : saved.$1 + _queueExtra,
       saved.$2 < min.height ? min.height : saved.$2,
     );
   }
@@ -67,10 +80,57 @@ class MiniWindow extends ChangeNotifier {
       final b = await windowManager.getBounds();
       _lastMiniOrigin = b.topLeft;
       UserSettings.instance
-          .setMiniWindowSize(b.width, b.height, viz: vizMode);
+        ..setMiniWindowSize(b.width - _queueExtra, b.height, viz: vizMode)
+        ..setMiniWindowOrigin(b.left, b.top);
     } catch (_) {}
   }
-  Size get _modeMinSize => vizMode ? kVizMinSize : kMiniSize;
+  Size get _modeMinSize {
+    final m = vizMode ? kVizMinSize : kMiniSize;
+    return Size(m.width + _queueExtra, m.height);
+  }
+
+  /// Ouvre / ferme la file à droite: la fenêtre s'élargit (ou rétrécit) par
+  /// la DROITE, coin haut-gauche et hauteur inchangés — sauf si elle sortait
+  /// de l'écran, auquel cas elle recule d'autant vers la gauche.
+  Future<void> setQueueOpen(bool v) async {
+    if (v == queueOpen) return;
+    if (!available || !_isMini || _busy) {
+      UserSettings.instance.miniWindowQueueOpen = v;
+      notifyListeners();
+      return;
+    }
+    _busy = true;
+    try {
+      final b = await windowManager.getBounds();
+      final base = b.width - _queueExtra;
+      UserSettings.instance.miniWindowQueueOpen = v;
+      notifyListeners();
+      var rect = Rect.fromLTWH(b.left, b.top, base + _queueExtra, b.height);
+      rect = rect.translate(-await _overflowRight(rect), 0);
+      await windowManager.setMinimumSize(const Size(120, 90));
+      await windowManager.setBounds(rect);
+      await windowManager.setMinimumSize(_modeMinSize);
+      _lastMiniOrigin = rect.topLeft;
+    } catch (e) {
+      debugPrint('[mini-window] file: $e');
+    } finally {
+      _busy = false;
+    }
+  }
+
+  /// De combien [r] dépasse le bord DROIT de l'écran qui porte son coin
+  /// haut-gauche (0 s'il tient, ou si les écrans ne se lisent pas).
+  Future<double> _overflowRight(Rect r) async {
+    try {
+      for (final d in await screenRetriever.getAllDisplays()) {
+        final area = (d.visiblePosition ?? Offset.zero) & (d.visibleSize ?? d.size);
+        if (!area.contains(r.topLeft)) continue;
+        final over = r.right - area.right;
+        return over > 0 ? over.clamp(0, r.left - area.left).toDouble() : 0;
+      }
+    } catch (_) {}
+    return 0;
+  }
 
   static bool get supported =>
       !kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows);
@@ -159,6 +219,14 @@ class MiniWindow extends ChangeNotifier {
       await windowManager.ensureInitialized();
       await windowManager.setMinimumSize(kMainMinSize);
       _ready = true;
+      // Position du mini lecteur retenue même si l'on QUITTE en mini (aucun
+      // _rememberSize n'aurait lieu): chaque déplacement l'écrit.
+      windowManager.addListener(this);
+      // Le natif lit « démarrer en mini » AVANT Dart: il en garde une copie,
+      // tenue à jour ici (launch_window.dart) — à chaque changement du réglage,
+      // remise à zéro comprise, et à chaque bascule du mini lecteur.
+      UserSettings.instance.addListener(() => unawaited(syncLaunchWindow()));
+      unawaited(syncLaunchWindow());
       // Le RÉGLAGE fait foi et le natif le suit — y compris quand il change
       // sans passer par nous (remise à zéro de la section « Général », qui
       // EFFACE la clé): sans cet écouteur la fenêtre resterait épinglée alors
@@ -266,13 +334,47 @@ class MiniWindow extends ChangeNotifier {
       // Par défaut: coin haut-droit de la fenêtre principale — même écran par
       // construction.
       final origin = _lastMiniOrigin ??
+          await _savedOriginOnScreen() ??
           Offset(bounds.right - _modeSize.width, bounds.top);
       await _applyModeSize(origin);
+      UserSettings.instance.lastWindowMini = true;
+      unawaited(syncLaunchWindow());
     } catch (e) {
       debugPrint('[mini-window] enter: $e');
     } finally {
       _busy = false;
     }
+  }
+
+  /// La position retenue d'un lancement PRÉCÉDENT, si elle tombe encore sur
+  /// un écran branché: le coin haut-gauche et une marge de 40 px doivent être
+  /// dans la zone visible d'un écran, sinon le mini lecteur s'ouvrirait hors
+  /// champ (écran externe débranché depuis). Sous Wayland une position ne
+  /// s'impose de toute façon pas — le compositeur place.
+  Future<Offset?> _savedOriginOnScreen() async {
+    final saved = UserSettings.instance.miniWindowOrigin;
+    if (saved == null) return null;
+    final o = Offset(saved.$1, saved.$2);
+    try {
+      for (final d in await screenRetriever.getAllDisplays()) {
+        final pos = d.visiblePosition ?? Offset.zero;
+        final size = d.visibleSize ?? d.size;
+        final area = (pos & size).deflate(40);
+        if (area.contains(o + const Offset(40, 40))) return o;
+      }
+    } catch (e) {
+      debugPrint('[mini-window] écrans: $e');
+    }
+    return null;
+  }
+
+  @override
+  void onWindowMoved() {
+    if (!_isMini || _busy) return;
+    windowManager.getPosition().then((pos) {
+      _lastMiniOrigin = pos;
+      UserSettings.instance.setMiniWindowOrigin(pos.dx, pos.dy);
+    }).catchError((Object _) {});
   }
 
   Future<void> exit() async {
@@ -295,6 +397,8 @@ class MiniWindow extends ChangeNotifier {
       _isMini = false;
       _frozenSize = null;
       _busy = false;
+      UserSettings.instance.lastWindowMini = false;
+      unawaited(syncLaunchWindow());
       notifyListeners();
       _releaseVizNextFrame();
     }

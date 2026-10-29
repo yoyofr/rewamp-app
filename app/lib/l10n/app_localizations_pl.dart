@@ -1214,6 +1214,19 @@ class AppLocalizationsPl extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count krótkiego pominiętego',
+      many: '$count krótkich pominiętych',
+      few: '$count krótkie pominięte',
+      one: '$count krótki pominięty',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => 'Wczytywanie szczegółów…';
 
   @override
@@ -1482,6 +1495,16 @@ class AppLocalizationsPl extends AppLocalizations {
 
   @override
   String get queueClear => 'Wyczyść kolejkę';
+
+  @override
+  String get queueAutoplayOn =>
+      'Autoodtwarzanie włączone: po kolejce zagrają podobne utwory';
+
+  @override
+  String get queueAutoplayOff => 'Autoodtwarzanie wyłączone';
+
+  @override
+  String get queueAutoplayRow => 'Dodane przez autoodtwarzanie';
 
   @override
   String get queueClearConfirmTitle => 'Wyczyścić kolejkę?';
@@ -2556,6 +2579,84 @@ class AppLocalizationsPl extends AppLocalizations {
   String get localOpsPhaseDeleting => 'usuwanie plików';
 
   @override
+  String localOpsScanning(String name) {
+    return 'Skanowanie $name…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'tworzenie listy plików';
+
+  @override
+  String get linkedRootsSection => 'Połączone foldery';
+
+  @override
+  String get linkedRootAppFolder => 'Folder Rewamp (aplikacja Pliki)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'Umieść pliki w aplikacji Pliki › Na moim iPhonie › Rewamp lub skopiuj je z komputera za pomocą Findera. Są odtwarzane stamtąd, nic nie jest kopiowane.';
+
+  @override
+  String get linkedRootsLink => 'Połącz folder…';
+
+  @override
+  String get linkedRootsLinkSubtitle =>
+      'Odtwarzanie z oryginalnej lokalizacji, nic nie jest kopiowane';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count pliku',
+      many: '$count plików',
+      few: '$count pliki',
+      one: '$count plik',
+      zero: 'Brak plików na liście',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => 'Obecnie niedostępny';
+
+  @override
+  String get linkedRootRescan => 'Odśwież';
+
+  @override
+  String get linkedRootRename => 'Zmień nazwę';
+
+  @override
+  String get linkedRootUnlink => 'Odłącz';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => 'Odłączyć ten folder?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'Nic nie zostanie usunięte z dysku. Ulubione i wpisy w playlistach pozostaną, wyszarzone do czasu ponownego połączenia.';
+
+  @override
+  String get linkedRootEmpty => 'Brak plików do odtworzenia w tym folderze.';
+
+  @override
+  String get linkedRootSearchHint => 'Szukaj w tym folderze';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count wyniku',
+      many: '$count wyników',
+      few: '$count wyniki',
+      one: '$count wynik',
+      zero: 'Brak wyników',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'Importuj pliki';
 
   @override
@@ -2678,6 +2779,58 @@ class AppLocalizationsPl extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'Nie trafia do kolejki: poniżej $seconds s (Ustawienia → Odtwarzanie)';
   }
+
+  @override
+  String get settingsAutoplaySection => 'Autoodtwarzanie';
+
+  @override
+  String get settingsAutoplayTitle => 'Graj dalej po zakończeniu kolejki';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'Gdy kolejka dobiega końca, dodawane są do niej podobne utwory. Przycisk ∞ w kolejce to to samo ustawienie.';
+
+  @override
+  String get settingsAutoplaySize =>
+      'Liczba utworów dodawanych za każdym razem';
+
+  @override
+  String get settingsAutoplayMode => 'Sposób wyboru utworów';
+
+  @override
+  String get settingsAutoplayModeAuto => 'Automatycznie';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      'Najpierw ci sami artyści, potem ich grupy, a następnie ta sama kolekcja.';
+
+  @override
+  String get settingsAutoplayModeArtist => 'Ci sami artyści';
+
+  @override
+  String get settingsAutoplayModeArtistHint =>
+      'Tylko utwory artystów, którzy właśnie grali.';
+
+  @override
+  String get settingsAutoplayModeGroup => 'Te same grupy';
+
+  @override
+  String get settingsAutoplayModeGroupHint =>
+      'Utwory grup, do których należą ci artyści.';
+
+  @override
+  String get settingsAutoplayModeCollection => 'Ta sama kolekcja';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      'Losowe utwory z tej samej kolekcji, najpierw z tej samej platformy.';
+
+  @override
+  String get settingsAutoplayModeRecent => 'Ostatnio słuchane';
+
+  @override
+  String get settingsAutoplayModeRecentHint =>
+      'Wybrane spośród ostatnio słuchanych utworów, nie tylko z kolejki.';
 
   @override
   String get settingsQueuePrefetchSection => 'Pobieranie kolejki';
@@ -4820,4 +4973,42 @@ class AppLocalizationsPl extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'Brak pliku';
+
+  @override
+  String get settingsPlayStartSection => 'Rozpoczynanie odtwarzania';
+
+  @override
+  String get settingsPlayStartInApp => 'Dotknięcie utworu w aplikacji';
+
+  @override
+  String get settingsPlayStartInAppHint =>
+      'Długie naciśnięcie (prawy klik) zawsze daje wybór.';
+
+  @override
+  String get settingsPlayStartExternal => 'Plik otwarty z systemu';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'Dwuklik, „Otwórz za pomocą”, upuszczenie na ikonę aplikacji.';
+
+  @override
+  String get settingsPlayStartAsk => 'Pytaj';
+
+  @override
+  String get settingsLaunchWindow => 'Przy uruchomieniu';
+
+  @override
+  String get settingsLaunchWindowNormal => 'Zwykłe okno';
+
+  @override
+  String get settingsLaunchWindowMini => 'Miniodtwarzacz';
+
+  @override
+  String get settingsLaunchWindowLast => 'Jak przy zamknięciu';
+
+  @override
+  String get miniWindowQuit => 'Zakończ Rewamp';
+
+  @override
+  String get miniWindowCompact => 'Kompaktowy miniodtwarzacz';
 }

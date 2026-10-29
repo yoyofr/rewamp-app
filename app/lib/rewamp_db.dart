@@ -6193,7 +6193,8 @@ class RewampDb {
   /// member (see _dirSegments) — wiping it would delete sibling tracks.
   /// Best-effort; never throws.
   static Future<void> _purgeSongDownload(
-      SearchResult oldRow, SearchResult freshRow, String songId) async {
+      SearchResult oldRow, SearchResult freshRow, String songId,
+      {String? staleUrl}) async {
     var deleted = 0;
     try {
       final rec = await LocalDb.instance.getTrackByOnlineId(songId);
@@ -6218,6 +6219,29 @@ class RewampDb {
       // That is the intended behaviour: if one member of an album was replaced
       // server-side, re-fetching the album is the clean, uniform fix.
       final dir = await artworkDirForResult(oldRow);
+      // ⚠️ Le balayage n'a de sens que pour une ARCHIVE: c'est elle qui laisse
+      // des noms que la ligne ne connaît pas, et ses pistes partagent UNE url
+      // (donc UNE détection). Un fichier DIRECT (un .vgz vgmrips) a sa propre
+      // url par piste: quand le serveur renomme le dossier du pack, CHAQUE
+      // piste détecte son changement à son tour — et chacune vidait l'album
+      // entier, y compris la voisine qu'on venait de retélécharger (09 posée,
+      // purge de 10, « MISSING ON DISK » sur 09). Pour un fichier direct on
+      // n'efface que le sien et ses compagnons, que la ligne nomme.
+      final wipeDir = _isArchiveUrl(staleUrl) ||
+          _isArchiveUrl(oldRow.downloadUrl) ||
+          _isArchiveUrl(freshRow.downloadUrl);
+      if (!wipeDir) {
+        for (final aux in [...oldRow.auxFiles, ...freshRow.auxFiles]) {
+          final name = auxRelativePath(aux.filename);
+          if (name.isEmpty) continue;
+          try {
+            final f = File(p.join(p.dirname(freshPath), name));
+            if (await f.exists()) { await f.delete(); deleted++; }
+          } catch (_) {}
+        }
+        debugPrint('[RewampDb] purged $deleted stale file(s) for $songId');
+        return;
+      }
       try {
         // RÉCURSIF: un compagnon peut vivre dans un SOUS-DOSSIER
         // (`Instruments/` d'un SMUS, voir [auxRelativePath]). Un balayage à
@@ -6246,6 +6270,20 @@ class RewampDb {
   /// dont l'original n'est pas jouable tel quel.
   static bool _isOverrideUrl(String? url) =>
       url != null && url.contains('/overrides/');
+
+  static const _archiveUrlExts = {
+    'zip', '7z', 'rar', 'rsn', 'lha', 'lzh', 'tar', 'gz', 'tgz', 'bz2', 'xz',
+  };
+
+  /// L'url désigne-t-elle une ARCHIVE (extraite dans le dossier de l'album)
+  /// plutôt qu'un fichier jouable posé tel quel ?
+  static bool _isArchiveUrl(String? url) {
+    if (url == null || url.isEmpty) return false;
+    final path = url.split('?').first;
+    final dot = path.lastIndexOf('.');
+    if (dot < 0 || dot < path.lastIndexOf('/')) return false;
+    return _archiveUrlExts.contains(path.substring(dot + 1).toLowerCase());
+  }
 
   /// L'OVERRIDE fait autorité: une ligne qui porte encore l'url de l'ORIGINE
   /// est périmée, et il faut la corriger AVANT toute décision de
@@ -6325,7 +6363,7 @@ class RewampDb {
         return;
       }
       debugPrint('[RewampDb] source url changed for ${r.songId} (was: $stored)');
-      await _purgeSongDownload(r, r, r.songId);
+      await _purgeSongDownload(r, r, r.songId, staleUrl: stored);
     } catch (e) {
       debugPrint('[RewampDb] _purgeIfSourceUrlChanged error: $e');
     }
@@ -6354,7 +6392,7 @@ class RewampDb {
       if (reference != null && reference == newUrl) return null; // unchanged
       // Replaced: purge the stale local copy (incl. the old extraction) so the
       // retry re-downloads the new file cleanly.
-      await _purgeSongDownload(oldRow, s, songId);
+      await _purgeSongDownload(oldRow, s, songId, staleUrl: reference);
       debugPrint('[RewampDb] $songId replaced server-side '
           '(was: ${e.triedUrl}) — retrying with $newUrl');
       return s;

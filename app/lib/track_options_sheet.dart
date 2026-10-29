@@ -11,6 +11,7 @@ import 'local_db.dart';
 import 'queue_position_icon.dart';
 import 'player_controller.dart';
 import 'note_markdown.dart';
+import 'play_start.dart';
 import 'playlist_picker.dart';
 import 'production_screen.dart';
 import 'rewamp_db.dart';
@@ -286,7 +287,7 @@ class _TrackOptionsSheetState extends State<_TrackOptionsSheet> {
         children: [
           // Header — track title + artist
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 8),
             child: Row(
               children: [
                 Expanded(
@@ -314,9 +315,9 @@ class _TrackOptionsSheetState extends State<_TrackOptionsSheet> {
           // Every chip is a door: tap → browse everything carrying that tag.
           if (_ctx != null) ...[
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 10, 16, 0),
               child: Align(
-                alignment: Alignment.centerLeft,
+                alignment: AlignmentDirectional.centerStart,
                 child: Text(
                   [
                     r.collection,
@@ -332,9 +333,9 @@ class _TrackOptionsSheetState extends State<_TrackOptionsSheet> {
             ),
             if (_ctx!.tags.isNotEmpty || _ctx!.usedIn.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 10),
                 child: Align(
-                  alignment: Alignment.centerLeft,
+                  alignment: AlignmentDirectional.centerStart,
                   child: Wrap(
                     spacing: 6,
                     runSpacing: 6,
@@ -788,7 +789,7 @@ class _AlbumOptionsSheetState extends State<_AlbumOptionsSheet> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 8),
           child: Text(widget.albumName,
               style: tt.titleSmall?.copyWith(fontWeight: FontWeight.bold),
               maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -893,6 +894,31 @@ bool trackOffersAlbumLink(TrackRecord t) {
 
 /// [openLabel] reste distinct: il rend `PlayChoice.open`, que son appelant
 /// gère lui-même (la carte d'album de la bibliothèque).
+/// Le choix qu'un réglage [PlayStartAction] prend d'avance; null = demander.
+PlayChoice? playChoiceFor(PlayStartAction a) => switch (a) {
+      PlayStartAction.ask  => null,
+      PlayStartAction.now  => PlayChoice.now,
+      PlayStartAction.next => PlayChoice.next,
+      PlayStartAction.end  => PlayChoice.end,
+    };
+
+/// L'appui long d'une piste dans une LISTE dont le tap lance toute la liste
+/// depuis elle sans demander (album, sous-chansons, playlist, production):
+/// la feuille de choix pour CETTE piste. « Maintenant » = [playNow] (le
+/// tap); « ensuite » / « à la fin » = la piste seule dans la file.
+Future<void> holdTrackChoice(BuildContext context, SearchResult r,
+        {required Future<void> Function() playNow, OnQueueAdd? queueAdd}) =>
+    withPlayChoiceSheet(() async {
+      final choice = await showPlayChoiceSheet(context, title: r.displayTitle);
+      if (choice == null || !context.mounted) return;
+      if (choice == PlayChoice.now) {
+        await playNow();
+        return;
+      }
+      await (queueAdd ?? globalOnQueueAdd)
+          ?.call(r, atEnd: choice == PlayChoice.end);
+    });
+
 Future<PlayChoice?> showPlayChoiceSheet(
   BuildContext context, {
   String? title,
@@ -901,10 +927,18 @@ Future<PlayChoice?> showPlayChoiceSheet(
   SearchResult? result,
   TrackRecord? track,
 }) {
-  // Nothing queued and nothing playing: every choice collapses into "play
-  // now" — skip the popup and start playback directly.
-  if (!(globalQueueHasContent?.call() ?? true)) {
-    return Future.value(PlayChoice.now);
+  // L'appui long (withPlayChoiceSheet) DEMANDE la feuille: elle s'affiche
+  // toujours, file vide comprise — sinon le geste lançait la lecture sans
+  // rien montrer, et ses liens « voir » étaient injoignables.
+  if (!playChoiceSheetForced) {
+    // Nothing queued and nothing playing: every choice collapses into "play
+    // now" — skip the popup and start playback directly.
+    if (!(globalQueueHasContent?.call() ?? true)) {
+      return Future.value(PlayChoice.now);
+    }
+    // Réglages → Lecture: « Toucher un morceau dans l'app » décidé d'avance.
+    final preset = playChoiceFor(UserSettings.instance.playStartInApp);
+    if (preset != null) return Future.value(preset);
   }
   return showModalBottomSheet<PlayChoice>(
     context: context,
@@ -929,7 +963,7 @@ Future<PlayChoice?> showPlayChoiceSheet(
           children: [
             if (title != null) ...[
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [

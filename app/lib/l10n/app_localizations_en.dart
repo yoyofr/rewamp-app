@@ -1163,6 +1163,17 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count short ones skipped',
+      one: '$count short one skipped',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => 'Loading details…';
 
   @override
@@ -1426,6 +1437,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get queueClear => 'Clear queue';
+
+  @override
+  String get queueAutoplayOn => 'Autoplay on: similar tracks follow the queue';
+
+  @override
+  String get queueAutoplayOff => 'Autoplay off';
+
+  @override
+  String get queueAutoplayRow => 'Added by autoplay';
 
   @override
   String get queueClearConfirmTitle => 'Clear the queue?';
@@ -2472,6 +2492,80 @@ class AppLocalizationsEn extends AppLocalizations {
   String get localOpsPhaseDeleting => 'removing files';
 
   @override
+  String localOpsScanning(String name) {
+    return 'Scanning $name…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'listing files';
+
+  @override
+  String get linkedRootsSection => 'Linked folders';
+
+  @override
+  String get linkedRootAppFolder => 'Rewamp folder (Files app)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'Put your files in the Files app › On My iPhone › Rewamp, or copy them from a computer with the Finder. They play from there, nothing is copied.';
+
+  @override
+  String get linkedRootsLink => 'Link a folder…';
+
+  @override
+  String get linkedRootsLinkSubtitle =>
+      'Played from where it is, nothing is copied';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count files',
+      one: '$count file',
+      zero: 'No file listed yet',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => 'Not reachable right now';
+
+  @override
+  String get linkedRootRescan => 'Refresh';
+
+  @override
+  String get linkedRootRename => 'Rename';
+
+  @override
+  String get linkedRootUnlink => 'Unlink';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => 'Unlink this folder?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'Nothing is deleted from the disk. Its favourites and playlist entries stay, greyed out until it is linked again.';
+
+  @override
+  String get linkedRootEmpty => 'No playable file in this folder.';
+
+  @override
+  String get linkedRootSearchHint => 'Search in this folder';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count matches',
+      one: '$count match',
+      zero: 'No match',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'Import files';
 
   @override
@@ -2591,6 +2685,57 @@ class AppLocalizationsEn extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'Not queued: under $seconds s (Settings → Playback)';
   }
+
+  @override
+  String get settingsAutoplaySection => 'Autoplay';
+
+  @override
+  String get settingsAutoplayTitle => 'Keep playing after the queue';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'When the queue nears its end, similar tracks are added to it. The ∞ button in the queue is the same setting.';
+
+  @override
+  String get settingsAutoplaySize => 'Tracks added each time';
+
+  @override
+  String get settingsAutoplayMode => 'How tracks are chosen';
+
+  @override
+  String get settingsAutoplayModeAuto => 'Automatic';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      'Same artists first, then their groups, then the same collection.';
+
+  @override
+  String get settingsAutoplayModeArtist => 'Same artists';
+
+  @override
+  String get settingsAutoplayModeArtistHint =>
+      'Only tracks by the artists that just played.';
+
+  @override
+  String get settingsAutoplayModeGroup => 'Same groups';
+
+  @override
+  String get settingsAutoplayModeGroupHint =>
+      'Tracks by the groups those artists belong to.';
+
+  @override
+  String get settingsAutoplayModeCollection => 'Same collection';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      'Random tracks from the same collection, same platform first.';
+
+  @override
+  String get settingsAutoplayModeRecent => 'Recent listens';
+
+  @override
+  String get settingsAutoplayModeRecentHint =>
+      'Picked from what you listened to lately, not only from the queue.';
 
   @override
   String get settingsQueuePrefetchSection => 'Queue downloads';
@@ -4681,4 +4826,42 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'File missing';
+
+  @override
+  String get settingsPlayStartSection => 'Starting playback';
+
+  @override
+  String get settingsPlayStartInApp => 'Tapping a track in the app';
+
+  @override
+  String get settingsPlayStartInAppHint =>
+      'A long press (right-click) always offers the choice.';
+
+  @override
+  String get settingsPlayStartExternal => 'File opened from the system';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'Double-click, “Open with”, drop on the app icon.';
+
+  @override
+  String get settingsPlayStartAsk => 'Ask';
+
+  @override
+  String get settingsLaunchWindow => 'At startup';
+
+  @override
+  String get settingsLaunchWindowNormal => 'Normal window';
+
+  @override
+  String get settingsLaunchWindowMini => 'Mini player';
+
+  @override
+  String get settingsLaunchWindowLast => 'As when last closed';
+
+  @override
+  String get miniWindowQuit => 'Quit Rewamp';
+
+  @override
+  String get miniWindowCompact => 'Compact mini player';
 }

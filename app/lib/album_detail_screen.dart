@@ -18,10 +18,12 @@ import 'user_settings.dart';
 import 'scrolling_text.dart';
 import 'artwork_image.dart';
 import 'artwork_viewer.dart';
+import 'browse_screen.dart' show BrowseResultsScreen;
 import 'download_manager.dart';
 import 'library_button.dart';
 import 'track_options_sheet.dart';
 import 'shell_insets.dart';
+import 'play_start.dart';
 
 // Human-readable byte size (B / KB / MB).
 String _fmtBytes(AppLocalizations l10n, int b) {
@@ -925,6 +927,28 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     }
   }
 
+  /// Appui long sur une piste: la feuille de choix, que le tap ne montre
+  /// jamais ici (voir _onTrackTapImpl). « Maintenant » = le tap (l'album
+  /// depuis cette piste); « ensuite » / « à la fin » = CETTE piste seule.
+  Future<void> _onTrackHold(BuildContext ctx, SearchResult r) =>
+      withPlayChoiceSheet(() async {
+        final choice = await showPlayChoiceSheet(ctx, title: r.displayTitle);
+        if (choice == null || !ctx.mounted) return;
+        if (choice == PlayChoice.now) {
+          await _onTrackTap(ctx, r);
+          return;
+        }
+        final atEnd = choice == PlayChoice.end;
+        if (_localAlbum) {
+          final i = _tracks.indexOf(r);
+          if (i >= 0 && i < _localTracks.length) {
+            await globalOnLocalQueueAdd?.call([_localTracks[i]], atEnd: atEnd);
+          }
+          return;
+        }
+        await (widget.onQueueAdd ?? globalOnQueueAdd)?.call(r, atEnd: atEnd);
+      });
+
   Future<void> _onTrackTapImpl(BuildContext ctx, SearchResult r) async {
     // PAS de popup ici: on est DANS l'album, et le tap initialise la file avec
     // ses pistes en démarrant sur celle-ci. La popup sert aux taps qui
@@ -1228,7 +1252,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             if (_offlinePartial)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 8),
                   child: Row(
                     children: [
                       Icon(Icons.cloud_off_outlined,
@@ -1249,7 +1273,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                 _tracks.length == 1 && _tracks.first.trackPosition == null)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(32, 32, 32, 32),
+                  padding: const EdgeInsetsDirectional.fromSTEB(32, 32, 32, 32),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1280,7 +1304,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             if (_isPsfArchiveAlbum && !_psfAlbumDownloaded)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 4),
                   child: Card(
                     color: cs.secondaryContainer,
                     child: Padding(
@@ -1304,7 +1328,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
               ),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 4),
                 child: Row(children: [
                   Builder(builder: (_) {
                     final bytes = _localAlbum
@@ -1353,6 +1377,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     subsongScore:
                         _subsongScores[_tracks[i].subsongIdx],
                     onTap:            _onTrackTap,
+                    onHold:           _onTrackHold,
                     downloadRevision: _downloadRevision,
                     // Local album: every track is guaranteed on disk. A PSF
                     // archive is NOT forced any more — its rows carry the real
@@ -1379,7 +1404,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                 _details!.description!.isNotEmpty)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 24),
                   child: Text(
                     _details!.description!,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1438,7 +1463,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     final tt   = Theme.of(context).textTheme;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1552,20 +1577,33 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
               ),
             ],
 
-            // Chip names
+            // Chip names — the album's `chip` tags. Tap lists everything that
+            // carries the same tag, as from the track options sheet.
             if (d.chipNames.isNotEmpty) ...[
               const SizedBox(height: 6),
               Wrap(
                 spacing: 6,
                 runSpacing: 4,
                 children: d.chipNames
-                    .map((c) => Chip(
+                    .map((c) => ActionChip(
                           label: Text(c,
                               style: const TextStyle(fontSize: 12)),
                           materialTapTargetSize:
                               MaterialTapTargetSize.shrinkWrap,
                           padding:
                               const EdgeInsets.symmetric(horizontal: 4),
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => BrowseResultsScreen(
+                                label:         c,
+                                tags:          [c],
+                                tagCategories: const ['chip'],
+                                showFilter:    true,
+                                onTap:         widget.onTap,
+                                onPlayAlbum:   widget.onPlayAlbum,
+                              ),
+                            ),
+                          ),
                         ))
                     .toList(),
               ),
@@ -1628,7 +1666,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
               // Download-only button next to play, shown until the album is on disk.
               if (!_albumDownloaded && !_localAlbum)
                 Padding(
-                  padding: const EdgeInsets.only(left: 8),
+                  padding: const EdgeInsetsDirectional.only(start: 8),
                   child: IconButton(
                     icon: const Icon(Icons.download),
                     tooltip: l10n.commonDownload,
@@ -1742,10 +1780,15 @@ class _AlbumTrackTile extends StatefulWidget {
   /// afficherait un nombre qui ne correspond pas à son propre grisé.
   final int? skippedShortSeconds;
 
+  /// Appui long / clic droit: la feuille « maintenant / ensuite / à la fin »
+  /// pour CETTE piste — le tap, lui, lance l'album entier sans demander.
+  final Future<void> Function(BuildContext, SearchResult)? onHold;
+
   const _AlbumTrackTile({
     required this.index,
     required this.result,
     required this.onTap,
+    this.onHold,
     required this.downloadRevision,
     this.onNavigateArtist,
     this.onQueueAdd,
@@ -1833,7 +1876,10 @@ class _AlbumTrackTileState extends State<_AlbumTrackTile> {
     // sous-titre qui explique pourquoi doit rester lisible.
     final skippedSecs = widget.skippedShortSeconds;
     final skipped = skippedSecs != null;
-    return ListTile(
+    final hold = widget.onHold;
+    return PlayChoiceHold(
+      onTap: hold == null ? null : () => hold(context, widget.result),
+      child: ListTile(
       leading: SizedBox(
         width: 32,
         child: Text(
@@ -1910,7 +1956,7 @@ class _AlbumTrackTileState extends State<_AlbumTrackTile> {
         ],
       ),
       onTap: () => widget.onTap(context, widget.result),
-    );
+    ));
   }
 }
 

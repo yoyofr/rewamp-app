@@ -217,6 +217,12 @@ REWAMP_EXPORT void rewamp_gl_flush(void) {
 REWAMP_EXPORT void rewamp_gl_uninit(void) {
     if (g_display != EGL_NO_DISPLAY) {
         eglMakeCurrent(g_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        // The preload context dies with the main one — see rewamp_gl_ios.mm.
+        // (If the worker still has it current, EGL defers the deletion until
+        // it releases it; what matters is that create() builds a FRESH one on
+        // the next display instead of handing back this corpse.)
+        if (g_preload_surf != EGL_NO_SURFACE) { eglDestroySurface(g_display, g_preload_surf); g_preload_surf = EGL_NO_SURFACE; }
+        if (g_preload_ctx  != EGL_NO_CONTEXT) { eglDestroyContext(g_display, g_preload_ctx);  g_preload_ctx  = EGL_NO_CONTEXT; }
         if (g_surface != EGL_NO_SURFACE) { eglDestroySurface(g_display, g_surface); g_surface = EGL_NO_SURFACE; }
         if (g_context != EGL_NO_CONTEXT) { eglDestroyContext(g_display, g_context); g_context = EGL_NO_CONTEXT; }
         eglTerminate(g_display);

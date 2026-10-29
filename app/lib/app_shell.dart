@@ -18,6 +18,7 @@ import 'l10n.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'local_tab_screen.dart';
 import 'drop_order.dart';
+import 'cli_options.dart';
 import 'local_open.dart';
 import 'preset_manager.dart';
 import 'preset_screen.dart';
@@ -25,18 +26,22 @@ import 'local_db.dart';
 import 'min_subsong.dart';
 import 'player_controller.dart' show PlayerController, QueueEntry;
 import 'queue_persistence.dart';
+import 'autoplay.dart';
+import 'local_roots.dart' show LocalRoots;
 import 'queue_shuffle.dart';
 import 'transport_log.dart';
 import 'media_session.dart';
 import 'glass_chrome.dart';
 import 'mini_player.dart';
+import 'mini_window.dart';
 import 'mini_window_player.dart';
 import 'download_banner.dart';
 import 'local_ops.dart' show LocalOpsBanner;
 import 'download_cancel.dart';
 import 'download_manager.dart';
 import 'download_queue_screen.dart';
-import 'player_screen.dart' show PlayerScreen, QueuePanel;
+import 'play_start.dart';
+import 'player_screen.dart' show PlayerScreen, PlayerViewRequests, QueuePanel;
 import 'playlist_picker.dart' show showAddToPlaylistSheet, trackIdsForRecords, trackIdsForResults;
 import 'album_detail_screen.dart';
 import 'competition_screen.dart' show globalOnPlayOnlineSong;
@@ -48,7 +53,7 @@ import 'opened_files.dart';
 import 'search_screen.dart';
 import 'container_subsong_screen.dart';
 import 'track_options_sheet.dart'
-    show globalOnQueueAdd, globalOnAlbumQueueAdd, globalOnPlayAlbum,
+    show playChoiceFor, globalOnQueueAdd, globalOnAlbumQueueAdd, globalOnPlayAlbum,
          globalOnNavigateTag, globalOnOpenGroup,
          globalOnNavigateAlbum, globalOnOpenSubsongs,
          globalOnOpenSubsongsForTrack,
@@ -105,6 +110,10 @@ sealed class _QueueItem {
   /// deleted row's red background sitting on the track that took its place.
   static int _nextUid = 0;
   final int uid = _nextUid++;
+
+  /// Posée par la lecture automatique (∞), jamais par un geste. Mutable: une
+  /// entrée restaurée d'un instantané la reprend après construction.
+  bool autoplay = false;
 
   _QueueItem(this.seq);
   String get title;
@@ -192,6 +201,8 @@ class _AppShellState extends State<AppShell>
   final Set<String> _prefetchDone = {};
   // Bumped when the search tab is re-selected → SearchScreen resets criteria.
   final _searchResetTick = ValueNotifier<int>(0);
+  // `--search` (ligne de commande): (numéro, texte), voir SearchScreen.
+  final _searchQueryRequest = ValueNotifier<(int, String)?>(null);
   int   _queueIdx = -1;
   // Index of the last entry that ACTUALLY started playing (loadFile ok). A
   // failed jump restores the counter/highlight to this so the display never
@@ -491,10 +502,19 @@ class _AppShellState extends State<AppShell>
     globalOnOpenSubsongsForTrack = _openSubsongListForTrack;
     globalOnOpenPresets   = _pushPresets;
     globalOpenLocalPaths  = _openLocalPaths;
+    globalOpenExternalPaths = _openExternalPaths;
+    globalRunCliCommand   = _runCliCommand;
     // Dock drop / Open With / double-click. Set the hook FIRST:
     // the native buffer is drained immediately and its contents
     // are cleared on the native side by that very call.
     listenForOpenedFiles();
+    // « Au démarrage: mini lecteur » (sans --mini ni --window sur la ligne):
+    // le natif garde la fenêtre invisible jusqu'à ce que ce soit fait.
+    if (launchPlan.miniFromSetting) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_enterMiniAndReveal());
+      });
+    }
     // Play path for the competition screen's entries (podium badges land there).
     globalOnPlayOnlineSong = _downloadAndPlayOnline;
     // Welcome carousel (welcome page + a short tour), once per install. After the
@@ -581,6 +601,7 @@ class _AppShellState extends State<AppShell>
     _controller.onReorderQueue = _reorderQueue;
     _controller.onRemoveFromQueue = _removeFromQueue;
     _controller.onClearQueue = _clearQueue;
+    _controller.onToggleAutoplay = _toggleAutoplay;
     _controller.onLoadResult = _onLoadResult;
     _controller.onTrackDeleted = _onTrackDeleted;
     // First play press on a restored (primed) queue actually loads the track.
@@ -635,6 +656,7 @@ class _AppShellState extends State<AppShell>
           onQueueAdd:      _onQueueAdd,
           onAlbumQueueAdd: _onAlbumQueueAdd,
           resetTick:       _searchResetTick,
+          queryRequest:    _searchQueryRequest,
         ),
       ),
       // Onglet « Local » — ce que CET APPAREIL possède: deux arbres
@@ -714,6 +736,7 @@ class _AppShellState extends State<AppShell>
   /// voyait qu'au relancement.
   void _onSettingsChanged() {
     _applyPlaybackLibraryPrefs(_controller.audio);
+    _onAutoplaySettingChanged();
     if (mounted) setState(() {});
   }
 
@@ -776,6 +799,8 @@ class _AppShellState extends State<AppShell>
       SyncService.instance.startPolling();
       // projectM preload worker back up (restarted by the next render tick).
       _controller.audio.projectmSetActive(true);
+      // iOS: des fichiers ont pu être déposés dans Fichiers › Rewamp.
+      LocalRoots.instance.onResumed();
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       // Deliberately NOT on `inactive`: macOS reports that on every focus loss,
@@ -1178,7 +1203,202 @@ class _AppShellState extends State<AppShell>
     }
   }
 
-  Future<void> _openLocalPaths(List<String> paths) async {
+  /// Une ligne de commande du bureau (cli_options.dart), fichiers déjà
+  /// filtrés sur l'existence.
+  Future<void> _runCliCommand(CliCommand cmd) async {
+    if (!mounted) return;
+    switch (cmd.remote) {
+      case CliRemote.playPause:
+        _controller.togglePlay();
+      case CliRemote.nextTrack:
+        await _controller.goNext();
+      case CliRemote.prevTrack:
+        await _controller.goPrev();
+      case CliRemote.stop:
+        _controller.stop();
+      case null:
+        break;
+    }
+    // Le mini lecteur n'a pas besoin du morceau: on y passe AVANT de charger
+    // (au démarrage, la fenêtre rétrécit tout de suite). Le lecteur, si.
+    if (cmd.mini) await _applyCliDisplay(cmd);
+    await _runCliFiles(cmd);
+    if (!cmd.mini) await _applyCliDisplay(cmd);
+  }
+
+  Future<void> _runCliFiles(CliCommand cmd) async {
+    if (cmd.files.isEmpty || !mounted) return;
+    // Un numéro de sous-chanson veut dire « joue CELLE-LÀ »: sans placement,
+    // pas de feuille à quoi le soumettre.
+    final placement = cmd.subsong != null && cmd.placement == CliPlacement.ask
+        ? CliPlacement.now
+        : cmd.placement;
+    // Sans option de placement, la ligne de commande est un fichier ouvert
+    // DEPUIS le système (c'est ainsi que Windows et Linux livrent un
+    // double-clic): réglage « Fichier ouvert depuis le système ».
+    if (placement == CliPlacement.ask) {
+      await _openExternalPaths(cmd.files, shuffle: cmd.shuffle);
+      return;
+    }
+    await _openLocalPaths(
+      cmd.files,
+      forced: switch (placement) {
+        CliPlacement.ask  => null,
+        CliPlacement.now  => PlayChoice.now,
+        CliPlacement.next => PlayChoice.next,
+        CliPlacement.end  => PlayChoice.end,
+      },
+      shuffle: cmd.shuffle,
+      subsong: cmd.subsong,
+    );
+  }
+
+  /// `--mini`, `--viz`, `--fullscreen`, `--search`, APRÈS les fichiers (le
+  /// lecteur ne s'ouvre que sur un morceau courant). `--mini` l'emporte —
+  /// la coquille est alors hors scène — et `--viz`/`--fullscreen` n'y
+  /// choisissent que le mode visualiseur; sinon on sort du mini lecteur, et
+  /// `--search` l'emporte sur le lecteur.
+  Future<void> _applyCliDisplay(CliCommand cmd) async {
+    if (!cmd.hasDisplay || !mounted) return;
+    final mini = MiniWindow.instance;
+    final wantsViz = cmd.viz || cmd.fullscreen;
+    if (cmd.mini) {
+      await _enterMiniAndReveal(viz: wantsViz);
+      return;
+    }
+    if (mini.isMini) await mini.exit();
+    if (!mounted) return;
+    final q = cmd.search;
+    if (q != null) {
+      _closePlayerOverlay();
+      final i = ShellTab.search.index;
+      _navKeys[i].currentState?.popUntil((r) => r.isFirst);
+      if (_index != i) setState(() => _index = i);
+      _searchQueryRequest.value = ((_searchQueryRequest.value?.$1 ?? 0) + 1, q);
+      return;
+    }
+    if (!wantsViz || _controller.filePath == null) return;
+    UserSettings.instance.showVisualizer = true;
+    if (cmd.fullscreen) PlayerViewRequests.instance.requestVizFullscreen();
+    if (!_playerOpen) _openFullPlayer();
+  }
+
+  /// Passe en mini lecteur ([viz] null = le mode retenu), puis révèle la
+  /// fenêtre qu'un démarrage à froid a gardée invisible (`--mini` ou le
+  /// réglage « Au démarrage ») — sans effet si elle est déjà visible.
+  Future<void> _enterMiniAndReveal({bool? viz}) async {
+    final mini = MiniWindow.instance;
+    try {
+      if (!mini.available) return;
+      if (viz != null) await mini.setVizMode(viz);
+      if (!mini.isMini && mounted) {
+        await mini.enter(MediaQuery.sizeOf(context));
+      }
+      // Une image dessinée à la NOUVELLE taille avant d'apparaître.
+      await WidgetsBinding.instance.endOfFrame;
+      await WidgetsBinding.instance.endOfFrame;
+    } finally {
+      unawaited(revealLaunchWindow());
+    }
+  }
+
+  // Fichiers ouverts DEPUIS le système quand le réglage décide d'avance: ceux
+  // arrivés à moins de [_kExternalGather] d'écart font UN lot. ⚠️ Sélectionner
+  // dix fichiers dans l'Explorateur et appuyer sur Entrée lance DIX processus
+  // (un par fichier, verbe « %1 »), qui transmettent chacun le leur: avec
+  // « Lire tout de suite » chaque arrivée remplaçait la file et seul le
+  // dernier restait. Le Finder, lui, livre une sélection en UN événement.
+  static const _kExternalGather = Duration(milliseconds: 500);
+  final List<List<String>> _externalPending = [];
+  Timer? _externalTimer;
+  Completer<void>? _externalDone;
+  bool _externalShuffle = false;
+  DateTime? _externalNowAt;
+
+  /// Se termine quand le lot qui contient [paths] a été traité — l'appelant
+  /// (ligne de commande) enchaîne l'affichage sur un morceau CHARGÉ.
+  Future<void> _openExternalPaths(List<String> paths, {bool shuffle = false}) {
+    if (paths.isEmpty) return Future.value();
+    final preset = playChoiceFor(UserSettings.instance.playStartExternal);
+    if (preset == null) {
+      // « Demander »: la feuille, dont la fenêtre ouverte RASSEMBLE déjà les
+      // arrivées suivantes (_dropChoiceOpen).
+      return _openLocalPaths(paths, askSheet: true, shuffle: shuffle);
+    }
+    _externalPending.add(paths);
+    _externalShuffle |= shuffle;
+    _externalTimer?.cancel();
+    _externalTimer = Timer(_kExternalGather, _flushExternalOpen);
+    return (_externalDone ??= Completer<void>()).future;
+  }
+
+  Future<void> _flushExternalOpen() async {
+    final groups = List<List<String>>.of(_externalPending);
+    final done = _externalDone;
+    final shuffle = _externalShuffle;
+    _externalPending.clear();
+    _externalDone = null;
+    _externalShuffle = false;
+    try {
+      await _runExternalBatch(groups, shuffle);
+    } finally {
+      done?.complete();
+    }
+  }
+
+  Future<void> _runExternalBatch(List<List<String>> groups, bool shuffle) async {
+    if (groups.isEmpty || !mounted) return;
+    // Plusieurs invocations: leur ordre d'arrivée ne veut rien dire, on range
+    // comme le Finder (par dossier, puis par nom). Une seule: son ordre à elle.
+    final paths = groups.length == 1
+        ? groups.first
+        : displayOrderForDrop([for (final g in groups) ...g]);
+    var action = playChoiceFor(UserSettings.instance.playStartExternal) ??
+        PlayChoice.now;
+    // Un retardataire de la même sélection (lot déjà parti) ne remplace pas
+    // ce qu'on vient de lancer: il le complète.
+    final now = DateTime.now();
+    if (action == PlayChoice.now &&
+        _externalNowAt != null &&
+        now.difference(_externalNowAt!) < const Duration(seconds: 3)) {
+      action = PlayChoice.end;
+    }
+    if (action == PlayChoice.now) _externalNowAt = now;
+    await _openLocalPaths(paths,
+        forced: action, preset: true, shuffle: shuffle);
+  }
+
+  /// [forced] non nul (ligne de commande) saute la feuille de choix; il ne
+  /// rejoint pas non plus un lot de dépôt en cours, qui a la sienne.
+  /// [subsong] (1-based) choisit une entrée d'un fichier UNIQUE: départ de la
+  /// file pour `now`, seule entrée ajoutée sinon. [shuffle] mélange le lot
+  /// (ignoré avec [subsong], qui désigne une position).
+  ///
+  /// Sans [forced], le réglage « Toucher un morceau dans l'app » peut décider
+  /// d'avance (dépôt, sélecteur, navigateur local…), sauf [askSheet] ou un
+  /// appui long ([withPlayChoiceSheet]). [preset]: [forced] vient d'un
+  /// RÉGLAGE et non d'une option explicite — « ensuite / à la fin » sans rien
+  /// en cours veut alors dire « lire », comme la feuille le décide.
+  Future<void> _openLocalPaths(List<String> pathsIn,
+      {PlayChoice? forced,
+      bool shuffle = false,
+      int? subsong,
+      bool askSheet = false,
+      bool preset = false}) async {
+    if (pathsIn.isEmpty || !mounted) return;
+    if (forced == null && !askSheet && !playChoiceSheetForced) {
+      forced = playChoiceFor(UserSettings.instance.playStartInApp);
+      preset = forced != null;
+    }
+    if (preset &&
+        forced != PlayChoice.now &&
+        _queue.isEmpty &&
+        !_controller.hasFile) {
+      forced = PlayChoice.now;
+    }
+    // Dossiers liés: mis en scène (Android) / descendus (iOS) AVANT tout —
+    // la suite lit les fichiers (sonde, M3U, sous-chansons).
+    final paths = await LocalRoots.instance.materialize(pathsIn);
     if (paths.isEmpty || !mounted) return;
     final l10n      = context.l10n;
     final messenger = ScaffoldMessenger.of(context);
@@ -1200,6 +1420,29 @@ class _AppShellState extends State<AppShell>
     );
     if (!mounted || tracks.isEmpty) return;
 
+    if (forced != null) {
+      var batch = List<TrackRecord>.of(tracks);
+      int? start;
+      if (subsong != null &&
+          batch.map((t) => t.filePath).toSet().length == 1) {
+        start = (subsong - 1).clamp(0, batch.length - 1);
+        if (forced != PlayChoice.now) batch = [batch[start]];
+      } else if (shuffle) {
+        batch.shuffle();
+      }
+      _exitRadio();
+      if (forced == PlayChoice.now) {
+        await _startLocalTrackQueue(context, batch, startIndex: start);
+        return;
+      }
+      await _onLocalTracksQueueAdd(batch,
+          atEnd: forced != PlayChoice.next, silent: true);
+      if (!mounted) return;
+      AppSnack.showOn(messenger, l10n.shellTracksQueued(batch.length),
+          duration: const Duration(seconds: 2));
+      return;
+    }
+
     if (_dropChoiceOpen) {
       _droppedBatch.addAll(tracks);
       return;
@@ -1211,12 +1454,27 @@ class _AppShellState extends State<AppShell>
     PlayChoice? choice;
     _dropChoiceOpen = true;
     try {
+      // Le compte annoncé est celui que la FILE recevra: le seuil des
+      // sous-chansons trop courtes (Réglages → Lecture) s'applique au
+      // remplissage, et la feuille annonçait la liste d'AVANT — « 66
+      // morceaux » pour un .rsn dont la file en reçoit 58 (Super Mario World:
+      // jingles « Player Down », « Fade Out! »…). Même fonction, même entrée
+      // que _startLocalTrackQueue, donc le même nombre.
+      final (kept, _) = filterQueueSubsongs(tracks, null,
+          minMs: minSubsongMs,
+          fileKey: (t) => t.filePath,
+          durationMs: (t) =>
+              t.durationS == null ? null : (t.durationS! * 1000).round());
+      final skipped = tracks.length - kept.length;
       choice = await showPlayChoiceSheet(
         context,
         title: tracks.length == 1
             ? tracks.first.displayTitle
             // Même libellé que le sélecteur de fichiers pour le même cas.
-            : l10n.albumTrackCount(tracks.length),
+            : skipped > 0
+                ? '${l10n.albumTrackCount(kept.length)} · '
+                    '${l10n.playChoiceSkippedShort(skipped)}'
+                : l10n.albumTrackCount(tracks.length),
       );
     } finally {
       _dropChoiceOpen = false;
@@ -1357,7 +1615,9 @@ class _AppShellState extends State<AppShell>
     var items = [for (final s in expanded) _OnlineItem(s, _seq())];
     if (_shuffleEnabled) items = items.toList()..shuffle();
     if (atEnd) {
-      _queue.addAll(items);
+      // « À la fin » = à la fin de ce que l'utilisateur a choisi: ce que le ∞
+      // a ajouté reste derrière (Apple Music fait pareil).
+      _queue.insertAll(_autoplayTailStart(), items);
     } else {
       final insertIdx = _queue.isEmpty ? 0 : (_queueIdx + 1).clamp(0, _queue.length);
       _queue.insertAll(insertIdx, items);
@@ -1818,6 +2078,39 @@ class _AppShellState extends State<AppShell>
   /// What the sidebar queue panel shows: the real queue, or a one-entry
   /// stand-in for the currently loaded track when a single file is playing
   /// (single-track plays deliberately clear the queue).
+  /// Le panneau de file du bureau: la barre latérale de la coquille ET le
+  /// panneau à droite du mini lecteur — mêmes gestes, mêmes rappels.
+  /// [compact] (mini lecteur, 132 px de haut au plancher): ni titre, ni
+  /// aléatoire / répétition (ils sont dans son transport), ni croix (le bouton
+  /// de file du transport referme) — l'en-tête tient alors sur UNE ligne et
+  /// laisse la hauteur à la liste.
+  Widget _queuePanel(BuildContext context,
+      {VoidCallback? onClose, bool compact = false}) {
+    final cs = Theme.of(context).colorScheme;
+    return QueuePanel(
+      cs: cs,
+      queue: _sidebarQueue(),
+      currentIdx: _controller.queue.isEmpty ? 0 : _controller.queueIdx,
+      onTap: _controller.goToQueueIndex,
+      backgroundColor: Colors.transparent,
+      title: compact ? null : context.l10n.playerQueue,
+      onClose: compact ? null : onClose,
+      shuffleEnabled: _controller.shuffleEnabled,
+      onToggleShuffle: compact ? null : _controller.toggleShuffle,
+      loopMode: _controller.loopMode,
+      onCycleLoop: compact ? null : _controller.cycleLoopMode,
+      onAddToPlaylist: _queue.isEmpty
+          ? null
+          : () => showAddToPlaylistSheet(context,
+              resolveTrackIds: _queueTrackIds),
+      onClearQueue: _queue.isEmpty ? null : _clearQueue,
+      onReorder: _queue.isEmpty ? null : _reorderQueue,
+      onRemove: _queue.isEmpty ? null : _removeFromQueue,
+      autoplayEnabled: UserSettings.instance.queueAutoplay,
+      onToggleAutoplay: _toggleAutoplay,
+    );
+  }
+
   List<QueueEntry> _sidebarQueue() {
     if (_controller.queue.isNotEmpty) return _controller.queue;
     return [
@@ -1956,6 +2249,7 @@ class _AppShellState extends State<AppShell>
             _OnlineItem(:final result) => result.subsongIdx,
             _LocalItem(:final track)   => track.subsongIdx,
           },
+          autoplay: item.autoplay,
         );
       }).toList(),
       currentIdx: _queueIdx,
@@ -1983,8 +2277,11 @@ class _AppShellState extends State<AppShell>
     // Radio never ends: keep "next" live even when the rolling window hasn't
     // been refilled yet (_playNext resolves one on demand in that case).
     final radio = _radioPool.isNotEmpty;
+    // Autoplay (∞): « suivant » existe tant que le ∞ est allumé — s'il n'a
+    // pas encore rempli, _playNext le fait à la demande, comme pour la radio.
     _controller.setQueueNav(
-      next: (radio || _queueIdx < _queue.length - 1 || _queueWrapsAtEnd)
+      next: (radio || _autoplayLive || _queueIdx < _queue.length - 1 ||
+              _queueWrapsAtEnd)
           ? _playNext
           : null,
       prev: _queueIdx > 0 ? _playPrev : null,
@@ -2004,7 +2301,10 @@ class _AppShellState extends State<AppShell>
     for (final it in _queue) {
       switch (it) {
         case _OnlineItem(:final result):
-          items.add({'t': 'online', 's': it.seq, 'r': result.toJson()});
+          items.add({
+            't': 'online', 's': it.seq, 'r': result.toJson(),
+            if (it.autoplay) 'a': true,
+          });
         case _LocalItem(:final track):
           // Full record, not just the id: local album/folder queues are
           // synthesized on the fly — only tracks that actually PLAYED have a
@@ -2049,7 +2349,8 @@ class _AppShellState extends State<AppShell>
         if (m['t'] == 'online' && m['r'] is Map) {
           items.add(_OnlineItem(
               SearchResult.fromJson((m['r'] as Map).cast<String, dynamic>()),
-              seq));
+              seq)
+            ..autoplay = m['a'] == true);
         } else if (m['t'] == 'local' && m['id'] is String) {
           // Prefer the live DB row (metadata stays current); fall back to the
           // serialized record — synthesized queue entries have no DB row.
@@ -2320,6 +2621,221 @@ class _AppShellState extends State<AppShell>
     }
   }
 
+  // ── Autoplay (∞) ──────────────────────────────────────────────────────────
+  //
+  // Quand la file touche à sa fin, des morceaux proches de ce qui vient de
+  // jouer y sont ajoutés (autoplay.dart décide lesquels, à sec). Pas un mode
+  // comme la radio — une propriété de la FIN de toute file, qu'on ne quitte
+  // pas en jouant autre chose. Repeat-file est exclu: la file ne finit pas.
+
+  bool _autoplayFilling = false;
+
+  /// La fin de file qui n'a RIEN donné (hors ligne, artiste inconnu du
+  /// serveur): on ne redemande pas à chaque tick, seulement quand la file a
+  /// changé ou sur un geste explicite (`force`).
+  String? _autoplayDrySignature;
+
+  /// Le dernier état du réglage vu par la coquille, pour n'agir qu'au
+  /// BASCULEMENT (Réglages → Lecture change la valeur sans passer par le ∞).
+  bool _autoplayWasOn = UserSettings.instance.queueAutoplay;
+
+  bool get _autoplayLive =>
+      UserSettings.instance.queueAutoplay &&
+      _radioPool.isEmpty &&
+      _queue.isNotEmpty &&
+      _controller.loopMode != 1;
+
+  String _autoplayTailSignature() =>
+      _queue.isEmpty ? '' : '${_queue.last.uid}:${_queue.length}';
+
+  /// L'index de la première entrée du ∞ APRÈS la piste en cours — là où un
+  /// ajout manuel « à la fin » s'insère. Fin de file s'il n'y en a pas.
+  int _autoplayTailStart() {
+    for (var i = _queueIdx + 1; i < _queue.length; i++) {
+      if (_queue[i].autoplay) return i;
+    }
+    return _queue.length;
+  }
+
+  /// Les graines: la FIN de la file (ce qui aura joué juste avant que le ∞
+  /// prenne la main), la plus récente d'abord — puis, en mode automatique,
+  /// quelques artistes de l'HISTORIQUE que la file ne porte pas déjà. Une
+  /// file d'un seul artiste sans groupe ne nourrit sinon que lui, et comme
+  /// les graines suivantes sont la fin de la file, on n'en sortait plus.
+  Future<List<AutoplaySeed>> _autoplayQueueSeeds() async {
+    const n = 5;
+    final tail = _queue.sublist(math.max(0, _queue.length - n)).reversed;
+    final seeds = [for (final it in tail) _autoplaySeedOf(it)];
+    final known = <String>{
+      for (final s in seeds)
+        for (final a in s.artistNames) a.toLowerCase(),
+    };
+    var extra = 0;
+    for (final s in await _autoplayHistorySeeds()) {
+      if (extra >= 3) break;
+      if (known.contains(s.artistNames.single.toLowerCase())) continue;
+      seeds.add(s);
+      extra++;
+    }
+    return seeds;
+  }
+
+  AutoplaySeed _autoplaySeedOf(_QueueItem it) => switch (it) {
+        _OnlineItem(:final result) => AutoplaySeed(
+            artistIds: result.artistIds,
+            artistNames: result.artistNames,
+            collection: result.collection,
+            platform: result.platform),
+        _LocalItem(:final track) => AutoplaySeed(
+            artistNames: [if ((track.artist ?? '').isNotEmpty) track.artist!],
+            collection: track.collectionSlug,
+            platform: track.platformName),
+      };
+
+  /// Mode « écoutes récentes »: les graines viennent de l'historique, un
+  /// artiste par graine, sans doublon.
+  Future<List<AutoplaySeed>> _autoplayHistorySeeds() async {
+    final recent = await LocalDb.instance.getRecentTracks(limit: 30);
+    final seen = <String>{};
+    final out = <AutoplaySeed>[];
+    for (final t in recent) {
+      final a = (t.artist ?? '').trim();
+      if (a.isEmpty || !seen.add(a.toLowerCase())) continue;
+      out.add(AutoplaySeed(
+          artistNames: [a],
+          collection: t.collectionSlug,
+          platform: t.platformName));
+      if (out.length >= 5) break;
+    }
+    return out;
+  }
+
+  String? _autoplayIdOf(_QueueItem it) => switch (it) {
+        _OnlineItem(:final result) => AutoplayPlanner.fileIdOf(result.songId),
+        _LocalItem(:final track) => track.onlineId,
+      };
+
+  /// Les vraies sources, branchées sur le catalogue. `random` avec une graine
+  /// tirée ici: deux remplissages ne rendent pas la même page.
+  Future<List<SearchResult>> _autoplayFetch(AutoplayQuery q) {
+    final seed = _rand.nextInt(1 << 30).toString();
+    return switch (q.source) {
+      AutoplaySource.artist => RewampDb.browse(
+          artistId: q.artistId,
+          artistName: q.artistId == null ? q.artistName : null,
+          sortBy: 'random', seed: seed, limit: q.limit),
+      AutoplaySource.group => RewampDb.browse(
+          tags: [q.groupName!], tagCategories: const ['group'],
+          sortBy: 'random', seed: seed, limit: q.limit),
+      AutoplaySource.collection => RewampDb.browse(
+          collection: q.collection, platform: q.platform,
+          sortBy: 'random', seed: seed, limit: q.limit),
+    };
+  }
+
+  Future<List<String>> _autoplayGroupsOf(String? id, String? name) async {
+    if ((name ?? '').isEmpty && id == null) return const [];
+    final d = await RewampDb.getArtistDetails(name ?? '', artistId: id);
+    return d?.groups ?? const [];
+  }
+
+  /// Remplit si la piste en cours est l'avant-dernière ou la dernière. Un
+  /// remplissage à la fois; la file est RELUE après les attentes, et un plan
+  /// qui ne correspond plus à la file qu'il a vue est jeté.
+  Future<void> _maybeFillAutoplay({bool force = false}) async {
+    if (!_autoplayLive || _queueIdx < 0) return;
+    if (!force && _queue.length - 1 - _queueIdx > 1) return;
+    if (_autoplayFilling) return;
+    final sig = _autoplayTailSignature();
+    if (!force && sig == _autoplayDrySignature) return;
+    _autoplayFilling = true;
+    try {
+      final s = UserSettings.instance;
+      final mode = s.queueAutoplayMode;
+      final seeds = mode == AutoplayMode.recent
+          ? await _autoplayHistorySeeds()
+          : await _autoplayQueueSeeds();
+      // Ni ce qui est dans la file, ni ce qu'on vient d'entendre.
+      final exclude = <String>{
+        for (final it in _queue)
+          if (_autoplayIdOf(it) case final id? when id.isNotEmpty) id,
+        for (final t in await LocalDb.instance.getRecentTracks(limit: 100))
+          if (t.onlineId case final id? when id.isNotEmpty) id,
+      };
+      final rows = await AutoplayPlanner(
+        fetch: _autoplayFetch,
+        groupsOf: _autoplayGroupsOf,
+        rand: _rand,
+      ).plan(mode: mode, seeds: seeds, exclude: exclude,
+          size: s.queueAutoplaySize);
+      if (!mounted || !_autoplayLive) return;
+      if (sig != _autoplayTailSignature()) return;   // la file a bougé: au tour suivant
+      if (rows.isEmpty) {
+        _autoplayDrySignature = sig;
+        return;
+      }
+      // Un fichier à sous-chansons COMPTE pour un morceau: déplié par le même
+      // chemin que la file d'album (sans téléchargement: `eager: false`),
+      // tourné sur son sous-chant de DÉPART, et seul celui-là entre. Un UADE
+      // dont le serveur ne connaît pas la liste reste une entrée DIFFÉRÉE,
+      // dépliée quand on l'atteint (_playAt), comme ailleurs.
+      final items = <_OnlineItem>[];
+      for (final r in rows) {
+        final subs = _rotateToTopEntry(r, await _subsongEntries(r, eager: false));
+        if (subs.isEmpty) continue;
+        final first = subs.first;
+        final deferred = subs.length == 1 &&
+            UadeInfoService.isUadePath(first.filename) &&
+            !_isResolvedSubsong(first);
+        items.add(_OnlineItem(first, _seq(), deferExpand: deferred)
+          ..autoplay = true);
+      }
+      if (!mounted || sig != _autoplayTailSignature()) return;
+      if (items.isEmpty) {
+        _autoplayDrySignature = sig;
+        return;
+      }
+      _autoplayDrySignature = null;
+      _queue.addAll(items);
+      _controller.queueExhausted = false;
+      _syncControllerQueue();
+      _refreshQueueNav();
+      debugPrint('[autoplay] +${items.length} (${mode.name}) après '
+          '${_queue.length - items.length} entrées');
+      _prefetchNextDownload();
+    } catch (e) {
+      debugPrint('[autoplay] échec: $e');
+    } finally {
+      _autoplayFilling = false;
+    }
+  }
+
+  /// Le ∞ du panneau de file: le MÊME réglage que Réglages → Lecture. Les
+  /// effets de bord (vider la suite, remplir) vivent dans le listener du
+  /// réglage, pour que les deux entrées fassent exactement pareil.
+  void _toggleAutoplay() {
+    UserSettings.instance.queueAutoplay = !UserSettings.instance.queueAutoplay;
+  }
+
+  /// Coupé: ce que le ∞ avait mis APRÈS la piste en cours s'en va — ce qui a
+  /// joué reste (c'est de l'historique). Allumé: on remplit si la fin est
+  /// proche. Dans les deux cas le bouton « suivant » suit.
+  void _onAutoplaySettingChanged() {
+    final on = UserSettings.instance.queueAutoplay;
+    if (on == _autoplayWasOn) return;
+    _autoplayWasOn = on;
+    _autoplayDrySignature = null;
+    if (!on) {
+      final drop = <int>{
+        for (var i = _queueIdx + 1; i < _queue.length; i++)
+          if (_queue[i].autoplay) i,
+      };
+      if (drop.isNotEmpty) _removeFromQueue(drop);
+    }
+    _refreshQueueNav();
+    if (on) unawaited(_maybeFillAutoplay());
+  }
+
   // ── Manual queue editing (reorder / remove) ────────────────────────────────
   //
   // The queue is a PLAIN LIST and _queueIdx is a position in it, so every edit
@@ -2423,6 +2939,15 @@ class _AppShellState extends State<AppShell>
     if (_queueIdx + 1 < _queue.length) return _playAt(_queueIdx + 1);
     // Dernière piste sous repeat-file: on repart de la première.
     if (_queueWrapsAtEnd) return _playAt(0);
+    // Autoplay (∞): le remplissage anticipé a pu manquer (hors ligne, source
+    // muette) — on le retente ICI, et l'on avance si quelque chose est venu.
+    if (_autoplayLive) {
+      await _maybeFillAutoplay(force: true);
+      if (_queueIdx + 1 < _queue.length) return _playAt(_queueIdx + 1);
+      // Rien n'est venu (hors ligne, rien de proche): la file est finie
+      // comme sans ∞ — le prochain « lecture » repart du début.
+      _controller.queueExhausted = true;
+    }
   }
 
   Future<void> _downloadAndPlayOnline(BuildContext ctx, SearchResult r) async {
@@ -2630,7 +3155,18 @@ class _AppShellState extends State<AppShell>
         adopt = () async =>
             _playResolvedOnline(result, fp, sub, artworkDir, adopt: true);
       case _LocalItem(:final track):
-        if (!await File(track.filePath).exists()) { _disarmNext(); return; }
+        if (!await File(track.filePath).exists()) {
+          _disarmNext();
+          // Dossier lié pas encore en cache: le mettre en scène PENDANT que
+          // le morceau courant joue, puis réarmer — c'est le pré-téléchargement
+          // du pauvre, et ce qui garde le gapless sur Android.
+          if (LocalRoots.instance.isVirtuallyPresent(track.filePath)) {
+            unawaited(LocalRoots.instance
+                .materialize([track.filePath])
+                .then((ok) { if (ok.isNotEmpty && mounted) _armNext(); }));
+          }
+          return;
+        }
         if (next >= _queue.length || !identical(_queue[next], item)) return;
         path = track.filePath;
         subsongIdx = track.subsongIdx;
@@ -2847,6 +3383,11 @@ class _AppShellState extends State<AppShell>
         }
         _consecutiveDlFailures = 0;
       case _LocalItem(:final track):
+        // Dossier LIÉ: un fichier pas encore mis en scène (Android, cache SAF)
+        // ou pas encore descendu (iOS, iCloud) le devient ICI. No-op sinon.
+        if (!await File(track.filePath).exists()) {
+          await LocalRoots.instance.materialize([track.filePath]);
+        }
         // Cache d'archive purgé par l'OS (Caches/local_archives): ré-extraire
         // depuis l'archive d'origine (opened/) AVANT toute autre récupération
         // — le chemin demandé redevient valide tel quel. Un stat quand le
@@ -2941,6 +3482,9 @@ class _AppShellState extends State<AppShell>
     // Radio: top the rolling window back up and trim the tail. Fire-and-forget
     // (it downloads/extracts the next album in the background while this plays).
     if (_radioPool.isNotEmpty) unawaited(_radioRefill());
+    // Autoplay (∞): la file touche-t-elle à sa fin ? Rempli AVANT, pour que
+    // le pré-téléchargement du premier ajouté ait le temps d'atterrir.
+    unawaited(_maybeFillAutoplay());
   }
 
   /// Safety net for a file that downloaded fine but the native decoder refused
@@ -4014,7 +4558,7 @@ class _AppShellState extends State<AppShell>
                             child: OverflowBox(
                               minWidth: w,
                               maxWidth: w,
-                              alignment: Alignment.centerLeft,
+                              alignment: AlignmentDirectional.centerStart,
                               // Toutes les marges système remises à zéro pour
                               // ce sous-arbre, pas seulement `padding`: la
                               // SafeArea interne de la NavigationBar les
@@ -4489,8 +5033,15 @@ class _AppShellState extends State<AppShell>
       // est lourd), donc un conteneur capturé ici survivait au changement de
       // piste. Le rappel, lui, redemande à chaque build du lecteur.
       onNavigateSubsongs: () {
-        final c = _currentContainerResult();
-        if (c != null) _openSubsongList(c);
+        var c = _currentContainerResult();
+        if (c == null) return;
+        // Un conteneur LOCAL n'a pas d'autre identité que son chemin: l'écran
+        // en tire sa clé de bibliothèque et ses lignes le fichier à jouer.
+        if (c.songId.isEmpty && c.localPath == null &&
+            _controller.filePath != null) {
+          c = c.copyWith(localPath: _controller.filePath);
+        }
+        _openSubsongList(c);
       },
       // Le NOM du conteneur, pour que la ligne d'album l'affiche au lieu d'un
       // libellé générique quand le fichier n'appartient à aucun album — le cas
@@ -4551,7 +5102,14 @@ class _AppShellState extends State<AppShell>
     // un contexte SOUS le MediaQuery gelé de l'hôte, sinon elle lirait la
     // largeur de la fenêtre rétrécie et basculerait en disposition téléphone.
     return MiniWindowHost(
-      mini: MiniWindowPlayer(controller: _controller),
+      mini: MiniWindowPlayer(
+        controller: _controller,
+        // File et index: pas de position (stateChanges, pas le tick).
+        queuePanel: (context) => ListenableBuilder(
+          listenable: _controller.stateChanges,
+          builder: (context, _) => _queuePanel(context, compact: true),
+        ),
+      ),
       child: Builder(builder: _buildShell),
     );
   }
@@ -4582,8 +5140,8 @@ class _AppShellState extends State<AppShell>
 
     // Home screen (index 0) keeps full width so "recently played" is not
     // squeezed by the queue overlay.  All other screens get right-padding.
-    final queuePad = EdgeInsets.only(
-      right: showQueueOverlay ? _kQueuePanelWidth : 0,
+    final queuePad = EdgeInsetsDirectional.only(
+      end: showQueueOverlay ? _kQueuePanelWidth : 0,
     );
     final body = IndexedStack(
       index: _index,
@@ -4839,31 +5397,10 @@ class _AppShellState extends State<AppShell>
                                   child: ListenableBuilder(
                                     // File et index: pas de position.
                                     listenable: _controller.stateChanges,
-                                    builder: (context, _) => QueuePanel(
-                                      cs: cs,
-                                      queue: _sidebarQueue(),
-                                      currentIdx: _controller.queue.isEmpty
-                                          ? 0
-                                          : _controller.queueIdx,
-                                      onTap: _controller.goToQueueIndex,
-                                          backgroundColor: Colors.transparent,
-                                      title: l10n.playerQueue,
+                                    builder: (context, _) => _queuePanel(
+                                      context,
                                       onClose: () => setState(
                                           () => _showSidebarQueue = false),
-                                      shuffleEnabled: _controller.shuffleEnabled,
-                                      onToggleShuffle: _controller.toggleShuffle,
-                                      loopMode: _controller.loopMode,
-                                      onCycleLoop: _controller.cycleLoopMode,
-                                      onAddToPlaylist: _queue.isEmpty
-                                          ? null
-                                          : () => showAddToPlaylistSheet(context,
-                                              resolveTrackIds: _queueTrackIds),
-                                      onClearQueue:
-                                          _queue.isEmpty ? null : _clearQueue,
-                                      onReorder: _queue.isEmpty
-                                          ? null : _reorderQueue,
-                                      onRemove: _queue.isEmpty
-                                          ? null : _removeFromQueue,
                                     ),
                                   ),
                                 ),
@@ -4922,11 +5459,11 @@ class _AppShellState extends State<AppShell>
                     child: AnimatedPadding(
                       duration: const Duration(milliseconds: 200),
                       curve: Curves.easeInOut,
-                      padding: const EdgeInsets.only(
+                      padding: const EdgeInsetsDirectional.only(
                         // Même marge dans les deux dispositions: en mode
                         // barre latérale la dalle touchait le bord droit de la
                         // fenêtre et le séparateur du rail à gauche.
-                        left: _kGlassInset,
+                        start: _kGlassInset,
                         // La queue ne PREND PLUS de largeur au mini-lecteur:
                         // il passe PAR-DESSUS (il est désormais après elle dans
                         // le Stack). Lui retrancher les 320 px du panneau le
@@ -4935,7 +5472,7 @@ class _AppShellState extends State<AppShell>
                         // « A RenderFlex overflowed by 1.00 pixels ». Une barre
                         // de transport n'a pas de largeur souple: la seule
                         // place qu'on peut lui rendre est celle du panneau.
-                        right: _kGlassInset,
+                        end: _kGlassInset,
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,

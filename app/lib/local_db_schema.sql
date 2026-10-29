@@ -1,5 +1,5 @@
 -- ============================================================
--- Rewamp — schéma SQLite local (sur l'appareil) — version 78
+-- Rewamp — schéma SQLite local (sur l'appareil) — version 79
 -- ============================================================
 --
 -- ⚠️ CE FICHIER EST UNE DOCUMENTATION, généré depuis `_kSchemaStatements`
@@ -336,3 +336,16 @@ CREATE TABLE IF NOT EXISTS pm_preset_ids (
     path       TEXT PRIMARY KEY,
     preset_id  TEXT NOT NULL
   );
+
+-- Dossiers liés (mig 79, local_roots.dart): la table des NOMS d'une racine,
+-- remplacée à chaque parcours. Chemin portable ('/') relatif à la racine, nom
+-- en colonne pour l'index de recherche. Aucune métadonnée musicale.
+CREATE TABLE IF NOT EXISTS linked_entries (
+    root_id   TEXT    NOT NULL,
+    rel_path  TEXT    NOT NULL,
+    name      TEXT    NOT NULL,
+    size      INTEGER,
+    mtime_ms  INTEGER,
+    PRIMARY KEY (root_id, rel_path)
+  );
+

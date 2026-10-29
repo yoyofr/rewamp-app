@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:rewamp/l10n.dart';
 import 'package:rewamp/local_db.dart';
 import 'package:rewamp/rewamp_db.dart';
 import 'package:rewamp/track_options_sheet.dart';
+import 'package:rewamp/user_settings.dart';
 
 /// La feuille de choix décide SEULE d'un lien « voir »: le lecteur offrait déjà
 /// « Voir l'album » et « Voir les subsongs », les LISTES non — un tap n'y menait
 /// qu'à la lecture. Les recoder dans chaque écran, c'était garantir qu'il en
 /// manquerait toujours un.
 void main() {
+  // La feuille lit « Toucher un morceau dans l'app » (défaut: demander).
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues({});
+    await UserSettings.init();
+  });
   SearchResult row({String? album, int? subsongs, bool resolved = false,
           String songId = 'u1'}) =>
       SearchResult(

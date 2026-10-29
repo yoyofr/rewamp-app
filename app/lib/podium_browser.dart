@@ -170,13 +170,13 @@ class _PodiumHubScreenState extends State<PodiumHubScreen> {
     Widget icon(IconData i, {Color? color}) =>
         Icon(i, color: color ?? cs.onPrimaryContainer, size: 20);
     Widget sectionTitle(String s) => Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 8),
           child: Text(s, style: tt.titleMedium),
         );
 
     final children = <Widget>[
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 0),
         child: Row(children: [
           Expanded(
             child: Text(
@@ -189,7 +189,7 @@ class _PodiumHubScreenState extends State<PodiumHubScreen> {
         ]),
       ),
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
         child: Text(l10n.podiumHubBias,
             style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
       ),
@@ -206,7 +206,7 @@ class _PodiumHubScreenState extends State<PodiumHubScreen> {
       // Les trois rangs: une rangée de puces aux couleurs des coupes.
       if (total > 0)
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 4),
           child: Wrap(spacing: 8, runSpacing: 8, children: [
             for (final r in const [1, 2, 3])
               ActionChip(
@@ -577,9 +577,9 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
         child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 8),
               child: Align(
-                alignment: Alignment.centerLeft,
+                alignment: AlignmentDirectional.centerStart,
                 child: Text(title,
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
               ),
@@ -651,7 +651,7 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
           constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.8),
           child: ListView(shrinkWrap: true, children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 8),
               child: Text(l10n.podiumChipEra,
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             ),
@@ -673,7 +673,7 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
                 onTap: () => Navigator.of(ctx).pop((kind: _EraKind.decade, value: d.decade)),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(56, 0, 16, 8),
+                padding: const EdgeInsetsDirectional.fromSTEB(56, 0, 16, 8),
                 child: Wrap(spacing: 6, runSpacing: 6, children: [
                   for (final y in years)
                     if (decadeOf(y.year) == d.decade)
@@ -767,7 +767,7 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
     ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 6, 12, 4),
       child: Row(children: [
         for (var i = 0; i < chips.length; i++) ...[
           if (i > 0) const SizedBox(width: 6),
@@ -806,7 +806,7 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
       ),
       body: Column(children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 0),
           child: CancelField(
             controller: _filterCtrl,
             onCleared: _onFilterChanged,
@@ -1087,7 +1087,7 @@ class _PodiumHallOfFameScreenState extends State<PodiumHallOfFameScreen> {
               Expanded(child: ScrollingText(text: r.label)),
             ]),
             subtitle: Padding(
-              padding: const EdgeInsets.only(left: 28),
+              padding: const EdgeInsetsDirectional.only(start: 28),
               child: _Medals(gold: r.gold, silver: r.silver, bronze: r.bronze),
             ),
             trailing: const Icon(Icons.chevron_right),
@@ -1113,7 +1113,7 @@ class _Medals extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.bodySmall;
     Widget one(int rank, int n) => Padding(
-          padding: const EdgeInsets.only(right: 10),
+          padding: const EdgeInsetsDirectional.only(end: 10),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(Icons.emoji_events, size: 14, color: podiumColor(context, rank)),
             const SizedBox(width: 2),

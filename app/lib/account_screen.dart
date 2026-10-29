@@ -351,7 +351,7 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
         if (UserSettings.instance.userIdInsecureFallback)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 4),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -366,7 +366,7 @@ class _AccountScreenState extends State<AccountScreen> {
           ),
         if (anon)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 8),
             child: FilledButton.icon(
               onPressed: _startEmailFlow,
               icon: const Icon(Icons.mail_outline),

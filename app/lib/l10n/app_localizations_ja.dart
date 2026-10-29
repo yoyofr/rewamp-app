@@ -1128,6 +1128,16 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '短い$count曲を除外',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => '詳細を読み込み中…';
 
   @override
@@ -1386,6 +1396,15 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get queueClear => 'キューを空にする';
+
+  @override
+  String get queueAutoplayOn => '自動再生オン：キューの後に似た曲が続きます';
+
+  @override
+  String get queueAutoplayOff => '自動再生オフ';
+
+  @override
+  String get queueAutoplayRow => '自動再生で追加';
 
   @override
   String get queueClearConfirmTitle => 'キューを空にしますか？';
@@ -2399,6 +2418,77 @@ class AppLocalizationsJa extends AppLocalizations {
   String get localOpsPhaseDeleting => 'ファイルを削除';
 
   @override
+  String localOpsScanning(String name) {
+    return '$nameをスキャン中…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'ファイル一覧を作成中';
+
+  @override
+  String get linkedRootsSection => 'リンクしたフォルダ';
+
+  @override
+  String get linkedRootAppFolder => 'Rewampフォルダ（「ファイル」App）';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'ファイルを「ファイル」App › このiPhone内 › Rewamp に置くか、コンピュータからFinderでコピーしてください。そこから直接再生され、何もコピーされません。';
+
+  @override
+  String get linkedRootsLink => 'フォルダをリンク…';
+
+  @override
+  String get linkedRootsLinkSubtitle => '元の場所から再生し、コピーはしません';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count個のファイル',
+      zero: 'ファイルはまだ一覧にありません',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => '現在アクセスできません';
+
+  @override
+  String get linkedRootRescan => '更新';
+
+  @override
+  String get linkedRootRename => '名前を変更';
+
+  @override
+  String get linkedRootUnlink => 'リンクを解除';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => 'このフォルダのリンクを解除しますか？';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'ディスクからは何も削除されません。お気に入りとプレイリストの項目は残り、再びリンクするまでグレー表示になります。';
+
+  @override
+  String get linkedRootEmpty => 'このフォルダに再生できるファイルはありません。';
+
+  @override
+  String get linkedRootSearchHint => 'このフォルダ内を検索';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count件の一致',
+      zero: '一致なし',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'ファイルをインポート';
 
   @override
@@ -2517,6 +2607,54 @@ class AppLocalizationsJa extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'キューに入りません：$seconds 秒未満（設定 → 再生）';
   }
+
+  @override
+  String get settingsAutoplaySection => '自動再生';
+
+  @override
+  String get settingsAutoplayTitle => 'キューの後も再生を続ける';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'キューが終わりに近づくと、似た曲が自動で追加されます。キューの∞ボタンはこの設定と同じです。';
+
+  @override
+  String get settingsAutoplaySize => '一度に追加する曲数';
+
+  @override
+  String get settingsAutoplayMode => '曲の選び方';
+
+  @override
+  String get settingsAutoplayModeAuto => '自動';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      '同じアーティスト、次にそのグループ、次に同じコレクションの順に選びます。';
+
+  @override
+  String get settingsAutoplayModeArtist => '同じアーティスト';
+
+  @override
+  String get settingsAutoplayModeArtistHint => '直前に再生したアーティストの曲のみ。';
+
+  @override
+  String get settingsAutoplayModeGroup => '同じグループ';
+
+  @override
+  String get settingsAutoplayModeGroupHint => 'そのアーティストが所属するグループの曲。';
+
+  @override
+  String get settingsAutoplayModeCollection => '同じコレクション';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      '同じコレクションからランダムに選びます。同じプラットフォームを優先します。';
+
+  @override
+  String get settingsAutoplayModeRecent => '最近聴いた曲';
+
+  @override
+  String get settingsAutoplayModeRecentHint => 'キューだけでなく、最近聴いた曲からも選びます。';
 
   @override
   String get settingsQueuePrefetchSection => 'キューのダウンロード';
@@ -4524,4 +4662,41 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'ファイルがありません';
+
+  @override
+  String get settingsPlayStartSection => '再生の開始';
+
+  @override
+  String get settingsPlayStartInApp => 'アプリ内で曲をタップしたとき';
+
+  @override
+  String get settingsPlayStartInAppHint => '長押し(右クリック)では常に選択肢が表示されます。';
+
+  @override
+  String get settingsPlayStartExternal => 'システムから開いたファイル';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'ダブルクリック、「このアプリで開く」、アプリアイコンへのドロップ。';
+
+  @override
+  String get settingsPlayStartAsk => '確認する';
+
+  @override
+  String get settingsLaunchWindow => '起動時';
+
+  @override
+  String get settingsLaunchWindowNormal => '通常のウインドウ';
+
+  @override
+  String get settingsLaunchWindowMini => 'ミニプレーヤー';
+
+  @override
+  String get settingsLaunchWindowLast => '終了時と同じ';
+
+  @override
+  String get miniWindowQuit => 'Rewamp を終了';
+
+  @override
+  String get miniWindowCompact => 'コンパクトなミニプレーヤー';
 }

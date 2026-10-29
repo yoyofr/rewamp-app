@@ -190,9 +190,9 @@ class _Mt32EnginePanelState extends State<Mt32EnginePanel> {
           ),
         ),
         Align(
-          alignment: Alignment.centerRight,
+          alignment: AlignmentDirectional.centerEnd,
           child: Padding(
-            padding: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsetsDirectional.only(end: 8),
             child: TextButton.icon(
               icon: const Icon(Icons.restart_alt, size: 16),
               label: Text(l10n.settingsResetEngine),

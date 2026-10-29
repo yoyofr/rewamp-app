@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart' show kIsWeb, listEquals, setEquals;
 import 'package:flutter/gestures.dart'
     show kTouchSlop, PointerPanZoomStartEvent, PointerPanZoomUpdateEvent;
 import 'package:flutter/material.dart';
+import 'media_direction.dart';
 import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart' show windowManager;
 
@@ -69,6 +70,27 @@ Color playerSurfaceColor(BuildContext context) {
 /// parle de la PISTE en cours. Sans lui, deux commentaires d'affilée se lisent
 /// comme un seul.
 const _kStilRule = '────────────────────';
+
+/// Demandes d'affichage venues de HORS du lecteur (ligne de commande du
+/// bureau, `--fullscreen`). Le lecteur est un overlay monté à l'ouverture:
+/// une demande faite avant qu'il n'existe l'attend, et se CONSOMME une fois.
+class PlayerViewRequests extends ChangeNotifier {
+  PlayerViewRequests._();
+  static final PlayerViewRequests instance = PlayerViewRequests._();
+
+  bool _fullscreen = false;
+
+  void requestVizFullscreen() {
+    _fullscreen = true;
+    notifyListeners();
+  }
+
+  bool _takeVizFullscreen() {
+    final v = _fullscreen;
+    _fullscreen = false;
+    return v;
+  }
+}
 
 class PlayerScreen extends StatefulWidget {
   final PlayerController   controller;
@@ -346,12 +368,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     _syncWakelock();
     UserSettings.instance.addListener(_onSettingsChanged);
     MiniWindow.instance.addListener(_onMiniWindowChanged);
+    PlayerViewRequests.instance.addListener(_onViewRequest);
     widget.controller.addListener(_onControllerChanged);
     _onControllerChanged(); // seed the artwork identity for the current track
     WidgetsBinding.instance.addObserver(this); // rotation → auto-fullscreen
     // The player just opened with a viz/video area: allow phone rotation.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _syncOrientation();
+      _onViewRequest(); // demandée avant que le lecteur ne soit monté
     });
     if (_macDesktop) {
       _windowCh.setMethodCallHandler((call) async {
@@ -386,6 +410,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     PlayerTint.dominant = null; // player closed → panels elsewhere stay neutral
     PlayerTint.dominantAlt = null;
     UserSettings.instance.removeListener(_onSettingsChanged);
+    PlayerViewRequests.instance.removeListener(_onViewRequest);
     MiniWindow.instance.removeListener(_onMiniWindowChanged);
     // The visualizer goes with the sheet, so the display hold does too — the
     // player is the ONLY place a viz is mounted (it is torn down at 0), which
@@ -1510,7 +1535,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           child: Padding(
             padding: fs
                 ? EdgeInsets.zero
-                : const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                : const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 0),
             child: Stack(
               key: _visualStackKey,
               children: [
@@ -1636,6 +1661,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                                 onRemove: ctrl.queue.isEmpty || !ctrl.canEditQueue
                                     ? null
                                     : ctrl.removeFromQueue,
+                                autoplayEnabled:
+                                    UserSettings.instance.queueAutoplay,
+                                onToggleAutoplay: ctrl.onToggleAutoplay,
                               ),
                             ),
                           ),
@@ -1751,13 +1779,13 @@ class _PlayerScreenState extends State<PlayerScreen>
               // `stateChanges` (voir build).
               child: ListenableBuilder(
                 listenable: ctrl,
-                builder: (context, _) => _seekBar(ctrl, textTheme),
+                builder: (context, _) => ltrMedia(_seekBar(ctrl, textTheme)),
               )),
         if (!fs)
           Transform.translate(
             key: const ValueKey('ps-transport'),
             offset: const Offset(0, -6),
-            child: _transportRow(ctrl, cs),
+            child: ltrMedia(_transportRow(ctrl, cs)),
           ),
 
         // ── Bottom action bar: viz | output | queue ───────────────────
@@ -1766,7 +1794,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             key: const ValueKey('ps-action-bar'),
             offset: const Offset(0, -10),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              padding: const EdgeInsetsDirectional.fromSTEB(24, 0, 24, 8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1798,9 +1826,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                   Builder(
                     builder: (btnCtx) => IconButton(
                       key: const ValueKey('ps-act-route'),
-                      icon: Icon((!kIsWeb && Platform.isAndroid)
-                          ? Icons.speaker_group_outlined
-                          : Icons.airplay),
+                      // Des enceintes, pas l'écran d'AirPlay: on choisit
+                      // une sortie SON.
+                      icon: const Icon(Icons.speaker_group_outlined),
                       tooltip: l10n.audioOutput,
                       onPressed: () => AudioRoute.show(btnCtx, ctrl.audio),
                     ),
@@ -2202,7 +2230,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       // wraps the whole player (see _onSheetPointerMove), and this strip sits
       // inside it. Two drivers on one pointer would fight over the value.
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(0, 6, 0, 6),
+        padding: const EdgeInsetsDirectional.fromSTEB(0, 6, 0, 6),
         child: Center(
           child: Container(
             width: 40,
@@ -2282,7 +2310,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         !ctrl.currentArtistIsFileTag &&
         (!isLocal || (_serverArtists?.isNotEmpty ?? false));
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 8, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 6, 8, 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2740,6 +2768,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     await ctrl.toggleFavorite(guardedRefId: ok);
   }
 
+  void _onViewRequest() {
+    if (!mounted || !PlayerViewRequests.instance._takeVizFullscreen()) return;
+    if (!_showVisualizer) _toggleVisualizer();
+    if (!_vizFs) _toggleVizFullscreen();
+  }
+
   void _toggleVisualizer() {
     final next = !_showVisualizer;
     setState(() => _showVisualizer = next);
@@ -3077,6 +3111,12 @@ class QueuePanel extends StatefulWidget {
   final void Function(int oldIndex, int newIndex)? onReorder;
   final void Function(Set<int> indices)? onRemove;
 
+  /// Lecture automatique (∞): l'état affiché et la bascule. null cache le
+  /// bouton. C'est le MÊME réglage que Réglages → Lecture; le panneau ne fait
+  /// que le montrer là où il agit.
+  final bool autoplayEnabled;
+  final VoidCallback? onToggleAutoplay;
+
   /// Row height and the cover geometry inside a row — shared with the animation
   /// so it can compute the landing rect without measuring a row.
   static const double kRowHeight   = 60;
@@ -3102,6 +3142,8 @@ class QueuePanel extends StatefulWidget {
     this.hideCurrentThumb = false,
     this.onReorder,
     this.onRemove,
+    this.autoplayEnabled = false,
+    this.onToggleAutoplay,
   });
 
   @override
@@ -3261,6 +3303,19 @@ class QueuePanelState extends State<QueuePanel> {
           tooltip: l10n.queueClear,
           onPressed: _confirmClearQueue,
         ),
+      // ∞ avant shuffle/repeat: il dit ce qui se passe APRÈS la file, les
+      // deux autres comment on la parcourt. Même accent que leurs états actifs.
+      if (widget.onToggleAutoplay != null)
+        IconButton(
+          icon: Icon(Icons.all_inclusive,
+              color: widget.autoplayEnabled
+                  ? kTransportActiveAccent
+                  : widget.cs.onSurfaceVariant.withValues(alpha: 0.45)),
+          tooltip: widget.autoplayEnabled
+              ? l10n.queueAutoplayOn
+              : l10n.queueAutoplayOff,
+          onPressed: widget.onToggleAutoplay,
+        ),
       if (widget.onToggleShuffle != null)
         ShuffleButton(
           enabled: widget.shuffleEnabled,
@@ -3357,7 +3412,7 @@ class QueuePanelState extends State<QueuePanel> {
                             ?.copyWith(fontWeight: FontWeight.bold));
                 if (stacked) {
                   return Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 4, 0),
+                    padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 4, 0),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -3375,7 +3430,7 @@ class QueuePanelState extends State<QueuePanel> {
                 }
                 return Padding(
                   padding:
-                      EdgeInsets.fromLTRB(widget.title != null ? 16 : 4, 4, 4, 0),
+                      EdgeInsetsDirectional.fromSTEB(widget.title != null ? 16 : 4, 4, 4, 0),
                   child: Row(
                     children: [
                       if (titleWidget != null)
@@ -3519,10 +3574,24 @@ class QueuePanelState extends State<QueuePanel> {
           color: isCurrent ? cs.primary : null,
         ),
       ),
+      // Une entrée venue du ∞ se reconnaît à son glyphe devant la ligne de
+      // contexte: ce que l'utilisateur n'a PAS mis là lui-même doit se voir.
       subtitle: (e.subtitle ?? e.artist) != null
-          ? ScrollingText(
-              text: (e.subtitle ?? e.artist)!,
-              style: textTheme.bodySmall)
+          ? Row(children: [
+              if (e.autoplay)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 4),
+                  child: Icon(Icons.all_inclusive,
+                      size: 12,
+                      color: cs.onSurfaceVariant,
+                      semanticLabel: ctx.l10n.queueAutoplayRow),
+                ),
+              Expanded(
+                child: ScrollingText(
+                    text: (e.subtitle ?? e.artist)!,
+                    style: textTheme.bodySmall),
+              ),
+            ])
           : null,
       onTap: _editing
           ? () => setState(() =>
@@ -3568,8 +3637,8 @@ class QueuePanelState extends State<QueuePanel> {
       // there is no undo, so the gesture has to be meant.
       dismissThresholds: const {DismissDirection.endToStart: 0.5},
       background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
+        alignment: AlignmentDirectional.centerEnd,
+        padding: const EdgeInsetsDirectional.only(end: 20),
         color: cs.errorContainer,
         child: Icon(Icons.delete_outline, color: cs.onErrorContainer),
       ),
@@ -3974,7 +4043,7 @@ class _PlayerOptionsSheetState extends State<_PlayerOptionsSheet> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -4343,7 +4412,7 @@ class _TrackInfoSheetBodyState extends State<_TrackInfoSheetBody> {
     final cs = Theme.of(context).colorScheme;
     return SingleChildScrollView(
       controller: widget.scroll,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      padding: const EdgeInsetsDirectional.fromSTEB(20, 0, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -1123,6 +1123,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已跳过$count首短曲',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => '正在加载详情…';
 
   @override
@@ -1381,6 +1391,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get queueClear => '清空队列';
+
+  @override
+  String get queueAutoplayOn => '自动播放已开启：队列结束后继续播放相似曲目';
+
+  @override
+  String get queueAutoplayOff => '自动播放已关闭';
+
+  @override
+  String get queueAutoplayRow => '由自动播放添加';
 
   @override
   String get queueClearConfirmTitle => '清空队列？';
@@ -2392,6 +2411,77 @@ class AppLocalizationsZh extends AppLocalizations {
   String get localOpsPhaseDeleting => '删除文件';
 
   @override
+  String localOpsScanning(String name) {
+    return '正在扫描 $name…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => '正在列出文件';
+
+  @override
+  String get linkedRootsSection => '已链接的文件夹';
+
+  @override
+  String get linkedRootAppFolder => 'Rewamp 文件夹（“文件”App）';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      '将文件放入“文件”App › 我的iPhone › Rewamp，或通过 Finder 从电脑拷贝。文件直接在原处播放，不会复制任何内容。';
+
+  @override
+  String get linkedRootsLink => '链接文件夹…';
+
+  @override
+  String get linkedRootsLinkSubtitle => '在原位置播放，不会复制任何内容';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个文件',
+      zero: '尚未列出任何文件',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => '当前无法访问';
+
+  @override
+  String get linkedRootRescan => '刷新';
+
+  @override
+  String get linkedRootRename => '重命名';
+
+  @override
+  String get linkedRootUnlink => '取消链接';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => '要取消链接此文件夹吗？';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      '不会从磁盘删除任何内容。其收藏和播放列表条目将保留并灰显，直到再次链接。';
+
+  @override
+  String get linkedRootEmpty => '此文件夹中没有可播放的文件。';
+
+  @override
+  String get linkedRootSearchHint => '在此文件夹中搜索';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个匹配结果',
+      zero: '无匹配结果',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => '导入文件';
 
   @override
@@ -2507,6 +2597,51 @@ class AppLocalizationsZh extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return '不会加入队列：不足 $seconds 秒（设置 → 播放）';
   }
+
+  @override
+  String get settingsAutoplaySection => '自动播放';
+
+  @override
+  String get settingsAutoplayTitle => '队列结束后继续播放';
+
+  @override
+  String get settingsAutoplaySubtitle => '队列接近结束时，会自动添加相似曲目。队列中的∞按钮与此设置相同。';
+
+  @override
+  String get settingsAutoplaySize => '每次添加的曲目数';
+
+  @override
+  String get settingsAutoplayMode => '曲目选择方式';
+
+  @override
+  String get settingsAutoplayModeAuto => '自动';
+
+  @override
+  String get settingsAutoplayModeAutoHint => '优先相同艺人，其次是他们所属的团体，再次是相同合集。';
+
+  @override
+  String get settingsAutoplayModeArtist => '相同艺人';
+
+  @override
+  String get settingsAutoplayModeArtistHint => '仅限刚播放过的艺人的曲目。';
+
+  @override
+  String get settingsAutoplayModeGroup => '相同团体';
+
+  @override
+  String get settingsAutoplayModeGroupHint => '这些艺人所属团体的曲目。';
+
+  @override
+  String get settingsAutoplayModeCollection => '相同合集';
+
+  @override
+  String get settingsAutoplayModeCollectionHint => '从同一合集中随机选取，优先相同平台。';
+
+  @override
+  String get settingsAutoplayModeRecent => '最近收听';
+
+  @override
+  String get settingsAutoplayModeRecentHint => '从您最近收听的内容中选取，而不仅限于队列。';
 
   @override
   String get settingsQueuePrefetchSection => '队列下载';
@@ -4491,4 +4626,40 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get libraryFileMissing => '文件缺失';
+
+  @override
+  String get settingsPlayStartSection => '开始播放';
+
+  @override
+  String get settingsPlayStartInApp => '在应用中点按曲目';
+
+  @override
+  String get settingsPlayStartInAppHint => '长按(右键单击)始终提供选择。';
+
+  @override
+  String get settingsPlayStartExternal => '从系统打开的文件';
+
+  @override
+  String get settingsPlayStartExternalHint => '双击、“打开方式”、拖放到应用图标上。';
+
+  @override
+  String get settingsPlayStartAsk => '询问';
+
+  @override
+  String get settingsLaunchWindow => '启动时';
+
+  @override
+  String get settingsLaunchWindowNormal => '普通窗口';
+
+  @override
+  String get settingsLaunchWindowMini => '迷你播放器';
+
+  @override
+  String get settingsLaunchWindowLast => '与关闭时相同';
+
+  @override
+  String get miniWindowQuit => '退出 Rewamp';
+
+  @override
+  String get miniWindowCompact => '紧凑迷你播放器';
 }

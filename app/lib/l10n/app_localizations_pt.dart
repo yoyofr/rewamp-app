@@ -1170,6 +1170,17 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count curtas ignoradas',
+      one: '$count curta ignorada',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => 'A carregar os detalhes…';
 
   @override
@@ -1433,6 +1444,16 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get queueClear => 'Limpar a fila';
+
+  @override
+  String get queueAutoplayOn =>
+      'Reprodução automática ativada: faixas semelhantes seguem a fila';
+
+  @override
+  String get queueAutoplayOff => 'Reprodução automática desativada';
+
+  @override
+  String get queueAutoplayRow => 'Adicionada pela reprodução automática';
 
   @override
   String get queueClearConfirmTitle => 'Limpar a fila?';
@@ -2487,6 +2508,80 @@ class AppLocalizationsPt extends AppLocalizations {
   String get localOpsPhaseDeleting => 'a remover ficheiros';
 
   @override
+  String localOpsScanning(String name) {
+    return 'Analisando $name…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'listando arquivos';
+
+  @override
+  String get linkedRootsSection => 'Pastas vinculadas';
+
+  @override
+  String get linkedRootAppFolder => 'Pasta do Rewamp (app Arquivos)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'Coloque seus arquivos no app Arquivos › No Meu iPhone › Rewamp, ou copie-os de um computador com o Finder. Eles tocam de lá, nada é copiado.';
+
+  @override
+  String get linkedRootsLink => 'Vincular uma pasta…';
+
+  @override
+  String get linkedRootsLinkSubtitle =>
+      'Reproduzida de onde está, nada é copiado';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count arquivos',
+      one: '$count arquivo',
+      zero: 'Nenhum arquivo listado ainda',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => 'Indisponível no momento';
+
+  @override
+  String get linkedRootRescan => 'Atualizar';
+
+  @override
+  String get linkedRootRename => 'Renomear';
+
+  @override
+  String get linkedRootUnlink => 'Desvincular';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => 'Desvincular esta pasta?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'Nada é apagado do disco. Seus favoritos e entradas de playlist permanecem, esmaecidos até que ela seja vinculada novamente.';
+
+  @override
+  String get linkedRootEmpty => 'Nenhum arquivo reproduzível nesta pasta.';
+
+  @override
+  String get linkedRootSearchHint => 'Buscar nesta pasta';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count resultados',
+      one: '$count resultado',
+      zero: 'Nenhum resultado',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'Importar ficheiros';
 
   @override
@@ -2607,6 +2702,57 @@ class AppLocalizationsPt extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'Não entra na fila: menos de $seconds s (Definições → Reprodução)';
   }
+
+  @override
+  String get settingsAutoplaySection => 'Reprodução automática';
+
+  @override
+  String get settingsAutoplayTitle => 'Continuar tocando após a fila';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'Quando a fila está perto do fim, faixas semelhantes são adicionadas a ela. O botão ∞ na fila é o mesmo ajuste.';
+
+  @override
+  String get settingsAutoplaySize => 'Faixas adicionadas por vez';
+
+  @override
+  String get settingsAutoplayMode => 'Como as faixas são escolhidas';
+
+  @override
+  String get settingsAutoplayModeAuto => 'Automático';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      'Primeiro os mesmos artistas, depois seus grupos, depois a mesma coleção.';
+
+  @override
+  String get settingsAutoplayModeArtist => 'Mesmos artistas';
+
+  @override
+  String get settingsAutoplayModeArtistHint =>
+      'Apenas faixas dos artistas que acabaram de tocar.';
+
+  @override
+  String get settingsAutoplayModeGroup => 'Mesmos grupos';
+
+  @override
+  String get settingsAutoplayModeGroupHint =>
+      'Faixas dos grupos aos quais esses artistas pertencem.';
+
+  @override
+  String get settingsAutoplayModeCollection => 'Mesma coleção';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      'Faixas aleatórias da mesma coleção, primeiro a mesma plataforma.';
+
+  @override
+  String get settingsAutoplayModeRecent => 'Ouvidas recentemente';
+
+  @override
+  String get settingsAutoplayModeRecentHint =>
+      'Escolhidas entre o que você ouviu ultimamente, não só da fila.';
 
   @override
   String get settingsQueuePrefetchSection => 'Transferências da fila';
@@ -4712,4 +4858,42 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'Ficheiro em falta';
+
+  @override
+  String get settingsPlayStartSection => 'Iniciar a reprodução';
+
+  @override
+  String get settingsPlayStartInApp => 'Tocar numa faixa na app';
+
+  @override
+  String get settingsPlayStartInAppHint =>
+      'Um toque longo (clique direito) oferece sempre a escolha.';
+
+  @override
+  String get settingsPlayStartExternal => 'Ficheiro aberto a partir do sistema';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'Duplo clique, «Abrir com», largar no ícone da app.';
+
+  @override
+  String get settingsPlayStartAsk => 'Perguntar';
+
+  @override
+  String get settingsLaunchWindow => 'Ao iniciar';
+
+  @override
+  String get settingsLaunchWindowNormal => 'Janela normal';
+
+  @override
+  String get settingsLaunchWindowMini => 'Minileitor';
+
+  @override
+  String get settingsLaunchWindowLast => 'Como ao fechar';
+
+  @override
+  String get miniWindowQuit => 'Sair do Rewamp';
+
+  @override
+  String get miniWindowCompact => 'Minileitor compacto';
 }

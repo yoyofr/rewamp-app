@@ -30,6 +30,7 @@ import 'scrolling_text.dart';
 import 'artwork_image.dart';
 import 'album_detail_screen.dart';
 import 'local_db.dart';
+import 'local_roots.dart' show LocalRoots, LinkedEntry;
 import 'local_open.dart' show globalOpenLocalPaths;
 import 'library_button.dart';
 import 'local_library_screen.dart';
@@ -45,6 +46,7 @@ import 'user_settings.dart';
 // _ArtistResultList, _PlaylistList, _ProductionList, _PaginatedListView) —
 // hence a part rather than a separate library that would have to duplicate them.
 import 'shell_insets.dart';
+import 'play_start.dart';
 
 part 'group_screen.dart';
 
@@ -715,6 +717,10 @@ class SearchScreen extends StatefulWidget {
   /// Bumped by the shell when the search tab is re-selected while already
   /// active → resets every search criterion (text, tags, année, note…).
   final ValueListenable<int>? resetTick;
+  /// Texte imposé de dehors (ligne de commande du bureau, `--search`): le
+  /// numéro fait qu'une MÊME recherche redemandée repart. Appliqué aussi à
+  /// la construction, l'onglet pouvant n'être monté qu'après la demande.
+  final ValueListenable<(int, String)?>? queryRequest;
   /// Pre-applied tag facets — used when the screen is PUSHED as a tag browse
   /// (tapping a tag in the player info sheet), so it opens showing songs,
   /// artists AND albums for that tag across its tabs.
@@ -730,6 +736,7 @@ class SearchScreen extends StatefulWidget {
     this.onQueueAdd,
     this.onAlbumQueueAdd,
     this.resetTick,
+    this.queryRequest,
     this.initialTags = const [],
     this.initialTagCategory,
   });
@@ -927,6 +934,9 @@ class _SearchScreenState extends State<SearchScreen>
   // Filtrage en MÉMOIRE (quelques milliers de lignes au plus), pas de
   // pagination; -1 = pas encore chargé (le libellé d'onglet reste nu).
   List<(String, TrackRecord)> _localMatches = const [];
+  /// Les fichiers des DOSSIERS LIÉS dont le nom ou le chemin répond (table
+  /// des noms, local_roots.dart) — pas de ligne `tracks` derrière.
+  List<LinkedEntry> _linkedMatches = const [];
   int _localTotal = -1;
   String  _sortBy       = 'relevance'; // relevance|title|year|rating
   final List<TagItem> _selectedTags = []; // tag facets (display name, send slug)
@@ -1021,6 +1031,10 @@ class _SearchScreenState extends State<SearchScreen>
     _tabs = TabController(length: _Tab.values.length, vsync: this);
     _tabs.addListener(_onTabChanged);
     widget.resetTick?.addListener(_resetAllCriteria);
+    widget.queryRequest?.addListener(_onQueryRequest);
+    if (widget.queryRequest?.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onQueryRequest());
+    }
     _loadCollections();
     _loadTagCategories();
     // Pushed as a tag browse: seed the tag facet and run the cross-entity
@@ -1044,6 +1058,17 @@ class _SearchScreenState extends State<SearchScreen>
 
   /// Clears every search criterion and returns to the browse landing.
   /// Triggered by re-selecting the search tab while already on it.
+  int _queryRequestSeen = -1;
+
+  void _onQueryRequest() {
+    final r = widget.queryRequest?.value;
+    if (!mounted || r == null || r.$1 == _queryRequestSeen) return;
+    _queryRequestSeen = r.$1;
+    _resetAllCriteria();
+    _controller.text = r.$2;
+    _search(r.$2);
+  }
+
   void _resetAllCriteria() {
     if (!mounted) return;
     _debounce?.cancel();
@@ -1364,6 +1389,7 @@ class _SearchScreenState extends State<SearchScreen>
   @override
   void dispose() {
     widget.resetTick?.removeListener(_resetAllCriteria);
+    widget.queryRequest?.removeListener(_onQueryRequest);
     _tabs.removeListener(_onTabChanged);
     _tabs.dispose();
     _controller.dispose();
@@ -1471,7 +1497,7 @@ class _SearchScreenState extends State<SearchScreen>
         _groups = []; _groupsLoaded = false;
         _artistTotal = -1; _albumTotal = -1; _playlistTotal = -1; _productionTotal = -1;
         _groupTotal = -1; _groupHasMore = false;
-        _localMatches = const []; _localTotal = -1;
+        _localMatches = const []; _linkedMatches = const []; _localTotal = -1;
         _artistHasMore = false; _albumHasMore = false; _playlistHasMore = false;
         _productionHasMore = false;
       });
@@ -1849,7 +1875,7 @@ class _SearchScreenState extends State<SearchScreen>
               children: [
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                    padding: const EdgeInsetsDirectional.fromSTEB(20, 20, 20, 12),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2563,7 +2589,7 @@ class _SearchScreenState extends State<SearchScreen>
               prefixIcon: const Icon(Icons.search, size: 20),
               prefixIconConstraints:
                   const BoxConstraints(minWidth: 38, minHeight: 38),
-              contentPadding: const EdgeInsets.fromLTRB(0, 10, 12, 10),
+              contentPadding: const EdgeInsetsDirectional.fromSTEB(0, 10, 12, 10),
               suffixIconConstraints:
                   const BoxConstraints(minWidth: 36, minHeight: 36),
             ),
@@ -2756,7 +2782,7 @@ class _SearchScreenState extends State<SearchScreen>
     if (formats.isEmpty && platforms.isEmpty && !showPodium) return const SizedBox.shrink();
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 4),
       child: Row(children: [
         if (formats.isNotEmpty)
           _facetChip(l10n.searchFormat, _formatFilter, formats,
@@ -2797,7 +2823,7 @@ class _SearchScreenState extends State<SearchScreen>
   Widget _buildPlaylistSourceBar() {
     final l10n = context.l10n;
     Widget chip(String label, String? value) => Padding(
-          padding: const EdgeInsets.only(right: 6),
+          padding: const EdgeInsetsDirectional.only(end: 6),
           child: ChoiceChip(
             label: Text(label, style: const TextStyle(fontSize: 11)),
             selected: _playlistSource == value,
@@ -2815,7 +2841,7 @@ class _SearchScreenState extends State<SearchScreen>
         );
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 4),
       child: Row(children: [
         chip(l10n.searchPlaylistSourceAll, null),
         chip(l10n.searchPlaylistSourceUser, 'user'),
@@ -2862,12 +2888,12 @@ class _SearchScreenState extends State<SearchScreen>
   Widget _buildCollectionChips() {
     final l10n = context.l10n;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 6, 12, 2),
       child: Row(
         children: [
           Expanded(
             child: Align(
-              alignment: Alignment.centerLeft,
+              alignment: AlignmentDirectional.centerStart,
               child: ActionChip(
                 avatar: const Icon(Icons.folder_outlined, size: 14),
                 label: Text(l10n.searchCollectionLabel(_currentCollectionLabel),
@@ -2977,10 +3003,18 @@ class _SearchScreenState extends State<SearchScreen>
         return _entityActions<ProductionSearchRow>(
             rows, (p) => RewampDb.productionTracks(p.production.id));
       case _Tab.local:
-        final rows = _localMatches;
+        // Imports ET dossiers liés joignables, en CHEMINS: c'est la forme que
+        // le routage commun attend, et le seul dénominateur des deux.
+        final roots = LocalRoots.instance;
+        final rows = <String>[
+          for (final e in _localMatches) e.$2.filePath,
+          for (final e in _linkedMatches)
+            if (roots.byId(e.rootId)?.available ?? false)
+              roots.absolutePathOf(e),
+        ];
         if (rows.isEmpty || globalOpenLocalPaths == null) return null;
-        void play(List<(String, TrackRecord)> list) {
-          final paths = [for (final e in list) e.$2.filePath];
+        Future<void> play(List<String> list) async {
+          final paths = await roots.materialize(list);
           if (paths.isEmpty) return;
           globalOpenLocalPaths?.call(paths);
         }
@@ -3191,6 +3225,12 @@ class _SearchScreenState extends State<SearchScreen>
   Future<void> _loadLocalMatches(String q) async {
     try {
       final all = await LocalDb.instance.getLocalImports();
+      // Dossiers liés: seulement sur une VRAIE question — la table peut
+      // compter des centaines de milliers de noms, une liste « tout » n'aurait
+      // pas de sens ici (le navigateur de la racine est fait pour ça).
+      final linked = (LocalRoots.supported && q.trim().isNotEmpty)
+          ? await LocalDb.instance.searchLinkedEntries(q, limit: 300)
+          : const <LinkedEntry>[];
       if (!mounted || _currentQuery != q) return;
       final lower = q.toLowerCase();
       final hits = lower.isEmpty
@@ -3203,7 +3243,8 @@ class _SearchScreenState extends State<SearchScreen>
             ];
       setState(() {
         _localMatches = hits;
-        _localTotal = hits.length;
+        _linkedMatches = linked;
+        _localTotal = hits.length + linked.length;
       });
     } catch (_) {}
   }
@@ -3211,7 +3252,7 @@ class _SearchScreenState extends State<SearchScreen>
   Widget _buildLocalTab() {
     final l10n = context.l10n;
     final cs = Theme.of(context).colorScheme;
-    if (_localMatches.isEmpty) {
+    if (_localMatches.isEmpty && _linkedMatches.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -3221,10 +3262,38 @@ class _SearchScreenState extends State<SearchScreen>
       );
     }
     return ListView.builder(
-      itemCount: _localMatches.length,
+      itemCount: _localMatches.length + _linkedMatches.length,
       itemBuilder: (ctx, i) {
+        if (i >= _localMatches.length) {
+          final e = _linkedMatches[i - _localMatches.length];
+          final root = LocalRoots.instance.byId(e.rootId);
+          final dir = p.posix.dirname(e.relPath);
+          // La racine d'abord: deux dossiers liés peuvent contenir le même
+          // chemin relatif, c'est elle qui dit lequel.
+          final where = [
+            if (root != null)
+              LocalRoots.instance.isAppFolder(root.id)
+                  ? context.l10n.linkedRootAppFolder
+                  : root.label,
+            if (dir != '.') dir,
+          ].join(' · ');
+          final reachable = root?.available ?? false;
+          return PlayChoiceHold.tile(ListTile(
+            dense: true,
+            leading: Icon(reachable ? Icons.folder_open : Icons.link_off,
+                color: reachable ? cs.primary : cs.outline),
+            title: ScrollingText(text: e.name),
+            subtitle: Text(where, maxLines: 1, overflow: TextOverflow.ellipsis),
+            enabled: reachable,
+            onTap: () async {
+              final paths = await LocalRoots.instance
+                  .materialize([LocalRoots.instance.absolutePathOf(e)]);
+              if (paths.isNotEmpty) globalOpenLocalPaths?.call(paths);
+            },
+          ));
+        }
         final (rel, t) = _localMatches[i];
-        return ListTile(
+        return PlayChoiceHold.tile(ListTile(
           dense: true,
           leading: RailArtwork(
             url:           t.artworkUrl,
@@ -3236,7 +3305,7 @@ class _SearchScreenState extends State<SearchScreen>
           title: ScrollingText(text: t.displayTitle),
           subtitle: Text(rel, maxLines: 1, overflow: TextOverflow.ellipsis),
           onTap: () => globalOpenLocalPaths?.call([t.filePath]),
-        );
+        ));
       },
     );
   }
@@ -4115,7 +4184,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 6, 16, 4),
       decoration: BoxDecoration(
         color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
         border: Border(bottom: BorderSide(color: cs.outlineVariant, width: 0.5)),
@@ -4283,7 +4352,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
               ),
           if (d.interviewUrl != null)
             Align(
-              alignment: Alignment.centerLeft,
+              alignment: AlignmentDirectional.centerStart,
               child: TextButton.icon(
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -4309,7 +4378,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
             ),
             if (d.notesUrl != null)
               Align(
-                alignment: Alignment.centerLeft,
+                alignment: AlignmentDirectional.centerStart,
                 child: TextButton.icon(
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -4395,7 +4464,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
     final active = value != null;
     final shown = value == null ? label : (upper ? value.toUpperCase() : value);
     return Padding(
-      padding: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsetsDirectional.only(end: 8),
       child: InputChip(
         label: Text(shown),
         selected: active,
@@ -4487,7 +4556,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
         podiumTotal(_podiumSongCounts) > 0 || podiumTotal(albumPodiums) > 0;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 4, 12, 0),
       child: Row(children: [
         RadioSurpriseButtons(
             onPlayAll:
@@ -4520,7 +4589,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
           ),
         if (canPodium)
           Padding(
-            padding: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsetsDirectional.only(end: 8),
             child: InputChip(
               avatar: const Icon(Icons.emoji_events_outlined, size: 16),
               label: Text(podiumChipLabel(l10n, _fPodium, podiumTotal(podCounts))),
@@ -5063,12 +5132,12 @@ Widget _albumTitleWithVideoBadge(BuildContext context,
     Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis)),
     if (podium != null)
       Padding(
-        padding: const EdgeInsets.only(left: 6),
+        padding: const EdgeInsetsDirectional.only(start: 6),
         child: PodiumBadge(podium, size: 15),
       ),
     if (hasVideo)
       Padding(
-        padding: const EdgeInsets.only(left: 6),
+        padding: const EdgeInsetsDirectional.only(start: 6),
         child: Icon(Icons.ondemand_video,
             size: 14, color: Theme.of(context).colorScheme.primary),
       ),
@@ -5237,9 +5306,9 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 8),
               child: Align(
-                alignment: Alignment.centerLeft,
+                alignment: AlignmentDirectional.centerStart,
                 child: Text(l10n.searchChooseCollection,
                     style: const TextStyle(
                         fontSize: 16, fontWeight: FontWeight.w600)),
@@ -5247,7 +5316,7 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
             ),
             if (showSearch)
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 8),
                 child: CancelField(
                   hasText: _query.isNotEmpty,
                   onCleared: (_) => setState(() => _query = ''),
@@ -5354,7 +5423,7 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
                           if (_expanded.contains(e.key))
                             for (final c in e.members)
                               Padding(
-                                padding: const EdgeInsets.only(left: 24),
+                                padding: const EdgeInsetsDirectional.only(start: 24),
                                 child: _row(
                                   context,
                                   title: collectionMemberLabel(c, e.label),
@@ -5615,8 +5684,8 @@ class _BrowseCardState extends State<_BrowseCard> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+              begin: AlignmentDirectional.topStart,
+              end: AlignmentDirectional.bottomEnd,
               colors: widget.colors,
             ),
           ),
@@ -5634,7 +5703,7 @@ class _BrowseCardState extends State<_BrowseCard> {
               Padding(
                 padding: const EdgeInsets.all(12),
                 child: Align(
-                  alignment: Alignment.topLeft,
+                  alignment: AlignmentDirectional.topStart,
                   child: Text(
                     widget.label,
                     maxLines: 2,

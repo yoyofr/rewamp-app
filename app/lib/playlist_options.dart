@@ -421,7 +421,7 @@ Future<({String? id})?> pickFolder(
           for (final (f, depth) in ordered)
             ListTile(
               contentPadding:
-                  EdgeInsets.only(left: 16.0 + depth * 20, right: 16),
+                  EdgeInsetsDirectional.only(start: 16.0 + depth * 20, end: 16),
               leading: const Icon(Icons.folder_outlined),
               title: ScrollingText(text: f.name),
               enabled: currentId != f.id,

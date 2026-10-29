@@ -24,6 +24,7 @@
 		<string>ja</string>
 		<string>zh</string>
 		<string>ko</string>
+		<string>hi</string>
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
@@ -1360,6 +1361,22 @@
 		</dict>
 	</array>
 
+	<!-- Ligne de commande du bureau: une seconde instance transmet sa commande
+	     à celle qui tourne par `rewamp://cli?…` (AppDelegate.handleCommandLine).
+	     Utilisable aussi depuis Raccourcis / Raycast pour le PILOTAGE
+	     (`open -g "rewamp://cli?a=--play-pause"`); un chemin n'y est pris
+	     qu'avec le jeton de l'app. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.rewamp.cli</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>rewamp</string>
+			</array>
+		</dict>
+	</array>
 	<!-- What the app accepts: the open panel, "Open With", and a drop on the
 	     Dock icon all read this table.
 	

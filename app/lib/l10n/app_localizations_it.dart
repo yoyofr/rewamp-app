@@ -1167,6 +1167,17 @@ class AppLocalizationsIt extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count brevi escluse',
+      one: '$count breve esclusa',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => 'Caricamento dei dettagli…';
 
   @override
@@ -1431,6 +1442,16 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get queueClear => 'Svuota la coda';
+
+  @override
+  String get queueAutoplayOn =>
+      'Riproduzione automatica attiva: brani simili seguono la coda';
+
+  @override
+  String get queueAutoplayOff => 'Riproduzione automatica disattivata';
+
+  @override
+  String get queueAutoplayRow => 'Aggiunto dalla riproduzione automatica';
 
   @override
   String get queueClearConfirmTitle => 'Svuotare la coda?';
@@ -2481,6 +2502,80 @@ class AppLocalizationsIt extends AppLocalizations {
   String get localOpsPhaseDeleting => 'rimozione dei file';
 
   @override
+  String localOpsScanning(String name) {
+    return 'Analisi di $name…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'elenco dei file';
+
+  @override
+  String get linkedRootsSection => 'Cartelle collegate';
+
+  @override
+  String get linkedRootAppFolder => 'Cartella Rewamp (app File)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'Metti i tuoi file nell’app File › Su iPhone › Rewamp, oppure copiali da un computer con il Finder. Vengono riprodotti da lì, non viene copiato nulla.';
+
+  @override
+  String get linkedRootsLink => 'Collega una cartella…';
+
+  @override
+  String get linkedRootsLinkSubtitle =>
+      'Riprodotta da dove si trova, non viene copiato nulla';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count file',
+      one: '$count file',
+      zero: 'Nessun file elencato per ora',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => 'Non raggiungibile al momento';
+
+  @override
+  String get linkedRootRescan => 'Aggiorna';
+
+  @override
+  String get linkedRootRename => 'Rinomina';
+
+  @override
+  String get linkedRootUnlink => 'Scollega';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => 'Scollegare questa cartella?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'Non viene eliminato nulla dal disco. I suoi preferiti e le voci nelle playlist restano, in grigio finché non viene collegata di nuovo.';
+
+  @override
+  String get linkedRootEmpty => 'Nessun file riproducibile in questa cartella.';
+
+  @override
+  String get linkedRootSearchHint => 'Cerca in questa cartella';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count risultati',
+      one: '$count risultato',
+      zero: 'Nessun risultato',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'Importa file';
 
   @override
@@ -2602,6 +2697,57 @@ class AppLocalizationsIt extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'Non messo in coda: meno di $seconds s (Impostazioni → Riproduzione)';
   }
+
+  @override
+  String get settingsAutoplaySection => 'Riproduzione automatica';
+
+  @override
+  String get settingsAutoplayTitle => 'Continua dopo la coda';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'Quando la coda sta per finire, vi vengono aggiunti brani simili. Il pulsante ∞ nella coda è la stessa impostazione.';
+
+  @override
+  String get settingsAutoplaySize => 'Brani aggiunti ogni volta';
+
+  @override
+  String get settingsAutoplayMode => 'Come vengono scelti i brani';
+
+  @override
+  String get settingsAutoplayModeAuto => 'Automatico';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      'Prima gli stessi artisti, poi i loro gruppi, poi la stessa collezione.';
+
+  @override
+  String get settingsAutoplayModeArtist => 'Stessi artisti';
+
+  @override
+  String get settingsAutoplayModeArtistHint =>
+      'Solo brani degli artisti appena riprodotti.';
+
+  @override
+  String get settingsAutoplayModeGroup => 'Stessi gruppi';
+
+  @override
+  String get settingsAutoplayModeGroupHint =>
+      'Brani dei gruppi a cui appartengono quegli artisti.';
+
+  @override
+  String get settingsAutoplayModeCollection => 'Stessa collezione';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      'Brani casuali dalla stessa collezione, prima la stessa piattaforma.';
+
+  @override
+  String get settingsAutoplayModeRecent => 'Ascolti recenti';
+
+  @override
+  String get settingsAutoplayModeRecentHint =>
+      'Scelti tra ciò che hai ascoltato di recente, non solo dalla coda.';
 
   @override
   String get settingsQueuePrefetchSection => 'Download della coda';
@@ -4711,4 +4857,42 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'File mancante';
+
+  @override
+  String get settingsPlayStartSection => 'Avvio della riproduzione';
+
+  @override
+  String get settingsPlayStartInApp => 'Toccare un brano nell\'app';
+
+  @override
+  String get settingsPlayStartInAppHint =>
+      'Una pressione prolungata (clic destro) offre sempre la scelta.';
+
+  @override
+  String get settingsPlayStartExternal => 'File aperto dal sistema';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'Doppio clic, «Apri con», trascinamento sull\'icona dell\'app.';
+
+  @override
+  String get settingsPlayStartAsk => 'Chiedi';
+
+  @override
+  String get settingsLaunchWindow => 'All\'avvio';
+
+  @override
+  String get settingsLaunchWindowNormal => 'Finestra normale';
+
+  @override
+  String get settingsLaunchWindowMini => 'Mini lettore';
+
+  @override
+  String get settingsLaunchWindowLast => 'Come alla chiusura';
+
+  @override
+  String get miniWindowQuit => 'Esci da Rewamp';
+
+  @override
+  String get miniWindowCompact => 'Mini lettore compatto';
 }

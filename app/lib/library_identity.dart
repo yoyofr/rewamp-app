@@ -33,6 +33,7 @@ import 'app_snack.dart';
 import 'l10n.dart';
 import 'local_db.dart';
 import 'local_import.dart';
+import 'local_roots.dart' show LocalRoots;
 import 'opened_files.dart';
 import 'rewamp_db.dart';
 
@@ -189,6 +190,8 @@ LibraryRefKind libraryRefKind(
   String? importsAlt,
   String? downloads,
   String? archiveCache,
+  /// Les racines LIÉES (local_roots.dart) — lues dans [LocalRoots] si absent.
+  List<String>? linkedRoots,
   /// Style de chemin — celui de la plateforme; les tests passent p.posix ou
   /// p.windows pour exercer les deux sur toute machine.
   p.Context? ctx,
@@ -196,6 +199,7 @@ LibraryRefKind libraryRefKind(
   final c = ctx ?? p.context;
   final base = splitLibraryRefId(refId).$1;
   if (base.isEmpty || !libraryRefIsPath(base)) return LibraryRefKind.catalogue;
+
 
   final impRoot = imports ?? LibraryRoots.imports;
   final impAlt = importsAlt ?? LibraryRoots.importsAlt;
@@ -210,6 +214,16 @@ LibraryRefKind libraryRefKind(
   if (_under(base, dlRoot, c)) return LibraryRefKind.download;
   if (_under(base, impRoot, c) || _under(base, impAlt, c)) {
     return LibraryRefKind.durableImport;
+  }
+  // Un fichier d'un dossier LIÉ est aussi pérenne qu'un import: l'utilisateur
+  // l'a mis là, l'app n'y touche pas, et son identité (le relatif à la
+  // racine) est celle du compte. ⚠️ APRÈS les racines de l'app: sur iOS la
+  // racine implicite est `Documents` tout entier, qui CONTIENT `online/` — un
+  // téléchargement doit rester un téléchargement.
+  final linked = linkedRoots ??
+      [for (final r in LocalRoots.instance.roots) r.path];
+  for (final root in linked) {
+    if (_under(base, root, c)) return LibraryRefKind.durableImport;
   }
 
   // Racines inconnues (tests, démarrage très tôt, forme `{sandbox}/…` lue en

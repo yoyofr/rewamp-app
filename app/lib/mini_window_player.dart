@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'media_direction.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -76,7 +79,7 @@ class MiniWindowHost extends StatelessWidget {
                   child: MediaQuery(
                     data: frozen == null ? mq : mq.copyWith(size: frozen),
                     child: OverflowBox(
-                      alignment: Alignment.topLeft,
+                      alignment: AlignmentDirectional.topStart,
                       minWidth: frozen?.width,
                       maxWidth: frozen?.width,
                       minHeight: frozen?.height,
@@ -132,7 +135,13 @@ class MiniWindowButton extends StatelessWidget {
 /// titre est masquée).
 class MiniWindowPlayer extends StatefulWidget {
   final PlayerController controller;
-  const MiniWindowPlayer({super.key, required this.controller});
+
+  /// Le panneau de FILE ouvert à droite (bouton de file du transport): fourni
+  /// par AppShell, à qui la file appartient — le même que sa barre latérale.
+  /// Null = pas de bouton.
+  final WidgetBuilder? queuePanel;
+
+  const MiniWindowPlayer({super.key, required this.controller, this.queuePanel});
 
   @override
   State<MiniWindowPlayer> createState() => _MiniWindowPlayerState();
@@ -197,10 +206,46 @@ class _MiniWindowPlayerState extends State<MiniWindowPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    return MiniWindow.instance.vizMode
+    final player = MiniWindow.instance.vizMode
         ? _buildViz(context)
         : _buildCompact(context);
+    final queue = widget.queuePanel;
+    final showQueue = queue != null && MiniWindow.instance.queueOpen;
+    // La fenêtre a été élargie de kQueueWidth (MiniWindow.setQueueOpen): le
+    // lecteur garde sa largeur, la file prend la bande de droite, même hauteur.
+    // ⚠️ Le Row est là MÊME file fermée, et le lecteur garde sa clé: sans ça
+    // ouvrir la file déplaçait le lecteur de la racine dans le Row, donc le
+    // DÉMONTAIT en pleine animation (titre défilant, visualiseur à instance
+    // unique) — « Looking up a deactivated widget's ancestor is unsafe ».
+    final cs = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(key: const ValueKey('mw-player'), child: player),
+        if (showQueue) ...[
+          VerticalDivider(
+              key: const ValueKey('mw-queue-divider'),
+              width: 1,
+              thickness: 1,
+              color: cs.outlineVariant),
+          SizedBox(
+            key: const ValueKey('mw-queue-panel'),
+            width: MiniWindow.kQueueWidth - 1,
+            child: Material(color: cs.surface, child: queue(context)),
+          ),
+        ],
+      ],
+    );
   }
+
+  /// La croix du mini lecteur QUITTE l'app (demandé: c'est la seule fenêtre,
+  /// sa barre de titre est masquée). Même chemin que le bouton de fermeture
+  /// de la fenêtre: macOS termine à la dernière fenêtre fermée, Windows par
+  /// SetQuitOnClose, Linux par notre delete-event (my_application.cc).
+  static void _quit() => unawaited(windowManager.close());
+
+  void _toggleQueue() =>
+      MiniWindow.instance.setQueueOpen(!MiniWindow.instance.queueOpen);
 
   // ── Mode visualiseur ─────────────────────────────────────────────────────
   // Le visualiseur « comme en plein écran »: bord à bord, sélecteur de mode,
@@ -229,8 +274,10 @@ class _MiniWindowPlayerState extends State<MiniWindowPlayer> {
                 isFullscreen: true,
                 fullscreenControls: _vizControls(context),
                 fullscreenTrackInfo: TrackInfoFlash(ctrl: c),
-                // La croix du viz ramène au mini lecteur compact.
-                onClose: () => MiniWindow.instance.setVizMode(false),
+                // La croix en haut à droite QUITTE, comme en compact; le
+                // retour au compact est un bouton du transport.
+                onClose: _quit,
+                closeTooltip: context.l10n.miniWindowQuit,
               ),
             ),
           // Bande de déplacement: la barre de titre est masquée, et le viz a
@@ -311,7 +358,20 @@ class _MiniWindowPlayerState extends State<MiniWindowPlayer> {
                     ring: true),
                 btn(Icons.fast_forward, c.canGoNext ? c.goNext : null, 28,
                     key: const ValueKey('mwv-next')),
+                if (widget.queuePanel != null)
+                  btn(MiniWindow.instance.queueOpen
+                          ? Icons.queue_music
+                          : Icons.queue_music_outlined,
+                      _toggleQueue, 22,
+                      tooltip: MiniWindow.instance.queueOpen
+                          ? l10n.playerHideQueue
+                          : l10n.playerShowQueue,
+                      key: const ValueKey('mwv-queue')),
                 const SizedBox(width: 10),
+                btn(Icons.close_fullscreen,
+                    () => MiniWindow.instance.setVizMode(false), 20,
+                    tooltip: l10n.miniWindowCompact,
+                    key: const ValueKey('mwv-compact')),
                 btn(Icons.open_in_full, MiniWindow.instance.exit, 20,
                     tooltip: l10n.miniWindowExit,
                     key: const ValueKey('mwv-exit')),
@@ -434,15 +494,15 @@ class _MiniWindowPlayerState extends State<MiniWindowPlayer> {
         Expanded(
           child: ClipRect(
             child: OverflowBox(
-              alignment: Alignment.topLeft,
+              alignment: AlignmentDirectional.topStart,
               minHeight: 0,
               maxHeight: double.infinity,
               child: _header(context, sub: sub, pinned: pinned),
             ),
           ),
         ),
-        _seekRow(context),
-        _transport(context),
+        ltrMedia(_seekRow(context)),
+        ltrMedia(_transport(context)),
       ],
     );
   }
@@ -496,6 +556,12 @@ class _MiniWindowPlayerState extends State<MiniWindowPlayer> {
           icon: Icons.open_in_full,
           color: cs.onSurfaceVariant,
           onPressed: MiniWindow.instance.exit,
+        ),
+        _chromeButton(
+          tooltip: l10n.miniWindowQuit,
+          icon: Icons.close,
+          color: cs.onSurfaceVariant,
+          onPressed: _quit,
         ),
       ],
     );
@@ -631,6 +697,25 @@ class _MiniWindowPlayerState extends State<MiniWindowPlayer> {
             onCycle: c.cycleLoopMode,
             iconSize: 15,
           ),
+          // Le bouton de file du lecteur, dans la continuité du transport:
+          // ouvre la file à DROITE, la fenêtre s'élargit d'autant.
+          if (widget.queuePanel != null)
+            IconButton(
+              key: const ValueKey('mw-queue'),
+              iconSize: 18,
+              tooltip: MiniWindow.instance.queueOpen
+                  ? context.l10n.playerHideQueue
+                  : context.l10n.playerShowQueue,
+              icon: Icon(
+                MiniWindow.instance.queueOpen
+                    ? Icons.queue_music
+                    : Icons.queue_music_outlined,
+                color: MiniWindow.instance.queueOpen
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+              ),
+              onPressed: _toggleQueue,
+            ),
         ],
       ),
     );

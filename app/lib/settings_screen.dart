@@ -12,7 +12,9 @@ import 'package:share_plus/share_plus.dart';
 import 'home_sections.dart';
 import 'shell_tabs.dart';
 import 'l10n.dart';
+import 'launch_window.dart';
 import 'mini_window.dart';
+import 'play_start.dart';
 import 'release_notes.dart'
     show kReleaseNotesLabel, showReleaseNotes;
 import 'account_screen.dart';
@@ -24,6 +26,7 @@ import 'preset_screen.dart';
 import 'screen_wakelock.dart';
 import 'data_reset.dart' show runLocalCleanup;
 import 'sync_service.dart';
+import 'autoplay.dart' show AutoplayMode;
 import 'user_settings.dart';
 import 'client_info.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -667,6 +670,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           value: _settings.windowAlwaysOnTop,
           onChanged: (v) => _settings.windowAlwaysOnTop = v,
         ),
+      // Bureau: la fenêtre au démarrage (launch_window.dart) — le natif la
+      // garde invisible jusqu'à ce que le mini lecteur soit en place.
+      if (MiniWindow.instance.available)
+        ListTile(
+          leading: const _ResetDot('launchWindow'),
+          title: Text(l10n.settingsLaunchWindow),
+          subtitle: Text(_settings.launchWindow.label(l10n)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _pickLaunchWindow(context),
+        ),
       SwitchListTile(
         secondary: const _ResetDot('artworkTintedPlayer'),
         title: Text(l10n.settingsArtworkTintTitle),
@@ -736,6 +749,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
     if (chosen != null) setState(() => _settings.launchTab = chosen);
+  }
+
+  static String _autoplayModeLabel(AppLocalizations l10n, AutoplayMode m) =>
+      switch (m) {
+        AutoplayMode.auto => l10n.settingsAutoplayModeAuto,
+        AutoplayMode.artist => l10n.settingsAutoplayModeArtist,
+        AutoplayMode.group => l10n.settingsAutoplayModeGroup,
+        AutoplayMode.collection => l10n.settingsAutoplayModeCollection,
+        AutoplayMode.recent => l10n.settingsAutoplayModeRecent,
+      };
+
+  static String _autoplayModeHint(AppLocalizations l10n, AutoplayMode m) =>
+      switch (m) {
+        AutoplayMode.auto => l10n.settingsAutoplayModeAutoHint,
+        AutoplayMode.artist => l10n.settingsAutoplayModeArtistHint,
+        AutoplayMode.group => l10n.settingsAutoplayModeGroupHint,
+        AutoplayMode.collection => l10n.settingsAutoplayModeCollectionHint,
+        AutoplayMode.recent => l10n.settingsAutoplayModeRecentHint,
+      };
+
+  Future<void> _pickPlayStart(BuildContext context,
+      {required String title,
+      required PlayStartAction current,
+      required ValueChanged<PlayStartAction> onChosen}) async {
+    final l10n = context.l10n;
+    final chosen = await showDialog<PlayStartAction>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(title),
+        children: [
+          for (final a in PlayStartAction.values)
+            ListTile(
+              title: Text(a.label(l10n)),
+              trailing: current == a ? const Icon(Icons.check) : null,
+              selected: current == a,
+              onTap: () => Navigator.pop(ctx, a),
+            ),
+        ],
+      ),
+    );
+    if (chosen != null) setState(() => onChosen(chosen));
+  }
+
+  Future<void> _pickLaunchWindow(BuildContext context) async {
+    final l10n = context.l10n;
+    final current = _settings.launchWindow;
+    final chosen = await showDialog<LaunchWindowMode>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(l10n.settingsLaunchWindow),
+        children: [
+          for (final m in LaunchWindowMode.values)
+            ListTile(
+              title: Text(m.label(l10n)),
+              trailing: current == m ? const Icon(Icons.check) : null,
+              selected: current == m,
+              onTap: () => Navigator.pop(ctx, m),
+            ),
+        ],
+      ),
+    );
+    if (chosen == null) return;
+    // MiniWindow écoute le réglage et le recopie chez le natif — y compris
+    // quand une remise à zéro EFFACE la clé sans passer par ici.
+    setState(() => _settings.launchWindow = chosen);
+  }
+
+  Future<void> _pickAutoplayMode(BuildContext context) async {
+    final l10n = context.l10n;
+    final chosen = await showDialog<AutoplayMode>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(l10n.settingsAutoplayMode),
+        children: [
+          for (final m in AutoplayMode.values)
+            ListTile(
+              title: Text(_autoplayModeLabel(l10n, m)),
+              subtitle: Text(_autoplayModeHint(l10n, m)),
+              trailing: _settings.queueAutoplayMode == m
+                  ? const Icon(Icons.check)
+                  : null,
+              selected: _settings.queueAutoplayMode == m,
+              onTap: () => Navigator.pop(ctx, m),
+            ),
+        ],
+      ),
+    );
+    if (chosen != null) setState(() => _settings.queueAutoplayMode = chosen);
   }
 
   List<Widget> _visualisationChildren(BuildContext context) {
@@ -1077,6 +1178,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final cs        = Theme.of(context).colorScheme;
     return [
       _sectionResetButton('playback'),
+      // QUAND entendre ce qu'on lance (play_start.dart): la feuille, ou un
+      // choix fait d'avance — un pour les gestes DANS l'app, un pour les
+      // fichiers ouverts DEPUIS le système.
+      _SubHeader(
+          label: l10n.settingsPlayStartSection, cs: cs, textTheme: textTheme),
+      ListTile(
+        leading: const _ResetDot('playStartInApp'),
+        title: Text(l10n.settingsPlayStartInApp),
+        subtitle: Text('${_settings.playStartInApp.label(l10n)}\n'
+            '${l10n.settingsPlayStartInAppHint}'),
+        isThreeLine: true,
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _pickPlayStart(context,
+            title: l10n.settingsPlayStartInApp,
+            current: _settings.playStartInApp,
+            onChosen: (v) => _settings.playStartInApp = v),
+      ),
+      ListTile(
+        leading: const _ResetDot('playStartExternal'),
+        title: Text(l10n.settingsPlayStartExternal),
+        subtitle: Text('${_settings.playStartExternal.label(l10n)}\n'
+            '${l10n.settingsPlayStartExternalHint}'),
+        isThreeLine: true,
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _pickPlayStart(context,
+            title: l10n.settingsPlayStartExternal,
+            current: _settings.playStartExternal,
+            onChosen: (v) => _settings.playStartExternal = v),
+      ),
+      const Divider(height: 24, indent: 16, endIndent: 16),
       // Desktop only: mobile already carries the track in its media
       // notification. macOS: AppDelegate channel; Linux: D-Bus
       // (linux_notifications.dart). Désactivé par défaut partout.
@@ -1118,6 +1249,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
         subtitle: Text(l10n.settingsQueuePrefetchSubtitle),
         value: _settings.queuePrefetchAll,
         onChanged: (v) => _settings.queuePrefetchAll = v,
+      ),
+      const Divider(height: 24, indent: 16, endIndent: 16),
+      // Lecture automatique (∞) — le même réglage que le bouton du panneau de
+      // file; voir autoplay.dart et AppShell._maybeFillAutoplay.
+      _SubHeader(
+          label: l10n.settingsAutoplaySection, cs: cs, textTheme: textTheme),
+      SwitchListTile(
+        secondary: const _ResetDot('queueAutoplay'),
+        title: Text(l10n.settingsAutoplayTitle),
+        subtitle: Text(l10n.settingsAutoplaySubtitle),
+        value: _settings.queueAutoplay,
+        onChanged: (v) => _settings.queueAutoplay = v,
+      ),
+      _SliderRow(
+        label: l10n.settingsAutoplaySize,
+        resetKey: 'queueAutoplaySize',
+        value: _settings.queueAutoplaySize.toDouble(),
+        min: UserSettings.kQueueAutoplaySizeMin.toDouble(),
+        max: UserSettings.kQueueAutoplaySizeMax.toDouble(),
+        divisions: (UserSettings.kQueueAutoplaySizeMax -
+                UserSettings.kQueueAutoplaySizeMin) ~/
+            5,
+        format: (v) => '${v.round()}',
+        onChanged: (v) => _settings.queueAutoplaySize = v.round(),
+      ),
+      // Une LISTE et non un menu déroulant: cinq entrées avec leur explication
+      // (voir le choix de l'onglet de lancement).
+      ListTile(
+        leading: const _ResetDot('queueAutoplayMode'),
+        title: Text(l10n.settingsAutoplayMode),
+        subtitle: Text(_autoplayModeLabel(l10n, _settings.queueAutoplayMode)),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _pickAutoplayMode(context),
       ),
       const Divider(height: 24, indent: 16, endIndent: 16),
       // Déclic de début de piste des rips CD — voir UserSettings.cdRipDeclick.
@@ -1297,9 +1461,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// engines pages'): one button per section, plus the per-setting _ResetDot.
   Widget _sectionResetButton(String section) {
     return Align(
-      alignment: Alignment.centerRight,
+      alignment: AlignmentDirectional.centerEnd,
       child: Padding(
-        padding: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsetsDirectional.only(end: 8),
         child: TextButton.icon(
           icon: const Icon(Icons.restart_alt, size: 16),
           label: Text(context.l10n.settingsResetSection),
@@ -1385,9 +1549,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final cs = Theme.of(context).colorScheme;
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetChoices),
@@ -1396,7 +1560,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 4),
         child: Text(
           l10n.settingsDecodersHelp,
           style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
@@ -1484,9 +1648,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetEngine),
@@ -1556,9 +1720,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetEngine),
@@ -1630,9 +1794,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetEngine),
@@ -1687,7 +1851,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ],
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 8),
         child: Text(l10n.settingsAppliedLive,
             style: const TextStyle(fontSize: 12)),
       ),
@@ -1699,9 +1863,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetEngine),
@@ -1850,7 +2014,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onChanged: (v) => _settings.sid8580Curve = v,
       ),
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 8),
         child: Text(l10n.settingsSidNote,
             style: const TextStyle(fontSize: 12)),
       ),
@@ -1862,9 +2026,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetEngine),
@@ -1886,7 +2050,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 8),
         child: Text(l10n.settingsAdplugNote,
             style: const TextStyle(fontSize: 12)),
       ),
@@ -1898,9 +2062,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetEngine),
@@ -1921,7 +2085,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onChanged: (v) => _settings.heSpuReverb = v,
       ),
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 8),
         child: Text(l10n.settingsAppliedLive,
             style: const TextStyle(fontSize: 12)),
       ),
@@ -1968,9 +2132,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetEngine),
@@ -1998,7 +2162,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onChanged: (v) => _settings.vgmLoopFadeSeconds = v.round(),
       ),
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
         child: Text(l10n.settingsVgmLoopFadeHelp,
             style: const TextStyle(fontSize: 12)),
       ),
@@ -2046,7 +2210,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           [l10n.settingsDefault, 'Ootake', 'MAME$noScope'],
           (v) => _settings.vgmC6280Core = v),
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 8),
         child: Text(l10n.settingsAppliedNextTrack,
             style: const TextStyle(fontSize: 12)),
       ),
@@ -2184,9 +2348,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetEngine),
@@ -2258,9 +2422,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetEngine),
@@ -2297,9 +2461,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetEngine),
@@ -2374,9 +2538,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetEngine),
@@ -2410,9 +2574,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l10n = context.l10n;
     return [
       Align(
-        alignment: Alignment.centerRight,
+        alignment: AlignmentDirectional.centerEnd,
         child: Padding(
-          padding: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsetsDirectional.only(end: 8),
           child: TextButton.icon(
             icon: const Icon(Icons.restart_alt, size: 16),
             label: Text(l10n.settingsResetEngine),
@@ -2496,7 +2660,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: (v) => _settings.uadeGainValue = v,
         ),
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 8),
         child: Text(l10n.settingsAppliedLive,
             style: const TextStyle(fontSize: 12)),
       ),
@@ -2616,7 +2780,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _dataGroupHeader(BuildContext context, String label) {
     final cs = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 4),
       child: Text(label,
           style: Theme.of(context)
               .textTheme
@@ -3000,7 +3164,7 @@ class _SubHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
       child: Text(
         label,
         style: textTheme.labelMedium?.copyWith(
@@ -3394,9 +3558,9 @@ class _PatternSettingsScreenState extends State<PatternSettingsScreen> {
       body: ListView(
         children: [
           Align(
-            alignment: Alignment.centerRight,
+            alignment: AlignmentDirectional.centerEnd,
             child: Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsetsDirectional.only(end: 8),
               child: TextButton.icon(
                 icon: const Icon(Icons.restart_alt, size: 16),
                 label: Text(l10n.settingsResetSection),
@@ -3556,9 +3720,9 @@ class _ProjectMSettingsScreenState extends State<ProjectMSettingsScreen> {
         children: [
           // Section reset at the TOP, like the other settings sections.
           Align(
-            alignment: Alignment.centerRight,
+            alignment: AlignmentDirectional.centerEnd,
             child: Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsetsDirectional.only(end: 8),
               child: TextButton.icon(
                 icon: const Icon(Icons.restart_alt, size: 16),
                 label: Text(l10n.settingsResetSection),
@@ -3854,7 +4018,7 @@ class _AboutHeader extends StatelessWidget {
       builder: (context, _) {
         final ci = ClientInfo.instance;
         return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 18, 16, 16),
           child: Row(
             children: [
               Container(
@@ -3966,7 +4130,7 @@ List<Widget> _donationChildren(BuildContext context) {
   final tt   = Theme.of(context).textTheme;
   return [
     Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 14, 16, 10),
       child: Text(l10n.settingsDonationBlurb,
           style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
     ),
@@ -4041,7 +4205,7 @@ List<Widget> _aboutChildren(BuildContext context) {
     // hosts and distributes nothing itself, and what the user does with the
     // music is the user's call.
     Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

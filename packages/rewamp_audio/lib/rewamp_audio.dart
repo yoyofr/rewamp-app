@@ -360,6 +360,9 @@ class RewampAudio {
   _SetForcedLoopDart?   _setForcedLoopFn;
   _HasNativeLoopDart?   _hasNativeLoopFn;
   _EndFadeDart?         _endFadeFn;
+  _HasNativeLoopDart?   _lengthAuthoritativeFn;  // int Function()
+  _GetDoubleDart?       _nominalDurationFn;      // double Function()
+  _HasNativeLoopDart?   _liftEndFn;              // int Function()
   _SetNextFileDart?     _setNextFileFn;
   _VizClearArtworkDart? _clearNextFileFn;  // void Function()
   _GetMaskDart?         _handoffSerialFn;  // int64 Function()
@@ -574,6 +577,18 @@ class RewampAudio {
       _hasNativeLoopFn = _lib.lookupFunction<_HasNativeLoopNative, _HasNativeLoopDart>('rewamp_has_native_loop_support');
       try {
         _endFadeFn = _lib.lookupFunction<_EndFadeNative, _EndFadeDart>('rewamp_track_end_fade_seconds');
+      } catch (_) {}
+      try {
+        _lengthAuthoritativeFn = _lib.lookupFunction<_HasNativeLoopNative,
+            _HasNativeLoopDart>('rewamp_track_length_authoritative');
+      } catch (_) {}
+      try {
+        _nominalDurationFn = _lib.lookupFunction<_GetDoubleNative,
+            _GetDoubleDart>('rewamp_nominal_duration_seconds');
+      } catch (_) {}
+      try {
+        _liftEndFn = _lib.lookupFunction<_HasNativeLoopNative,
+            _HasNativeLoopDart>('rewamp_lift_end_for_infinite');
       } catch (_) {}
     } catch (_) {
       debugLog('rewamp_audio: native forced-loop functions not found');
@@ -1023,6 +1038,25 @@ class RewampAudio {
   /// the file's nominal length (libvgm on a looping VGM), 0 when none.
   /// [durationSeconds] already includes it; a catalogue duration does not.
   double get trackEndFadeSeconds => _endFadeFn?.call() ?? 0;
+
+  /// The loaded file's plugin length must win over any external duration
+  /// (catalogue): it counts loop passes the plugin plays on its own and/or
+  /// its own end fade. True even when the fade is off (crossfade active).
+  /// Falls back to the fade signal on a binary older than the export.
+  /// One pass of the loaded file as its plugin reported it BEFORE the forced
+  /// loop applied — still known under infinite loop, where a plugin may lift
+  /// its own end and [durationSeconds] drops to 0 (vio2sf). 0 when unknown.
+  double get nominalDurationSeconds => _nominalDurationFn?.call() ?? 0;
+
+  /// Infinite loop armed WHILE a track plays: asks the loaded plugin to lift
+  /// its own end live (PSF family). True when it now loops natively; false
+  /// means the generic Dart loop must keep handling it.
+  bool liftEndForInfinite() => (_liftEndFn?.call() ?? 0) != 0;
+
+  bool get trackLengthAuthoritative =>
+      _lengthAuthoritativeFn != null
+          ? _lengthAuthoritativeFn!.call() != 0
+          : trackEndFadeSeconds > 0;
 
   /// Gapless: stage the NEXT queue entry. When the current decoder ends, the
   /// native producer opens this path in place and keeps the output running.

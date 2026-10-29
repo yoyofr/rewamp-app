@@ -1165,6 +1165,17 @@ class AppLocalizationsNo extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count korte hoppet over',
+      one: '$count kort hoppet over',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => 'Laster detaljer…';
 
   @override
@@ -1428,6 +1439,16 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get queueClear => 'Tøm køen';
+
+  @override
+  String get queueAutoplayOn =>
+      'Autoavspilling på: lignende spor følger etter køen';
+
+  @override
+  String get queueAutoplayOff => 'Autoavspilling av';
+
+  @override
+  String get queueAutoplayRow => 'Lagt til av autoavspilling';
 
   @override
   String get queueClearConfirmTitle => 'Tømme køen?';
@@ -2476,6 +2497,80 @@ class AppLocalizationsNo extends AppLocalizations {
   String get localOpsPhaseDeleting => 'fjerner filer';
 
   @override
+  String localOpsScanning(String name) {
+    return 'Skanner $name…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'lister opp filer';
+
+  @override
+  String get linkedRootsSection => 'Koblede mapper';
+
+  @override
+  String get linkedRootAppFolder => 'Rewamp-mappe (Filer-appen)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'Legg filene dine i Filer-appen › På min iPhone › Rewamp, eller kopier dem fra en datamaskin med Finder. De spilles av derfra, ingenting kopieres.';
+
+  @override
+  String get linkedRootsLink => 'Koble til en mappe…';
+
+  @override
+  String get linkedRootsLinkSubtitle =>
+      'Spilles der den ligger, ingenting kopieres';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count filer',
+      one: '$count fil',
+      zero: 'Ingen filer listet enda',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => 'Ikke tilgjengelig akkurat nå';
+
+  @override
+  String get linkedRootRescan => 'Oppdater';
+
+  @override
+  String get linkedRootRename => 'Gi nytt navn';
+
+  @override
+  String get linkedRootUnlink => 'Koble fra';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => 'Koble fra denne mappen?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'Ingenting slettes fra disken. Favorittene og spillelisteoppføringene beholdes, nedtonet til mappen kobles til igjen.';
+
+  @override
+  String get linkedRootEmpty => 'Ingen spillbare filer i denne mappen.';
+
+  @override
+  String get linkedRootSearchHint => 'Søk i denne mappen';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count treff',
+      one: '$count treff',
+      zero: 'Ingen treff',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'Importer filer';
 
   @override
@@ -2595,6 +2690,57 @@ class AppLocalizationsNo extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'Legges ikke i kø: under $seconds s (Innstillinger → Avspilling)';
   }
+
+  @override
+  String get settingsAutoplaySection => 'Autoavspilling';
+
+  @override
+  String get settingsAutoplayTitle => 'Fortsett å spille etter køen';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'Når køen nærmer seg slutten, legges lignende spor til. Knappen ∞ i køen er samme innstilling.';
+
+  @override
+  String get settingsAutoplaySize => 'Spor som legges til hver gang';
+
+  @override
+  String get settingsAutoplayMode => 'Hvordan spor velges';
+
+  @override
+  String get settingsAutoplayModeAuto => 'Automatisk';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      'Samme artister først, deretter gruppene deres, så samme samling.';
+
+  @override
+  String get settingsAutoplayModeArtist => 'Samme artister';
+
+  @override
+  String get settingsAutoplayModeArtistHint =>
+      'Bare spor av artistene som nettopp ble spilt.';
+
+  @override
+  String get settingsAutoplayModeGroup => 'Samme grupper';
+
+  @override
+  String get settingsAutoplayModeGroupHint =>
+      'Spor av gruppene disse artistene tilhører.';
+
+  @override
+  String get settingsAutoplayModeCollection => 'Samme samling';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      'Tilfeldige spor fra samme samling, samme plattform først.';
+
+  @override
+  String get settingsAutoplayModeRecent => 'Nylig lyttet';
+
+  @override
+  String get settingsAutoplayModeRecentHint =>
+      'Velges blant det du har lyttet til nylig, ikke bare fra køen.';
 
   @override
   String get settingsQueuePrefetchSection => 'Nedlastinger i køen';
@@ -4691,4 +4837,42 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'Filen mangler';
+
+  @override
+  String get settingsPlayStartSection => 'Starte avspilling';
+
+  @override
+  String get settingsPlayStartInApp => 'Trykke på et spor i appen';
+
+  @override
+  String get settingsPlayStartInAppHint =>
+      'Et langt trykk (høyreklikk) gir alltid valget.';
+
+  @override
+  String get settingsPlayStartExternal => 'Fil åpnet fra systemet';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'Dobbeltklikk, «Åpne med», slipp på appikonet.';
+
+  @override
+  String get settingsPlayStartAsk => 'Spør';
+
+  @override
+  String get settingsLaunchWindow => 'Ved oppstart';
+
+  @override
+  String get settingsLaunchWindowNormal => 'Vanlig vindu';
+
+  @override
+  String get settingsLaunchWindowMini => 'Minispiller';
+
+  @override
+  String get settingsLaunchWindowLast => 'Som ved lukking';
+
+  @override
+  String get miniWindowQuit => 'Avslutt Rewamp';
+
+  @override
+  String get miniWindowCompact => 'Kompakt minispiller';
 }

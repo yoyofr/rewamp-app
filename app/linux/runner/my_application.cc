@@ -7,9 +7,33 @@
 
 #include "flutter/generated_plugin_registrant.h"
 
+#include <glib/gstdio.h>
+
+#include <cstdio>
+#include <string>
+#include <vector>
+
+#include "../../native_cli/rewamp_cli.h"
+
+#ifndef FLUTTER_VERSION
+#define FLUTTER_VERSION ""
+#endif
+
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  // Instance UNIQUE (voir my_application_command_line): les lignes de
+  // commande d'une seconde invocation, en attente que Dart les tire par le
+  // canal `rewamp/cli` (`takePending`). Même discipline que l'ouverture de
+  // fichiers sur Apple: le natif ne pousse jamais, il prévient.
+  GPtrArray* pending_cli;   // de GStrv
+  FlMethodChannel* cli_channel;
+  // Démarrage à froid avec `--mini`: pas d'affichage à la première image —
+  // Dart rétrécit la fenêtre puis la révèle (`rewamp/cli` `revealWindow`),
+  // sinon on la voyait en grand une fraction de seconde. Filet: 5 s.
+  gboolean launch_hidden;
+  guint reveal_timeout;
+  GtkWindow* window;
   // Référence gardée sur le moteur pour l'ARRÊTER nous-mêmes à la fin de la
   // boucle, avant la sortie du processus (voir window_delete_cb et shutdown).
   FlEngine* engine;
@@ -17,8 +41,29 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+static void reveal_launch_window(MyApplication* self) {
+  if (self->reveal_timeout != 0) {
+    g_source_remove(self->reveal_timeout);
+    self->reveal_timeout = 0;
+  }
+  if (!self->launch_hidden || self->window == nullptr) return;
+  self->launch_hidden = FALSE;
+  gtk_widget_show(GTK_WIDGET(self->window));
+}
+
+static gboolean reveal_timeout_cb(gpointer user_data) {
+  MyApplication* self = MY_APPLICATION(user_data);
+  self->reveal_timeout = 0;
+  reveal_launch_window(self);
+  return G_SOURCE_REMOVE;
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
+  if (self->launch_hidden) {
+    self->reveal_timeout = g_timeout_add_seconds(5, reveal_timeout_cb, self);
+    return;
+  }
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
@@ -51,11 +96,161 @@ static gboolean window_delete_cb(GtkWidget* window, GdkEvent* event,
   return TRUE;
 }
 
+static void set_launch_mini_setting(gboolean on);
+
+// `takePending`: rend et VIDE le tampon, d'un coup — une ligne arrivée en
+// vol est soit dans ce lot soit dans le prochain, jamais dans les deux.
+static void cli_method_call_cb(FlMethodChannel* channel,
+                               FlMethodCall* method_call, gpointer user_data) {
+  MyApplication* self = MY_APPLICATION(user_data);
+  g_autoptr(FlMethodResponse) response = nullptr;
+  if (g_strcmp0(fl_method_call_get_name(method_call), "takePending") == 0) {
+    g_autoptr(FlValue) out = fl_value_new_list();
+    for (guint i = 0; i < self->pending_cli->len; i++) {
+      GStrv argv = static_cast<GStrv>(g_ptr_array_index(self->pending_cli, i));
+      FlValue* one = fl_value_new_list();
+      for (GStrv a = argv; a && *a; a++) {
+        fl_value_append_take(one, fl_value_new_string(*a));
+      }
+      fl_value_append_take(out, one);
+    }
+    g_ptr_array_set_size(self->pending_cli, 0);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(out));
+  } else if (g_strcmp0(fl_method_call_get_name(method_call), "revealWindow") == 0) {
+    reveal_launch_window(self);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (g_strcmp0(fl_method_call_get_name(method_call), "setLaunchMini") == 0) {
+    FlValue* v = fl_method_call_get_args(method_call);
+    set_launch_mini_setting(v != nullptr && fl_value_get_type(v) == FL_VALUE_TYPE_BOOL &&
+                            fl_value_get_bool(v));
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else {
+    response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
+  }
+  fl_method_call_respond(method_call, response, nullptr);
+}
+
+// Les arguments BRUTS, précédés de `--cwd=<dossier courant de L'INVOCATION>`
+// (pas du nôtre: une seconde instance peut être lancée d'ailleurs). Dart
+// interprète tout (lib/cli_options.dart) — rendre les positionnels absolus ici
+// transformait aussi la VALEUR d'une option (`--subsong 3` → `/home/u/3`).
+static GStrv cli_args_with_cwd(GApplicationCommandLine* cmdline) {
+  int argc = 0;
+  g_auto(GStrv) argv = g_application_command_line_get_arguments(cmdline, &argc);
+  // GPtrArray et pas GStrvBuilder: celui-ci exige glib 2.68, et le plancher
+  // de l'AppImage est plus bas (docs/APPIMAGE.md).
+  GPtrArray* out = g_ptr_array_new();
+  const gchar* cwd = g_application_command_line_get_cwd(cmdline);
+  if (cwd != nullptr) g_ptr_array_add(out, g_strconcat("--cwd=", cwd, nullptr));
+  for (int i = 1; i < argc; i++) {   // argv[0] = l'exécutable
+    g_ptr_array_add(out, g_strdup(argv[i]));
+  }
+  g_ptr_array_add(out, nullptr);
+  return reinterpret_cast<GStrv>(g_ptr_array_free(out, FALSE));
+}
+
+// Le manifeste de la ligne de commande (native_cli/rewamp_cli.h), lu UNE fois:
+// `<dossier de l'exécutable>/data/flutter_assets/assets/cli/cli_manifest.json`.
+static const rewamp_cli::Manifest& cli_manifest() {
+  static rewamp_cli::Manifest m;
+  static bool done = false;
+  if (!done) {
+    done = true;
+    g_autofree gchar* exe = g_file_read_link("/proc/self/exe", nullptr);
+    if (exe != nullptr) {
+      g_autofree gchar* dir = g_path_get_dirname(exe);
+      g_autofree gchar* path =
+          g_build_filename(dir, "data", "flutter_assets", "assets", "cli",
+                           "cli_manifest.json", nullptr);
+      m = rewamp_cli::LoadManifest(path);
+    }
+  }
+  return m;
+}
+
+// Réglage « Au démarrage: mini lecteur », CONFIÉ par Dart (`setLaunchMini`,
+// lib/launch_window.dart) parce qu'il doit être connu avant Dart: un fichier
+// `launch_mini` dans le dossier de données de l'app — sa PRÉSENCE vaut oui.
+static gchar* launch_mini_path() {
+  return g_build_filename(g_get_user_data_dir(), APPLICATION_ID, "launch_mini",
+                          nullptr);
+}
+
+static gboolean launch_mini_setting() {
+  g_autofree gchar* path = launch_mini_path();
+  return g_file_test(path, G_FILE_TEST_EXISTS);
+}
+
+static void set_launch_mini_setting(gboolean on) {
+  g_autofree gchar* path = launch_mini_path();
+  if (on) {
+    g_autofree gchar* dir = g_path_get_dirname(path);
+    (void)g_mkdir_with_parents(dir, 0700);
+    (void)g_file_set_contents(path, "1\n", -1, nullptr);
+  } else {
+    (void)g_unlink(path);
+  }
+}
+
+// Même règle que `planLaunch` (lib/local_open.dart): `--mini`, ou le réglage
+// sans `--window`.
+static gboolean launch_hidden_for(const rewamp_cli::Scan& scan) {
+  return scan.Has("mini") || (!scan.Has("window") && launch_mini_setting());
+}
+
+// argv sans argv[0].
+static std::vector<std::string> cli_tail(gchar** argv) {
+  std::vector<std::string> out;
+  if (argv == nullptr || argv[0] == nullptr) return out;
+  for (gchar** a = argv + 1; *a != nullptr; a++) out.emplace_back(*a);
+  return out;
+}
+
+// Implements GApplication::command_line — l'instance PRINCIPALE reçoit ici sa
+// propre ligne de commande ET celles des invocations suivantes, transmises
+// par D-Bus (G_APPLICATION_HANDLES_COMMAND_LINE, instance unique).
+static int my_application_command_line(GApplication* application,
+                                       GApplicationCommandLine* cmdline) {
+  MyApplication* self = MY_APPLICATION(application);
+  GStrv args = cli_args_with_cwd(cmdline);
+  if (self->window == nullptr) {
+    // Premier lancement: les arguments vont à `main()` de Dart, comme avant.
+    int argc = 0;
+    g_auto(GStrv) raw = g_application_command_line_get_arguments(cmdline, &argc);
+    self->launch_hidden =
+        launch_hidden_for(rewamp_cli::ScanArgs(cli_tail(raw), cli_manifest()));
+    g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+    self->dart_entrypoint_arguments = args;
+    g_application_activate(application);
+    return 0;
+  }
+  // Seconde invocation: au tampon, Dart est prévenu et tire.
+  int argc = 0;
+  g_auto(GStrv) raw = g_application_command_line_get_arguments(cmdline, &argc);
+  const bool remote_only =
+      rewamp_cli::ScanArgs(cli_tail(raw), cli_manifest()).RemoteOnly(cli_manifest());
+  g_ptr_array_add(self->pending_cli, args);
+  if (self->cli_channel != nullptr) {
+    fl_method_channel_invoke_method(self->cli_channel, "argsAvailable", nullptr,
+                                    nullptr, nullptr, nullptr);
+  }
+  // Piloter la lecture ne vole pas le premier plan; ouvrir des fichiers, si.
+  if (!remote_only) gtk_window_present(self->window);
+  return 0;
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+  // Une seconde « activation » (sans argument, depuis le lanceur) ne doit
+  // pas ouvrir une seconde fenêtre: elle ramène la première.
+  if (self->window != nullptr) {
+    gtk_window_present(self->window);
+    return;
+  }
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  self->window = window;
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu
@@ -127,28 +322,65 @@ static void my_application_activate(GApplication* application) {
   g_signal_connect(window, "delete-event", G_CALLBACK(window_delete_cb),
                    application);
 
+  // Canal des lignes de commande transmises par une seconde instance.
+  g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
+  self->cli_channel = fl_method_channel_new(
+      fl_engine_get_binary_messenger(self->engine), "rewamp/cli",
+      FL_METHOD_CODEC(codec));
+  fl_method_channel_set_method_call_handler(self->cli_channel,
+                                            cli_method_call_cb, self, nullptr);
+
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
 // Implements GApplication::local_command_line.
+//
+// Instance UNIQUE: on s'enregistre sur le bus de session, puis on rend la main
+// (FALSE) — `g_application_run` envoie alors la ligne de commande à
+// l'instance PRINCIPALE si elle existe déjà (et ce processus se termine),
+// sinon l'appelle ici même (my_application_command_line).
+//
+// ⚠️ Sans bus de session (rare, mais un lancement nu sous un autre
+// utilisateur, un conteneur minimal…), l'enregistrement échoue: on retombe
+// sur l'ancien comportement, une instance locale, plutôt que de refuser de
+// démarrer — c'est ce que l'implémentation par défaut aurait fait.
 static gboolean my_application_local_command_line(GApplication* application,
                                                   gchar*** arguments,
                                                   int* exit_status) {
   MyApplication* self = MY_APPLICATION(application);
-  // Strip out the first argument as it is the binary name.
-  self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
-
+  // Ce que le natif décide AVANT Dart (rewamp_cli.h): `--help` et `--version`
+  // s'impriment ici, sans bus ni fenêtre.
+  const rewamp_cli::Manifest& manifest = cli_manifest();
+  const rewamp_cli::Scan scan = rewamp_cli::ScanArgs(cli_tail(*arguments), manifest);
+  if (scan.Has("help") || scan.Has("version")) {
+    const std::string out = scan.Has("help")
+                                ? rewamp_cli::HelpText(manifest, FLUTTER_VERSION)
+                                : rewamp_cli::VersionLine(FLUTTER_VERSION);
+    fputs(out.c_str(), stdout);
+    fflush(stdout);
+    *exit_status = 0;
+    return TRUE;
+  }
   g_autoptr(GError) error = nullptr;
-  if (!g_application_register(application, nullptr, &error)) {
-    g_warning("Failed to register: %s", error->message);
+  const bool registered = g_application_register(application, nullptr, &error);
+  // Une commande de pilotage seule sans instance lancée: le dire, plutôt que
+  // de démarrer l'app pour rien. Sans bus, aucune instance n'est joignable.
+  if (scan.RemoteOnly(manifest) &&
+      (!registered || !g_application_get_is_remote(application))) {
+    fputs(rewamp_cli::kNotRunning, stderr);
     *exit_status = 1;
     return TRUE;
   }
-
-  g_application_activate(application);
-  *exit_status = 0;
-
-  return TRUE;
+  if (!registered) {
+    g_warning("Instance unique indisponible (%s): instance locale.",
+              error->message);
+    self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
+    self->launch_hidden = launch_hidden_for(scan);
+    g_application_activate(application);
+    *exit_status = 0;
+    return TRUE;
+  }
+  return FALSE;
 }
 
 // Implements GApplication::startup.
@@ -182,6 +414,12 @@ static void my_application_shutdown(GApplication* application) {
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+  g_clear_pointer(&self->pending_cli, g_ptr_array_unref);
+  g_clear_object(&self->cli_channel);
+  if (self->reveal_timeout != 0) {
+    g_source_remove(self->reveal_timeout);
+    self->reveal_timeout = 0;
+  }
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 
@@ -189,12 +427,16 @@ static void my_application_class_init(MyApplicationClass* klass) {
   G_APPLICATION_CLASS(klass)->activate = my_application_activate;
   G_APPLICATION_CLASS(klass)->local_command_line =
       my_application_local_command_line;
+  G_APPLICATION_CLASS(klass)->command_line = my_application_command_line;
   G_APPLICATION_CLASS(klass)->startup = my_application_startup;
   G_APPLICATION_CLASS(klass)->shutdown = my_application_shutdown;
   G_OBJECT_CLASS(klass)->dispose = my_application_dispose;
 }
 
-static void my_application_init(MyApplication* self) {}
+static void my_application_init(MyApplication* self) {
+  self->pending_cli =
+      g_ptr_array_new_with_free_func(reinterpret_cast<GDestroyNotify>(g_strfreev));
+}
 
 MyApplication* my_application_new() {
   // Set the program name to the application ID, which helps various systems
@@ -205,5 +447,6 @@ MyApplication* my_application_new() {
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_NON_UNIQUE, nullptr));
+                                     G_APPLICATION_HANDLES_COMMAND_LINE,
+                                     nullptr));
 }

@@ -215,7 +215,7 @@ class _PresetRow extends StatelessWidget {
         children: [
           if (trailingText != null)
             Padding(
-              padding: const EdgeInsets.only(right: 4),
+              padding: const EdgeInsetsDirectional.only(end: 4),
               child: Text(trailingText!,
                   style: Theme.of(context).textTheme.bodySmall),
             ),
@@ -373,7 +373,7 @@ class _PacksTabState extends State<_PacksTab> {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       color: proposeDefault ? cs.primaryContainer.withValues(alpha: 0.35) : null,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 8, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -449,7 +449,7 @@ class _PacksTabState extends State<_PacksTab> {
                 final p = prog['pack:${pack.slug}'];
                 if (p != null) {
                   return Padding(
-                    padding: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsetsDirectional.only(end: 8),
                     child: LinearProgressIndicator(value: p > 0 ? p : null),
                   );
                 }
@@ -653,7 +653,7 @@ class _BrowseTabState extends State<_BrowseTab> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 12, 0),
           // Side by side only when there is room: a pack name eats most of a
           // phone's width, leaving the search field a sliver with just its
           // magnifier showing. Below the picker it gets the full width.
@@ -718,7 +718,7 @@ class _BrowseTabState extends State<_BrowseTab> {
         ),
         if (_folder.isNotEmpty)
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerStart,
             child: TextButton.icon(
               icon: const Icon(Icons.arrow_upward, size: 16),
               label: Text(_folder, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -774,7 +774,7 @@ class _PlaylistsTabState extends State<_PlaylistsTab> {
         return ListView(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
               child: Row(
                 children: [
                   Expanded(
@@ -887,7 +887,7 @@ class _PlaylistsTabState extends State<_PlaylistsTab> {
               ),
             const Divider(),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 4),
               child: Text(l10n.pmCuratedSection,
                   style: Theme.of(context).textTheme.titleSmall),
             ),
@@ -1434,7 +1434,7 @@ class _SetAsideTabState extends State<_SetAsideTab> {
     return ListView(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
           child: Row(
             children: [
               Expanded(

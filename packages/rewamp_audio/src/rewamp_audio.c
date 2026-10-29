@@ -506,6 +506,10 @@ double        g_force_base_duration_secs = 0.0;
  * opened (e.g. vgmstream/libvgm on a stream with no loop point). Reset before
  * every open(); read once right after in rewamp_load_file(). */
 int           g_force_loop_native_veto   = 0;
+// Posé par un configure_loop(2) rejoué EN VOL qui ne peut pas lever la fin
+// (libvgm sans point de boucle ou déjà en fondu): rewamp_lift_end_for_infinite
+// rend alors 0 et la boucle reste générique.
+int           g_loop_lift_refused        = 0;
 static int    g_native_loop_supported    = 0;  /* set by the last rewamp_load_file() */
 /* Fondu de fin que le greffon a lui-même AJOUTÉ après la durée nominale du
  * fichier (secondes; 0 = aucun) — libvgm sur un VGM à boucle, réglage
@@ -513,6 +517,20 @@ static int    g_native_loop_supported    = 0;  /* set by the last rewamp_load_fi
  * Dart, qui préfère le catalogue, coupait le fondu. Remis à zéro avant chaque
  * open(), posé par le greffon dans son open(). */
 double        g_track_end_fade_secs      = 0.0;
+/* La length() du greffon FAIT FOI sur toute durée externe (catalogue): le
+ * greffon y a mis ce que le catalogue ne compte pas — les PASSES DE BOUCLE
+ * qu'il joue de lui-même (libvgm: 2 sur un VGM à boucle), et le fondu ci-
+ * dessus quand il y en a un. Distinct du fondu: sous fondu croisé le greffon
+ * coupe son fondu mais joue toujours ses boucles, et Dart, ne voyant plus de
+ * fondu, reprenait la durée CATALOGUE (une passe) — la piste s'arrêtait avant
+ * la boucle, et l'arrêt du filet Dart court-circuitait le relais du fondu
+ * croisé (RayForce, 2026-10-27). Remis à zéro avant chaque open(). */
+int           g_track_length_authoritative = 0;
+// Longueur d'UNE passe telle que le greffon la donnait AVANT configure_loop:
+// sous boucle infinie un greffon peut LEVER sa fin (vio2sf, totalFrames = 0)
+// et length() rend alors 0 — l'app afficherait la durée PAR DÉFAUT au lieu
+// de celle du fichier, et ne saurait plus où la musique devait finir.
+static double g_nominal_length_secs = 0.0;
 
 /* Generic native fadeout window for a natively-looped track with a known
  * single-pass length (see rewamp_set_forced_loop's doc comment) — computed
@@ -1128,10 +1146,16 @@ static int rewamp_open_track(const char* path, RewampOpenedTrack* out) {
         RewampAudioFormat fmt = {0};
         g_force_loop_native_veto = 0; // plugin's open() may set it (see below)
         g_track_end_fade_secs    = 0.0; // idem (fondu de fin propre au greffon)
+        g_track_length_authoritative = 0; // idem (sa length() fait foi)
         // Pass the ORIGINAL path (with suffix) so the plugin can read subsong.
         RewampDecoder* dec = vt->open(path, &fmt);
+        g_nominal_length_secs = 0.0;
         if (dec != NULL && fmt.channels > 0 && fmt.sampleRate > 0) {
             g_loop_fadeout_start_frame = -1; // reset; only armed below when possible
+            if (vt->length != NULL) {
+                g_nominal_length_secs =
+                    (double)vt->length(dec) / (double)fmt.sampleRate;
+            }
             if (vt->configure_loop != NULL) {
                 vt->configure_loop(dec, g_force_loop_mode, g_force_loop_count);
                 // Generic native fadeout window (see rewamp_set_forced_loop's
@@ -1584,6 +1608,61 @@ int rewamp_has_native_loop_support(void) {
 
 double rewamp_track_end_fade_seconds(void) {
     return g_track_end_fade_secs;
+}
+
+/* Greffons dont configure_loop(2) ne fait QUE lever leur troncature
+ * (totalFrames = 0) et retirer le fondu: sûr à rejouer en cours de lecture.
+ * La famille PSF, libvgm (qui relit loopCount à chaque boucle) et vgmstream
+ * (config.play_forever relu à chaque bloc). Les deux derniers REFUSENT par
+ * g_loop_lift_refused quand ils ne peuvent pas (pas de point de boucle, déjà
+ * en fondu): les déclarer « natifs » à tort couperait la relance générique
+ * et rien ne bouclerait. Liste par NOM du
+ * décodeur EN COURS (g_dataSource.vt suit le relais gapless), jamais un
+ * drapeau posé par open() — l'ouverture du SUIVANT l'écraserait. */
+static int rewamp_loop_lifts_live(const RewampPluginVTable* vt) {
+    static const char* const kNames[] = {
+        "vio2sf", "gsf", "ncsf", "snsf", "lazyusf",
+        "highlyexp", "highlytheoritical", "highlyquixotic",
+        "libvgm",   /* loopCount relu à chaque PLREVT_LOOP — vgm_configure_loop */
+        "vgmstream", /* config.play_forever relu à chaque bloc — vgm_configure_loop_fn */
+        NULL,
+    };
+    if (vt == NULL || vt->name == NULL || vt->configure_loop == NULL) return 0;
+    for (int i = 0; kNames[i]; i++)
+        if (strcmp(vt->name, kNames[i]) == 0) return 1;
+    return 0;
+}
+
+int rewamp_lift_end_for_infinite(void) {
+    if (!g_initialized || !g_sound_loaded || !g_using_plugin) return 0;
+    if (rewamp_load_busy_for_caller()) return 0;
+    if (g_force_loop_mode != 2) return 0;
+    int done = 0;
+    pthread_mutex_lock(&g_dataSource.decodeLock);
+    const RewampPluginVTable* vt = g_dataSource.vt;
+    if (g_dataSource.decoder != NULL && rewamp_loop_lifts_live(vt)) {
+        g_loop_lift_refused = 0;
+        vt->configure_loop(g_dataSource.decoder, 2, g_force_loop_count);
+    }
+    if (g_dataSource.decoder != NULL && rewamp_loop_lifts_live(vt) &&
+        !g_loop_lift_refused) {
+        // La fin du PRODUCTEUR avait été figée à l'ouverture sur length():
+        // en infini il n'y en a plus, sans quoi il coupe quand même à
+        // l'ancienne longueur.
+        rewamp_data_source_clear_end_locked(&g_dataSource);
+        g_native_loop_supported = 1;
+        done = 1;
+    }
+    pthread_mutex_unlock(&g_dataSource.decodeLock);
+    return done;
+}
+
+double rewamp_nominal_duration_seconds(void) {
+    return g_nominal_length_secs;
+}
+
+int rewamp_track_length_authoritative(void) {
+    return g_track_length_authoritative || g_track_end_fade_secs > 0.0;
 }
 
 double rewamp_get_position_seconds(void) {

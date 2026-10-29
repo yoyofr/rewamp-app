@@ -1167,6 +1167,17 @@ class AppLocalizationsSv extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count korta hoppade över',
+      one: '$count kort hoppad över',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => 'Läser in detaljer…';
 
   @override
@@ -1430,6 +1441,16 @@ class AppLocalizationsSv extends AppLocalizations {
 
   @override
   String get queueClear => 'Töm kön';
+
+  @override
+  String get queueAutoplayOn =>
+      'Autouppspelning på: liknande spår följer efter kön';
+
+  @override
+  String get queueAutoplayOff => 'Autouppspelning av';
+
+  @override
+  String get queueAutoplayRow => 'Tillagd av autouppspelning';
 
   @override
   String get queueClearConfirmTitle => 'Töm kön?';
@@ -2480,6 +2501,80 @@ class AppLocalizationsSv extends AppLocalizations {
   String get localOpsPhaseDeleting => 'tar bort filer';
 
   @override
+  String localOpsScanning(String name) {
+    return 'Söker igenom $name…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'listar filer';
+
+  @override
+  String get linkedRootsSection => 'Länkade mappar';
+
+  @override
+  String get linkedRootAppFolder => 'Rewamp-mapp (appen Filer)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'Lägg dina filer i appen Filer › På min iPhone › Rewamp, eller kopiera dem från en dator med Finder. De spelas därifrån, ingenting kopieras.';
+
+  @override
+  String get linkedRootsLink => 'Länka en mapp…';
+
+  @override
+  String get linkedRootsLinkSubtitle => 'Spelas där den ligger, inget kopieras';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count filer',
+      one: '$count fil',
+      zero: 'Inga filer listade än',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => 'Inte tillgänglig just nu';
+
+  @override
+  String get linkedRootRescan => 'Uppdatera';
+
+  @override
+  String get linkedRootRename => 'Byt namn';
+
+  @override
+  String get linkedRootUnlink => 'Ta bort länk';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle =>
+      'Ta bort länken till den här mappen?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'Inget raderas från disken. Dess favoriter och spellisteposter finns kvar, nedtonade tills den länkas igen.';
+
+  @override
+  String get linkedRootEmpty => 'Inga spelbara filer i den här mappen.';
+
+  @override
+  String get linkedRootSearchHint => 'Sök i den här mappen';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count träffar',
+      one: '$count träff',
+      zero: 'Inga träffar',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'Importera filer';
 
   @override
@@ -2600,6 +2695,57 @@ class AppLocalizationsSv extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'Köas inte: under $seconds s (Inställningar → Uppspelning)';
   }
+
+  @override
+  String get settingsAutoplaySection => 'Autouppspelning';
+
+  @override
+  String get settingsAutoplayTitle => 'Fortsätt spela efter kön';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'När kön närmar sig slutet läggs liknande spår till. Knappen ∞ i kön är samma inställning.';
+
+  @override
+  String get settingsAutoplaySize => 'Spår som läggs till varje gång';
+
+  @override
+  String get settingsAutoplayMode => 'Hur spår väljs';
+
+  @override
+  String get settingsAutoplayModeAuto => 'Automatiskt';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      'Samma artister först, sedan deras grupper, sedan samma samling.';
+
+  @override
+  String get settingsAutoplayModeArtist => 'Samma artister';
+
+  @override
+  String get settingsAutoplayModeArtistHint =>
+      'Bara spår av artisterna som just spelades.';
+
+  @override
+  String get settingsAutoplayModeGroup => 'Samma grupper';
+
+  @override
+  String get settingsAutoplayModeGroupHint =>
+      'Spår av grupperna som dessa artister tillhör.';
+
+  @override
+  String get settingsAutoplayModeCollection => 'Samma samling';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      'Slumpade spår från samma samling, samma plattform först.';
+
+  @override
+  String get settingsAutoplayModeRecent => 'Nyligen lyssnat';
+
+  @override
+  String get settingsAutoplayModeRecentHint =>
+      'Väljs bland det du lyssnat på nyligen, inte bara från kön.';
 
   @override
   String get settingsQueuePrefetchSection => 'Nedladdningar i kön';
@@ -4691,4 +4837,42 @@ class AppLocalizationsSv extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'Filen saknas';
+
+  @override
+  String get settingsPlayStartSection => 'Starta uppspelning';
+
+  @override
+  String get settingsPlayStartInApp => 'Tryck på ett spår i appen';
+
+  @override
+  String get settingsPlayStartInAppHint =>
+      'Ett långt tryck (högerklick) erbjuder alltid valet.';
+
+  @override
+  String get settingsPlayStartExternal => 'Fil öppnad från systemet';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'Dubbelklick, ”Öppna med”, släpp på appens ikon.';
+
+  @override
+  String get settingsPlayStartAsk => 'Fråga';
+
+  @override
+  String get settingsLaunchWindow => 'Vid start';
+
+  @override
+  String get settingsLaunchWindowNormal => 'Vanligt fönster';
+
+  @override
+  String get settingsLaunchWindowMini => 'Minispelare';
+
+  @override
+  String get settingsLaunchWindowLast => 'Som vid stängning';
+
+  @override
+  String get miniWindowQuit => 'Avsluta Rewamp';
+
+  @override
+  String get miniWindowCompact => 'Kompakt minispelare';
 }

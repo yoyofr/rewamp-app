@@ -41,4 +41,11 @@ void main() {
     expect(l.last, 'Droid Sans Fallback');
     expect(l.toSet().length, l.length, reason: 'aucun doublon');
   });
+
+  test("le devanagari (interface hindi) est nommé, quelle que soit la langue",
+      () {
+    for (final lang in ['hi', 'ja', 'fr']) {
+      expect(fb(lang), contains('Noto Sans Devanagari'), reason: lang);
+    }
+  });
 }

@@ -1214,6 +1214,19 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count короткой пропущено',
+      many: '$count коротких пропущено',
+      few: '$count короткие пропущены',
+      one: '$count короткая пропущена',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => 'Загрузка сведений…';
 
   @override
@@ -1482,6 +1495,16 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get queueClear => 'Очистить очередь';
+
+  @override
+  String get queueAutoplayOn =>
+      'Автовоспроизведение включено: после очереди играют похожие треки';
+
+  @override
+  String get queueAutoplayOff => 'Автовоспроизведение выключено';
+
+  @override
+  String get queueAutoplayRow => 'Добавлено автовоспроизведением';
 
   @override
   String get queueClearConfirmTitle => 'Очистить очередь?';
@@ -2556,6 +2579,84 @@ class AppLocalizationsRu extends AppLocalizations {
   String get localOpsPhaseDeleting => 'удаление файлов';
 
   @override
+  String localOpsScanning(String name) {
+    return 'Сканирование $name…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'составление списка файлов';
+
+  @override
+  String get linkedRootsSection => 'Связанные папки';
+
+  @override
+  String get linkedRootAppFolder => 'Папка Rewamp (приложение «Файлы»)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'Поместите файлы в приложение «Файлы» › На iPhone › Rewamp или скопируйте их с компьютера через Finder. Они воспроизводятся оттуда, ничего не копируется.';
+
+  @override
+  String get linkedRootsLink => 'Связать папку…';
+
+  @override
+  String get linkedRootsLinkSubtitle =>
+      'Воспроизводится на месте, ничего не копируется';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count файла',
+      many: '$count файлов',
+      few: '$count файла',
+      one: '$count файл',
+      zero: 'Файлы ещё не перечислены',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => 'Сейчас недоступна';
+
+  @override
+  String get linkedRootRescan => 'Обновить';
+
+  @override
+  String get linkedRootRename => 'Переименовать';
+
+  @override
+  String get linkedRootUnlink => 'Отвязать';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => 'Отвязать эту папку?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'С диска ничего не удаляется. Её избранное и записи в плейлистах сохранятся, но будут затенены, пока папка не будет связана снова.';
+
+  @override
+  String get linkedRootEmpty => 'В этой папке нет воспроизводимых файлов.';
+
+  @override
+  String get linkedRootSearchHint => 'Поиск в этой папке';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count совпадения',
+      many: '$count совпадений',
+      few: '$count совпадения',
+      one: '$count совпадение',
+      zero: 'Ничего не найдено',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'Импорт файлов';
 
   @override
@@ -2677,6 +2778,57 @@ class AppLocalizationsRu extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'Не ставится в очередь: меньше $seconds с (Настройки → Воспроизведение)';
   }
+
+  @override
+  String get settingsAutoplaySection => 'Автовоспроизведение';
+
+  @override
+  String get settingsAutoplayTitle => 'Продолжать после очереди';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'Когда очередь подходит к концу, в неё добавляются похожие треки. Кнопка ∞ в очереди — та же настройка.';
+
+  @override
+  String get settingsAutoplaySize => 'Треков за один раз';
+
+  @override
+  String get settingsAutoplayMode => 'Как выбираются треки';
+
+  @override
+  String get settingsAutoplayModeAuto => 'Автоматически';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      'Сначала те же исполнители, затем их группы, затем та же коллекция.';
+
+  @override
+  String get settingsAutoplayModeArtist => 'Те же исполнители';
+
+  @override
+  String get settingsAutoplayModeArtistHint =>
+      'Только треки исполнителей, которые только что играли.';
+
+  @override
+  String get settingsAutoplayModeGroup => 'Те же группы';
+
+  @override
+  String get settingsAutoplayModeGroupHint =>
+      'Треки групп, в которых состоят эти исполнители.';
+
+  @override
+  String get settingsAutoplayModeCollection => 'Та же коллекция';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      'Случайные треки из той же коллекции, сначала с той же платформы.';
+
+  @override
+  String get settingsAutoplayModeRecent => 'Недавно прослушанное';
+
+  @override
+  String get settingsAutoplayModeRecentHint =>
+      'Подбирается из того, что вы слушали недавно, а не только из очереди.';
 
   @override
   String get settingsQueuePrefetchSection => 'Загрузка очереди';
@@ -4820,4 +4972,42 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'Файл отсутствует';
+
+  @override
+  String get settingsPlayStartSection => 'Запуск воспроизведения';
+
+  @override
+  String get settingsPlayStartInApp => 'Нажатие на трек в приложении';
+
+  @override
+  String get settingsPlayStartInAppHint =>
+      'Долгое нажатие (правый щелчок) всегда предлагает выбор.';
+
+  @override
+  String get settingsPlayStartExternal => 'Файл, открытый из системы';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'Двойной щелчок, «Открыть с помощью», перетаскивание на значок приложения.';
+
+  @override
+  String get settingsPlayStartAsk => 'Спрашивать';
+
+  @override
+  String get settingsLaunchWindow => 'При запуске';
+
+  @override
+  String get settingsLaunchWindowNormal => 'Обычное окно';
+
+  @override
+  String get settingsLaunchWindowMini => 'Мини-плеер';
+
+  @override
+  String get settingsLaunchWindowLast => 'Как при закрытии';
+
+  @override
+  String get miniWindowQuit => 'Выйти из Rewamp';
+
+  @override
+  String get miniWindowCompact => 'Компактный мини-плеер';
 }

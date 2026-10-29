@@ -26,6 +26,7 @@
 			<string>ja</string>
 			<string>zh</string>
 			<string>ko</string>
+			<string>hi</string>
 		</array>
 		<key>CFBundleDisplayName</key>
 		<string>Rewamp</string>

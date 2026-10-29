@@ -22,6 +22,7 @@ import 'local_open.dart';
 import 'uade_info.dart';
 import 'local_db.dart' show LocalDb, TrackRecord, RecentEntry, TrackStat;
 import 'note_markdown.dart';
+import 'play_start.dart';
 import 'player_controller.dart';
 import 'search_screen.dart'   show OnFileReady, downloadAndPlay;
 import 'artwork_image.dart';
@@ -361,7 +362,7 @@ class HomeScreen extends StatelessWidget {
                 HomeSection.recents: [
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, _kSectionTopGap, 16, 8),
+                    padding: const EdgeInsetsDirectional.fromSTEB(16, _kSectionTopGap, 16, 8),
                     child: Text(
                       l10n.recentlyPlayed,
                       style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -1165,11 +1166,22 @@ class _RecentRowState extends State<_RecentRow> {
     if (nextFav != curFav) setState(() => _entries = List.of(next));
   }
 
-  void _diffAndAnimate(List<RecentEntry> next) {
+  void _diffAndAnimate(List<RecentEntry> incoming) {
+    // ⚠️ Le diff suppose des clés UNIQUES: une entrée en double la retirait
+    // puis la réinsérait au-delà de la fin (RangeError en plein callback),
+    // et l'AnimatedList, désaccordée de _entries, cassait l'arbre entier.
+    final seen = <String>{};
+    final next = [
+      for (final e in incoming)
+        if (seen.add(_entryKey(e))) e,
+    ];
     final state = _listKey.currentState;
     if (state == null) {
-      // AnimatedList not yet mounted — defer until after frame so the key is attached.
-      WidgetsBinding.instance.addPostFrameCallback((_) => _diffAndAnimate(next));
+      // Pas d'AnimatedList montée (la rangée était vide): la prochaine
+      // construction la crée avec initialItemCount — rien à animer. Un diff
+      // différé rejouerait sur un _entries que d'autres mises à jour auront
+      // changé entre-temps.
+      _entries = next;
       return;
     }
 
@@ -1210,7 +1222,7 @@ class _RecentRowState extends State<_RecentRow> {
       child: FadeTransition(
         opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
         child: Padding(
-          padding: const EdgeInsets.only(right: 12),
+          padding: const EdgeInsetsDirectional.only(end: 12),
           child: _RecentCard(
             entry: e,
             cs:    widget.cs,
@@ -1271,7 +1283,9 @@ class _RecentCard extends StatelessWidget {
     // Square artwork side = card width
     const artworkSize = _kRecentCardWidth;
 
-    return HoverGrow(child: GestureDetector(
+    // Appui long / clic droit: la feuille de choix et ses liens « voir »,
+    // même quand le réglage fait lancer le tap d'office (play_start.dart).
+    return HoverGrow(child: PlayChoiceHold(onTap: onTap, child: GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
@@ -1362,7 +1376,7 @@ class _RecentCard extends StatelessWidget {
           ],
         ),
       ),
-    ));
+    )));
   }
 }
 
@@ -1415,7 +1429,7 @@ class _TrendPeriodPicker extends StatelessWidget {
       children: [
         for (final p in TrendPeriod.values)
           Padding(
-            padding: const EdgeInsets.only(left: 4),
+            padding: const EdgeInsetsDirectional.only(start: 4),
             child: GestureDetector(
               onTap: () => onChanged(p),
               behavior: HitTestBehavior.opaque,
@@ -1513,7 +1527,7 @@ class _LocalTrendRailState extends State<_LocalTrendRail> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, _kSectionTopGap, 12, 8),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, _kSectionTopGap, 12, 8),
           child: Row(children: [
             Expanded(
               child: Text(
@@ -1702,7 +1716,7 @@ class _SongRailState extends State<_SongRail> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, _kSectionTopGap, 12, 8),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, _kSectionTopGap, 12, 8),
               child: Row(children: [
                 Expanded(
                   child: Text(
@@ -1939,7 +1953,7 @@ class _FeaturedRailState extends State<_FeaturedRail> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, _kSectionTopGap, 16, 8),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, _kSectionTopGap, 16, 8),
               child: Text(
                 widget.title,
                 style: theme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -2208,7 +2222,7 @@ class _FeaturedSeriesScreenState extends State<FeaturedSeriesScreen> {
         // the playlist screens). The radio sits right next to "Tout lire".
         if (widget.onPlayAlbum != null)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
             child: Row(children: [
               if (_busy)
                 const Padding(
@@ -2244,7 +2258,7 @@ class _FeaturedSeriesScreenState extends State<FeaturedSeriesScreen> {
         itemBuilder: (ctx, i) {
           if (header.isNotEmpty && i == 0) {
             return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 12),
               child: Text(header,
                   style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
             );
@@ -2385,7 +2399,9 @@ class _RailCard extends StatelessWidget {
   Widget build(BuildContext context) {
     const artworkSize = _kRecentCardWidth;
 
-    return HoverGrow(child: GestureDetector(
+    // Appui long / clic droit: la feuille de choix et ses liens « voir »,
+    // même quand le réglage fait lancer le tap d'office (play_start.dart).
+    return HoverGrow(child: PlayChoiceHold(onTap: onTap, child: GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
@@ -2432,6 +2448,6 @@ class _RailCard extends StatelessWidget {
           ],
         ),
       ),
-    ));
+    )));
   }
 }

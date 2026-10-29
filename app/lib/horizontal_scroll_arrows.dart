@@ -167,16 +167,19 @@ class _HorizontalScrollArrowsState extends State<HorizontalScrollArrows> {
     );
     // Centre on centerY (artwork middle) when provided, else full height.
     if (widget.centerY != null) {
-      return Positioned(
-        left:  left ? 8 : null,
-        right: left ? null : 8,
+      // Directional: `left` means "toward the START" (min scroll extent),
+      // which sits on the right in a right-to-left locale — the chevrons
+      // mirror on their own (matchTextDirection).
+      return PositionedDirectional(
+        start: left ? 8 : null,
+        end:   left ? null : 8,
         top:   widget.centerY! - pillH / 2,
         child: pill,
       );
     }
-    return Positioned(
-      left:   left ? 8 : null,
-      right:  left ? null : 8,
+    return PositionedDirectional(
+      start:  left ? 8 : null,
+      end:    left ? null : 8,
       top: 0,
       bottom: 0,
       child: Center(child: pill),
