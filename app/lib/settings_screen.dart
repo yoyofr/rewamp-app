@@ -36,6 +36,7 @@ import 'engine_formats_screen.dart';
 import 'soundfont_manager.dart';
 import 'mt32_rom_manager.dart';
 import 'mt32_settings.dart';
+import 'adlmidi_settings.dart';
 import 'local_db.dart';
 import 'artwork_image.dart';
 import 'rewamp_db.dart';
@@ -66,6 +67,7 @@ const Map<String, EngineSettingsPage> kEngineSettingsPages = {
   'gbsplay':      EngineSettingsPage('gbsplay', SettingsScreen.gbsChildren),
   'fluidlite':    EngineSettingsPage('FluidLite', SettingsScreen.midiChildren),
   'mt32':         EngineSettingsPage('Munt (mt32emu)', SettingsScreen.mt32Children),
+  'adlmidi':      EngineSettingsPage('libADLMIDI', SettingsScreen.adlmidiChildren),
   'gsf':          EngineSettingsPage('libgsf (VBA)', SettingsScreen.gsfChildren),
   'uade':         EngineSettingsPage('UADE', SettingsScreen.uadeChildren),
   'libsidplayfp': EngineSettingsPage('libsidplayfp', SettingsScreen.sidChildren),
@@ -155,6 +157,8 @@ class SettingsScreen extends StatefulWidget {
       _SettingsScreenState._midiChildren(c);
   static List<Widget> mt32Children(BuildContext c) =>
       _SettingsScreenState._mt32Children(c);
+  static List<Widget> adlmidiChildren(BuildContext c) =>
+      _SettingsScreenState._adlmidiChildren(c);
   static List<Widget> gsfChildren(BuildContext c) =>
       _SettingsScreenState._gsfChildren(c);
   static List<Widget> uadeChildren(BuildContext c) =>
@@ -1523,6 +1527,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ? l10n.settingsMt32RomsMissing
                 : l10n.settingsMt32RomsActive(Mt32RomManager.instance.status()),
             children: _mt32Children),
+        (icon: Icons.graphic_eq, name: 'libADLMIDI',
+            subtitle: l10n.settingsEngineAdlmidiSubtitle,
+            children: _adlmidiChildren),
         (icon: Icons.sports_esports, name: 'libgsf (VBA)',
             subtitle: l10n.settingsEngineGsfSubtitle, children: _gsfChildren),
         (icon: Icons.computer, name: 'UADE',
@@ -1634,6 +1641,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             DropdownMenuItem(value: 'auto', child: Text(l10n.settingsMidiSynthAuto, overflow: TextOverflow.ellipsis)),
             DropdownMenuItem(value: 'soundfont', child: Text(l10n.settingsMidiSynthSoundfont, overflow: TextOverflow.ellipsis)),
             DropdownMenuItem(value: 'mt32', child: Text(l10n.settingsMidiSynthMt32, overflow: TextOverflow.ellipsis)),
+            DropdownMenuItem(value: 'opl3', child: Text(l10n.settingsMidiSynthOpl3, overflow: TextOverflow.ellipsis)),
           ],
           onChanged: (v) { if (v != null) _settings.midiSynth = v; },
         ),
@@ -2455,6 +2463,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// autres choix de moteur.
   static List<Widget> _mt32Children(BuildContext context) => const [
         Mt32EnginePanel(),
+      ];
+
+  /// Page moteur « libADLMIDI » (OPL3): banque, émulateur, puces, volume.
+  static List<Widget> _adlmidiChildren(BuildContext context) => const [
+        AdlmidiEnginePanel(),
       ];
 
   static List<Widget> _midiChildren(BuildContext context) {

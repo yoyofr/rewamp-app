@@ -4876,4 +4876,33 @@ class AppLocalizationsDa extends AppLocalizations {
 
   @override
   String get miniWindowCompact => 'Kompakt miniafspiller';
+
+  @override
+  String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
+
+  @override
+  String get settingsEngineAdlmidiSubtitle =>
+      'MIDI og DOS-spilmusik på en emuleret OPL3-chip';
+
+  @override
+  String get settingsAdlBank => 'Instrumentbank';
+
+  @override
+  String get settingsAdlEmulator => 'Emulator';
+
+  @override
+  String get settingsAdlChips => 'Emulerede chips';
+
+  @override
+  String get settingsAdlVolumeModel => 'Lydstyrkemodel';
+
+  @override
+  String get settingsAdlVolumeGeneric => 'Generisk';
+
+  @override
+  String get settingsAdlSoftPan => 'Blød panorering';
+
+  @override
+  String get engineDescAdlmidi =>
+      'MIDI, XMI, DMX MUS, HMI/HMP på en emuleret OPL3-chip (AdLib / Sound Blaster)';
 }

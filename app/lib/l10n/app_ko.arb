@@ -1324,5 +1324,14 @@
   "settingsLaunchWindowMini": "미니 플레이어",
   "settingsLaunchWindowLast": "종료할 때와 같이",
   "miniWindowQuit": "Rewamp 종료",
-  "miniWindowCompact": "간단한 미니 플레이어"
+  "miniWindowCompact": "간단한 미니 플레이어",
+  "settingsMidiSynthOpl3": "OPL3 FM (AdLib / Sound Blaster)",
+  "settingsEngineAdlmidiSubtitle": "에뮬레이션된 OPL3 칩으로 MIDI와 DOS 게임 음악 재생",
+  "settingsAdlBank": "악기 뱅크",
+  "settingsAdlEmulator": "에뮬레이터",
+  "settingsAdlChips": "에뮬레이션 칩 수",
+  "settingsAdlVolumeModel": "볼륨 모델",
+  "settingsAdlVolumeGeneric": "일반",
+  "settingsAdlSoftPan": "부드러운 패닝",
+  "engineDescAdlmidi": "에뮬레이션된 OPL3 칩으로 MIDI, XMI, DMX MUS, HMI/HMP 재생 (AdLib / Sound Blaster)"
 }

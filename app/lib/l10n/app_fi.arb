@@ -1324,5 +1324,14 @@
   "settingsLaunchWindowMini": "Minisoitin",
   "settingsLaunchWindowLast": "Kuten suljettaessa",
   "miniWindowQuit": "Lopeta Rewamp",
-  "miniWindowCompact": "Kompakti minisoitin"
+  "miniWindowCompact": "Kompakti minisoitin",
+  "settingsMidiSynthOpl3": "OPL3 FM (AdLib / Sound Blaster)",
+  "settingsEngineAdlmidiSubtitle": "MIDI ja DOS-pelien musiikki emuloidulla OPL3-piirillä",
+  "settingsAdlBank": "Soitinpankki",
+  "settingsAdlEmulator": "Emulaattori",
+  "settingsAdlChips": "Emuloidut piirit",
+  "settingsAdlVolumeModel": "Äänenvoimakkuusmalli",
+  "settingsAdlVolumeGeneric": "Yleinen",
+  "settingsAdlSoftPan": "Pehmeä panorointi",
+  "engineDescAdlmidi": "MIDI, XMI, DMX MUS, HMI/HMP emuloidulla OPL3-piirillä (AdLib / Sound Blaster)"
 }

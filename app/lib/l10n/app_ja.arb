@@ -1324,5 +1324,14 @@
   "settingsLaunchWindowMini": "ミニプレーヤー",
   "settingsLaunchWindowLast": "終了時と同じ",
   "miniWindowQuit": "Rewamp を終了",
-  "miniWindowCompact": "コンパクトなミニプレーヤー"
+  "miniWindowCompact": "コンパクトなミニプレーヤー",
+  "settingsMidiSynthOpl3": "OPL3 FM（AdLib / Sound Blaster）",
+  "settingsEngineAdlmidiSubtitle": "エミュレートされたOPL3チップでMIDIとDOSゲーム音楽を再生",
+  "settingsAdlBank": "音色バンク",
+  "settingsAdlEmulator": "エミュレーター",
+  "settingsAdlChips": "エミュレートするチップ数",
+  "settingsAdlVolumeModel": "音量モデル",
+  "settingsAdlVolumeGeneric": "汎用",
+  "settingsAdlSoftPan": "なめらかなパン",
+  "engineDescAdlmidi": "エミュレートされたOPL3チップでMIDI・XMI・DMX MUS・HMI/HMP（AdLib / Sound Blaster）"
 }

@@ -21,9 +21,9 @@ without regenerating turns the suite red.)
 See [LICENSING.md](LICENSING.md) for how these licences combine,
 and for the two that constrain what may be redistributed.
 
-## Playback engines (45)
+## Playback engines (46)
 
-1250 file extensions across all of them.
+1254 file extensions across all of them.
 
 | Engine | Licence | Authors | Role |
 | --- | --- | --- | --- |
@@ -41,6 +41,7 @@ and for the two that constrain what may be redistributed.
 | [HighlyQuixotic](https://github.com/kode54/Highly_Quixotic) | aucune licence explicite (Neill Corlett) | Neill Corlett ; Chris Moeller (kode54) | Capcom QSound .qsf — Z80 + puce QSound |
 | [highlytheoritical](https://github.com/kode54/Highly_Theoretical) | aucune licence explicite ; m68k Musashi non commercial | Neill Corlett ; Chris Moeller (kode54) | Saturn .ssf / Dreamcast .dsf — 68000/ARM7 + SCSP |
 | [HivelyTracker](http://www.hivelytracker.co.uk/) | aucune licence explicite | Pete Gordon, Xeron/IRIS | AHX / Hively Tracker (.ahx/.hvl/.thx) |
+| [libADLMIDI](https://github.com/Wohlstand/libADLMIDI) | GPL-3.0-or-later (cœur) · émulateurs LGPL-2.1+ / BSD-3 · séquenceur et WOPL MIT | Vitaliy Novichkov (Wohlstand), Joel Yliluoma (Bisqwit) et al. | MIDI, XMI, MUS DMX, HMI/HMP sur une puce OPL3 émulée (AdLib / Sound Blaster) |
 | [libgsf (VBA)](https://github.com/yshui/playgsf) | GPL-2.0 (VBA) ; playgsf sans licence explicite | VisualBoyAdvance team ; playgsf : yshui | Game Boy Advance .gsf/.minigsf |
 | [libkss](https://github.com/digital-sound-antiques/libkss) | ISC (kss-drivers non couverts) | Mitsutaka Okazaki | Chiptunes MSX (KSS/MGS/BGM/MPK/MBM/OPX) |
 | [libLazyusf (Mupen64plus)](https://github.com/losnoco/Cog) | GPL-2.0 | Chris Moeller (kode54) ; Mupen64Plus team | Nintendo 64 .usf — émulation R4300 + RSP audio |

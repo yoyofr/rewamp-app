@@ -2948,5 +2948,41 @@
   "settingsLaunchWindowMini": "Mini player",
   "settingsLaunchWindowLast": "As when last closed",
   "miniWindowQuit": "Quit Rewamp",
-  "miniWindowCompact": "Compact mini player"
+  "miniWindowCompact": "Compact mini player",
+  "settingsMidiSynthOpl3": "OPL3 FM (AdLib / Sound Blaster)",
+  "@settingsMidiSynthOpl3": {
+    "description": "Settings: MIDI synth choice / libADLMIDI on an emulated OPL3 (proper names)"
+  },
+  "settingsEngineAdlmidiSubtitle": "MIDI and DOS game music on an emulated OPL3 chip",
+  "@settingsEngineAdlmidiSubtitle": {
+    "description": "Settings \u2192 Engines: subtitle of the libADLMIDI (OPL3) engine tile"
+  },
+  "settingsAdlBank": "Instrument bank",
+  "@settingsAdlBank": {
+    "description": "Settings \u2192 libADLMIDI: the embedded FM instrument bank"
+  },
+  "settingsAdlEmulator": "Emulator",
+  "@settingsAdlEmulator": {
+    "description": "Settings \u2192 libADLMIDI: which OPL3 chip emulator renders"
+  },
+  "settingsAdlChips": "Emulated chips",
+  "@settingsAdlChips": {
+    "description": "Settings \u2192 libADLMIDI: how many OPL3 chips are emulated (more = more polyphony)"
+  },
+  "settingsAdlVolumeModel": "Volume model",
+  "@settingsAdlVolumeModel": {
+    "description": "Settings \u2192 libADLMIDI: the volume curve of a given DOS sound driver"
+  },
+  "settingsAdlVolumeGeneric": "Generic",
+  "@settingsAdlVolumeGeneric": {
+    "description": "Settings \u2192 libADLMIDI \u2192 volume model: the generic curve (not tied to a driver)"
+  },
+  "settingsAdlSoftPan": "Smooth panning",
+  "@settingsAdlSoftPan": {
+    "description": "Settings \u2192 libADLMIDI: full stereo panning instead of hard left/centre/right"
+  },
+  "engineDescAdlmidi": "MIDI, XMI, DMX MUS, HMI/HMP on an emulated OPL3 chip (AdLib / Sound Blaster)",
+  "@engineDescAdlmidi": {
+    "description": "About \u2192 engines: what libADLMIDI plays"
+  }
 }

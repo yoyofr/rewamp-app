@@ -16,6 +16,11 @@ void main() {
   test('mt32 épingle mt32emu', () {
     expect(preferredMidiPluginFor('mt32'), 'mt32');
   });
+  // libADLMIDI score 95 sur un MIDI ordinaire, sous les 100 des deux autres:
+  // seule l'épingle le choisit (auto garde la SoundFont).
+  test('opl3 épingle libADLMIDI', () {
+    expect(preferredMidiPluginFor('opl3'), 'adlmidi');
+  });
   test('une valeur inconnue vaut auto, jamais une épingle inventée', () {
     expect(preferredMidiPluginFor('adlmidi'), isNull);
     expect(preferredMidiPluginFor(''), isNull);

@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -878,6 +880,8 @@ class UserSettings extends ChangeNotifier {
     'midi':    [_kMidiGain, _kMidiPolyphony, _kMidiReverb, _kMidiChorus,
                 _kMidiInterp, _kMidiMt32ToGm],
     'mt32':    [_kMt32Model, _kMt32Reverb, _kMt32Gain],
+    'adlmidi': [_kAdlBank, _kAdlEmulator, _kAdlChips, _kAdlVolumeModel,
+                _kAdlSoftPan, _kAdlGain],
     'uade':    [_kUadePostfx, _kUadePanOn, _kUadePanValue, _kUadeHeadphones,
                 _kUadeGainOn, _kUadeGainValue, _kUadeLed, _kUadeFilterType],
     // Which engine wins a shared format (Settings → Moteurs → Décodeurs par
@@ -978,6 +982,9 @@ class UserSettings extends ChangeNotifier {
     'midiInterp': _kMidiInterp, 'midiMt32ToGm': _kMidiMt32ToGm,
     'midiSynth': _kMidiSynth, 'mt32Model': _kMt32Model, 'mt32Reverb': _kMt32Reverb,
     'mt32Gain': _kMt32Gain,
+    'adlBank': _kAdlBank, 'adlEmulator': _kAdlEmulator, 'adlChips': _kAdlChips,
+    'adlVolumeModel': _kAdlVolumeModel, 'adlSoftPan': _kAdlSoftPan,
+    'adlGain': _kAdlGain,
     'uadePostfx': _kUadePostfx, 'uadePanEnabled': _kUadePanOn,
     'uadePanValue': _kUadePanValue, 'uadeHeadphones': _kUadeHeadphones,
     'uadeGainEnabled': _kUadeGainOn, 'uadeGainValue': _kUadeGainValue,
@@ -2181,7 +2188,8 @@ class UserSettings extends ChangeNotifier {
   /// Which engine plays a .mid: 'auto' (FluidLite, or the MT-32 when the
   /// file carries Roland MT-32 sysex — the plugin scores 104 vs 100 then),
   /// 'soundfont' (pin FluidLite), 'mt32' (pin mt32emu; silently absent when no
-  /// ROM set is imported, since its probe then returns 0).
+  /// ROM set is imported, since its probe then returns 0), 'opl3' (pin
+  /// libADLMIDI — an emulated OPL3, the AdLib / Sound Blaster sound).
   static const _kMidiSynth = 'playback.midi_synth';
   String get midiSynth => _p.getString(_kMidiSynth) ?? 'auto';
   set midiSynth(String v) { _p.setString(_kMidiSynth, v); notifyListeners(); }
@@ -2198,6 +2206,37 @@ class UserSettings extends ChangeNotifier {
   set mt32Reverb(bool v) { _p.setBool(_kMt32Reverb, v); notifyListeners(); }
   double get mt32Gain => _p.getDouble(_kMt32Gain) ?? 1.0;
   set mt32Gain(double v) { _p.setDouble(_kMt32Gain, v); notifyListeners(); }
+
+  // libADLMIDI (OPL3) — Réglages → Moteurs → libADLMIDI. Les défauts
+  // reprennent les replis de param() dans rewamp_plugin_adlmidi.cpp.
+  static const _kAdlBank        = 'playback.adl_bank';
+  static const _kAdlEmulator    = 'playback.adl_emulator';
+  static const _kAdlChips       = 'playback.adl_chips';
+  static const _kAdlVolumeModel = 'playback.adl_volume_model';
+  static const _kAdlSoftPan     = 'playback.adl_soft_pan';
+  static const _kAdlGain        = 'playback.adl_gain';
+  /// Banque EMBARQUÉE (index de adl_getBankNames; 0 = AIL, The Fat Man).
+  int get adlBank => _p.getInt(_kAdlBank) ?? 0;
+  set adlBank(int v) { _p.setInt(_kAdlBank, v); notifyListeners(); }
+  /// Émulateur (valeur de ADL_Emulator). Nuked OPL3 sur le bureau, le plus
+  /// fidèle; DOSBox sur téléphone, que l'amont conseille aux machines lentes
+  /// (Nuked × 4 puces y coûte cher).
+  int get adlEmulator =>
+      _p.getInt(_kAdlEmulator) ??
+      ((Platform.isIOS || Platform.isAndroid) ? 2 : 0);
+  set adlEmulator(int v) { _p.setInt(_kAdlEmulator, v); notifyListeners(); }
+  /// Puces OPL3 émulées (1–16): plus de puces = plus de polyphonie.
+  int get adlChips => _p.getInt(_kAdlChips) ?? 4;
+  set adlChips(int v) { _p.setInt(_kAdlChips, v); notifyListeners(); }
+  /// Modèle de volume (ADLMIDI_VolumeModel_*; 0 = auto d'après le format).
+  int get adlVolumeModel => _p.getInt(_kAdlVolumeModel) ?? 0;
+  set adlVolumeModel(int v) { _p.setInt(_kAdlVolumeModel, v); notifyListeners(); }
+  bool get adlSoftPan => _p.getBool(_kAdlSoftPan) ?? true;
+  set adlSoftPan(bool v) { _p.setBool(_kAdlSoftPan, v); notifyListeners(); }
+  /// Gain de sortie: l'OPL3 sort bas (crête médiane ≈ 0,12 à 1× sur 20
+  /// fichiers mesurés), d'où 2× par défaut.
+  double get adlGain => _p.getDouble(_kAdlGain) ?? 2.0;
+  set adlGain(double v) { _p.setDouble(_kAdlGain, v); notifyListeners(); }
 
   // ── Browse preferences ─────────────────────────────────────────────────────
 

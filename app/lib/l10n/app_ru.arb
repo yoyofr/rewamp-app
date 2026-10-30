@@ -1324,5 +1324,14 @@
   "settingsLaunchWindowMini": "Мини-плеер",
   "settingsLaunchWindowLast": "Как при закрытии",
   "miniWindowQuit": "Выйти из Rewamp",
-  "miniWindowCompact": "Компактный мини-плеер"
+  "miniWindowCompact": "Компактный мини-плеер",
+  "settingsMidiSynthOpl3": "OPL3 FM (AdLib / Sound Blaster)",
+  "settingsEngineAdlmidiSubtitle": "MIDI и музыка из игр DOS на эмулированном чипе OPL3",
+  "settingsAdlBank": "Банк инструментов",
+  "settingsAdlEmulator": "Эмулятор",
+  "settingsAdlChips": "Эмулируемые чипы",
+  "settingsAdlVolumeModel": "Модель громкости",
+  "settingsAdlVolumeGeneric": "Общая",
+  "settingsAdlSoftPan": "Плавная панорама",
+  "engineDescAdlmidi": "MIDI, XMI, DMX MUS, HMI/HMP на эмулированном чипе OPL3 (AdLib / Sound Blaster)"
 }

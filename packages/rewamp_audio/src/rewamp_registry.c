@@ -91,6 +91,9 @@ const RewampPluginVTable* rewamp_midi_plugin(void);
 #ifdef REWAMP_WITH_MT32
 const RewampPluginVTable* rewamp_mt32_plugin(void);
 #endif
+#ifdef REWAMP_WITH_ADLMIDI
+const RewampPluginVTable* rewamp_adlmidi_plugin(void);
+#endif
 #ifdef REWAMP_WITH_GSF
 const RewampPluginVTable* rewamp_gsf_plugin(void);
 #endif
@@ -269,6 +272,14 @@ void rewamp_register_builtin_plugins(void) {
     // an imported ROM set. Neither is exclusive (< 105): the app pins one or
     // the other through rewamp_registry_set_preferred_plugin("mid", ...).
     rewamp_register_plugin(rewamp_mt32_plugin());
+#endif
+#ifdef REWAMP_WITH_ADLMIDI
+    // Third .mid engine: libADLMIDI on an emulated OPL3 (AdLib / Sound
+    // Blaster). 95 on a plain MIDI — under FluidLite's and MT-32's 100, so
+    // only « Synthé MIDI: OPL3 » (a pin) selects it there; 100 on the formats
+    // no other plugin plays, confirmed by their magic (XMI, DMX MUS, HMI/HMP,
+    // GMF). A `.mus` without the DMX magic stays with SID/KSS/vgmstream.
+    rewamp_register_plugin(rewamp_adlmidi_plugin());
 #endif
 #ifdef REWAMP_WITH_GSF
     // GBA .gsf/.minigsf via VBA (PSF 0x22 magic → 110/100). Before highlyexp

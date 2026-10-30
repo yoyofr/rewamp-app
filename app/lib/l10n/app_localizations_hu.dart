@@ -4888,4 +4888,33 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get miniWindowCompact => 'Kompakt minilejátszó';
+
+  @override
+  String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
+
+  @override
+  String get settingsEngineAdlmidiSubtitle =>
+      'MIDI és DOS-os játékzene emulált OPL3 chipen';
+
+  @override
+  String get settingsAdlBank => 'Hangszerbank';
+
+  @override
+  String get settingsAdlEmulator => 'Emulátor';
+
+  @override
+  String get settingsAdlChips => 'Emulált chipek';
+
+  @override
+  String get settingsAdlVolumeModel => 'Hangerőmodell';
+
+  @override
+  String get settingsAdlVolumeGeneric => 'Általános';
+
+  @override
+  String get settingsAdlSoftPan => 'Lágy panoráma';
+
+  @override
+  String get engineDescAdlmidi =>
+      'MIDI, XMI, DMX MUS, HMI/HMP emulált OPL3 chipen (AdLib / Sound Blaster)';
 }

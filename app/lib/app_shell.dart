@@ -84,6 +84,7 @@ const int kQueueLimit = 2000;
 String? preferredMidiPluginFor(String midiSynth) => switch (midiSynth) {
       'soundfont' => 'fluidlite',
       'mt32'      => 'mt32',
+      'opl3'      => 'adlmidi',
       _           => null,
     };
 
@@ -861,6 +862,12 @@ class _AppShellState extends State<AppShell>
     audio.setEngineParam('mt32', 'model',  s.mt32Model.toDouble());
     audio.setEngineParam('mt32', 'reverb', s.mt32Reverb ? 1 : 0);
     audio.setEngineParam('mt32', 'gain',   s.mt32Gain);
+    audio.setEngineParam('adlmidi', 'bank',         s.adlBank.toDouble());
+    audio.setEngineParam('adlmidi', 'emulator',     s.adlEmulator.toDouble());
+    audio.setEngineParam('adlmidi', 'chips',        s.adlChips.toDouble());
+    audio.setEngineParam('adlmidi', 'volume_model', s.adlVolumeModel.toDouble());
+    audio.setEngineParam('adlmidi', 'soft_pan',     s.adlSoftPan ? 1 : 0);
+    audio.setEngineParam('adlmidi', 'gain',         s.adlGain);
 
     // Per-engine parameters (Settings → Moteurs) — read by the plugin's
     // open(), i.e. applied on the next track (re)load.

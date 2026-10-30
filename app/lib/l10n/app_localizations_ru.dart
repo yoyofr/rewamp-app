@@ -5010,4 +5010,33 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get miniWindowCompact => 'Компактный мини-плеер';
+
+  @override
+  String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
+
+  @override
+  String get settingsEngineAdlmidiSubtitle =>
+      'MIDI и музыка из игр DOS на эмулированном чипе OPL3';
+
+  @override
+  String get settingsAdlBank => 'Банк инструментов';
+
+  @override
+  String get settingsAdlEmulator => 'Эмулятор';
+
+  @override
+  String get settingsAdlChips => 'Эмулируемые чипы';
+
+  @override
+  String get settingsAdlVolumeModel => 'Модель громкости';
+
+  @override
+  String get settingsAdlVolumeGeneric => 'Общая';
+
+  @override
+  String get settingsAdlSoftPan => 'Плавная панорама';
+
+  @override
+  String get engineDescAdlmidi =>
+      'MIDI, XMI, DMX MUS, HMI/HMP на эмулированном чипе OPL3 (AdLib / Sound Blaster)';
 }

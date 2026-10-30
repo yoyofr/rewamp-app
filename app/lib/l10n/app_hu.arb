@@ -1324,5 +1324,14 @@
   "settingsLaunchWindowMini": "Minilejátszó",
   "settingsLaunchWindowLast": "Ahogy bezáráskor volt",
   "miniWindowQuit": "Kilépés a Rewampból",
-  "miniWindowCompact": "Kompakt minilejátszó"
+  "miniWindowCompact": "Kompakt minilejátszó",
+  "settingsMidiSynthOpl3": "OPL3 FM (AdLib / Sound Blaster)",
+  "settingsEngineAdlmidiSubtitle": "MIDI és DOS-os játékzene emulált OPL3 chipen",
+  "settingsAdlBank": "Hangszerbank",
+  "settingsAdlEmulator": "Emulátor",
+  "settingsAdlChips": "Emulált chipek",
+  "settingsAdlVolumeModel": "Hangerőmodell",
+  "settingsAdlVolumeGeneric": "Általános",
+  "settingsAdlSoftPan": "Lágy panoráma",
+  "engineDescAdlmidi": "MIDI, XMI, DMX MUS, HMI/HMP emulált OPL3 chipen (AdLib / Sound Blaster)"
 }

@@ -1625,6 +1625,7 @@ static int rewamp_loop_lifts_live(const RewampPluginVTable* vt) {
         "highlyexp", "highlytheoritical", "highlyquixotic",
         "libvgm",   /* loopCount relu à chaque PLREVT_LOOP — vgm_configure_loop */
         "vgmstream", /* config.play_forever relu à chaque bloc — vgm_configure_loop_fn */
+        "adlmidi",  /* adl_setLoopEnabled relu en fin de morceau — mesuré */
         NULL,
     };
     if (vt == NULL || vt->name == NULL || vt->configure_loop == NULL) return 0;
@@ -1723,6 +1724,9 @@ extern int         rewamp_kss_probe_subsong_count(const char* path);
 extern const char* rewamp_kss_probe_get_title(int idx);
 extern int         rewamp_kss_probe_get_duration_ms(int idx);
 extern int         rewamp_kss_probe_base(void);
+#endif
+#ifdef REWAMP_WITH_ADLMIDI
+extern int         rewamp_adlmidi_probe_subsong_count(const char* path);
 #endif
 #ifdef REWAMP_WITH_OPENMPT
 extern int         rewamp_openmpt_probe_subsong_count(const char* path);
@@ -1908,6 +1912,18 @@ static int rewamp_probe_subsong_count_locked(const char* path) {
         if (n > 0) {
             s_probe_title_fn    = NULL;   // le format ne nomme pas ses morceaux
             s_probe_duration_fn = rewamp_ronklaren_probe_get_duration_ms;
+            return n;
+        }
+    }
+#endif
+#ifdef REWAMP_WITH_ADLMIDI
+    // XMI (Miles Sound System) can bundle several songs; adl_getSongsCount
+    // after an open. Header-gated inside (FORM…XDIR): any other file is 0.
+    {
+        const int n = rewamp_adlmidi_probe_subsong_count(path);
+        if (n > 1) {
+            s_probe_title_fn    = NULL;   // XMI names no song
+            s_probe_duration_fn = NULL;
             return n;
         }
     }

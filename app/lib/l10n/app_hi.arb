@@ -1317,5 +1317,14 @@
   "settingsLaunchWindowMini": "मिनी प्लेयर",
   "settingsLaunchWindowLast": "जैसा बंद करते समय था",
   "miniWindowQuit": "Rewamp बंद करें",
-  "miniWindowCompact": "कॉम्पैक्ट मिनी प्लेयर"
+  "miniWindowCompact": "कॉम्पैक्ट मिनी प्लेयर",
+  "settingsMidiSynthOpl3": "OPL3 FM (AdLib / Sound Blaster)",
+  "settingsEngineAdlmidiSubtitle": "एमुलेटेड OPL3 चिप पर MIDI और DOS गेम संगीत",
+  "settingsAdlBank": "वाद्य बैंक",
+  "settingsAdlEmulator": "एमुलेटर",
+  "settingsAdlChips": "एमुलेटेड चिप",
+  "settingsAdlVolumeModel": "वॉल्यूम मॉडल",
+  "settingsAdlVolumeGeneric": "सामान्य",
+  "settingsAdlSoftPan": "सहज पैनिंग",
+  "engineDescAdlmidi": "एमुलेटेड OPL3 चिप पर MIDI, XMI, DMX MUS, HMI/HMP (AdLib / Sound Blaster)"
 }

@@ -153,6 +153,14 @@ const kV2mExts = <String>{ 'v2m', 'v2mz' };
 /// Standard MIDI (FluidLite + SoundFont).
 const kMidiExts = <String>{ 'mid', 'midi', 'kar', 'rmi' };
 
+/// libADLMIDI (OPL3): le MIDI, plus les formats de musique de jeux DOS que son
+/// séquenceur lit lui-même. `mus` n'est revendiqué qu'avec la magie DMX
+/// (`MUS\x1A`): un `.mus` SID ou MSX reste à son moteur. IMF/CMF/KLM, que la
+/// bibliothèque sait aussi lire, restent à AdPlug.
+const kAdlmidiExts = <String>{
+  ...kMidiExts, 'xmi', 'mus', 'hmi', 'hmp', 'gmf',
+};
+
 /// ASAP Atari 8-bit POKEY.
 const kAsapExts = <String>{
   'sap', 'cmc', 'cm3', 'cmr', 'cms', 'dmc', 'dlt', 'mpt', 'mpd',

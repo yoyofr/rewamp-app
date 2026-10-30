@@ -1324,5 +1324,14 @@
   "settingsLaunchWindowMini": "Minispeler",
   "settingsLaunchWindowLast": "Zoals bij het afsluiten",
   "miniWindowQuit": "Rewamp afsluiten",
-  "miniWindowCompact": "Compacte minispeler"
+  "miniWindowCompact": "Compacte minispeler",
+  "settingsMidiSynthOpl3": "OPL3 FM (AdLib / Sound Blaster)",
+  "settingsEngineAdlmidiSubtitle": "MIDI en DOS-gamemuziek op een geëmuleerde OPL3-chip",
+  "settingsAdlBank": "Instrumentenbank",
+  "settingsAdlEmulator": "Emulator",
+  "settingsAdlChips": "Geëmuleerde chips",
+  "settingsAdlVolumeModel": "Volumemodel",
+  "settingsAdlVolumeGeneric": "Generiek",
+  "settingsAdlSoftPan": "Vloeiend pannen",
+  "engineDescAdlmidi": "MIDI, XMI, DMX-MUS, HMI/HMP op een geëmuleerde OPL3-chip (AdLib / Sound Blaster)"
 }

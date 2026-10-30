@@ -4698,4 +4698,33 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get miniWindowCompact => '간단한 미니 플레이어';
+
+  @override
+  String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
+
+  @override
+  String get settingsEngineAdlmidiSubtitle =>
+      '에뮬레이션된 OPL3 칩으로 MIDI와 DOS 게임 음악 재생';
+
+  @override
+  String get settingsAdlBank => '악기 뱅크';
+
+  @override
+  String get settingsAdlEmulator => '에뮬레이터';
+
+  @override
+  String get settingsAdlChips => '에뮬레이션 칩 수';
+
+  @override
+  String get settingsAdlVolumeModel => '볼륨 모델';
+
+  @override
+  String get settingsAdlVolumeGeneric => '일반';
+
+  @override
+  String get settingsAdlSoftPan => '부드러운 패닝';
+
+  @override
+  String get engineDescAdlmidi =>
+      '에뮬레이션된 OPL3 칩으로 MIDI, XMI, DMX MUS, HMI/HMP 재생 (AdLib / Sound Blaster)';
 }

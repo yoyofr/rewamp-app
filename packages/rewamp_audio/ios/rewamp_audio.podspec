@@ -1698,6 +1698,72 @@ Pod::Spec.new do |s|
     SH
   end
 
+  # --- libADLMIDI: .mid / XMI / DMX MUS / HMI / HMP / GMF on an emulated OPL3 --
+  # Enabled by default; opt out with REWAMP_WITH_ADLMIDI=0. GPL-3.0+ core
+  # (Wohlstand), vendored verbatim at v1.6.2.1. ⚠️ Each LIBRARY wrapper
+  # includes rewamp/adlmidi_rename.h FIRST — the podspec's force-include:
+  # AdPlug (OPL3_*), Furnace (ESFM_*) and pmdmini (namespace ymfm) define the
+  # same names. The plugin wrapper does NOT (public adl_* API only). Same file
+  # list as cmake/rewamp.cmake's rewamp_add_adlmidi — keep the two in sync.
+  if ENV['REWAMP_WITH_ADLMIDI'] != '0'
+    defines << 'REWAMP_WITH_ADLMIDI=1'
+    defines << 'ADLMIDI_DISABLE_JAVA_EMULATOR=1'
+    defines << 'ADLMIDI_DISABLE_MAME_OPL2_EMULATOR=1'
+    defines << 'ENABLE_END_SILENCE_SKIPPING=1'
+    search_paths << '$(PODS_TARGET_SRCROOT)/../third_party/libadlmidi/include'
+    search_paths << '$(PODS_TARGET_SRCROOT)/../third_party/tml'
+
+    prepare_parts << <<-'SH'
+      CLASSES="$(pwd)/Classes"
+      WRAP="$CLASSES/adlmidi_cores"
+      rm -rf "$WRAP"; mkdir -p "$WRAP"
+      for f in src/adlmidi.cpp \
+               src/adlmidi_load.cpp \
+               src/adlmidi_midiplay.cpp \
+               src/adlmidi_opl3.cpp \
+               src/adlmidi_private.cpp \
+               src/adlmidi_sequencer.cpp \
+               src/inst_db.cpp \
+               src/wopl/wopl_file.c \
+               src/models/model_ail.c \
+               src/models/model_apogee.c \
+               src/models/model_dmx.c \
+               src/models/model_generic.c \
+               src/models/model_hmi_sos.c \
+               src/models/model_msadlib.c \
+               src/models/model_oconnell.c \
+               src/models/model_win9x.c \
+               src/chips/dosbox_opl2.cpp \
+               src/chips/dosbox_opl3.cpp \
+               src/chips/dosbox/dbopl.cpp \
+               src/chips/nuked_opl3.cpp \
+               src/chips/nuked/nukedopl3.c \
+               src/chips/nuked_opl3_fast.cpp \
+               src/chips/nuked_fast/nukedopl3_fast.c \
+               src/chips/nuked_opl2.cpp \
+               src/chips/nuked/nukedopl2.c \
+               src/chips/nuked_cqm.cpp \
+               src/chips/nuked_cqm/cqm.c \
+               src/chips/opal_opl3.cpp \
+               src/chips/opal/opal.c \
+               src/chips/esfmu_opl3.cpp \
+               src/chips/esfmu/esfm.c \
+               src/chips/esfmu/esfm_registers.c \
+               src/chips/ymfm_opl2.cpp \
+               src/chips/ymfm_opl3.cpp \
+               src/chips/ymfm/ymfm_adpcm.cpp \
+               src/chips/ymfm/ymfm_misc.cpp \
+               src/chips/ymfm/ymfm_opl.cpp \
+               src/chips/ymfm/ymfm_pcm.cpp \
+               src/chips/ymfm/ymfm_ssg.cpp; do
+        out="$WRAP/$(echo "$f" | sed 's|^src/||; s|/|_|g')"
+        printf '#include "../../../third_party/libadlmidi/rewamp/adlmidi_rename.h"\n#include "../../../third_party/libadlmidi/%s"\n' "$f" > "$out"
+      done
+      printf '#include "../../../src/rewamp_plugin_adlmidi.cpp"\n' > "$WRAP/zz_rewamp_adlmidi_plugin.cpp"
+      [ -f "$CLASSES/rewamp_tml_impl.c" ] || printf '#include "../../src/rewamp_tml.c"\n' > "$CLASSES/rewamp_tml_impl.c"
+    SH
+  end
+
   # --- HivelyTracker: .hvl / .ahx (native replayer, beats UADE on these) ------
   # Enabled by default; opt out with REWAMP_WITH_HVL=0. Single vendored TU
   # (Modizer hvl_replay, inline voice-capture patches).

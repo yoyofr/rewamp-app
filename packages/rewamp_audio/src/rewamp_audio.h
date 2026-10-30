@@ -611,6 +611,10 @@ REWAMP_EXPORT void        rewamp_mt32_set_rom_dir(const char* path);
 REWAMP_EXPORT const char* rewamp_mt32_rom_status(void);
 REWAMP_EXPORT const char* rewamp_mt32_identify_rom(const char* path);
 REWAMP_EXPORT const char* rewamp_mt32_lcd(void);
+/* libADLMIDI (OPL3): banques EMBARQUÉES, pour Réglages → OPL3 (l'index est
+ * le paramètre moteur "adlmidi"/"bank"). Nom "" hors bornes. */
+REWAMP_EXPORT int         rewamp_adlmidi_bank_count(void);
+REWAMP_EXPORT const char* rewamp_adlmidi_bank_name(int index);
 REWAMP_EXPORT int         rewamp_openmpt_active_instruments(uint8_t* out, int maxOut);
 REWAMP_EXPORT const char* rewamp_sid_md5(const char* path);
 

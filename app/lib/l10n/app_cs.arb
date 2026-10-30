@@ -1324,5 +1324,14 @@
   "settingsLaunchWindowMini": "Minipřehrávač",
   "settingsLaunchWindowLast": "Jako při zavření",
   "miniWindowQuit": "Ukončit Rewamp",
-  "miniWindowCompact": "Kompaktní minipřehrávač"
+  "miniWindowCompact": "Kompaktní minipřehrávač",
+  "settingsMidiSynthOpl3": "OPL3 FM (AdLib / Sound Blaster)",
+  "settingsEngineAdlmidiSubtitle": "MIDI a hudba z her pro DOS na emulovaném čipu OPL3",
+  "settingsAdlBank": "Banka nástrojů",
+  "settingsAdlEmulator": "Emulátor",
+  "settingsAdlChips": "Emulované čipy",
+  "settingsAdlVolumeModel": "Model hlasitosti",
+  "settingsAdlVolumeGeneric": "Obecný",
+  "settingsAdlSoftPan": "Plynulé panorama",
+  "engineDescAdlmidi": "MIDI, XMI, DMX MUS, HMI/HMP na emulovaném čipu OPL3 (AdLib / Sound Blaster)"
 }

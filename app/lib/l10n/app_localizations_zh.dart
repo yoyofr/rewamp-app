@@ -4662,4 +4662,32 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get miniWindowCompact => '紧凑迷你播放器';
+
+  @override
+  String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
+
+  @override
+  String get settingsEngineAdlmidiSubtitle => '在模拟的 OPL3 芯片上播放 MIDI 和 DOS 游戏音乐';
+
+  @override
+  String get settingsAdlBank => '音色库';
+
+  @override
+  String get settingsAdlEmulator => '模拟器';
+
+  @override
+  String get settingsAdlChips => '模拟芯片数';
+
+  @override
+  String get settingsAdlVolumeModel => '音量模型';
+
+  @override
+  String get settingsAdlVolumeGeneric => '通用';
+
+  @override
+  String get settingsAdlSoftPan => '平滑声像';
+
+  @override
+  String get engineDescAdlmidi =>
+      '在模拟的 OPL3 芯片上播放 MIDI、XMI、DMX MUS、HMI/HMP（AdLib / Sound Blaster）';
 }

@@ -4989,4 +4989,33 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get miniWindowCompact => 'Kompaktní minipřehrávač';
+
+  @override
+  String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
+
+  @override
+  String get settingsEngineAdlmidiSubtitle =>
+      'MIDI a hudba z her pro DOS na emulovaném čipu OPL3';
+
+  @override
+  String get settingsAdlBank => 'Banka nástrojů';
+
+  @override
+  String get settingsAdlEmulator => 'Emulátor';
+
+  @override
+  String get settingsAdlChips => 'Emulované čipy';
+
+  @override
+  String get settingsAdlVolumeModel => 'Model hlasitosti';
+
+  @override
+  String get settingsAdlVolumeGeneric => 'Obecný';
+
+  @override
+  String get settingsAdlSoftPan => 'Plynulé panorama';
+
+  @override
+  String get engineDescAdlmidi =>
+      'MIDI, XMI, DMX MUS, HMI/HMP na emulovaném čipu OPL3 (AdLib / Sound Blaster)';
 }

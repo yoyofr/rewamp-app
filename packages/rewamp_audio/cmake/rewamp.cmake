@@ -232,6 +232,7 @@ rewamp_option(REWAMP_WITH_HVL      "Build the HivelyTracker plugin (.hvl/.ahx)" 
 rewamp_option(REWAMP_WITH_V2M      "Build the Farbrausch V2M plugin (.v2m/.v2mz)" ON)
 rewamp_option(REWAMP_WITH_MIDI     "Build the FluidLite MIDI plugin (.mid, SF2 SoundFont)" ON)
 rewamp_option(REWAMP_WITH_MT32     "Build the mt32emu MIDI plugin (.mid on a Roland MT-32 / CM-32L, user-imported ROMs)" ON)
+rewamp_option(REWAMP_WITH_ADLMIDI  "Build the libADLMIDI plugin (.mid / XMI / DMX MUS / HMI / HMP / GMF on an emulated OPL3)" ON)
 rewamp_option(REWAMP_WITH_GSF      "Build the libgsf plugin (GBA .gsf/.minigsf via VBA)" ON)
 rewamp_option(REWAMP_WITH_VIO2SF   "Build the vio2sf plugin (Nintendo DS .2sf/.mini2sf via melonDS)" ON)
 rewamp_option(REWAMP_WITH_NCSF     "Build the NCSF plugin (Nintendo DS .ncsf/.minincsf via SSEQPlayer)" ON)
@@ -2143,6 +2144,61 @@ function(rewamp_add_mt32 target)
   target_link_libraries(${target} PRIVATE rewamp_mt32emu)
 endfunction()
 
+# ── libADLMIDI: MIDI and DOS game music formats on an emulated OPL3 ─────────
+# (Wohlstand, GPL-3.0-or-later core; chip cores LGPL-2.1+/BSD-3/PD). Vendored
+# verbatim at v1.6.2.1. ⚠️ Every TU of the LIBRARY gets rewamp/adlmidi_rename.h
+# injected first (rewamp_force_include_option): AdPlug (OPL3_*), Furnace
+# (ESFM_*) and pmdmini (namespace ymfm) define the same names, and the linker
+# would merge them in silence. The plugin TU does NOT get it: it only calls the
+# public adl_* API, which keeps its names. Emulators: Nuked OPL3 (+ fast, OPL2
+# lite, CQM), DOSBox, Opal, ESFMu, YMFM — not MAME OPL2, Java, the LLE cores.
+# Same file list as the upstream CMakeLists with those options. Embedded banks:
+# all 79, greyzone included (inst_db.cpp — the author's decision, 2026-10-29).
+function(rewamp_add_adlmidi target)
+  set(ADL_ROOT "${REWAMP_THIRD_PARTY_DIR}/libadlmidi")
+  if(NOT EXISTS "${ADL_ROOT}/src/adlmidi.cpp")
+    message(FATAL_ERROR "REWAMP_WITH_ADLMIDI=ON but libADLMIDI sources are missing at ${ADL_ROOT}")
+  endif()
+  set(_adl_srcs
+    src/adlmidi.cpp src/adlmidi_load.cpp src/adlmidi_midiplay.cpp
+    src/adlmidi_opl3.cpp src/adlmidi_private.cpp src/adlmidi_sequencer.cpp
+    src/inst_db.cpp src/wopl/wopl_file.c
+    src/models/model_ail.c src/models/model_apogee.c src/models/model_dmx.c
+    src/models/model_generic.c src/models/model_hmi_sos.c
+    src/models/model_msadlib.c src/models/model_oconnell.c
+    src/models/model_win9x.c
+    src/chips/dosbox_opl2.cpp src/chips/dosbox_opl3.cpp src/chips/dosbox/dbopl.cpp
+    src/chips/nuked_opl3.cpp src/chips/nuked/nukedopl3.c
+    src/chips/nuked_opl3_fast.cpp src/chips/nuked_fast/nukedopl3_fast.c
+    src/chips/nuked_opl2.cpp src/chips/nuked/nukedopl2.c
+    src/chips/nuked_cqm.cpp src/chips/nuked_cqm/cqm.c
+    src/chips/opal_opl3.cpp src/chips/opal/opal.c
+    src/chips/esfmu_opl3.cpp src/chips/esfmu/esfm.c src/chips/esfmu/esfm_registers.c
+    src/chips/ymfm_opl2.cpp src/chips/ymfm_opl3.cpp
+    src/chips/ymfm/ymfm_adpcm.cpp src/chips/ymfm/ymfm_misc.cpp
+    src/chips/ymfm/ymfm_opl.cpp src/chips/ymfm/ymfm_pcm.cpp
+    src/chips/ymfm/ymfm_ssg.cpp)
+  list(TRANSFORM _adl_srcs PREPEND "${ADL_ROOT}/")
+  add_library(rewamp_adlmidi STATIC ${_adl_srcs})
+  # YMFM needs C++14; the rest is C++98-clean and builds as 14 too.
+  set_target_properties(rewamp_adlmidi PROPERTIES POSITION_INDEPENDENT_CODE ON
+    CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON)
+  target_compile_definitions(rewamp_adlmidi PRIVATE
+    ADLMIDI_DISABLE_JAVA_EMULATOR ADLMIDI_DISABLE_MAME_OPL2_EMULATOR
+    ENABLE_END_SILENCE_SKIPPING)
+  target_include_directories(rewamp_adlmidi PRIVATE "${ADL_ROOT}/include" "${ADL_ROOT}/src")
+  rewamp_force_include_option(_adl_fi "${ADL_ROOT}/rewamp/adlmidi_rename.h")
+  set_source_files_properties(${_adl_srcs} PROPERTIES COMPILE_OPTIONS "${_adl_fi}")
+
+  target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_adlmidi.cpp")
+  if(NOT REWAMP_WITH_MIDI AND NOT REWAMP_WITH_MT32)
+    target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_tml.c")
+  endif()
+  target_compile_definitions(${target} PRIVATE REWAMP_WITH_ADLMIDI=1)
+  target_include_directories(${target} PRIVATE "${ADL_ROOT}/include" "${REWAMP_THIRD_PARTY_DIR}/tml")
+  target_link_libraries(${target} PRIVATE rewamp_adlmidi)
+endfunction()
+
 # Official UnRAR as a static lib — only the .cpp files its makefile compiles
 # (OBJECTS + LIB_OBJ); the rest (crypt1-5, unpack15/20/30/50, blake2s_sse, …)
 # are #included by those. RAR_SMP deliberately NOT set (single-threaded, no
@@ -2724,6 +2780,10 @@ function(rewamp_configure_decoders target)
 
   if(REWAMP_WITH_MT32)
     rewamp_add_mt32(${target})
+  endif()
+
+  if(REWAMP_WITH_ADLMIDI)
+    rewamp_add_adlmidi(${target})
   endif()
 
   if(REWAMP_WITH_GSF)

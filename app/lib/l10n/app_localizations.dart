@@ -8040,6 +8040,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Compact mini player'**
   String get miniWindowCompact;
+
+  /// Settings: MIDI synth choice / libADLMIDI on an emulated OPL3 (proper names)
+  ///
+  /// In en, this message translates to:
+  /// **'OPL3 FM (AdLib / Sound Blaster)'**
+  String get settingsMidiSynthOpl3;
+
+  /// Settings → Engines: subtitle of the libADLMIDI (OPL3) engine tile
+  ///
+  /// In en, this message translates to:
+  /// **'MIDI and DOS game music on an emulated OPL3 chip'**
+  String get settingsEngineAdlmidiSubtitle;
+
+  /// Settings → libADLMIDI: the embedded FM instrument bank
+  ///
+  /// In en, this message translates to:
+  /// **'Instrument bank'**
+  String get settingsAdlBank;
+
+  /// Settings → libADLMIDI: which OPL3 chip emulator renders
+  ///
+  /// In en, this message translates to:
+  /// **'Emulator'**
+  String get settingsAdlEmulator;
+
+  /// Settings → libADLMIDI: how many OPL3 chips are emulated (more = more polyphony)
+  ///
+  /// In en, this message translates to:
+  /// **'Emulated chips'**
+  String get settingsAdlChips;
+
+  /// Settings → libADLMIDI: the volume curve of a given DOS sound driver
+  ///
+  /// In en, this message translates to:
+  /// **'Volume model'**
+  String get settingsAdlVolumeModel;
+
+  /// Settings → libADLMIDI → volume model: the generic curve (not tied to a driver)
+  ///
+  /// In en, this message translates to:
+  /// **'Generic'**
+  String get settingsAdlVolumeGeneric;
+
+  /// Settings → libADLMIDI: full stereo panning instead of hard left/centre/right
+  ///
+  /// In en, this message translates to:
+  /// **'Smooth panning'**
+  String get settingsAdlSoftPan;
+
+  /// About → engines: what libADLMIDI plays
+  ///
+  /// In en, this message translates to:
+  /// **'MIDI, XMI, DMX MUS, HMI/HMP on an emulated OPL3 chip (AdLib / Sound Blaster)'**
+  String get engineDescAdlmidi;
 }
 
 class _AppLocalizationsDelegate

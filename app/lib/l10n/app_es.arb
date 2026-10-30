@@ -1324,5 +1324,14 @@
   "settingsLaunchWindowMini": "Minirreproductor",
   "settingsLaunchWindowLast": "Como al cerrar",
   "miniWindowQuit": "Salir de Rewamp",
-  "miniWindowCompact": "Minirreproductor compacto"
+  "miniWindowCompact": "Minirreproductor compacto",
+  "settingsMidiSynthOpl3": "OPL3 FM (AdLib / Sound Blaster)",
+  "settingsEngineAdlmidiSubtitle": "MIDI y música de juegos de DOS en un chip OPL3 emulado",
+  "settingsAdlBank": "Banco de instrumentos",
+  "settingsAdlEmulator": "Emulador",
+  "settingsAdlChips": "Chips emulados",
+  "settingsAdlVolumeModel": "Modelo de volumen",
+  "settingsAdlVolumeGeneric": "Genérico",
+  "settingsAdlSoftPan": "Panorámica suave",
+  "engineDescAdlmidi": "MIDI, XMI, MUS de DMX, HMI/HMP en un chip OPL3 emulado (AdLib / Sound Blaster)"
 }

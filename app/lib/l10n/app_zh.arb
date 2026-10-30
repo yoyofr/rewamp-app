@@ -1324,5 +1324,14 @@
   "settingsLaunchWindowMini": "迷你播放器",
   "settingsLaunchWindowLast": "与关闭时相同",
   "miniWindowQuit": "退出 Rewamp",
-  "miniWindowCompact": "紧凑迷你播放器"
+  "miniWindowCompact": "紧凑迷你播放器",
+  "settingsMidiSynthOpl3": "OPL3 FM (AdLib / Sound Blaster)",
+  "settingsEngineAdlmidiSubtitle": "在模拟的 OPL3 芯片上播放 MIDI 和 DOS 游戏音乐",
+  "settingsAdlBank": "音色库",
+  "settingsAdlEmulator": "模拟器",
+  "settingsAdlChips": "模拟芯片数",
+  "settingsAdlVolumeModel": "音量模型",
+  "settingsAdlVolumeGeneric": "通用",
+  "settingsAdlSoftPan": "平滑声像",
+  "engineDescAdlmidi": "在模拟的 OPL3 芯片上播放 MIDI、XMI、DMX MUS、HMI/HMP（AdLib / Sound Blaster）"
 }

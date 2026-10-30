@@ -1324,5 +1324,14 @@
   "settingsLaunchWindowMini": "Minispiller",
   "settingsLaunchWindowLast": "Som ved lukking",
   "miniWindowQuit": "Avslutt Rewamp",
-  "miniWindowCompact": "Kompakt minispiller"
+  "miniWindowCompact": "Kompakt minispiller",
+  "settingsMidiSynthOpl3": "OPL3 FM (AdLib / Sound Blaster)",
+  "settingsEngineAdlmidiSubtitle": "MIDI og DOS-spillmusikk på en emulert OPL3-brikke",
+  "settingsAdlBank": "Instrumentbank",
+  "settingsAdlEmulator": "Emulator",
+  "settingsAdlChips": "Emulerte brikker",
+  "settingsAdlVolumeModel": "Volummodell",
+  "settingsAdlVolumeGeneric": "Generisk",
+  "settingsAdlSoftPan": "Myk panorering",
+  "engineDescAdlmidi": "MIDI, XMI, DMX MUS, HMI/HMP på en emulert OPL3-brikke (AdLib / Sound Blaster)"
 }
