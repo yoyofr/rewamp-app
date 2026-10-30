@@ -66,7 +66,8 @@ extern "C" int g_force_loop_native_veto;
 namespace {
 
 /* ⚠️ Not `struct RewampDecoder`: it owns nothing non-trivial today, but the
- * rule (CLAUDE.md, ODR) is to keep every plugin's state in its own type. */
+ * rule is to keep every plugin's state in its own type (ODR: an implicit
+ * destructor is a weak symbol the linker merges with another plugin's). */
 struct AdlDec {
     ADL_MIDIPlayer* dev = nullptr;
     double          gain = 2.0;
