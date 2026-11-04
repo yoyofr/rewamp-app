@@ -266,3 +266,10 @@ unrelated fuzzy matches. All 862 Flutter tests passed. The explicit live check
 lookups against the real catalogue, finding the Randall MOD for “Randall”,
 “Randal”, and “The Bullet by Randal”. The exact transcript from the vehicle
 request remains unknown, so Siri recognition still needs a new in-car test.
+
+The fix was built and signed as development build 19 (version 1.0.0), then
+installed over the existing test app on the registered iPhone. CarPlay/Siri
+entitlements, device inclusion and all nested bundle identifiers passed signature
+validation. The phone reports version 1.0.0, build 19. After the tester unlocked
+it, the normal app launched without a debugger and its new process remained
+running. In-car Siri recognition remains the final acceptance check.
