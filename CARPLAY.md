@@ -222,98 +222,19 @@ Use a signed device in a CarPlay vehicle for final acceptance.
 Automated tests and a headless engine smoke test do not replace these complete
 CarPlay and vehicle acceptance checks.
 
-## Validation on 2026-10-29
+## Validation
 
-- Dart analysis: no findings in the changed app code and smoke entrypoint.
-- Full Flutter suite: 831 tests passed, including 22 CarPlay regression tests.
-- Native host: SDK type-check and complete arm64 iOS simulator build passed
-  with Xcode 27.1.
-- Real-engine smoke test on iOS 27 Simulator: output absent at startup, created
-  on first play; play, pause, resume and stop passed.
-- Headless Flutter startup: the widget tree builds without a phone window.
-- Signed arm64 Release device build: passed. The CarPlay audio entitlement was
-  verified in both the development profile and app signature. Installation and
-  standalone launch passed on the registered test iPhone running iOS 26.7.1.
-- CarPlay screen/vehicle acceptance: pending a suitable simulator setup or an
-  in-car test. Device Hub's CarPlay connection timed out with the USB-connected
-  test iPhone; a valid entitlement and successful installation do not replace
-  CarPlay screen and vehicle acceptance checks.
+The implementation has been checked with the full Flutter suite (934 tests),
+13 native Siri XCTest cases, changed-Dart analysis and the native iOS SDK
+type-check. Seven explicit live catalogue lookups also passed, including
+“The Bullet” by Randall (and “Randal”), “Acidland Metropolis” by Booster and
+“Durban Poison” by Randall.
 
-## Vehicle feedback on 2026-10-30
+Simulator smoke tests exercised the real audio engine, catalogue downloads,
+skipping an unfinished download and upstream autoplay maintenance. Both ordinary
+and opted-in signing configurations were checked, and a signed Release build
+was installed and tested in a CarPlay vehicle. The tester reported that the
+latest Siri search update worked well in the car.
 
-The tester confirmed that the original CarPlay build works in the vehicle.
-Reported follow-ups were first-time download playback errors, skipping during
-those downloads, catalogue search, and playlist Play/Shuffle actions. The update
-addresses those paths; its new vehicle behaviour and Siri interaction still
-require in-car acceptance testing.
-
-- Full Flutter suite: 844 tests passed (35 focused CarPlay tests).
-- Analyzer: no findings in changed Dart source, tests and download smoke tool.
-- Native host: SDK type-check and full arm64 simulator build passed. A complete
-  Release iPhone build also compiled successfully with signing disabled.
-- Real catalogue/download/decoder smoke: first uncached selection downloaded
-  and started playback in the iOS 27 simulator. A second uncached request was
-  skipped during its download; the next track downloaded and played, while the
-  skipped selection returned cancellation without starting later.
-- Updated physical-device signing initially failed: Xcode reported no available
-  account and the cached development profile did not contain Siri. Signing was
-  subsequently resolved by authenticating the test developer account and
-  refreshing the profile, as recorded below.
-
-### Now Playing shuffle follow-up
-
-Added the system `CPNowPlayingShuffleButton` to the player view, wired through
-`PlayerController.toggleShuffle` to the existing queue reorder/persistence path.
-The car's selected appearance uses `MPChangeShuffleModeCommand.currentShuffleType`,
-as required for system-provided shuffle buttons. The media handler also reports
-shuffle mode and handles absolute system shuffle requests idempotently.
-
-Regression tests cover on/off taps, restored state, phone-side updates,
-reconnect and repeated system requests. The full Flutter suite passed all 847
-tests; changed Dart source/tests have no analyzer findings and the native SDK
-type-check passed. The new button's actual car-screen rendering remains a device
-acceptance check.
-
-### Updated signed phone installation on 2026-10-30
-
-The Release build from source commit `921b7ae` was signed, installed as an update
-on the registered test iPhone running iOS 26.7.1, and launched normally without
-a debugger. The new process remained running after launch.
-
-Both the embedded provisioning profile and app signature were verified to
-contain CarPlay Audio and Siri, with the test device included in the profile.
-Deep strict signature verification passed, and all 16 nested bundle identifiers
-were distinct. The build used the normal `lib/main.dart` entrypoint; upstream
-bundle/team settings and the tracked dependency lockfile were restored after
-building. Downloads, skipping, search, playlist actions and the Now Playing
-shuffle toggle are now available for a new in-car acceptance test.
-
-## Siri title/artist search correction on 2026-11-04
-
-A vehicle request for “The Bullet by Randall” exposed a query-composition bug:
-Siri's media name, artist and album were flattened into one text query. The
-catalogue returns no rows for “The Bullet Randall”, although a separate title
-query and artist filter find the MOD in Modland and AMP. A one-letter “Randal”
-artist transcription also misses the catalogue's strict artist filter.
-
-The Siri bridge now preserves those fields. A bounded artist lookup corrects
-small spelling differences to canonical artist IDs, rejecting unrelated names
-returned by cross-entity fuzzy search. A complete “title by artist” phrase left
-in the media-name field is retried in structured form only after its literal
-search misses. Exact track titles take priority over album matches in the five
-Siri choices; conservative fuzzy-title fallback keeps artist/album constraints.
-
-Offline regression coverage includes both artist spellings, whole phrases,
-artist/album field preservation, real titles containing “by”, and rejection of
-unrelated fuzzy matches. All 862 Flutter tests passed. The explicit live check
-`flutter test --no-pub tool/carplay_voice_search_smoke.dart` also passed three
-lookups against the real catalogue, finding the Randall MOD for “Randall”,
-“Randal”, and “The Bullet by Randal”. The exact transcript from the vehicle
-request remains unknown, so Siri recognition still needs a new in-car test.
-
-The fix was built and signed as development build 19 (version 1.0.0), then
-installed over the existing test app on the registered iPhone. CarPlay/Siri
-entitlements, device inclusion and all nested bundle identifiers passed signature
-validation. The phone reports version 1.0.0, build 19. After the tester unlocked
-it, the normal app launched without a debugger and its new process remained
-running. In-car Siri recognition remains the final acceptance check.
+These results are a validation snapshot, not a claim that every manual check
+above has been completed across all supported iOS versions and vehicles.
