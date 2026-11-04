@@ -90,16 +90,13 @@ final class RewampMediaIntentHandler: NSObject, INPlayMediaIntentHandling,
   static let identifierPrefix = "rewamp-voice:" + UUID().uuidString + ":"
 
   private func query(_ search: INMediaSearch?) -> String {
-    var terms: [String] = []
-    for value in [search?.mediaName, search?.artistName, search?.albumName] {
-      if let value = value, !value.isEmpty, !terms.contains(value) { terms.append(value) }
-    }
-    return terms.joined(separator: " ")
+    search?.mediaName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
   }
 
   private func find(_ search: INMediaSearch?, shuffle: Bool = false,
                     completion: @escaping ([INMediaItem]) -> Void) {
     bridge.whenReady("voiceSearch", ["query": query(search),
+      "artist": search?.artistName ?? "", "album": search?.albumName ?? "",
       "playlist": search?.mediaType == .playlist, "shuffle": shuffle]) { value in
       let rows = value as? [[String: Any]] ?? []
       completion(rows.compactMap { row -> INMediaItem? in
@@ -119,7 +116,11 @@ final class RewampMediaIntentHandler: NSObject, INPlayMediaIntentHandling,
        item.identifier?.hasPrefix(RewampMediaIntentHandler.identifierPrefix) == true {
       completion([.success(with: item)]); return
     }
-    if query(intent.mediaSearch).isEmpty { completion([.needsValue()]); return }
+    if query(intent.mediaSearch).isEmpty,
+       (intent.mediaSearch?.artistName ?? "").isEmpty,
+       (intent.mediaSearch?.albumName ?? "").isEmpty {
+      completion([.needsValue()]); return
+    }
     find(intent.mediaSearch, shuffle: intent.playShuffled == true) { items in
       if items.isEmpty { completion([.unsupported()]) }
       else if items.count == 1 { completion([.success(with: items[0])]) }

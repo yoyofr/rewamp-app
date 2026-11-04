@@ -9,6 +9,7 @@ import 'local_db.dart';
 import 'player_controller.dart';
 import 'rewamp_db.dart';
 import 'download_cancel.dart';
+import 'carplay_voice_search.dart';
 
 /// A new selection or transport skip supersedes the pending download. The
 /// cancelled task may still unwind, but it can never clear its successor's UI.
@@ -54,6 +55,7 @@ abstract class CarPlayLibrary {
   Future<List<TrackRecord>> tracks(String source);
   Future<List<UserPlaylist>> playlists();
   Future<List<Collection>> collections();
+  Future<List<SearchResult>> voiceSearch(CarPlayVoiceQuery query);
   Future<List<SearchResult>> online(
       String source, String query, int offset, int limit);
 }
@@ -92,6 +94,9 @@ List<TrackRecord> carPlayResolvedSubsongs(
     ];
 
 class LocalCarPlayLibrary implements CarPlayLibrary {
+  @override
+  Future<List<SearchResult>> voiceSearch(CarPlayVoiceQuery query) =>
+      CarPlayVoiceSearcher().search(query);
   @override
   Future<List<Collection>> collections() => RewampDb.fetchCollections();
 
@@ -340,8 +345,13 @@ class CarPlayBrowser {
   /// Siri supplies recognized text; use the catalogue, including uncached
   /// tracks. Keep the resolved action snapshot for Siri's disambiguation step.
   Future<List<Map<String, Object?>>> voiceSearch(String query,
-      {bool playlistsOnly = false, bool shuffle = false}) async {
-    if (query.trim().isEmpty) return [];
+      {String? artistName,
+      String? albumName,
+      bool playlistsOnly = false,
+      bool shuffle = false}) async {
+    final request =
+        CarPlayVoiceQuery(query, artist: artistName, album: albumName);
+    if (request.isEmpty || (playlistsOnly && query.trim().isEmpty)) return [];
     final actions = <String, Future<void> Function()>{};
     final results = <Map<String, Object?>>[];
     if (playlistsOnly) {
@@ -365,7 +375,7 @@ class CarPlayBrowser {
         if (results.length == 5) break;
       }
     } else {
-      final songs = await library.online('onlineSearch', query.trim(), 0, 5);
+      final songs = await library.voiceSearch(request);
       for (final song in songs) {
         final token = '${_nextToken++}';
         actions[token] = () => playOnline(song);
@@ -444,6 +454,8 @@ class CarPlaySession {
               limit: args['limit'] as int? ?? 100);
         case 'voiceSearch':
           return browser.voiceSearch(args['query'] as String,
+              artistName: args['artist'] as String?,
+              albumName: args['album'] as String?,
               playlistsOnly: args['playlist'] == true,
               shuffle: args['shuffle'] == true);
         case 'select':

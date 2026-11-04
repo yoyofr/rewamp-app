@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rewamp/carplay.dart';
+import 'package:rewamp/carplay_voice_search.dart';
 import 'package:rewamp/local_db.dart';
 import 'package:rewamp/player_controller.dart';
 import 'package:rewamp/rewamp_db.dart';
@@ -36,6 +37,13 @@ SearchResult song(int i) => SearchResult(
     subsongIdx: i);
 
 class Library implements CarPlayLibrary {
+  final voiceQueries = <CarPlayVoiceQuery>[];
+  @override
+  Future<List<SearchResult>> voiceSearch(CarPlayVoiceQuery query) {
+    voiceQueries.add(query);
+    return online('onlineSearch', query.text, 0, 5);
+  }
+
   List<TrackRecord> records = [];
   List<SearchResult> songs = List.generate(12, song);
   final calls = <(String, String, int, int)>[];
@@ -367,6 +375,16 @@ void main() {
   test('empty Siri search makes no catalogue request', () async {
     expect(await browser.voiceSearch('  '), isEmpty);
     expect(library.calls, isEmpty);
+  });
+
+  test('Siri preserves title, artist and album as separate search fields',
+      () async {
+    await browser.voiceSearch('The Bullet',
+        artistName: 'Randal', albumName: 'Remedy 96');
+    final request = library.voiceQueries.single;
+    expect(request.text, 'The Bullet');
+    expect(request.artist, 'Randal');
+    expect(request.album, 'Remedy 96');
   });
 
   test('invalid pagination and unknown selections fail safely', () async {

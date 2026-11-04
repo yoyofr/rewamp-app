@@ -243,3 +243,26 @@ were distinct. The build used the normal `lib/main.dart` entrypoint; upstream
 bundle/team settings and the tracked dependency lockfile were restored after
 building. Downloads, skipping, search, playlist actions and the Now Playing
 shuffle toggle are now available for a new in-car acceptance test.
+
+## Siri title/artist search correction on 2026-11-04
+
+A vehicle request for “The Bullet by Randall” exposed a query-composition bug:
+Siri's media name, artist and album were flattened into one text query. The
+catalogue returns no rows for “The Bullet Randall”, although a separate title
+query and artist filter find the MOD in Modland and AMP. A one-letter “Randal”
+artist transcription also misses the catalogue's strict artist filter.
+
+The Siri bridge now preserves those fields. A bounded artist lookup corrects
+small spelling differences to canonical artist IDs, rejecting unrelated names
+returned by cross-entity fuzzy search. A complete “title by artist” phrase left
+in the media-name field is retried in structured form only after its literal
+search misses. Exact track titles take priority over album matches in the five
+Siri choices; conservative fuzzy-title fallback keeps artist/album constraints.
+
+Offline regression coverage includes both artist spellings, whole phrases,
+artist/album field preservation, real titles containing “by”, and rejection of
+unrelated fuzzy matches. All 862 Flutter tests passed. The explicit live check
+`flutter test --no-pub tool/carplay_voice_search_smoke.dart` also passed three
+lookups against the real catalogue, finding the Randall MOD for “Randall”,
+“Randal”, and “The Bullet by Randal”. The exact transcript from the vehicle
+request remains unknown, so Siri recognition still needs a new in-car test.

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rewamp/carplay.dart';
+import 'package:rewamp/carplay_voice_search.dart';
 import 'package:rewamp/download_cancel.dart';
 import 'package:rewamp/l10n/app_localizations_en.dart';
 import 'package:rewamp/local_db.dart';
@@ -41,6 +42,8 @@ class Controller extends ChangeNotifier implements PlayerController {
 }
 
 class Library implements CarPlayLibrary {
+  @override
+  Future<List<SearchResult>> voiceSearch(CarPlayVoiceQuery query) async => [];
   @override
   Future<List<TrackRecord>> tracks(String source) async => [];
   @override
