@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -192,6 +193,9 @@ class CarPlayBrowser {
   final bool Function(String) fileExists;
   final Map<String, Map<String, Future<void> Function()>> _selections = {};
   int _nextToken = 0;
+  final String _tokenPrefix = '${DateTime.now().microsecondsSinceEpoch}-'
+      '${Random.secure().nextInt(0x7fffffff)}';
+  String _token() => '$_tokenPrefix:${_nextToken++}';
 
   Future<Map<String, Object?>> browse(String source,
       {String query = '', int offset = 0, int limit = 100}) async {
@@ -202,7 +206,7 @@ class CarPlayBrowser {
     Map<String, Object?> row(
         String title, String? subtitle, Future<void> Function() action,
         {bool playing = false}) {
-      final token = '${_nextToken++}';
+      final token = _token();
       actions[token] = action;
       return {
         'id': token,
@@ -351,15 +355,18 @@ class CarPlayBrowser {
       bool shuffle = false}) async {
     final request =
         CarPlayVoiceQuery(query, artist: artistName, album: albumName);
-    if (request.isEmpty || (playlistsOnly && query.trim().isEmpty)) return [];
+    if (request.isEmpty) return [];
     final actions = <String, Future<void> Function()>{};
     final results = <Map<String, Object?>>[];
-    if (playlistsOnly) {
+    if (playlistsOnly &&
+        query.trim().isNotEmpty &&
+        request.artist == null &&
+        request.album == null) {
       for (final playlist in await library.playlists()) {
         if (!playlist.name.toLowerCase().contains(query.trim().toLowerCase())) {
           continue;
         }
-        final token = '${_nextToken++}';
+        final token = _token();
         actions[token] = () async {
           final tracks = (await library.tracks('playlist:${playlist.id}'))
               .where((t) => fileExists(t.filePath) || t.onlineId != null)
@@ -371,21 +378,57 @@ class CarPlayBrowser {
             await playTracks(tracks, 0);
           }
         };
-        results.add({'id': token, 'title': playlist.name, 'playlist': true});
+        results.add({
+          'id': token,
+          'title': playlist.name,
+          'playlist': true,
+          'mediaId': playlist.id,
+          'artist': '',
+          'album': ''
+        });
         if (results.length == 5) break;
       }
-    } else {
+    }
+    if (results.isEmpty) {
       final songs = await library.voiceSearch(request);
       for (final song in songs) {
-        final token = '${_nextToken++}';
+        final token = _token();
         actions[token] = () => playOnline(song);
         results.add({
           'id': token,
           'title': song.displayTitle,
           'subtitle': song.artistLabel,
-          'playlist': false
+          'playlist': false,
+          'mediaId': song.songId,
+          'subsong': song.subsongIdx,
+          'artist': song.artistLabel,
+          'artists': song.artistNames,
+          'album': song.album ?? '',
+          'collection': song.collection,
+          'format': song.formatExt,
         });
       }
+    }
+    String spokenKey(Object? value) => (value as String? ?? '')
+        .toLowerCase()
+        .replaceAll(RegExp(r'[_\s]+'), ' ')
+        .trim();
+    for (final result in results) {
+      final duplicates = results
+          .where((other) =>
+              spokenKey(other['title']) == spokenKey(result['title']) &&
+              spokenKey(other['artist']) == spokenKey(result['artist']))
+          .toList();
+      if (duplicates.length < 2) continue;
+      final collection = result['collection'] as String? ?? '';
+      final label =
+          collection == 'modland' ? 'Modland' : collection.toUpperCase();
+      final sameCollection =
+          duplicates.where((r) => r['collection'] == collection);
+      final suffix = sameCollection.length > 1
+          ? '$label, ${result['format']}, version ${duplicates.indexOf(result) + 1}'
+          : label;
+      result['spokenTitle'] = '${result['title']} ($suffix)';
     }
     final retained = _selections.putIfAbsent('voiceSearch', () => {});
     retained.addAll(actions);
@@ -408,6 +451,7 @@ class CarPlaySession {
   bool _connected = false;
   bool _disposed = false;
   Timer? _debounce;
+  Timer? _vocabularyTimer;
   (int, int, bool, bool)? _lastQueue;
   bool? _lastShuffle;
   DownloadInfo? _currentDownload;
@@ -453,11 +497,39 @@ class CarPlaySession {
               offset: args['offset'] as int? ?? 0,
               limit: args['limit'] as int? ?? 100);
         case 'voiceSearch':
-          return browser.voiceSearch(args['query'] as String,
-              artistName: args['artist'] as String?,
-              albumName: args['album'] as String?,
-              playlistsOnly: args['playlist'] == true,
-              shuffle: args['shuffle'] == true);
+          final watch = Stopwatch()..start();
+          try {
+            final rows = await browser.voiceSearch(args['query'] as String,
+                artistName: args['artist'] as String?,
+                albumName: args['album'] as String?,
+                playlistsOnly: args['playlist'] == true,
+                shuffle: args['shuffle'] == true);
+            _voiceLog({
+              'stage': 'catalogue_result',
+              'request': args['request'],
+              'count': rows.length,
+              'ms': watch.elapsedMilliseconds
+            });
+            return rows;
+          } catch (error) {
+            final status =
+                RegExp(r'HTTP\s+(\d{3})').firstMatch(error.toString())?[1];
+            _voiceLog({
+              'stage': 'catalogue_error',
+              'request': args['request'],
+              'error': error.runtimeType.toString(),
+              if (status != null) 'httpStatus': int.parse(status),
+              'kind': error is TimeoutException
+                  ? 'timeout'
+                  : status != null
+                      ? 'http'
+                      : 'service',
+              'ms': watch.elapsedMilliseconds
+            });
+            throw PlatformException(
+                code: 'search_unavailable',
+                message: 'The catalogue search service is unavailable');
+          }
         case 'select':
           try {
             await playback.run(() =>
@@ -483,7 +555,7 @@ class CarPlaySession {
       }
     });
     controller.addListener(_playerChanged);
-    LocalDb.instance.addListener(_changed);
+    LocalDb.instance.addListener(_libraryChanged);
     RewampDb.downloadStatus.addListener(_downloadChanged);
     playback.addListener(_playbackChanged);
     try {
@@ -497,6 +569,37 @@ class CarPlaySession {
       debugPrint('[carplay] initialization failed: $e');
     } on MissingPluginException {
       // Allows an older native host to run the Dart app.
+    }
+    await _syncVocabulary();
+  }
+
+  void _voiceLog(Map<String, Object?> event) {
+    unawaited(
+        channel.invokeMethod<void>('siriLog', event).catchError((Object _) {}));
+  }
+
+  void _libraryChanged() {
+    _changed();
+    _vocabularyTimer?.cancel();
+    _vocabularyTimer = Timer(const Duration(seconds: 1), () {
+      unawaited(_syncVocabulary());
+    });
+  }
+
+  Future<void> _syncVocabulary() async {
+    try {
+      final recent = await browser.library.tracks('recent');
+      final playlists = await browser.library.playlists();
+      if (_disposed) return;
+      await channel.invokeMethod<void>('vocabulary', {
+        'artists': {
+          for (final t in recent)
+            if ((t.artist ?? '').isNotEmpty) t.artist!
+        }.take(100).toList(),
+        'playlists': playlists.map((p) => p.name).take(100).toList(),
+      });
+    } catch (error) {
+      debugPrint('[Siri] vocabulary unavailable: ${error.runtimeType}');
     }
   }
 
@@ -601,8 +704,9 @@ class CarPlaySession {
   void dispose() {
     _disposed = true;
     _debounce?.cancel();
+    _vocabularyTimer?.cancel();
     controller.removeListener(_playerChanged);
-    LocalDb.instance.removeListener(_changed);
+    LocalDb.instance.removeListener(_libraryChanged);
     RewampDb.downloadStatus.removeListener(_downloadChanged);
     playback.removeListener(_playbackChanged);
     playback.dispose();

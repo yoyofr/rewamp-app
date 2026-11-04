@@ -14,7 +14,11 @@ import Intents
   private let mediaIntents = RewampMediaIntentHandler()
 
   override func application(_ application: UIApplication, handlerFor intent: INIntent) -> Any? {
-    if intent is INPlayMediaIntent || intent is INSearchForMediaIntent { return mediaIntents }
+    if intent is INPlayMediaIntent || intent is INSearchForMediaIntent {
+      SiriDiagnostics.record(["stage": "dispatch", "intent": String(describing: type(of: intent)),
+        "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? ""])
+      return mediaIntents
+    }
     return nil
   }
 

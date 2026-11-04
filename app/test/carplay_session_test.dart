@@ -42,10 +42,16 @@ class Controller extends ChangeNotifier implements PlayerController {
 }
 
 class Library implements CarPlayLibrary {
+  Object? voiceError;
+  List<TrackRecord> recent = [];
   @override
-  Future<List<SearchResult>> voiceSearch(CarPlayVoiceQuery query) async => [];
+  Future<List<SearchResult>> voiceSearch(CarPlayVoiceQuery query) async {
+    if (voiceError != null) throw voiceError!;
+    return [];
+  }
+
   @override
-  Future<List<TrackRecord>> tracks(String source) async => [];
+  Future<List<TrackRecord>> tracks(String source) async => recent;
   @override
   Future<List<UserPlaylist>> playlists() async => [];
   @override
@@ -62,6 +68,7 @@ void main() {
   const codec = StandardMethodCodec();
   late Controller controller;
   late CarPlaySession session;
+  late Library library;
   late List<MethodCall> calls;
   Future<void> Function()? play;
 
@@ -81,8 +88,9 @@ void main() {
       calls.add(call);
       return call.method == 'ready';
     });
+    library = Library();
     final browser = CarPlayBrowser(
-        library: Library(),
+        library: library,
         queue: () => controller.queue,
         queueIndex: () => controller.queueIdx,
         playQueueIndex: (_) async {
@@ -261,6 +269,76 @@ void main() {
     expect(token.isCancelled, true);
     resume.complete();
     await expectation;
+    await tester.pump(const Duration(milliseconds: 250));
+  });
+
+  testWidgets(
+      'Siri service failures remain errors and diagnostics omit error payloads',
+      (tester) async {
+    library.voiceError = StateError('private request contents');
+    await session.start();
+    await expectLater(
+        incoming('voiceSearch', {
+          'query': 'Durban Poison',
+          'artist': 'Randall',
+          'request': 'test-request'
+        }),
+        throwsA(isA<PlatformException>()
+            .having((e) => e.code, 'code', 'search_unavailable')));
+    final event =
+        calls.lastWhere((c) => c.method == 'siriLog').arguments as Map;
+    expect(event['stage'], 'catalogue_error');
+    expect(event['request'], 'test-request');
+    expect(event['error'], 'StateError');
+    expect(event.toString(), isNot(contains('private request contents')));
+    await tester.pump(const Duration(milliseconds: 250));
+  });
+
+  testWidgets('Siri no-match remains an empty successful lookup',
+      (tester) async {
+    await session.start();
+    expect(await incoming('voiceSearch', {'query': 'No such module'}), isEmpty);
+    final event =
+        calls.lastWhere((c) => c.method == 'siriLog').arguments as Map;
+    expect(event['stage'], 'catalogue_result');
+    expect(event['count'], 0);
+    await tester.pump(const Duration(milliseconds: 250));
+  });
+
+  testWidgets('Siri diagnostic HTTP status is retained without request secrets',
+      (tester) async {
+    library.voiceError =
+        Exception('search_music HTTP 403; private request contents');
+    await session.start();
+    await expectLater(incoming('voiceSearch', {'query': 'Durban Poison'}),
+        throwsA(isA<PlatformException>()));
+    final event =
+        calls.lastWhere((c) => c.method == 'siriLog').arguments as Map;
+    expect(event['httpStatus'], 403);
+    expect(event['kind'], 'http');
+    expect(event.toString(), isNot(contains('private request contents')));
+    await tester.pump(const Duration(milliseconds: 250));
+  });
+
+  testWidgets('Siri vocabulary includes recent tracker artists',
+      (tester) async {
+    library.recent = [
+      TrackRecord(
+          id: 'module',
+          filePath: '',
+          entryPath: '',
+          subsongIdx: 0,
+          title: 'Durban Poison',
+          artist: 'Randall',
+          source: 'online',
+          isFavorite: false,
+          inLibrary: false,
+          playCount: 1)
+    ];
+    await session.start();
+    final vocabulary =
+        calls.lastWhere((c) => c.method == 'vocabulary').arguments as Map;
+    expect(vocabulary['artists'], ['Randall']);
     await tester.pump(const Duration(milliseconds: 250));
   });
 }

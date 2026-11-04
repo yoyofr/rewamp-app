@@ -22,4 +22,5 @@ xcrun swiftc -typecheck -target arm64-apple-ios15.0-simulator \
   "$APP_DIR/ios/Runner/AppDelegate.swift" \
   "$APP_DIR/ios/Runner/SceneDelegate.swift" \
   "$APP_DIR/ios/Runner/CarPlaySceneDelegate.swift" \
+  "$APP_DIR/ios/Runner/SiriMediaIntentHandler.swift" \
   "$SCRATCH/Registrant.swift"

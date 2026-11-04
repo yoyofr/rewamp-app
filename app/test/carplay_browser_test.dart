@@ -387,6 +387,75 @@ void main() {
     expect(request.album, 'Remedy 96');
   });
 
+  for (final request in [
+    ('Acidland Metropolis', 'Booster'),
+    ('Durban Poison', 'Randall')
+  ]) {
+    test('Siri catalogue fallback for misclassified ${request.$1}', () async {
+      final results = await browser.voiceSearch(request.$1,
+          artistName: request.$2, playlistsOnly: true);
+      expect(results, isNotEmpty);
+      expect(results.first['playlist'], false);
+      expect(library.voiceQueries.single.text, request.$1);
+      expect(library.voiceQueries.single.artist, request.$2);
+    });
+  }
+
+  test(
+      'Siri catalogue copies have distinct spoken labels and retain both selections',
+      () async {
+    library.songs = [
+      song(0).copyWith(
+          title: 'Durban Poison',
+          collection: 'modland',
+          artistNames: ['Randall']),
+      song(1).copyWith(
+          title: 'Durban Poison', collection: 'amp', artistNames: ['Randall']),
+    ];
+    final results =
+        await browser.voiceSearch('Durban Poison', artistName: 'Randall');
+    expect(results.map((r) => r['spokenTitle']),
+        ['Durban Poison (Modland)', 'Durban Poison (AMP)']);
+    expect(results.map((r) => r['mediaId']), ['song-0', 'song-1']);
+    await browser.select('voiceSearch', results.last['id'] as String);
+    expect(playedOnline!.songId, 'song-1');
+  });
+
+  test('playlist classification does not discard an artist-only request',
+      () async {
+    final results = await browser.voiceSearch('',
+        artistName: 'Randall', playlistsOnly: true);
+    expect(results, isNotEmpty);
+    expect(results.first['playlist'], false);
+    expect(library.voiceQueries.single.artist, 'Randall');
+  });
+
+  test('Siri version labels normalize underscores and case', () async {
+    library.songs = [
+      song(0).copyWith(title: 'Durban Poison', collection: 'modland'),
+      song(1).copyWith(title: 'durban_poison', collection: 'amp'),
+    ];
+    final results = await browser.voiceSearch('Durban Poison');
+    expect(results.first['spokenTitle'], 'Durban Poison (Modland)');
+    expect(results.last['spokenTitle'], 'durban_poison (AMP)');
+  });
+
+  test('a restarted browser cannot reuse an old Siri action token', () async {
+    final old = await browser.voiceSearch('Durban Poison');
+    final restarted = CarPlayBrowser(
+        library: library,
+        queue: () => [],
+        queueIndex: () => -1,
+        playQueueIndex: (_) async {},
+        playTracks: (tracks, index) async {},
+        playOnline: (_) async => fail('Stale selection played'));
+    final fresh = await restarted.voiceSearch('Durban Poison');
+    expect(fresh.first['id'], isNot(old.first['id']));
+    await expectLater(
+        restarted.select('voiceSearch', old.first['id'] as String),
+        throwsStateError);
+  });
+
   test('invalid pagination and unknown selections fail safely', () async {
     await expectLater(browser.browse('queue', limit: 0), throwsArgumentError);
     await expectLater(browser.browse('queue', offset: -1), throwsArgumentError);

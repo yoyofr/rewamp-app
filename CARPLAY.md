@@ -76,9 +76,27 @@ the Siri search update. The entitlement file is a request, not an Apple approval
 SiriKit uses scene-based in-app intent handling (`INIntentsSupported`) in
 `AppDelegate`, sharing the normal Flutter engine. `INPlayMediaIntent` resolves
 catalogue or playlist results and supports Siri's disambiguation;
-`INSearchForMediaIntent` supplies results without starting playback. Only
-process-specific resolved identifiers are accepted, preventing an old Siri
-selection from being reused for a different item after relaunch.
+`INSearchForMediaIntent` supplies results without starting playback. Requests use
+Siri's structured search fields, with media-item/container metadata as a fallback.
+References carry catalogue identity and search metadata rather than a process's
+action token. After relaunch, a saved selection is resolved again and matched to
+the same catalogue version before playback. Copies from different collections
+have distinct spoken labels. A playlist request with no matching saved playlist
+also searches the online catalogue.
+
+Network, startup and malformed-response failures are reported as service
+unavailability rather than a successful search with no matches. Recent artists,
+playlist names and artists in search results supply bounded Siri vocabulary;
+this does not require downloading the music or indexing the entire catalogue.
+Vocabulary updates respect the CarPlay build opt-in.
+
+Siri diagnostics stay in the app container at
+`Library/Application Support/siri-diagnostics.jsonl`, with one `.previous` file.
+Each file is bounded to 128 KiB and excluded from backup. The log records parsed
+search fields, dispatch/readiness, timings, result counts and error codes, without
+credentials or audio recordings. It can be retrieved from a development app's
+container for a failed in-car test; it is not uploaded. Real Siri recognition and
+routing still need a device test, even when catalogue and intent tests pass.
 
 The developer distributing a CarPlay-enabled device build must:
 
@@ -124,6 +142,17 @@ generated plugin registrant for that check; it does not link or run the app.
 `python3 tool/check_ios_signing.py` checks Xcode's resolved entitlement selection
 for ordinary and opted-in Debug, Profile and Release builds. It requires Xcode
 and the generated Flutter iOS configuration, but does not build or sign the app.
+
+Native Siri request, restart, service-error and diagnostic-log regression tests
+are in `ios/RunnerTests/RunnerTests.swift`. From `app`, run them against an
+available iPhone simulator with an ad-hoc-signed test host:
+
+```sh
+xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner \
+  -configuration Debug -destination 'platform=iOS Simulator,id=<simulator-udid>' \
+  -only-testing:RunnerTests CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+  CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+```
 
 For a real-engine transport smoke test, build with the Xcode build-setting
 override `FLUTTER_TARGET=tool/carplay_audio_smoke.dart`. It generates a quiet WAV

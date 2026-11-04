@@ -11,6 +11,20 @@ final class CarPlayBridge {
   private(set) var ready = false
   weak var scene: CarPlaySceneDelegate?
   private var strings: [String: String] = [:]
+  private var voiceRows: [String: [String: Any]] = [:]
+  private var voiceOrder: [String] = []
+
+  func rememberVoiceRow(_ row: [String: Any]) -> String? {
+    guard row["id"] is String, let identifier = SiriMediaReference.identifier(row) else { return nil }
+    voiceRows[identifier] = row
+    voiceOrder.removeAll { $0 == identifier }
+    voiceOrder.append(identifier)
+    while voiceOrder.count > 100 { voiceRows.removeValue(forKey: voiceOrder.removeFirst()) }
+    return identifier
+  }
+
+  func voiceRow(_ identifier: String) -> [String: Any]? { voiceRows[identifier] }
+  func resetVoiceSelections() { voiceRows.removeAll(); voiceOrder.removeAll() }
 
   func updateShuffle(_ enabled: Bool) {
     // System shuffle buttons derive their selected appearance from the media
@@ -31,15 +45,25 @@ final class CarPlayBridge {
 
   func attach(to messenger: FlutterBinaryMessenger) {
     ready = false
+    resetVoiceSelections()
     let channel = FlutterMethodChannel(name: "rewamp/carplay", binaryMessenger: messenger)
     self.channel = channel
+    SiriDiagnostics.record(["stage": "bridge_attached"])
     channel.setMethodCallHandler { [weak self] call, result in
       guard let self = self else { result(nil); return }
       switch call.method {
       case "isConnected": result(self.scene != nil)
+      case "siriLog":
+        SiriDiagnostics.record(call.arguments as? [String: Any] ?? [:])
+        result(nil)
+      case "vocabulary":
+        SiriVocabulary.update(call.arguments as? [String: Any] ?? [:])
+        result(nil)
       case "ready", "changed":
+        if call.method == "ready" { self.resetVoiceSelections() }
         self.strings = call.arguments as? [String: String] ?? self.strings
         self.ready = true
+        if call.method == "ready" { SiriDiagnostics.record(["stage": "bridge_ready"]) }
         self.scene?.refresh(includeOnline: call.method == "ready")
         result(self.scene != nil)
       case "download":
@@ -77,78 +101,6 @@ final class CarPlayBridge {
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
       self?.whenReady(method, args, deadline: deadline, completion: completion)
-    }
-  }
-}
-
-/// Scene-based SiriKit handling runs in the app's existing playback engine.
-/// This also supplies voice search on systems where audio keyboard search is
-/// unavailable. No recording session or custom keyboard is required.
-final class RewampMediaIntentHandler: NSObject, INPlayMediaIntentHandling,
-    INSearchForMediaIntentHandling {
-  private let bridge = CarPlayBridge.shared
-  static let identifierPrefix = "rewamp-voice:" + UUID().uuidString + ":"
-
-  private func query(_ search: INMediaSearch?) -> String {
-    search?.mediaName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-  }
-
-  private func find(_ search: INMediaSearch?, shuffle: Bool = false,
-                    completion: @escaping ([INMediaItem]) -> Void) {
-    bridge.whenReady("voiceSearch", ["query": query(search),
-      "artist": search?.artistName ?? "", "album": search?.albumName ?? "",
-      "playlist": search?.mediaType == .playlist, "shuffle": shuffle]) { value in
-      let rows = value as? [[String: Any]] ?? []
-      completion(rows.compactMap { row -> INMediaItem? in
-        guard let token = row["id"] as? String else { return nil }
-        let item = INMediaItem(identifier: Self.identifierPrefix + token,
-          title: row["title"] as? String,
-          type: row["playlist"] as? Bool == true ? .playlist : .song, artwork: nil,
-          artist: row["subtitle"] as? String)
-        return item
-      })
-    }
-  }
-
-  func resolveMediaItems(for intent: INPlayMediaIntent,
-                        with completion: @escaping ([INPlayMediaMediaItemResolutionResult]) -> Void) {
-    if let item = intent.mediaItems?.first,
-       item.identifier?.hasPrefix(RewampMediaIntentHandler.identifierPrefix) == true {
-      completion([.success(with: item)]); return
-    }
-    if query(intent.mediaSearch).isEmpty,
-       (intent.mediaSearch?.artistName ?? "").isEmpty,
-       (intent.mediaSearch?.albumName ?? "").isEmpty {
-      completion([.needsValue()]); return
-    }
-    find(intent.mediaSearch, shuffle: intent.playShuffled == true) { items in
-      if items.isEmpty { completion([.unsupported()]) }
-      else if items.count == 1 { completion([.success(with: items[0])]) }
-      else { completion([.disambiguation(with: items)]) }
-    }
-  }
-
-  func handle(intent: INPlayMediaIntent,
-              completion: @escaping (INPlayMediaIntentResponse) -> Void) {
-    guard let identifier = intent.mediaItems?.first?.identifier,
-          identifier.hasPrefix(RewampMediaIntentHandler.identifierPrefix) else {
-      completion(INPlayMediaIntentResponse(code: .failure, userActivity: nil)); return
-    }
-    bridge.whenReady("select", ["source": "voiceSearch",
-      "id": String(identifier.dropFirst(RewampMediaIntentHandler.identifierPrefix.count))]) { result in
-      completion(INPlayMediaIntentResponse(
-        code: result is FlutterError ? .failure : .success, userActivity: nil))
-    }
-  }
-
-  func handle(intent: INSearchForMediaIntent,
-              completion: @escaping (INSearchForMediaIntentResponse) -> Void) {
-    find(intent.mediaSearch) { [weak self] items in
-      let response = INSearchForMediaIntentResponse(
-        code: items.isEmpty ? .failure : .success, userActivity: nil)
-      response.mediaItems = items
-      self?.bridge.scene?.showVoiceResults(items)
-      completion(response)
     }
   }
 }
@@ -449,8 +401,9 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
   func showVoiceResults(_ results: [INMediaItem]) {
     let rows: [[String: Any]] = results.compactMap { item in
-      guard let id = item.identifier, id.hasPrefix(RewampMediaIntentHandler.identifierPrefix) else { return nil }
-      return ["id": String(id.dropFirst(RewampMediaIntentHandler.identifierPrefix.count)),
+      guard let identifier = item.identifier,
+            let id = bridge.voiceRow(identifier)?["id"] as? String else { return nil }
+      return ["id": id,
               "title": item.title ?? bridge.text("search"), "subtitle": item.artist ?? ""]
     }
     let template = CPListTemplate(title: bridge.text("search"),

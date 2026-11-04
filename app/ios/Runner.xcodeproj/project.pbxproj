@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C4A901002F10000100000006 /* SiriMediaIntentHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4A901002F10000100000007 /* SiriMediaIntentHandler.swift */; };
 		C4A901002F10000100000001 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4A901002F10000100000002 /* CarPlaySceneDelegate.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		2BE0E5129DD67EAD388B2FAC /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A8147CA45C859C737C90887B /* Pods_RunnerTests.framework */; };
@@ -45,6 +46,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C4A901002F10000100000007 /* SiriMediaIntentHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiriMediaIntentHandler.swift; sourceTree = "<group>"; };
 		C4A901002F10000100000002 /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
 		C4A901002F10000100000003 /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
 		C4A901002F10000100000004 /* CarPlay.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CarPlay.entitlements; sourceTree = "<group>"; };
@@ -151,6 +153,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				C4A901002F10000100000002 /* CarPlaySceneDelegate.swift */,
+				C4A901002F10000100000007 /* SiriMediaIntentHandler.swift */,
 				C4A901002F10000100000003 /* Runner.entitlements */,
 				C4A901002F10000100000004 /* CarPlay.entitlements */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
@@ -403,6 +406,7 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				C4A901002F10000100000001 /* CarPlaySceneDelegate.swift in Sources */,
+				C4A901002F10000100000006 /* SiriMediaIntentHandler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
