@@ -124,7 +124,8 @@ class _ScrollingTextState extends State<ScrollingText> {
         final style = withCjkFallback(
             DefaultTextStyle.of(ctx).style.merge(widget.style));
         final tw  = _measure
-            .measure(widget.text, style, Directionality.of(ctx), maxLines: 1)
+            .measure(widget.text, style, Directionality.of(ctx),
+                textScaler: MediaQuery.textScalerOf(ctx), maxLines: 1)
             .width;
         final gap = gapFor(style);
 

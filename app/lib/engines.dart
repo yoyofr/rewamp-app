@@ -51,6 +51,7 @@ class DecoderEngine {
         'AdPlug + libbinio'          => l10n.engineDescAdplug,
         'FluidLite + TinyMidiLoader' => l10n.engineDescMidi,
         'munt mt32emu'               => l10n.engineDescMt32,
+        'libADLMIDI'                 => l10n.engineDescAdlmidi,
         'Highly Experimental'        => l10n.engineDescHighlyExp,
         'libgsf (VBA)'               => l10n.engineDescGsf,
         'vio2sf (Cog / melonDS)'     => l10n.engineDescVio2sf,
@@ -220,6 +221,16 @@ const List<DecoderEngine> kEngines = [
     license: 'LGPL-2.1',
     description: 'Émulation Roland MT-32 / CM-32L pour le MIDI (.mid/.midi/.kar/.rmi)',
     formats: kMidiExts,
+  ),
+  DecoderEngine(
+    name: 'libADLMIDI',
+    url: 'https://github.com/Wohlstand/libADLMIDI',
+    author: 'Vitaliy Novichkov (Wohlstand), Joel Yliluoma (Bisqwit) et al.',
+    license: 'GPL-3.0-or-later (cœur) · émulateurs LGPL-2.1+ / BSD-3 · '
+        'séquenceur et WOPL MIT',
+    description: 'MIDI, XMI, MUS DMX, HMI/HMP sur une puce OPL3 émulée '
+        '(AdLib / Sound Blaster)',
+    formats: kAdlmidiExts,
   ),
   DecoderEngine(
     name: 'Highly Experimental',

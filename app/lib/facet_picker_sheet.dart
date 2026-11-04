@@ -59,16 +59,16 @@ class _FacetPickerSheetState extends State<FacetPickerSheet> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 8),
                 child: Align(
-                  alignment: Alignment.centerLeft,
+                  alignment: AlignmentDirectional.centerStart,
                   child: Text(widget.label,
                       style: const TextStyle(
                           fontSize: 16, fontWeight: FontWeight.w600)),
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 8),
                 child: CancelField(
                   hasText: _query.isNotEmpty,
                   onCleared: (_) => setState(() => _query = ''),

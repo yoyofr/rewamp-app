@@ -8,6 +8,7 @@ import 'hover_grow.dart';
 import 'local_badge.dart';
 import 'artwork_image.dart';
 import 'local_db.dart';
+import 'play_start.dart';
 import 'user_settings.dart';
 import 'rewamp_db.dart'
     show OnPlayAlbum, OnPlayLocalAlbum, RewampDb, SearchResult, Playlist;
@@ -234,7 +235,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 // ── Recently added grid header ────────────────────────────
                 if (_recent.isNotEmpty) ...[
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
                     sliver: SliverToBoxAdapter(
                       child: Text(
                         l10n.libraryRecentlyAdded,
@@ -602,7 +603,7 @@ class _RecentCard extends StatelessWidget {
     final second     = elsewhere
         ? libraryElsewhereLabel(context)
         : _secondLine(item);
-    return HoverGrow(child: GestureDetector(
+    return HoverGrow(child: PlayChoiceHold(onTap: onTap, child: GestureDetector(
       onTap: onTap,
       child: Opacity(
         opacity: elsewhere ? 0.45 : 1.0,
@@ -726,7 +727,7 @@ class _RecentCard extends StatelessWidget {
         ],
       ),
       ),
-    ));
+    )));
   }
 }
 

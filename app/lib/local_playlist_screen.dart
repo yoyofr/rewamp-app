@@ -12,6 +12,7 @@ import 'playlist_options.dart';
 import 'playlist_sync.dart';
 import 'rewamp_db.dart' show OnPlayLocalAlbum, RewampDb, SearchResult;
 import 'scrolling_text.dart';
+import 'play_start.dart';
 import 'track_options_sheet.dart'
     show showPlayChoiceSheet, PlayChoice, globalOnQueueAdd, globalOnPlayNowSong;
 
@@ -369,7 +370,7 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
                       style: TextStyle(color: cs.outline)))
               : Column(children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
                     // Play-all left, the counts CENTRED, the "…" menu right.
                     // The counter sits in an Expanded rather than after a
                     // Spacer so it is centred on the ROW, not on what is left
@@ -647,14 +648,16 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
                             DismissDirection.endToStart: 0.5
                           },
                           background: Container(
-                            alignment: Alignment.centerRight,
-                            padding: const EdgeInsets.only(right: 20),
+                            alignment: AlignmentDirectional.centerEnd,
+                            padding: const EdgeInsetsDirectional.only(end: 20),
                             color: cs.errorContainer,
                             child: Icon(Icons.delete_outline,
                                 color: cs.onErrorContainer),
                           ),
                           onDismissed: (_) => _removeEntries({e.rowId}),
-                          child: tile,
+                          // Hors édition seulement: l'appui long ramène la
+                          // feuille « maintenant / ensuite / à la fin ».
+                          child: PlayChoiceHold.tile(tile),
                         );
                       },
                     ),

@@ -122,7 +122,7 @@ class _CompetitionScreenState extends State<CompetitionScreen> {
                   itemBuilder: (_, i) {
                     if (widget.note != null && i == 0) {
                       return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
                         child: Text(widget.note!,
                             style: TextStyle(color: cs.onSurfaceVariant)),
                       );

@@ -63,6 +63,10 @@ dependencies:
   # et la lentille perd sa réfraction — voir docs/BUILD_WINDOWS.md §5.10.
   liquid_glass_easy: ^4.3.3
   window_manager: ^0.5.2
+  # Les écrans branchés: le mini lecteur ne rouvre à sa place d'hier que si
+  # elle tombe encore sur l'un d'eux (mini_window.dart). Déjà tiré par
+  # window_manager.
+  screen_retriever: ^0.2.2
   audio_service_mpris: ^0.2.1
   # Windows: notre implémentation SMTC (lib/media_session_windows.dart)
   # étend directement l'interface de plateforme d'audio_service.
@@ -137,6 +141,9 @@ flutter:
     # startup, then loaded natively via rewamp_set_data_dir). C64 ROMs are
     # needed by libsidplayfp for RSID/BASIC tunes.
     - assets/c64/
+    # Ligne de commande du bureau: lu par le NATIF avant que Dart n'existe
+    # (--help, --version, pilotage sans instance). GÉNÉRÉ (cli_options.dart).
+    - assets/cli/
     # AdPlug module-info DB (loaded natively from <datadir>/adplug/adplug.db).
     - assets/adplug/
     # libvgm OPL4/YMF278B wavetable ROM, requested on demand via

@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:rewamp/l10n/app_localizations.dart';
 import 'package:rewamp/track_options_sheet.dart';
+import 'package:rewamp/user_settings.dart';
 
 /// Le contrat sur lequel s'appuie l'ouverture de fichiers déposés
 /// (AppShell._openLocalPaths): la feuille ne s'affiche QUE s'il y a quelque
 /// chose à protéger, et un rejet ne vaut pas « à la fin ».
 void main() {
+  // La feuille lit « Toucher un morceau dans l'app » (défaut: demander).
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues({});
+    await UserSettings.init();
+  });
   tearDown(() => globalQueueHasContent = null);
 
   Future<PlayChoice?> run(WidgetTester tester) async {

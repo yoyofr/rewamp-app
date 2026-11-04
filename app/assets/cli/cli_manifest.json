@@ -1,0 +1,86 @@
+{
+  "comment": "GENERATED from app/lib/cli_options.dart — do not edit. Regenerate: cd app && REWAMP_WRITE_CLI_MANIFEST=1 flutter test test/cli_manifest_sync_test.dart",
+  "help": "Usage: rewamp [OPTIONS] [FILES...]\n\nWithout options, FILES open the usual \"play now / next / at the end\" choice.\nWhen Rewamp is already running, the command goes to it;\notherwise Rewamp starts with it (e.g. rewamp --mini --play song.mod).\n\nOptions:\n  --play         Replace the queue with FILES and start playing.\n  --next         Insert FILES right after the current track.\n  --enqueue      Append FILES to the end of the queue.\n  --shuffle      Play FILES in random order.\n  --subsong N    Start a multi-track FILE at its N-th track (1-based).\n  --play-pause   Toggle play / pause.\n  --next-track   Skip to the next track.\n  --prev-track   Go back to the previous track.\n  --stop         Stop playback.\n  --mini         Switch to the mini player (with --viz: its visualizer mode).\n  --window       Use the normal window (leaves the mini player; overrides a start in the mini player).\n  --viz          Open the player on the visualizer.\n  --fullscreen   Open the player on the visualizer, full screen.\n  --search TEXT  Open Search with TEXT.\n  --help         Show this help and exit.\n  --version      Show the version and exit.\n",
+  "options": [
+    {
+      "name": "play",
+      "value": false,
+      "remote": false
+    },
+    {
+      "name": "next",
+      "value": false,
+      "remote": false
+    },
+    {
+      "name": "enqueue",
+      "value": false,
+      "remote": false
+    },
+    {
+      "name": "shuffle",
+      "value": false,
+      "remote": false
+    },
+    {
+      "name": "subsong",
+      "value": true,
+      "remote": false
+    },
+    {
+      "name": "play-pause",
+      "value": false,
+      "remote": true
+    },
+    {
+      "name": "next-track",
+      "value": false,
+      "remote": true
+    },
+    {
+      "name": "prev-track",
+      "value": false,
+      "remote": true
+    },
+    {
+      "name": "stop",
+      "value": false,
+      "remote": true
+    },
+    {
+      "name": "mini",
+      "value": false,
+      "remote": false
+    },
+    {
+      "name": "window",
+      "value": false,
+      "remote": false
+    },
+    {
+      "name": "viz",
+      "value": false,
+      "remote": false
+    },
+    {
+      "name": "fullscreen",
+      "value": false,
+      "remote": false
+    },
+    {
+      "name": "search",
+      "value": true,
+      "remote": false
+    },
+    {
+      "name": "help",
+      "value": false,
+      "remote": false
+    },
+    {
+      "name": "version",
+      "value": false,
+      "remote": false
+    }
+  ]
+}

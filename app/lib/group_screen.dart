@@ -623,7 +623,7 @@ class _GroupScreenState extends State<GroupScreen>
     final tt   = Theme.of(context).textTheme;
     if (d.artists.isEmpty && d.note == null) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

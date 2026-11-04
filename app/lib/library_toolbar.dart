@@ -97,7 +97,7 @@ class ListFilterField extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 12, 4),
       child: SizedBox(
         height: 40,
         child: CancelField(
@@ -272,7 +272,7 @@ class LibraryToolbar extends StatelessWidget {
     final l10n = context.l10n;
     final cs   = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 4, 4),
       child: Row(children: [
         Expanded(
           child: SizedBox(

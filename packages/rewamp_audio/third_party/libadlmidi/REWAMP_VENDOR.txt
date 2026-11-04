@@ -1,0 +1,18 @@
+libADLMIDI v1.6.2.1 (99c5e03, 2026-08-30) — https://github.com/Wohlstand/libADLMIDI
+Vendored: src/, include/, licences, bank notices.
+Rewamp files live in rewamp/ (rename header, scope hooks).
+
+Patched upstream files — per-voice oscilloscope, every site marked
+"REWAMP SCOPE" (grep -rn "REWAMP SCOPE" src/ after a resync, re-apply):
+  src/chips/opl_chip_base.h, .tcc   per-channel outputs after each native
+                                    tick, one hook per OUTPUT frame;
+                                    m_bufferIndex private -> protected
+  src/chips/nuked_opl3.{h,cpp}      rewampChannelOut (Nuked OPL3 1.8)
+  src/chips/nuked_opl3_fast.{h,cpp} rewampChannelOut (Nuked OPL3 1.7.4)
+  src/chips/dosbox_opl3.{h,cpp}     rewampChannelOut from a per-block buffer
+  src/chips/dosbox/dbopl.{h,cpp}    Chip::rwScope, written by BlockTemplate
+  src/adlmidi_midiplay.cpp          noteUpdFreq: chip channel -> MIDI channel
+Other emulators (Opal, ESFMu, YMFM, Nuked OPL2/CQM, DOSBox OPL2) keep the
+default (no capture): notes and mute only.
+Oracle: scripts/verify_adlmidi.sh prints per-voice peaks and the
+correlation of the voices' sum with the mix (0.96-0.99 measured).

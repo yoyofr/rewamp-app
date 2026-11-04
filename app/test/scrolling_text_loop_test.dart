@@ -95,4 +95,32 @@ void main() {
     expect(find.text(_short), findsOneWidget);
     expect(_ctrlOf(tester).offset, 0);
   });
+
+  testWidgets(
+      'ScrollingText shrinkWrap: la boîte suit le texte AGRANDI par la police '
+      'du système (rewamp-app#2)', (tester) async {
+    const title = 'airforce delta';
+    await tester.pumpWidget(MaterialApp(
+      home: MediaQuery(
+        data: const MediaQueryData(textScaler: TextScaler.linear(1.5)),
+        child: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 600,
+              child: Row(children: [
+                Flexible(
+                    child: ScrollingText(text: title, shrinkWrap: true)),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    final box = tester.getSize(find.byType(ScrollingText));
+    final text = tester.getSize(find.text(title));
+    expect(box.width, closeTo(text.width, 1),
+        reason: 'mesuré sans le facteur, le titre était coupé à 2/3');
+  });
 }

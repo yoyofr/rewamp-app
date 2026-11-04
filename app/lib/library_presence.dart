@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:isolate';
+import 'local_roots.dart' show LocalRoots;
 
 import 'package:flutter/widgets.dart';
 
@@ -61,7 +62,10 @@ Future<Set<String>> _missingPaths(Iterable<String> paths) async {
       for (final p in list) if (!File(p).existsSync()) p,
     });
     for (final p in list) {
-      _presence[p] = !gone.contains(p);
+      // Racine SAF joignable: le fichier sera mis en scène à la lecture — il
+      // n'est pas « sur un autre appareil » parce qu'il n'a jamais joué ici.
+      _presence[p] = !gone.contains(p) ||
+          LocalRoots.instance.isVirtuallyPresent(p);
     }
   }
   return {for (final p in paths) if (_presence[p] == false) p};

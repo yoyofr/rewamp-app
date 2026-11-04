@@ -350,8 +350,8 @@ class _LibraryTracksScreenState extends State<LibraryTracksScreen> {
           confirmDismiss: (_) => confirmLibraryRemoval(context, item.name),
           background: Container(
             color: cs.errorContainer,
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: 20),
+            alignment: AlignmentDirectional.centerEnd,
+            padding: const EdgeInsetsDirectional.only(end: 20),
             child: Icon(Icons.delete_outline, color: cs.onErrorContainer),
           ),
           onDismissed: (_) => _remove(item),

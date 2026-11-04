@@ -92,6 +92,8 @@ typedef _BackendNameNative = Pointer<Utf8> Function();
 typedef _BackendNameDart = Pointer<Utf8> Function();
 typedef _TrackMessageNative = Pointer<Utf8> Function();
 typedef _TrackMessageDart = Pointer<Utf8> Function();
+typedef _IndexedNameNative = Pointer<Utf8> Function(Int32);
+typedef _IndexedNameDart = Pointer<Utf8> Function(int);
 typedef _TrackArtworkNative = Pointer<Uint8> Function(Pointer<Int32> size);
 typedef _TrackArtworkDart = Pointer<Uint8> Function(Pointer<Int32> size);
 typedef _TrackArtworkMimeNative = Pointer<Utf8> Function();
@@ -360,6 +362,9 @@ class RewampAudio {
   _SetForcedLoopDart?   _setForcedLoopFn;
   _HasNativeLoopDart?   _hasNativeLoopFn;
   _EndFadeDart?         _endFadeFn;
+  _HasNativeLoopDart?   _lengthAuthoritativeFn;  // int Function()
+  _GetDoubleDart?       _nominalDurationFn;      // double Function()
+  _HasNativeLoopDart?   _liftEndFn;              // int Function()
   _SetNextFileDart?     _setNextFileFn;
   _VizClearArtworkDart? _clearNextFileFn;  // void Function()
   _GetMaskDart?         _handoffSerialFn;  // int64 Function()
@@ -378,6 +383,8 @@ class RewampAudio {
   _SetDataDirDart?   _setMidiSoundfontFn;
   _SetDataDirDart?   _setMt32RomDirFn;
   _TrackMessageDart? _mt32RomStatusFn;
+  _IsPlayingDart?     _adlBankCountFn;
+  _IndexedNameDart?   _adlBankNameFn;
   _IsPlayingDart?    _midiMt32FallbackFn;
   _SidMd5Dart?       _mt32IdentifyRomFn;
   _TrackMessageDart?  _outputDevicesFn;
@@ -575,6 +582,18 @@ class RewampAudio {
       try {
         _endFadeFn = _lib.lookupFunction<_EndFadeNative, _EndFadeDart>('rewamp_track_end_fade_seconds');
       } catch (_) {}
+      try {
+        _lengthAuthoritativeFn = _lib.lookupFunction<_HasNativeLoopNative,
+            _HasNativeLoopDart>('rewamp_track_length_authoritative');
+      } catch (_) {}
+      try {
+        _nominalDurationFn = _lib.lookupFunction<_GetDoubleNative,
+            _GetDoubleDart>('rewamp_nominal_duration_seconds');
+      } catch (_) {}
+      try {
+        _liftEndFn = _lib.lookupFunction<_HasNativeLoopNative,
+            _HasNativeLoopDart>('rewamp_lift_end_for_infinite');
+      } catch (_) {}
     } catch (_) {
       debugLog('rewamp_audio: native forced-loop functions not found');
     }
@@ -671,6 +690,16 @@ class RewampAudio {
       _mt32IdentifyRomFn = _lib.lookupFunction<_SidMd5Native, _SidMd5Dart>('rewamp_mt32_identify_rom');
     } catch (_) {
       debugLog('rewamp_audio: rewamp_mt32_* not found — MT-32 engine absent from this binary');
+    }
+
+    // libADLMIDI (REWAMP_WITH_ADLMIDI): its own try, like MT-32.
+    try {
+      _adlBankCountFn = _lib.lookupFunction<_IsPlayingNative, _IsPlayingDart>(
+          'rewamp_adlmidi_bank_count');
+      _adlBankNameFn = _lib.lookupFunction<_IndexedNameNative, _IndexedNameDart>(
+          'rewamp_adlmidi_bank_name');
+    } catch (_) {
+      debugLog('rewamp_audio: rewamp_adlmidi_* not found — OPL3 engine absent from this binary');
     }
 
     try {
@@ -1024,6 +1053,25 @@ class RewampAudio {
   /// [durationSeconds] already includes it; a catalogue duration does not.
   double get trackEndFadeSeconds => _endFadeFn?.call() ?? 0;
 
+  /// The loaded file's plugin length must win over any external duration
+  /// (catalogue): it counts loop passes the plugin plays on its own and/or
+  /// its own end fade. True even when the fade is off (crossfade active).
+  /// Falls back to the fade signal on a binary older than the export.
+  /// One pass of the loaded file as its plugin reported it BEFORE the forced
+  /// loop applied — still known under infinite loop, where a plugin may lift
+  /// its own end and [durationSeconds] drops to 0 (vio2sf). 0 when unknown.
+  double get nominalDurationSeconds => _nominalDurationFn?.call() ?? 0;
+
+  /// Infinite loop armed WHILE a track plays: asks the loaded plugin to lift
+  /// its own end live (PSF family). True when it now loops natively; false
+  /// means the generic Dart loop must keep handling it.
+  bool liftEndForInfinite() => (_liftEndFn?.call() ?? 0) != 0;
+
+  bool get trackLengthAuthoritative =>
+      _lengthAuthoritativeFn != null
+          ? _lengthAuthoritativeFn!.call() != 0
+          : trackEndFadeSeconds > 0;
+
   /// Gapless: stage the NEXT queue entry. When the current decoder ends, the
   /// native producer opens this path in place and keeps the output running.
   /// The loop parameters are the per-track snapshot [setForcedLoop] would
@@ -1259,6 +1307,14 @@ class RewampAudio {
   bool get midiMt32Fallback => (_midiMt32FallbackFn?.call() ?? 0) != 0;
 
   /// The ROM set the MT-32 plugin would play with ("" = none usable).
+  /// libADLMIDI's EMBEDDED banks, by index (the engine param "adlmidi"/
+  /// "bank"). Empty when the binary was built without the engine.
+  List<String> adlmidiBankNames() {
+    final count = _adlBankCountFn, name = _adlBankNameFn;
+    if (count == null || name == null) return const [];
+    return [for (var i = 0; i < count(); i++) name(i).toDartString()];
+  }
+
   String mt32RomStatus() {
     final fn = _mt32RomStatusFn;
     if (fn == null) return '';

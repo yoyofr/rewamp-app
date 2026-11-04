@@ -113,7 +113,7 @@ class _OnboardingPagesState extends State<_OnboardingPages> {
         child: Column(
           children: [
             Align(
-              alignment: Alignment.centerRight,
+              alignment: AlignmentDirectional.centerEnd,
               child: TextButton(
                 onPressed: _close,
                 child: Text(l10n.onboardingSkip),
@@ -178,7 +178,7 @@ class _OnboardingPagesState extends State<_OnboardingPages> {
               ],
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(32, 20, 32, 28),
+              padding: const EdgeInsetsDirectional.fromSTEB(32, 20, 32, 28),
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton(

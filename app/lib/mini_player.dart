@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
+import 'media_direction.dart';
 import 'glass_chrome.dart';
 import 'l10n.dart';
 import 'mini_window.dart';
@@ -309,7 +310,7 @@ class _MiniPlayerBar extends StatelessWidget {
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                       ),
-                      child: Row(
+                      child: ltrMedia(Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           // ⚠️ Les boutons de saut sont TOUJOURS présents,
@@ -389,7 +390,7 @@ class _MiniPlayerBar extends StatelessWidget {
                               iconSize: _kToggleIconSize,
                             ),
                         ],
-                      ),
+                      )),
                     ),
                     const SizedBox(width: 12),
                     // ── Pochette + titre + progression, en COLONNE ──────────
@@ -461,7 +462,7 @@ class _MiniPlayerBar extends StatelessWidget {
                                 tween: Tween<double>(end: progress),
                                 duration: const Duration(milliseconds: 230),
                                 curve: Curves.linear,
-                                builder: (_, v, __) => LinearProgressIndicator(
+                                builder: (_, v, __) => ltrMedia(LinearProgressIndicator(
                                   value: v,
                                   minHeight: 3,
                                   borderRadius: BorderRadius.circular(2),
@@ -471,7 +472,7 @@ class _MiniPlayerBar extends StatelessWidget {
                                   // de `onSurface` tient dans les deux thèmes.
                                   backgroundColor:
                                       cs.onSurface.withValues(alpha: 0.22),
-                                ),
+                                )),
                               );
                             },
                           ),

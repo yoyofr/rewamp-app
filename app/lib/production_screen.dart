@@ -9,6 +9,7 @@ import 'l10n.dart';
 import 'note_markdown.dart' show openExternalLink;
 import 'player_controller.dart';
 import 'rewamp_db.dart';
+import 'play_start.dart';
 import 'track_options_sheet.dart';
 import 'video_screen.dart';
 import 'scrolling_text.dart';
@@ -136,9 +137,9 @@ class _ProductionScreenState extends State<ProductionScreen> {
       children: [
         _header(context),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
           child: Align(
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerStart,
             child: FilledButton.icon(
               icon: const Icon(Icons.ondemand_video),
               label: Text(l10n.videoWatchDemo),
@@ -197,7 +198,7 @@ class _ProductionScreenState extends State<ProductionScreen> {
                     if (_albums.isNotEmpty && idx == 1) return _albumStrip(ctx);
                     if (_tracks!.isNotEmpty && idx == leading - 1) {
                       return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
                         child: Row(children: [
                           FilledButton.icon(
                             onPressed:
@@ -221,7 +222,12 @@ class _ProductionScreenState extends State<ProductionScreen> {
                     ].join(' — ');
                     final hasArt =
                         r.artworkUrl != null && r.artworkUrl!.isNotEmpty;
-                    return ListTile(
+                    // Le tap lance la production depuis ici sans demander:
+                    // l'appui long rend la feuille pour CETTE piste.
+                    return PlayChoiceHold(
+                      onTap: () => holdTrackChoice(ctx, r,
+                          playNow: () => _playFrom(i)),
+                      child: ListTile(
                       leading: hasArt
                           // Placeholder thématisé (voir RailArtwork): un
                           // `placeholder:` explicite l'écrase.
@@ -274,7 +280,7 @@ class _ProductionScreenState extends State<ProductionScreen> {
                         onPressed: () => showTrackOptions(ctx, r),
                       ),
                       onTap: () => _playFrom(i),
-                    );
+                    ));
                   },
                 );
               }),
@@ -288,7 +294,7 @@ class _ProductionScreenState extends State<ProductionScreen> {
     final tt = Theme.of(context).textTheme;
     final l10n = context.l10n;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 0, 0),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 0, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -300,7 +306,7 @@ class _ProductionScreenState extends State<ProductionScreen> {
             // Rail sans flèches: il se fait au moins glisser à la souris.
             child: MouseDragScrollConfiguration(child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.only(right: 16),
+              padding: const EdgeInsetsDirectional.only(end: 16),
               itemCount: _albums.length,
               separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (ctx, i) {
@@ -363,7 +369,7 @@ class _ProductionScreenState extends State<ProductionScreen> {
     final subtitle = d?.subtitle ?? '';
     final art = d?.artworkUrl;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -571,7 +577,7 @@ class _ProductionsBrowseScreenState extends State<ProductionsBrowseScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 4),
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
@@ -589,9 +595,9 @@ class _ProductionsBrowseScreenState extends State<ProductionsBrowseScreen> {
             ),
           ),
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerStart,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 4),
               child: FilterChip(
                 avatar: const Icon(Icons.ondemand_video, size: 16),
                 label: Text(l10n.filterWithVideo),

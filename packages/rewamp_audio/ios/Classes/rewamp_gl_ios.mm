@@ -317,6 +317,13 @@ REWAMP_EXPORT void rewamp_gl_uninit(void) {
     for (int i = 0; i < 3; i++) _destroy_buf(&g_buf[i]);
     _destroy_scene();
     eglMakeCurrent(g_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    // The preload context shares this one's group and dies with it. Left
+    // alone, create() (idempotent) handed the worker a context of a TERMINATED
+    // display at the next init: make_current failed, the worker exited, and
+    // every preset switch compiled synchronously again — the "freezes come
+    // back after closing and reopening the player" report (iOS, 2026-10-27).
+    if (g_preload_surf != EGL_NO_SURFACE) { eglDestroySurface(g_display, g_preload_surf); g_preload_surf = EGL_NO_SURFACE; }
+    if (g_preload_ctx  != EGL_NO_CONTEXT) { eglDestroyContext(g_display, g_preload_ctx);  g_preload_ctx  = EGL_NO_CONTEXT; }
     if (g_surface != EGL_NO_SURFACE) { eglDestroySurface(g_display, g_surface); g_surface = EGL_NO_SURFACE; }
     if (g_context != EGL_NO_CONTEXT) { eglDestroyContext(g_display, g_context); g_context = EGL_NO_CONTEXT; }
     eglTerminate(g_display); g_display = EGL_NO_DISPLAY;

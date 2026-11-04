@@ -123,7 +123,7 @@ class _ChartsScreenState extends State<ChartsScreen> {
               padding: shellInset(context, EdgeInsets.zero),
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
                   child: Text(l10n.chartsGlobal,
                       style: Theme.of(context)
                           .textTheme
@@ -144,7 +144,7 @@ class _ChartsScreenState extends State<ChartsScreen> {
                 ),
                 const Divider(height: 24),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 4),
                   child: Text(l10n.chartsByCollection,
                       style: Theme.of(context)
                           .textTheme
@@ -280,7 +280,7 @@ class _CollectionChartsScreenState extends State<CollectionChartsScreen> {
                   padding: shellInset(context, EdgeInsets.zero),
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
                       child: Text(l10n.chartsRewampSection,
                           style: Theme.of(context)
                               .textTheme
@@ -305,7 +305,7 @@ class _CollectionChartsScreenState extends State<CollectionChartsScreen> {
                     if (o.charts.isNotEmpty) ...[
                       const Divider(height: 24),
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                        padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 4),
                         child: Text(l10n.chartsPublishedSection,
                             style: Theme.of(context)
                                 .textTheme
@@ -573,7 +573,7 @@ class _ChartResultsScreenState extends State<ChartResultsScreen> {
     final l10n = context.l10n;
     final albums = _albums ?? const <PopularAlbum>[];
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 4),
       child: Row(children: [
         Expanded(
           child: Text(
@@ -605,7 +605,7 @@ class _ChartResultsScreenState extends State<ChartResultsScreen> {
     // grisée que sur un palmarès réellement vide.
     final all = [..._playable, ..._albumRows];
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 16, 4),
       child: Row(children: [
         Expanded(
           child: Text(
@@ -669,7 +669,7 @@ class _ChartResultsScreenState extends State<ChartResultsScreen> {
                           Expanded(
                             child: ListTile(
                               contentPadding:
-                                  const EdgeInsets.only(left: 0, right: 16),
+                                  const EdgeInsetsDirectional.only(start: 0, end: 16),
                               leading: RailArtwork(
                                 url: a.artworkUrl,
                                 album: a.name,
@@ -819,7 +819,7 @@ class _ChartPlaylistScreenState extends State<ChartPlaylistScreen> {
                       Expanded(
                         child: ListTile(
                           contentPadding:
-                              const EdgeInsets.only(left: 0, right: 8),
+                              const EdgeInsetsDirectional.only(start: 0, end: 8),
                           leading: RailArtwork(
                             url: a.artworkUrl,
                             album: a.name,

@@ -200,6 +200,13 @@ static void ds_seg_prune(RewampDataSource* ds, int64_t cursor) {
     }
 }
 
+void rewamp_data_source_clear_end_locked(RewampDataSource* ds) {
+    if (ds == NULL) return;
+    ring_lock(&ds->ringLock);
+    ds->trackLenRing = 0;
+    ring_unlock(&ds->ringLock);
+}
+
 /* Fin de la piste du PRODUCTEUR en temps du morceau (trames de 44100): sa
  * longueur, sinon la fin posée par Dart; 0 = inconnue. */
 static int64_t ds_effective_end_song(const RewampDataSource* ds) {

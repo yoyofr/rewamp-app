@@ -51,7 +51,12 @@ void main() {
     final pt = RegExp(r"const _kPlaylistTracksDdl = '''(.*?)''';", dotAll: true)
         .firstMatch(dart)!
         .group(1)!;
-    code = '$code\n$pt;';
+    // Même chose pour la table des noms des dossiers liés (mig 79), partagée
+    // entre la création et la migration par son identifiant.
+    final le = RegExp(r"const kLinkedEntriesSchema = '''(.*?)''';", dotAll: true)
+        .firstMatch(dart)!
+        .group(1)!;
+    code = '$code\n$pt;\n$le;';
 
     final codeTables = tablesOf(code);
     final docTables = tablesOf(doc);

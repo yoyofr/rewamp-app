@@ -12,6 +12,18 @@ class MainFlutterWindow: NSWindow {
   private var onTopItem: NSMenuItem?
 
   override func awakeFromNib() {
+    // Ligne de commande: `--help`/`--version`, ou une autre instance tourne
+    // déjà ⇒ elle reçoit notre commande et celle-ci s'arrête AVANT d'avoir
+    // démarré un moteur. Sinon la ligne attend que Dart la tire (AppDelegate).
+    if let code = AppDelegate.handleCommandLine() {
+      exit(code)
+    }
+    if AppDelegate.launchHidden {
+      self.alphaValue = 0
+      DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+        AppDelegate.revealLaunchWindow()
+      }
+    }
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
     self.contentViewController = flutterViewController
@@ -75,6 +87,10 @@ class MainFlutterWindow: NSWindow {
     // before the engine) exists on a cold start. See AppDelegate.pending.
     (NSApp.delegate as? AppDelegate)?
       .attachOpenFiles(messenger: flutterViewController.engine.binaryMessenger)
+    (NSApplication.shared.delegate as? AppDelegate)?
+      .attachBookmarks(messenger: flutterViewController.engine.binaryMessenger)
+    (NSApp.delegate as? AppDelegate)?
+      .attachCli(messenger: flutterViewController.engine.binaryMessenger)
     // Track-change notifications (optional setting) — same delegate, own channel.
     (NSApp.delegate as? AppDelegate)?
       .attachTrackNotify(messenger: flutterViewController.engine.binaryMessenger)

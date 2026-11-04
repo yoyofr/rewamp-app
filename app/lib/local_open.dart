@@ -1,13 +1,14 @@
 import 'picker_memory.dart';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb, visibleForTesting;
 
 import 'package:path/path.dart' as p;
 
 import 'package:flutter/services.dart';
 import 'package:rewamp_audio/rewamp_audio.dart' show SubsongInfo;
 
+import 'cli_options.dart';
 import 'formats.dart';
 import 'local_db.dart' show LocalDb, TrackRecord;
 import 'local_import.dart' show androidPickerStartDir;
@@ -104,6 +105,11 @@ enum LocalOpenNotice {
 /// the native side has to buffer for.
 Future<void> Function(List<String> paths)? globalOpenLocalPaths;
 
+/// Comme [globalOpenLocalPaths], pour un fichier ouvert DEPUIS le système
+/// (double-clic, « Ouvrir avec », Dock): suit le réglage « Fichier ouvert
+/// depuis le système » et non celui des gestes faits dans l'app.
+Future<void> Function(List<String> paths)? globalOpenExternalPaths;
+
 /// Le sélecteur de fichiers de l'OUVERTURE, et rien d'autre: il rend des
 /// chemins STABLES, prêts à jouer.
 ///
@@ -159,24 +165,163 @@ Future<void> consumeInboxCopy(String? path) async {
 bool get _hasNativeOpen =>
     Platform.isMacOS || Platform.isIOS || Platform.isAndroid;
 
-/// Chemins passés en ARGUMENTS au lancement — le mécanisme de Linux et de
-/// Windows, là où Apple a `application(_:open:)`.
+/// La ligne de commande d'un démarrage à FROID sous Linux et Windows (le
+/// runner la passe en arguments d'entrée Dart). macOS n'en passe pas: son
+/// natif la met dans le tampon du canal `rewamp/cli`, comme une invocation
+/// transmise.
 ///
-/// Le runner GTK transmet déjà tout ce qui suit `argv[0]` comme arguments
-/// d'entrée Dart; il ne manquait qu'un `main` qui les lise. Appelé depuis
-/// `main()`, donc AVANT que le shell existe: les chemins rejoignent la même
-/// file d'attente que ceux d'un démarrage à froid sur Apple, et le premier
-/// `drainOpenedFiles` les emporte.
-///
-/// Filtré sur « le fichier existe »: la ligne de commande porte aussi des
-/// options (`--enable-impeller`, un `--flag=valeur`), et rien ne les distingue
-/// d'un chemin par la forme seule.
+/// Appelé depuis `main()`, donc AVANT que le shell existe: la commande attend
+/// dans [_awaitingCli] et la première [drainCliCommands] l'emporte.
 void seedOpenedPathsFromArgs(List<String> args) {
-  for (final a in args) {
-    if (a.isEmpty || a.startsWith('-')) continue;
+  final inv = CliInvocation.fromNative(args);
+  if (inv != null && inv.args.isNotEmpty) _awaitingCli.add(inv);
+}
+
+/// Une ligne de commande reçue, pas encore interprétée.
+class CliInvocation {
+  CliInvocation(this.args, {required this.cwd, this.trusted = true});
+
+  final List<String> args;
+
+  /// Le dossier courant de l'INVOCATION, pas le nôtre: un relatif tapé dans
+  /// un autre terminal se résout contre lui.
+  final String cwd;
+
+  /// Faux pour une URL `rewamp://` sans le jeton de l'app (une page web, une
+  /// autre app): on n'y prend que le PILOTAGE, jamais un chemin — avec
+  /// l'exception de lecture seule du bac à sable macOS, un chemin désigne
+  /// n'importe quel fichier du dossier personnel.
+  final bool trusted;
+
+  /// Ce que le natif tient en tampon: une liste (Linux/Windows, premier
+  /// élément `--cwd=<dossier>`) ou une table `{args, cwd, trusted}` (macOS).
+  static CliInvocation? fromNative(Object? line) {
+    if (line is Map) {
+      final args = line['args'];
+      final cwd = line['cwd'];
+      if (args is! List || cwd is! String) return null;
+      return CliInvocation([for (final a in args) '$a'],
+          cwd: cwd, trusted: line['trusted'] == true);
+    }
+    if (line is List) {
+      final args = [for (final a in line) '$a'];
+      var cwd = Directory.current.path;
+      if (args.isNotEmpty && args.first.startsWith('--cwd=')) {
+        cwd = args.removeAt(0).substring(6);
+      }
+      return CliInvocation(args, cwd: cwd);
+    }
+    return null;
+  }
+}
+
+/// Exécute une commande déjà filtrée (fichiers EXISTANTS seulement). Posé par
+/// le shell; null avant lui.
+Future<void> Function(CliCommand command)? globalRunCliCommand;
+
+final List<CliInvocation> _awaitingCli = [];
+
+/// Ce que [inv] demande vraiment: fichiers absents écartés, chemins retirés
+/// d'une invocation non fiable. Null = rien à faire.
+CliCommand? cliCommandFor(CliInvocation inv) {
+  final cmd = parseCommandLine(inv.args, cwd: inv.cwd);
+  for (final e in cmd.errors) {
+    debugPrint('[cli] $e');
+  }
+  final files = !inv.trusted
+      ? const <String>[]
+      : [
+          for (final f in cmd.files)
+            if (FileSystemEntity.typeSync(f) != FileSystemEntityType.notFound) f,
+        ];
+  // Sans jeton (une page web peut ouvrir `rewamp://`), seuls les CHEMINS
+  // tombent: piloter la lecture ou changer d'affichage ne lit rien.
+  if (files.isEmpty && cmd.remote == null && !cmd.hasDisplay) return null;
+  return CliCommand(
+    files: files,
+    placement: cmd.placement,
+    shuffle: cmd.shuffle,
+    subsong: cmd.subsong,
+    remote: cmd.remote,
+    mini: cmd.mini,
+    window: cmd.window,
+    viz: cmd.viz,
+    fullscreen: cmd.fullscreen,
+    search: cmd.search,
+  );
+}
+
+/// Démarrage à froid avec `--mini`: les trois runners gardent la fenêtre
+/// INVISIBLE (macOS: opacité 0; Linux, Windows: pas d'affichage à la première
+/// image) jusqu'à cet appel, pour qu'elle n'apparaisse qu'une fois rétrécie.
+/// Sans effet sinon; filet natif à 5 s si Dart ne l'appelle jamais.
+Future<void> revealLaunchWindow() async {
+  if (kIsWeb || !(Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
+    return;
+  }
+  try {
+    await _cliChannel.invokeMethod<void>('revealWindow');
+  } catch (_) {/* runner plus ancien: son filet la montre */}
+}
+
+/// Ce que le démarrage à froid doit savoir avant la première image.
+class LaunchPlan {
+  const LaunchPlan({required this.skipIntro, required this.miniFromSetting});
+
+  /// Ni intro ni note de version: la ligne de commande dit sur QUOI s'ouvrir
+  /// (`--mini`, `--viz`, `--search`…), ou l'app démarre en mini lecteur —
+  /// lequel vit DANS AppShell, sous l'intro.
+  final bool skipIntro;
+
+  /// Démarrer en mini par le RÉGLAGE « Au démarrage » (aucun `--mini` ni
+  /// `--window` sur la ligne): c'est au shell d'y entrer, la ligne de
+  /// commande ne le fera pas. Le natif a fait le même calcul et garde la
+  /// fenêtre invisible jusqu'à [revealLaunchWindow].
+  final bool miniFromSetting;
+}
+
+/// Lu par AppShell une fois monté.
+LaunchPlan launchPlan = const LaunchPlan(skipIntro: false, miniFromSetting: false);
+
+/// Appelé dans `main()` avant `runApp`, [prefersMini] = le réglage
+/// (`launchPrefersMini`). Tire aussi le tampon natif (macOS), que le shell
+/// exécutera une fois monté — [globalRunCliCommand] est encore nul, donc
+/// [drainCliCommands] garde tout. ⚠️ Même règle que les runners (« `--mini`,
+/// ou le réglage sans `--window` »): un désaccord montrerait la fenêtre en
+/// grand un instant, ou la laisserait cachée jusqu'au filet de 5 s.
+Future<LaunchPlan> planLaunch({required bool prefersMini}) async {
+  await drainCliCommands();
+  var display = false, mini = false, window = false;
+  for (final inv in _awaitingCli) {
+    final cmd = parseCommandLine(inv.args, cwd: inv.cwd);
+    display |= cmd.hasDisplay;
+    mini |= cmd.mini;
+    window |= cmd.window;
+  }
+  final fromSetting = prefersMini && !mini && !window;
+  return launchPlan =
+      LaunchPlan(skipIntro: display || fromSetting, miniFromSetting: fromSetting);
+}
+
+/// Tire le tampon natif `rewamp/cli` et remet chaque commande au shell, dans
+/// l'ordre d'arrivée.
+Future<void> drainCliCommands() async {
+  if (!kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
     try {
-      if (File(a).existsSync()) _awaitingShell.add(a);
-    } catch (_) {/* chemin invalide: ce n'en était pas un */}
+      final lines = await _cliChannel.invokeListMethod<dynamic>('takePending');
+      for (final line in lines ?? const []) {
+        final inv = CliInvocation.fromNative(line);
+        if (inv != null) _awaitingCli.add(inv);
+      }
+    } catch (_) {/* canal pas encore là: le prochain signal réessaie */}
+  }
+  final run = globalRunCliCommand;
+  if (run == null || _awaitingCli.isEmpty) return;
+  final batch = List<CliInvocation>.of(_awaitingCli);
+  _awaitingCli.clear();
+  for (final inv in batch) {
+    final cmd = cliCommandFor(inv);
+    if (cmd != null) await run(cmd);
   }
 }
 
@@ -190,29 +335,30 @@ final List<String> _awaitingShell = [];
 /// double-click. Call once, after [globalOpenLocalPaths] is set.
 ///
 /// macOS, iOS et Android tiennent un tampon natif et la MÊME discipline: le
-/// natif ne pousse jamais, Dart tire. Linux et Windows livrent leurs chemins en
-/// ARGUMENTS, semés depuis `main` (voir [seedOpenedPathsFromArgs]).
+/// natif ne pousse jamais, Dart tire. La LIGNE DE COMMANDE du bureau a son
+/// propre canal (`rewamp/cli`, [drainCliCommands]).
 ///
 /// Sur iOS le chemin rendu est une COPIE dans notre bac à sable (voir
 /// `AppDelegate.ingestOpenedFile`): une URL « en place » n'est lisible que le
 /// temps d'une portée de sécurité, et nos décodeurs C ouvrent le fichier bien
 /// après.
 void listenForOpenedFiles() {
-  // Linux/Windows n'ont pas de canal natif, mais peuvent avoir des chemins
-  // semés par la ligne de commande: on tente le drain quand même.
-  if (!_hasNativeOpen) {
-    // ⚠️ Au tour de boucle SUIVANT, jamais ici: cet appel vient de
-    // `_AppShellState.initState`, et sans canal natif `drainOpenedFiles` ne
-    // rencontre aucun `await` avant de remettre le lot au shell — donc
-    // `_openLocalPaths` lisait `context.l10n` DANS initState. Flutter le
-    // refuse (« dependOnInheritedWidgetOfExactType… called before
-    // initState() completed »): lancer l'app avec un fichier en argument
-    // levait une exception et rien ne jouait. Mesuré sur Windows le
-    // 2026-10-03; Apple et Android y échappaient par accident, leur
-    // `await takePending` rendant la main avant.
-    if (_awaitingShell.isNotEmpty) Future<void>(drainOpenedFiles);
-    return;
+  // Bureau: instance UNIQUE — une seconde invocation transmet sa ligne de
+  // commande à celle-ci (runner GTK: G_APPLICATION_HANDLES_COMMAND_LINE;
+  // Windows: WM_COPYDATA; macOS: URL `rewamp://cli`). Même discipline que le
+  // canal des fichiers: le natif prévient (`argsAvailable`), Dart tire
+  // (`takePending`). Le tampon peut déjà tenir la ligne d'un démarrage à
+  // froid, d'où le drain immédiat. ⚠️ Au tour de boucle SUIVANT, jamais ici:
+  // cet appel vient de `_AppShellState.initState`, et `_openLocalPaths` lit
+  // `context.l10n` — Flutter le refuse dans initState (mesuré sur Windows le
+  // 2026-10-03: lancer l'app avec un fichier en argument ne jouait rien).
+  if (!kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
+    _cliChannel.setMethodCallHandler((call) async {
+      if (call.method == 'argsAvailable') await drainCliCommands();
+    });
+    Future<void>(drainCliCommands);
   }
+  if (!_hasNativeOpen) return;
   _openFilesChannel.setMethodCallHandler((call) async {
     if (call.method == 'filesAvailable') await drainOpenedFiles();
   });
@@ -220,6 +366,8 @@ void listenForOpenedFiles() {
   // nudge is coming that we have not already missed, so ask straight away.
   drainOpenedFiles();
 }
+
+const _cliChannel = MethodChannel('rewamp/cli');
 
 /// Pulls whatever the native side has buffered and hands it to the shell.
 Future<void> drainOpenedFiles() async {
@@ -230,7 +378,7 @@ Future<void> drainOpenedFiles() async {
       if (fetched != null) _awaitingShell.addAll(fetched);
     } catch (_) {/* channel not up yet — the next nudge retries */}
   }
-  final open = globalOpenLocalPaths;
+  final open = globalOpenExternalPaths ?? globalOpenLocalPaths;
   if (open == null || _awaitingShell.isEmpty) return;
   final batch = List<String>.from(_awaitingShell);
   _awaitingShell.clear();

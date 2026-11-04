@@ -40,6 +40,13 @@ const _kByScript = <String, List<String>>{
          'UnDotum'],
 };
 
+/// Les écritures HORS Han, que le même défaut du repli par caractère laisse
+/// en rectangles: le DEVANAGARI de l'interface hindi (et des titres indiens).
+/// Aucun conflit d'unification avec le Han, donc leur place dans la liste ne
+/// change aucun glyphe: elles passent après les variantes CJK. Noto
+/// (`fonts-noto-core`), puis Lohit, l'ancienne police de Fedora/Debian.
+const _kOtherScripts = ['Noto Sans Devanagari', 'Lohit Devanagari'];
+
 /// Dernier recours: couvre les trois scripts, sans variante propre.
 const _kLastResort = ['Droid Sans Fallback'];
 
@@ -58,7 +65,11 @@ List<String>? cjkFontFallback(String? languageCode, {String? scriptCode,
     _ => 'ja',
   };
   final order = [first, ...['ja', 'zh', 'zh_Hant', 'ko'].where((k) => k != first)];
-  return [for (final k in order) ..._kByScript[k]!, ..._kLastResort];
+  return [
+    for (final k in order) ..._kByScript[k]!,
+    ..._kOtherScripts,
+    ..._kLastResort,
+  ];
 }
 
 /// La locale de l'appareil, telle que le système la donne au démarrage.

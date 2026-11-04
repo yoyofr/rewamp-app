@@ -418,7 +418,7 @@ class _StorageScreenState extends State<StorageScreen> {
                     opened != null &&
                     opened.isEmpty)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 12),
                     child: Text(l10n.storageOpenedEmpty,
                         style: TextStyle(color: cs.outline)),
                   ),
@@ -679,7 +679,7 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
           : Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                  padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 12, 4),
                   child: CancelField(
                     controller: _filterCtrl,
                     onCleared: (_) => setState(() {}),
@@ -696,9 +696,9 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
                   child: Align(
-                    alignment: Alignment.centerLeft,
+                    alignment: AlignmentDirectional.centerStart,
                     child: Text(
                       l10n.storageCategoryStat(shown.length,
                           _StorageScreenState._fmtSize(

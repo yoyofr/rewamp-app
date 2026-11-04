@@ -40,11 +40,13 @@
 /* Forced-loop setting (Settings → Lecture) — see rewamp_audio.c. */
 extern "C" int    g_force_loop_mode;
 extern "C" int    g_force_loop_count;
+extern "C" int    g_loop_lift_refused;     /* rewamp_audio.c */
 extern "C" int    g_force_fadeout_enabled;
 extern "C" double g_force_fadeout_seconds;
 extern "C" int    g_force_loop_native_veto;
 extern "C" double g_crossfade_seconds;     /* rewamp_datasource.c */
 extern "C" double g_track_end_fade_secs;   /* rewamp_audio.c */
+extern "C" int    g_track_length_authoritative;   /* rewamp_audio.c */
 
 /* For vgmGetVoicesNb / vgmDataVoice_Available we define them inline here. */
 
@@ -644,6 +646,9 @@ static RewampDecoder* vgm_open(const char* path, RewampAudioFormat* outFmt) {
          * gme et la rampe PSF). */
         const double fadeSecs = rewamp_get_engine_param("vgm", "loop_fade_secs", 5.0);
         const PlayerBase* pb = dec->player.GetPlayer();
+        /* Un fichier à BOUCLE joue ses 2 passes (défaut de PlayerA) quel que
+         * soit le fondu: notre length() les compte, la durée catalogue non. */
+        if (pb != NULL && pb->GetLoopTicks() != 0) g_track_length_authoritative = 1;
         if (fadeSecs > 0.0 && g_crossfade_seconds <= 0.0 &&
             pb != NULL && pb->GetLoopTicks() != 0) {
             PlayerA::Config cfg = dec->player.GetConfiguration();
@@ -840,12 +845,30 @@ static uint64_t vgm_length(RewampDecoder* rdec) {
 }
 
 /* configure_loop is called AFTER open() (see rewamp_plugin.h's doc comment)
- * — too late for PlayerA::SetConfiguration, which must run before Start().
- * The real work already happened in vgm_open() above by reading the
- * g_force_loop_* globals directly; this only exists so the vtable field is
- * non-NULL (rewamp_has_native_loop_support). */
+ * — too late for most of PlayerA::Config, which vgm_open() already applied
+ * from the g_force_loop_* globals before Start().
+ *
+ * Mode 2 is the exception, and it matters for an infinite loop armed WHILE
+ * the track plays (rewamp_lift_end_for_infinite): PlayerA reads loopCount
+ * at EVERY PLREVT_LOOP (playera.cpp, « loopCount > 0 && curLoop >= loopCount
+ * ⇒ FadeOut() »), so loopCount 0 lifts the end live, and fadeSmpls 0 drops
+ * the vgmplay end fade. Right after open() in mode 2 this re-states what
+ * vgm_open() set: harmless. Refused (g_loop_lift_refused) when there is no
+ * loop point — loopCount hooks onto nothing, the generic Dart loop must keep
+ * it — or when the end fade has already begun (no API cancels it). */
 static void vgm_configure_loop(RewampDecoder* rdec, int mode, int count) {
-    (void)rdec; (void)mode; (void)count;
+    (void)count;
+    if (mode != 2 || rdec == NULL) return;
+    VgmDecoder* dec = (VgmDecoder*)rdec;
+    const PlayerBase* pb = dec->player.GetPlayer();
+    if (pb == NULL || pb->GetLoopTicks() == 0 ||
+        (dec->player.GetState() & (PLAYSTATE_FADE | PLAYSTATE_END | PLAYSTATE_FIN))) {
+        g_loop_lift_refused = 1;
+        return;
+    }
+    dec->player.SetLoopCount(0);
+    dec->player.SetFadeSamples(0);
+    dec->defaultFade = false;
 }
 
 /* ── Close ──────────────────────────────────────────────────────────────── */

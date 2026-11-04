@@ -1175,6 +1175,17 @@ class AppLocalizationsFi extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count lyhyttä ohitettu',
+      one: '$count lyhyt ohitettu',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => 'Ladataan tietoja…';
 
   @override
@@ -1439,6 +1450,16 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get queueClear => 'Tyhjennä jono';
+
+  @override
+  String get queueAutoplayOn =>
+      'Automaattinen toisto päällä: jonon jälkeen soitetaan samankaltaisia kappaleita';
+
+  @override
+  String get queueAutoplayOff => 'Automaattinen toisto pois';
+
+  @override
+  String get queueAutoplayRow => 'Automaattisen toiston lisäämä';
 
   @override
   String get queueClearConfirmTitle => 'Tyhjennetäänkö jono?';
@@ -2488,6 +2509,81 @@ class AppLocalizationsFi extends AppLocalizations {
   String get localOpsPhaseDeleting => 'poistetaan tiedostoja';
 
   @override
+  String localOpsScanning(String name) {
+    return 'Käydään läpi $name…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'luetteloidaan tiedostoja';
+
+  @override
+  String get linkedRootsSection => 'Linkitetyt kansiot';
+
+  @override
+  String get linkedRootAppFolder => 'Rewamp-kansio (Tiedostot-appi)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'Laita tiedostosi Tiedostot-appiin › Omassa iPhonessa › Rewamp tai kopioi ne tietokoneelta Finderilla. Ne toistetaan sieltä, mitään ei kopioida.';
+
+  @override
+  String get linkedRootsLink => 'Linkitä kansio…';
+
+  @override
+  String get linkedRootsLinkSubtitle =>
+      'Toistetaan alkuperäisestä sijainnista, mitään ei kopioida';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tiedostoa',
+      one: '$count tiedosto',
+      zero: 'Ei vielä tiedostoja',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => 'Ei tavoitettavissa juuri nyt';
+
+  @override
+  String get linkedRootRescan => 'Päivitä';
+
+  @override
+  String get linkedRootRename => 'Nimeä uudelleen';
+
+  @override
+  String get linkedRootUnlink => 'Poista linkitys';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => 'Poistetaanko kansion linkitys?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'Levyltä ei poisteta mitään. Sen suosikit ja soittolistamerkinnät säilyvät harmaina, kunnes se linkitetään uudelleen.';
+
+  @override
+  String get linkedRootEmpty =>
+      'Tässä kansiossa ei ole toistettavia tiedostoja.';
+
+  @override
+  String get linkedRootSearchHint => 'Hae tästä kansiosta';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count osumaa',
+      one: '$count osuma',
+      zero: 'Ei osumia',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'Tuo tiedostoja';
 
   @override
@@ -2608,6 +2704,57 @@ class AppLocalizationsFi extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'Ei jonoon: alle $seconds s (Asetukset → Toisto)';
   }
+
+  @override
+  String get settingsAutoplaySection => 'Automaattinen toisto';
+
+  @override
+  String get settingsAutoplayTitle => 'Jatka toistoa jonon jälkeen';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'Kun jono lähestyy loppuaan, siihen lisätään samankaltaisia kappaleita. Jonon ∞-painike on sama asetus.';
+
+  @override
+  String get settingsAutoplaySize => 'Kerralla lisättävät kappaleet';
+
+  @override
+  String get settingsAutoplayMode => 'Kappaleiden valintatapa';
+
+  @override
+  String get settingsAutoplayModeAuto => 'Automaattinen';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      'Ensin samat artistit, sitten heidän ryhmänsä ja lopuksi sama kokoelma.';
+
+  @override
+  String get settingsAutoplayModeArtist => 'Samat artistit';
+
+  @override
+  String get settingsAutoplayModeArtistHint =>
+      'Vain juuri soineiden artistien kappaleita.';
+
+  @override
+  String get settingsAutoplayModeGroup => 'Samat ryhmät';
+
+  @override
+  String get settingsAutoplayModeGroupHint =>
+      'Kappaleita ryhmiltä, joihin nämä artistit kuuluvat.';
+
+  @override
+  String get settingsAutoplayModeCollection => 'Sama kokoelma';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      'Satunnaisia kappaleita samasta kokoelmasta, ensin samalta alustalta.';
+
+  @override
+  String get settingsAutoplayModeRecent => 'Viimeksi kuunnellut';
+
+  @override
+  String get settingsAutoplayModeRecentHint =>
+      'Valitaan viime aikoina kuuntelemastasi, ei vain jonosta.';
 
   @override
   String get settingsQueuePrefetchSection => 'Jonon lataukset';
@@ -4714,4 +4861,71 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'Tiedosto puuttuu';
+
+  @override
+  String get settingsPlayStartSection => 'Toiston aloitus';
+
+  @override
+  String get settingsPlayStartInApp => 'Kappaleen napautus sovelluksessa';
+
+  @override
+  String get settingsPlayStartInAppHint =>
+      'Pitkä painallus (oikea napsautus) tarjoaa aina valinnan.';
+
+  @override
+  String get settingsPlayStartExternal => 'Järjestelmästä avattu tiedosto';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'Kaksoisnapsautus, ”Avaa sovelluksella”, pudotus sovelluksen kuvakkeelle.';
+
+  @override
+  String get settingsPlayStartAsk => 'Kysy';
+
+  @override
+  String get settingsLaunchWindow => 'Käynnistettäessä';
+
+  @override
+  String get settingsLaunchWindowNormal => 'Tavallinen ikkuna';
+
+  @override
+  String get settingsLaunchWindowMini => 'Minisoitin';
+
+  @override
+  String get settingsLaunchWindowLast => 'Kuten suljettaessa';
+
+  @override
+  String get miniWindowQuit => 'Lopeta Rewamp';
+
+  @override
+  String get miniWindowCompact => 'Kompakti minisoitin';
+
+  @override
+  String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
+
+  @override
+  String get settingsEngineAdlmidiSubtitle =>
+      'MIDI ja DOS-pelien musiikki emuloidulla OPL3-piirillä';
+
+  @override
+  String get settingsAdlBank => 'Soitinpankki';
+
+  @override
+  String get settingsAdlEmulator => 'Emulaattori';
+
+  @override
+  String get settingsAdlChips => 'Emuloidut piirit';
+
+  @override
+  String get settingsAdlVolumeModel => 'Äänenvoimakkuusmalli';
+
+  @override
+  String get settingsAdlVolumeGeneric => 'Yleinen';
+
+  @override
+  String get settingsAdlSoftPan => 'Pehmeä panorointi';
+
+  @override
+  String get engineDescAdlmidi =>
+      'MIDI, XMI, DMX MUS, HMI/HMP emuloidulla OPL3-piirillä (AdLib / Sound Blaster)';
 }

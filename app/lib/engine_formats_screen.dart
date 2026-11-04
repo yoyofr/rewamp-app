@@ -17,7 +17,7 @@ class EngineFormatsScreen extends StatelessWidget {
       body: ListView(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 8),
             child: Text(
               l10n.enginesFormatsSummary(kTotalFormatCount, kEngines.length),
               style: tt.bodyMedium,
@@ -31,7 +31,7 @@ class EngineFormatsScreen extends StatelessWidget {
               subtitle: Text(
                   l10n.enginesLicenseFormats(e.license, e.formatCount),
                   style: tt.bodySmall),
-              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              childrenPadding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 12),
               expandedCrossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(

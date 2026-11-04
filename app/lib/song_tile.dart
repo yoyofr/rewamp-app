@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'album_detail_screen.dart';
@@ -7,6 +9,7 @@ import 'browse_screen.dart' show BrowseResultsScreen;
 import 'container_subsong_screen.dart';
 import 'favorite_color.dart';
 import 'l10n.dart';
+import 'play_start.dart';
 import 'podium_badge.dart';
 import 'hover_grow.dart';
 import 'local_db.dart';
@@ -219,6 +222,21 @@ class _SongTileState extends State<SongTile> {
     }
   }
 
+  /// Appui long / clic droit d'une ligne: la feuille « maintenant / ensuite /
+  /// à la fin » quand le tap LANCE la lecture (même geste, feuille imposée);
+  /// le menu d'options quand le tap NAVIGUE (ligne d'album, conteneur), où
+  /// refaire le tap ne ferait qu'ouvrir l'écran.
+  void _hold(BuildContext context) {
+    final r = widget.result;
+    final navigates = r.matchSubsongTitle == null &&
+        (_isAlbumRow || RewampDb.isContainerRow(r));
+    if (navigates) {
+      _showOptions(context);
+    } else {
+      unawaited(withPlayChoiceSheet(() => _handleTap(context)));
+    }
+  }
+
   Future<void> _handleTap(BuildContext context) async {
     final r = widget.result;
     // Query matched a TRACK title inside a container → play that exact track,
@@ -379,7 +397,12 @@ class _SongTileState extends State<SongTile> {
     final year = widget.showYear ? (r.podium?.year ?? r.year) : null;
     final showCollectionLine =
         (widget.showCollection && r.collection.isNotEmpty) || year != null;
-    return ListTile(
+    // Appui long / clic droit: voir _hold.
+    return GestureDetector(
+      behavior: HitTestBehavior.deferToChild,
+      onSecondaryTap: () => _hold(context),
+      child: ListTile(
+      onLongPress: () => _hold(context),
       leading: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -423,13 +446,13 @@ class _SongTileState extends State<SongTile> {
         ),
         if (r.podium != null)
           Padding(
-            padding: const EdgeInsets.only(left: 6),
+            padding: const EdgeInsetsDirectional.only(start: 6),
             child: PodiumBadge(r.podium!, size: 15),
           ),
         // Linked demozoo video — the ▶ tile/button appears in the player.
         if (r.hasVideo)
           Padding(
-            padding: const EdgeInsets.only(left: 6),
+            padding: const EdgeInsetsDirectional.only(start: 6),
             child: Icon(Icons.ondemand_video,
                 size: 14, color: Theme.of(context).colorScheme.primary),
           ),
@@ -476,7 +499,7 @@ class _SongTileState extends State<SongTile> {
           // aucune durée en base.
           if (RewampDb.listDurationMs(r) != null)
             Padding(
-              padding: const EdgeInsets.only(right: 4),
+              padding: const EdgeInsetsDirectional.only(end: 4),
               child: Text(
                 RewampDb.formatDurationMs(RewampDb.listDurationMs(r)!),
                 style: TextStyle(
@@ -494,7 +517,7 @@ class _SongTileState extends State<SongTile> {
           // le chiffre ne dit rien à personne et encombrerait chaque ligne.
           if ((r.popularity ?? 0) >= 95)
             Padding(
-              padding: const EdgeInsets.only(left: 4),
+              padding: const EdgeInsetsDirectional.only(start: 4),
               child: Text(
                 // Le percentile plafonne à 100, et « Top 0 % » ne veut rien
                 // dire — le meilleur rang possible, c'est le premier centile.
@@ -524,7 +547,7 @@ class _SongTileState extends State<SongTile> {
         ],
       ),
       onTap: () => _handleTap(context),
-    );
+    ));
   }
 }
 

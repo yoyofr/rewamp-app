@@ -12,11 +12,27 @@
 	<true/>
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
 	<key>com.apple.security.files.downloads.read-write</key>
 	<true/>
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)com.rewamp.app</string>
+	</array>
+	<!-- Lecture SEULE du dossier personnel et des volumes: la ligne de commande
+	     transmet un CHEMIN (l'instance du terminal, elle-même sous bac à sable,
+	     ne peut rien transmettre d'autre), et un module ouvert seul (Finder,
+	     « Ouvrir avec ») doit pouvoir lire ses COMPAGNONS (smpl., .pdx,
+	     .psflib, m3u voisin) — l'accès par fichier ne les couvre pas. Mesuré
+	     le 2026-10-28. ⚠️ Refusé en général par le Mac App Store. -->
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
+	<array>
+		<string>/</string>
+	</array>
+	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+	<array>
+		<string>/Volumes/</string>
 	</array>
 </dict>
 </plist>

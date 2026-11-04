@@ -247,6 +247,9 @@ REWAMP_EXPORT void rewamp_gl_uninit(void) {
     g_pending = -1; g_draw = 1;
     for(int i=0;i<3;i++) _destroy_buf(&g_buf[i]);
     eglMakeCurrent(g_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    // The preload context dies with the main one — see rewamp_gl_ios.mm.
+    if (g_preload_surf != EGL_NO_SURFACE) { eglDestroySurface(g_dpy, g_preload_surf); g_preload_surf = EGL_NO_SURFACE; }
+    if (g_preload_ctx  != EGL_NO_CONTEXT) { eglDestroyContext(g_dpy, g_preload_ctx);  g_preload_ctx  = EGL_NO_CONTEXT; }
     if (g_baseSurf != EGL_NO_SURFACE) { eglDestroySurface(g_dpy, g_baseSurf); g_baseSurf=EGL_NO_SURFACE; }
     if (g_ctx != EGL_NO_CONTEXT) { eglDestroyContext(g_dpy, g_ctx); g_ctx=EGL_NO_CONTEXT; }
     eglTerminate(g_dpy); g_dpy=EGL_NO_DISPLAY; g_config=NULL; g_width=0; g_height=0;

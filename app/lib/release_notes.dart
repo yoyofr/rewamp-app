@@ -101,7 +101,7 @@ class ReleaseNotesSplash extends StatelessWidget {
               children: [
                 Flexible(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(28, 32, 28, 8),
+                    padding: const EdgeInsetsDirectional.fromSTEB(28, 32, 28, 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -142,7 +142,7 @@ class ReleaseNotesSplash extends StatelessWidget {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
+                  padding: const EdgeInsetsDirectional.fromSTEB(28, 8, 28, 24),
                   child: SizedBox(
                     width: double.infinity,
                     child: FilledButton(

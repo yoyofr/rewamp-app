@@ -125,7 +125,10 @@ class _MarqueeTextState extends State<MarqueeText> {
       return LayoutBuilder(builder: (ctx, constraints) {
         final cw = constraints.maxWidth.isFinite ? constraints.maxWidth : 0.0;
         final tw =
-            _measure.measure(widget.text, style, dir, maxLines: 1).width;
+            _measure
+                .measure(widget.text, style, dir,
+                    textScaler: scaler, maxLines: 1)
+                .width;
         final gap = (style.fontSize ?? 14) * 3;   // « quelques caractères »
         final overflows = cw > 0 && tw > cw + 1;
         _cycle = overflows ? tw + gap : 0;
@@ -154,11 +157,14 @@ class _MarqueeTextState extends State<MarqueeText> {
     // style et de la police système, et une fenêtre approximative coupe une
     // ligne en deux. Le texte replié est mesuré à la largeur du conteneur pour
     // savoir s'il déborde; s'il déborde, deux copies séparées d'UNE ligne vide.
-    final lineH = _probe.measure('Xg', style, dir, maxLines: 1).height;
+    final lineH = _probe
+        .measure('Xg', style, dir, textScaler: scaler, maxLines: 1)
+        .height;
     return LayoutBuilder(builder: (ctx, constraints) {
       final cw = constraints.maxWidth.isFinite ? constraints.maxWidth : 0.0;
       final th = _measure
           .measure(widget.text, style, dir,
+              textScaler: scaler,
               maxWidth: cw > 0 ? cw : double.infinity)
           .height;
       final windowH = lineH * widget.maxLines;

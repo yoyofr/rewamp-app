@@ -92,12 +92,13 @@ class AppSnack {
   /// Called by the banner once its exit animation is done. Guarded by identity
   /// so a stale banner finishing its reverse can't clear a newer one's state.
   static void _finish(OverlayEntry entry, ValueNotifier<bool> vis) {
-    if (_entry == entry) {
-      _timer?.cancel();
-      _timer = null;
-      _entry = null;
-      _visible = null;
-    }
+    // Not the current banner any more: _removeNow already removed it and
+    // disposed its notifier. Removing twice asserts.
+    if (_entry != entry) return;
+    _timer?.cancel();
+    _timer = null;
+    _entry = null;
+    _visible = null;
     entry.remove();      // → _TopSnack.dispose removes its listener (vis alive)
     vis.dispose();
   }
@@ -159,16 +160,30 @@ class _TopSnackState extends State<_TopSnack>
     widget.visible.addListener(_onVisibility);
   }
 
+  bool _gone = false;
+  Timer? _goneFallback;
+
   void _onVisibility() {
     if (!widget.visible.value) {
-      _ctrl.reverse().then((_) {
-        if (mounted) widget.onGone();
-      });
+      // `then` alone never fires when the reverse is CANCELED, and a ticker
+      // that gets no frame never completes it: the banner then stayed up for
+      // good, deaf to taps. Cancel counts as done, and a timer a little longer
+      // than the exit animation tears it down whatever the ticker does.
+      _ctrl.reverse().whenCompleteOrCancel(_goneOnce);
+      _goneFallback ??= Timer(const Duration(milliseconds: 500), _goneOnce);
     }
+  }
+
+  void _goneOnce() {
+    if (_gone || !mounted) return;
+    _gone = true;
+    _goneFallback?.cancel();
+    widget.onGone();
   }
 
   @override
   void dispose() {
+    _goneFallback?.cancel();
     widget.visible.removeListener(_onVisibility);
     _ctrl.dispose();
     super.dispose();
@@ -183,7 +198,7 @@ class _TopSnackState extends State<_TopSnack>
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+          padding: const EdgeInsetsDirectional.fromSTEB(8, 8, 8, 0),
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
@@ -237,7 +252,7 @@ class _SnackContent extends StatelessWidget {
         child: Container(
           height: 34,
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          alignment: Alignment.centerLeft,
+          alignment: AlignmentDirectional.centerStart,
           child: Row(
             children: [
               if (isError) ...[

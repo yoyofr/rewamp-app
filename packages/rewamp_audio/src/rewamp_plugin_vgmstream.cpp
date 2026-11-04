@@ -7,6 +7,10 @@
 
 extern "C" {
 #include "libvgmstream.h"  // includes libvgmstream_streamfile.h transitively
+// ⚠️ En-tête INTERNE (sous-module): seul chemin vers `config.play_forever`
+// du flux en cours — voir vgm_configure_loop_fn. À revérifier à chaque
+// resynchro de vgmstream (champs priv->vgmstream, pstate, loop_target).
+#include "base/api_internal.h"
 }
 
 #include <stdlib.h>
@@ -21,6 +25,7 @@ extern "C" int    g_force_fadeout_enabled;
 extern "C" double g_force_fadeout_seconds;
 extern "C" int    g_force_loop_native_veto;
 extern "C" double g_crossfade_seconds;
+extern "C" int    g_loop_lift_refused;     // rewamp_audio.c
 
 // Extensions vgmstream décline, pour qu'un greffon MIEUX PLACÉ les prenne.
 //
@@ -265,12 +270,40 @@ static void vgm_close_fn(RewampDecoder* dec) {
 }
 
 // configure_loop is called AFTER open() (see rewamp_plugin.h's doc comment)
-// — too late for libvgmstream_setup(), which must run inside open(). The
-// real work already happened in vgm_open_fn() above by reading the
-// g_force_loop_* globals directly; this only exists so the vtable field is
-// non-NULL (rewamp_has_native_loop_support).
+// — too late for libvgmstream_setup(), which must run inside open() and
+// refuses a second call (« can only apply once »: it rewrites the mixing
+// chain). vgm_open_fn() already applied the g_force_loop_* globals.
+//
+// Mode 2 is the exception, for an infinite loop armed WHILE the stream plays
+// (rewamp_lift_end_for_infinite): render.c reads `config.play_forever` at
+// EVERY block (fade, pad-end, EOR all bail out on it), and the decoder keeps
+// looping as long as `loop_flag` holds and `loop_target` does not cut it
+// (decode_do_loop). So flipping play_forever and clearing loop_target lifts
+// the end live. Refused (g_loop_lift_refused) when that cannot work:
+//   - no loop point, or the loop target already cleared loop_flag;
+//   - decode already done (priv->decode_done is never reset but by reset);
+//   - the end fade has begun — play_forever would snap it back to full
+//     volume mid-fade.
+// Right after open() in mode 2 this re-states what open() set: harmless.
 static void vgm_configure_loop_fn(RewampDecoder* dec, int mode, int count) {
-    (void)dec; (void)mode; (void)count;
+    (void)count;
+    if (mode != 2 || dec == NULL || dec->lib == NULL) return;
+    libvgmstream_priv_t* priv = (libvgmstream_priv_t*)dec->lib->priv;
+    VGMSTREAM* v = priv ? priv->vgmstream : NULL;
+    if (v == NULL || priv->decode_done || !v->loop_flag) {
+        g_loop_lift_refused = 1;
+        return;
+    }
+    if (v->config.play_forever) return;   // déjà infini (ouvert en mode 2)
+    const play_state_t* ps = &v->pstate;
+    if (v->config_enabled && ps->fade_duration > 0 &&
+        ps->play_position >= ps->fade_start) {
+        g_loop_lift_refused = 1;
+        return;
+    }
+    v->loop_target = 0;
+    v->config.play_forever = true;
+    priv->pos.play_forever = 1;
 }
 
 static const RewampPluginVTable kVgmstreamPlugin = {

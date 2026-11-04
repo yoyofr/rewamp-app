@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:rewamp/main.dart' as app;
 import 'package:rewamp/media_session.dart';
 import 'package:rewamp/rewamp_db.dart';
+import 'package:rewamp/user_settings.dart';
 
 Future<Object?> incoming(String method, Map<String, Object?> args) async {
   const codec = StandardMethodCodec();
@@ -34,16 +35,30 @@ Future<void> run() async {
     debugPrint(
         '[CarPlay download smoke] download: ${info?.label} ${info?.progress} ${info?.error}');
   });
-  final page = await incoming(
-          'browse', {'source': 'onlineSearch', 'query': 'stardust', 'limit': 5})
-      as Map;
-  final item = (page['items'] as List).firstWhere((r) => r['id'] != null);
+  final results = await incoming('voiceSearch',
+      {'query': 'The Bullet', 'artist': 'Randall'}) as List;
+  final item = results.first as Map;
   debugPrint('[CarPlay download smoke] selecting ${item['title']}');
-  await incoming('select', {'source': 'onlineSearch', 'id': item['id']});
-  if (!gMediaHandler!.c.isPlaying) {
-    throw StateError('Selection completed without playback');
+  final settings = UserSettings.instance;
+  final previousAutoplay = settings.queueAutoplay;
+  settings.queueAutoplay = true;
+  try {
+    await incoming('select', {'source': 'voiceSearch', 'id': item['id']});
+    if (!gMediaHandler!.c.isPlaying) {
+      throw StateError('Selection completed without playback');
+    }
+    debugPrint('[CarPlay download smoke] PASSED: ${gMediaHandler!.c.fileName}');
+    final deadline = DateTime.now().add(const Duration(seconds: 45));
+    while (!gMediaHandler!.c.queue.any((entry) => entry.autoplay)) {
+      if (DateTime.now().isAfter(deadline)) {
+        throw StateError('CarPlay playback did not refill upstream autoplay');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    debugPrint('[CarPlay download smoke] PASSED: upstream autoplay refill');
+  } finally {
+    settings.queueAutoplay = previousAutoplay;
   }
-  debugPrint('[CarPlay download smoke] PASSED: ${gMediaHandler!.c.fileName}');
   await gMediaHandler!.stop();
 
   final nextPage = await incoming('browse',

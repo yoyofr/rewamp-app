@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rewamp/local_db.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// Le corps SQL de `LocalDb.getRecentEntries`, tel qu'il sera exécuté.
@@ -24,8 +25,12 @@ String _recentEntriesSql() {
   expect(at, greaterThan(0), reason: 'getRecentEntries introuvable');
   final start = src.indexOf("'''", at) + 3;
   final end   = src.indexOf("'''", start);
-  final sql   = src.substring(start, end);
+  // Les fragments partagés que la requête INTERPOLE (Dart les résout, le
+  // source non).
+  final sql   = src.substring(start, end).replaceAll(
+      r'$kRecentAlbumLibraryMatch', LocalDb.kRecentAlbumLibraryMatch);
   expect(sql, contains('recent_albums'));
+  expect(sql, isNot(contains(r'$')), reason: 'interpolation non résolue');
   return sql;
 }
 

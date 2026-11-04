@@ -84,6 +84,10 @@ class VizSelectorWidget extends StatefulWidget {
   final bool isFullscreen;
   final VoidCallback? onToggleFullscreen;
 
+  /// Libellé de la croix ([onClose]) quand elle fait autre chose que fermer
+  /// le visualiseur (mini lecteur: quitter l'app). Null = « fermer ».
+  final String? closeTooltip;
+
   /// Transport controls drawn at the very bottom while fullscreen (the player
   /// chrome is hidden then). Lives INSIDE the tap-to-reveal overlay, so it
   /// fades in and auto-hides exactly like the visualizer selector.
@@ -131,6 +135,7 @@ class VizSelectorWidget extends StatefulWidget {
     this.album,
     this.isFullscreen        = false,
     this.onToggleFullscreen,
+    this.closeTooltip,
     this.fullscreenControls,
     this.fullscreenTrackInfo,
     this.onClose,
@@ -1191,10 +1196,10 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
   /// de fenêtre (croix, plein écran), posés en haut-DROITE du même Stack: sans
   /// elle la barre, même réduite, passerait dessous.
   Widget _fitControlBar(Widget bar) => Padding(
-        padding: const EdgeInsets.only(right: 44),
+        padding: const EdgeInsetsDirectional.only(end: 44),
         child: FittedBox(
           fit: BoxFit.scaleDown,
-          alignment: Alignment.topLeft,
+          alignment: AlignmentDirectional.topStart,
           child: bar,
         ),
       );
@@ -1705,7 +1710,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
         // Escape still do the same thing.
         if (widget.onClose != null || widget.onToggleFullscreen != null)
           Align(
-            alignment: Alignment.topRight,
+            alignment: AlignmentDirectional.topEnd,
             child: Padding(
               padding: const EdgeInsets.all(8),
               child: Column(
@@ -1714,7 +1719,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
                   if (widget.onClose != null)
                     _fsButton(
                       icon: Icons.close,
-                      tooltip: l10n.vizClose,
+                      tooltip: widget.closeTooltip ?? l10n.vizClose,
                       onPressed: widget.onClose!,
                     ),
                   if (widget.onClose != null &&
@@ -1739,9 +1744,9 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
         // Settings → Visualisation).
         if (_effective == VizEffect.projectm) ...[
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerStart,
             child: Padding(
-              padding: const EdgeInsets.only(left: 4),
+              padding: const EdgeInsetsDirectional.only(start: 4),
               child: _presetArrow(
                 icon: Icons.arrow_left,
                 tooltip: _withKeyHint(l10n.vizPrevPreset, 'P'),
@@ -1753,9 +1758,9 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
             ),
           ),
           Align(
-            alignment: Alignment.centerRight,
+            alignment: AlignmentDirectional.centerEnd,
             child: Padding(
-              padding: const EdgeInsets.only(right: 4),
+              padding: const EdgeInsetsDirectional.only(end: 4),
               child: _presetArrow(
                 icon: Icons.arrow_right,
                 tooltip: _withKeyHint(l10n.vizNextPreset, 'N'),
@@ -1771,7 +1776,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
           // playlist API.
           if (widget.audio.hasProjectMPlaylist)
             Align(
-              alignment: Alignment.topLeft,
+              alignment: AlignmentDirectional.topStart,
               child: Padding(
                 padding: const EdgeInsets.all(8),
                 child: _fitControlBar(_pmControls(l10n, cs)),
@@ -1781,7 +1786,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
         // Spectrum viz: the palette, top-left (same corner as the pattern's).
         if (_effective == VizEffect.spectrum)
           Align(
-            alignment: Alignment.topLeft,
+            alignment: AlignmentDirectional.topStart,
             child: Padding(
               padding: const EdgeInsets.all(8),
               child: _fitControlBar(_spectrumControls(l10n, cs)),
@@ -1790,7 +1795,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
         // Oscilloscope par voies: grille, noms, libellé voie/instrument, top-left.
         if (_effective == VizEffect.voices)
           Align(
-            alignment: Alignment.topLeft,
+            alignment: AlignmentDirectional.topStart,
             child: Padding(
               padding: const EdgeInsets.all(8),
               child: _fitControlBar(_voicesControls(l10n, cs)),
@@ -1799,7 +1804,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
         // Notation viz: couleur par voix / par instrument, top-left.
         if (_effective == VizEffect.notes)
           Align(
-            alignment: Alignment.topLeft,
+            alignment: AlignmentDirectional.topStart,
             child: Padding(
               padding: const EdgeInsets.all(8),
               child: _fitControlBar(_notesControls(l10n, cs)),
@@ -1808,7 +1813,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
         // Piano viz: look / colours / glow, top-left.
         if (_effective == VizEffect.piano)
           Align(
-            alignment: Alignment.topLeft,
+            alignment: AlignmentDirectional.topStart,
             child: Padding(
               padding: const EdgeInsets.all(8),
               child: _fitControlBar(_pianoControls(l10n, cs)),
@@ -1817,7 +1822,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
         // Pattern viz: scroll-mode / volume-bars / color-scheme, top-left.
         if (_effective == VizEffect.patterns)
           Align(
-            alignment: Alignment.topLeft,
+            alignment: AlignmentDirectional.topStart,
             child: Padding(
               padding: const EdgeInsets.all(8),
               child: _fitControlBar(_patternControls(l10n, cs)),
@@ -2188,7 +2193,7 @@ class _PmPresetPickerSheetState extends State<_PmPresetPickerSheet> {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
             child: CancelField(
               controller: _filter,
               builder: (_) => TextField(

@@ -526,7 +526,7 @@ class _VideoPlayerPanelState extends State<VideoPlayerPanel> {
         opacity: _chromeVisible ? 1.0 : 0.0,
         duration: const Duration(milliseconds: 250),
         child: Align(
-          alignment: Alignment.topLeft,
+          alignment: AlignmentDirectional.topStart,
           child: Container(
             margin: const EdgeInsets.all(6),
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),

@@ -35,6 +35,7 @@
 			<string>ja</string>
 			<string>zh</string>
 			<string>ko</string>
+			<string>hi</string>
 		</array>
 		<key>CFBundleDisplayName</key>
 		<string>Rewamp</string>
@@ -512,6 +513,7 @@
 					<string>gm</string>
 					<string>gmc</string>
 					<string>gmd</string>
+					<string>gmf</string>
 					<string>gms</string>
 					<string>got</string>
 					<string>gray</string>
@@ -542,6 +544,8 @@
 					<string>hipc</string>
 					<string>his</string>
 					<string>hmc</string>
+					<string>hmi</string>
+					<string>hmp</string>
 					<string>hn</string>
 					<string>hot</string>
 					<string>hps</string>
@@ -1407,6 +1411,7 @@
 					<string>xma</string>
 					<string>xma2</string>
 					<string>xmd</string>
+					<string>xmi</string>
 					<string>xms</string>
 					<string>xmu</string>
 					<string>xmv</string>

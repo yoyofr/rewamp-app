@@ -17,9 +17,9 @@ import 'l10n.dart';
 /// Une pile, pas une case: un dépôt pendant un import en cours ouvre une
 /// seconde opération, et la fin de l'une ne doit pas effacer l'autre. Le
 /// bandeau montre la plus récente.
-enum LocalOpKind { import, delete }
+enum LocalOpKind { import, delete, scan }
 
-enum LocalOpPhase { copying, extracting, registering, deleting }
+enum LocalOpPhase { copying, extracting, registering, deleting, scanning }
 
 class LocalOpState {
   final LocalOpKind kind;
@@ -116,12 +116,14 @@ class LocalOpsBanner extends StatelessWidget {
               ? l10n.localOpsImporting(op.name!)
               : l10n.localOpsImportingSelection,
           LocalOpKind.delete => l10n.localOpsDeleting(op.name ?? ''),
+          LocalOpKind.scan   => l10n.localOpsScanning(op.name ?? ''),
         };
         final phase = switch (op.phase) {
           LocalOpPhase.copying     => l10n.localOpsPhaseCopying,
           LocalOpPhase.extracting  => l10n.localOpsPhaseExtracting,
           LocalOpPhase.registering => l10n.localOpsPhaseRegistering,
           LocalOpPhase.deleting    => l10n.localOpsPhaseDeleting,
+          LocalOpPhase.scanning    => l10n.localOpsPhaseScanning,
         };
         // Le compteur est un NOMBRE, pas une phrase: pas de clé de traduction
         // à décliner, et « 12 / 340 » se lit pareil partout.

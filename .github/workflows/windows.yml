@@ -94,10 +94,17 @@ jobs:
       # ⚠️ Un vcpkg CLONÉ en entier, pas celui du runner: nos manifestes
       # épinglent un `builtin-baseline`, et le C:\vcpkg de l'image peut ne pas
       # contenir ce commit. Les scripts le prennent par VCPKG_EXE.
+      # ⚠️ Et le clone est FIGÉ sur ce même baseline, pas sur HEAD: les outils
+      # que vcpkg télécharge (Python compris) suivent les scripts DU CLONE.
+      # Payé le 2026-10-29: HEAD prenait Python 3.15.2, où `typing` n'a plus
+      # `no_type_check_decorator`, et le get-pip.py du port ANGLE mourait —
+      # invisible tant que le cache d'ANGLE était chaud. Bumper ce commit AVEC
+      # les `builtin-baseline` des manifestes windows/angle et windows/ffmpeg.
       - name: vcpkg
         if: steps.angle.outputs.cache-hit != 'true' || steps.ffmpeg.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP\vcpkg"
+          git -C "$env:RUNNER_TEMP\vcpkg" checkout --quiet a4d4f0d62ca4cbaf5dbf17a7e1455e00ec383cc8
           & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
           "VCPKG_EXE=$env:RUNNER_TEMP\vcpkg\vcpkg.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 

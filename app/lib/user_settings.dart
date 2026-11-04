@@ -1,8 +1,13 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'autoplay.dart' show AutoplayMode;
 import 'home_sections.dart';
+import 'launch_window.dart';
+import 'play_start.dart';
 import 'shell_tabs.dart';
 import 'token_file.dart';
 
@@ -155,9 +160,8 @@ class UserSettings extends ChangeNotifier {
   }
 
   /// Dernière TAILLE du mini lecteur, une par mode (`viz` ou compact). État de
-  /// vue, pas un réglage. La POSITION, elle, n'est pas persistée: un écran
-  /// débranché entre deux lancements mettrait la fenêtre hors champ, alors
-  /// qu'une taille reste valable partout.
+  /// vue, pas un réglage. La POSITION est à part ([miniWindowOrigin]): elle
+  /// n'est reprise que si elle tombe encore sur un écran branché.
   (double, double)? miniWindowSize({required bool viz}) {
     final k = viz ? 'viz' : 'compact';
     final w = _p.getDouble('ui.mini_window_${k}_w');
@@ -171,6 +175,50 @@ class UserSettings extends ChangeNotifier {
     _p.setDouble('ui.mini_window_${k}_h', h);
     // Pas de notifyListeners: rien n'affiche cette valeur, et UserSettings
     // réveille une vingtaine d'écouteurs.
+  }
+
+  /// Dernière POSITION du mini lecteur (coin haut-gauche, coordonnées
+  /// logiques de l'écran). État de vue. ⚠️ Un écran débranché entre deux
+  /// lancements la mettrait hors champ: `MiniWindow` la confronte aux écrans
+  /// PRÉSENTS avant de s'en servir.
+  (double, double)? get miniWindowOrigin {
+    final x = _p.getDouble('ui.mini_window_x');
+    final y = _p.getDouble('ui.mini_window_y');
+    return (x == null || y == null) ? null : (x, y);
+  }
+
+  void setMiniWindowOrigin(double x, double y) {
+    _p.setDouble('ui.mini_window_x', x);
+    _p.setDouble('ui.mini_window_y', y);
+  }
+
+  static const _kLaunchWindow = 'ui.launch_window';
+  static const _kLastWindowMini = 'ui.last_window_mini';
+
+  /// Bureau: la fenêtre au démarrage — `normal`, `mini`, ou `last` (comme à
+  /// la fermeture, façon Winamp). Le RUNNER natif doit le savoir AVANT de
+  /// montrer la fenêtre: `LaunchWindowFile` le recopie dans un fichier qu'il
+  /// lit (voir launch_window.dart). La ligne de commande l'emporte.
+  LaunchWindowMode get launchWindow =>
+      LaunchWindowMode.fromName(_p.getString(_kLaunchWindow));
+  set launchWindow(LaunchWindowMode v) {
+    _p.setString(_kLaunchWindow, v.name);
+    notifyListeners();
+  }
+
+  /// La fenêtre était-elle en mini lecteur à la dernière bascule? État de
+  /// vue, lu par `launchWindow == last`.
+  bool get lastWindowMini => _p.getBool(_kLastWindowMini) ?? false;
+  set lastWindowMini(bool v) => _p.setBool(_kLastWindowMini, v);
+
+  static const _kMiniWindowQueueOpen = 'ui.mini_window_queue_open';
+
+  /// Mini lecteur: la file ouverte à sa droite. État de vue retenu, pas un
+  /// réglage. Passer par `MiniWindow.setQueueOpen`, qui élargit la fenêtre.
+  bool get miniWindowQueueOpen => _p.getBool(_kMiniWindowQueueOpen) ?? false;
+  set miniWindowQueueOpen(bool v) {
+    _p.setBool(_kMiniWindowQueueOpen, v);
+    notifyListeners();
   }
 
   static const _kMiniWindowVizMode = 'ui.mini_window_viz_mode';
@@ -832,6 +880,8 @@ class UserSettings extends ChangeNotifier {
     'midi':    [_kMidiGain, _kMidiPolyphony, _kMidiReverb, _kMidiChorus,
                 _kMidiInterp, _kMidiMt32ToGm],
     'mt32':    [_kMt32Model, _kMt32Reverb, _kMt32Gain],
+    'adlmidi': [_kAdlBank, _kAdlEmulator, _kAdlChips, _kAdlVolumeModel,
+                _kAdlSoftPan, _kAdlGain],
     'uade':    [_kUadePostfx, _kUadePanOn, _kUadePanValue, _kUadeHeadphones,
                 _kUadeGainOn, _kUadeGainValue, _kUadeLed, _kUadeFilterType],
     // Which engine wins a shared format (Settings → Moteurs → Décodeurs par
@@ -869,6 +919,7 @@ class UserSettings extends ChangeNotifier {
     'themeMode': _kThemeMode, 'artworkTintedPlayer': _kArtworkTintedPlayer,
     'notifyTrackChange': _kNotifyTrackChange,
     'windowAlwaysOnTop': _kWindowAlwaysOnTop, 'glassEffect': _kGlassEffect,
+    'launchWindow': _kLaunchWindow,
     // Visualisation
     'showVisualizer': _kShowVisualizer, 'vizArtworkOpacity': _kVizArtworkOpacity,
     'vizKeepAwake': _kVizKeepAwake,
@@ -904,6 +955,9 @@ class UserSettings extends ChangeNotifier {
     'pmTransition': _kPmTransition,
     // Lecture
     'queuePrefetchAll': _kQueuePrefetchAll,
+    'queueAutoplay': _kQueueAutoplay, 'queueAutoplaySize': _kQueueAutoplaySize,
+    'queueAutoplayMode': _kQueueAutoplayMode,
+    'playStartInApp': _kPlayStartInApp, 'playStartExternal': _kPlayStartExternal,
     'cdRipDeclick': _kCdRipDeclick,
     'silenceSkip': _kSilenceSkip, 'silenceSkipSecs': _kSilenceSkipSecs,
     'minSubsongSecs': _kMinSubsongSecs,
@@ -928,6 +982,9 @@ class UserSettings extends ChangeNotifier {
     'midiInterp': _kMidiInterp, 'midiMt32ToGm': _kMidiMt32ToGm,
     'midiSynth': _kMidiSynth, 'mt32Model': _kMt32Model, 'mt32Reverb': _kMt32Reverb,
     'mt32Gain': _kMt32Gain,
+    'adlBank': _kAdlBank, 'adlEmulator': _kAdlEmulator, 'adlChips': _kAdlChips,
+    'adlVolumeModel': _kAdlVolumeModel, 'adlSoftPan': _kAdlSoftPan,
+    'adlGain': _kAdlGain,
     'uadePostfx': _kUadePostfx, 'uadePanEnabled': _kUadePanOn,
     'uadePanValue': _kUadePanValue, 'uadeHeadphones': _kUadeHeadphones,
     'uadeGainEnabled': _kUadeGainOn, 'uadeGainValue': _kUadeGainValue,
@@ -1015,7 +1072,8 @@ class UserSettings extends ChangeNotifier {
   /// Deliberately excluded: _kVizEffect (last-used visualizer, a state, not a
   /// setting), _kUserId, search/browse history.
   static const Map<String, List<String>> kSectionKeys = {
-    'general': [_kThemeMode, _kArtworkTintedPlayer, _kWindowAlwaysOnTop],
+    'general': [_kThemeMode, _kArtworkTintedPlayer, _kWindowAlwaysOnTop,
+        _kLaunchWindow],
     'visualisation': [
       _kShowVisualizer, _kVizArtworkOpacity, _kVizMaxFps,
       _kVizVoiceGrid, _kVizVoiceNames, _kVizVoiceNameSource, _kVizLineThickness,
@@ -1037,6 +1095,8 @@ class UserSettings extends ChangeNotifier {
     ],
     'playback': [
       _kQueuePrefetchAll, _kCdRipDeclick,
+      _kQueueAutoplay, _kQueueAutoplaySize, _kQueueAutoplayMode,
+      _kPlayStartInApp, _kPlayStartExternal,
       _kSilenceSkip, _kSilenceSkipSecs, _kMinSubsongSecs, _kDefaultTrackLength,
       // `_kCrossfadeSecs` manquait: une remise à zéro de la section laissait
       // le fondu croisé en place, en silence — la classe de bug que
@@ -1766,6 +1826,67 @@ class UserSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Lecture — lecture automatique (∞) ──────────────────────────────────────
+
+  static const _kQueueAutoplay     = 'playback.queue_autoplay';
+  static const _kQueueAutoplaySize = 'playback.queue_autoplay_size';
+  static const _kQueueAutoplayMode = 'playback.queue_autoplay_mode';
+
+  static const int kQueueAutoplaySizeDefault = 10;
+  static const int kQueueAutoplaySizeMin = 5;
+  static const int kQueueAutoplaySizeMax = 50;
+
+  /// Quand la file touche à sa fin, des morceaux proches y sont ajoutés
+  /// (voir autoplay.dart). Actif par défaut, comme chez Apple Music; le ∞ du
+  /// panneau de file est le MÊME réglage.
+  bool get queueAutoplay => _p.getBool(_kQueueAutoplay) ?? true;
+  set queueAutoplay(bool v) {
+    _p.setBool(_kQueueAutoplay, v);
+    notifyListeners();
+  }
+
+  /// Combien de morceaux sont ajoutés à chaque remplissage.
+  int get queueAutoplaySize =>
+      (_p.getInt(_kQueueAutoplaySize) ?? kQueueAutoplaySizeDefault)
+          .clamp(kQueueAutoplaySizeMin, kQueueAutoplaySizeMax);
+  set queueAutoplaySize(int v) {
+    _p.setInt(_kQueueAutoplaySize,
+        v.clamp(kQueueAutoplaySizeMin, kQueueAutoplaySizeMax));
+    notifyListeners();
+  }
+
+  /// Comment ils sont choisis — persisté par NOM (`AutoplayMode.name`), pour
+  /// qu'une valeur insérée dans l'enum ne décale pas un choix enregistré.
+  AutoplayMode get queueAutoplayMode =>
+      AutoplayMode.fromName(_p.getString(_kQueueAutoplayMode));
+  set queueAutoplayMode(AutoplayMode v) {
+    _p.setString(_kQueueAutoplayMode, v.name);
+    notifyListeners();
+  }
+
+  // ── Lecture — quand entendre ce qu'on lance (play_start.dart) ───────────────
+
+  static const _kPlayStartInApp    = 'playback.play_start_in_app';
+  static const _kPlayStartExternal = 'playback.play_start_external';
+
+  /// Un geste DANS l'app qui écraserait la file: la feuille par défaut — le
+  /// comportement connu de tous.
+  PlayStartAction get playStartInApp => PlayStartAction.fromName(
+      _p.getString(_kPlayStartInApp), PlayStartAction.ask);
+  set playStartInApp(PlayStartAction v) {
+    _p.setString(_kPlayStartInApp, v.name);
+    notifyListeners();
+  }
+
+  /// Un fichier ouvert DEPUIS le système: lu tout de suite par défaut, comme
+  /// le fait un lecteur au double-clic.
+  PlayStartAction get playStartExternal => PlayStartAction.fromName(
+      _p.getString(_kPlayStartExternal), PlayStartAction.now);
+  set playStartExternal(PlayStartAction v) {
+    _p.setString(_kPlayStartExternal, v.name);
+    notifyListeners();
+  }
+
   // ── Lecture — détection de silence ─────────────────────────────────────────
 
   static const _kSilenceSkip     = 'playback.silence_skip';
@@ -2067,7 +2188,8 @@ class UserSettings extends ChangeNotifier {
   /// Which engine plays a .mid: 'auto' (FluidLite, or the MT-32 when the
   /// file carries Roland MT-32 sysex — the plugin scores 104 vs 100 then),
   /// 'soundfont' (pin FluidLite), 'mt32' (pin mt32emu; silently absent when no
-  /// ROM set is imported, since its probe then returns 0).
+  /// ROM set is imported, since its probe then returns 0), 'opl3' (pin
+  /// libADLMIDI — an emulated OPL3, the AdLib / Sound Blaster sound).
   static const _kMidiSynth = 'playback.midi_synth';
   String get midiSynth => _p.getString(_kMidiSynth) ?? 'auto';
   set midiSynth(String v) { _p.setString(_kMidiSynth, v); notifyListeners(); }
@@ -2084,6 +2206,37 @@ class UserSettings extends ChangeNotifier {
   set mt32Reverb(bool v) { _p.setBool(_kMt32Reverb, v); notifyListeners(); }
   double get mt32Gain => _p.getDouble(_kMt32Gain) ?? 1.0;
   set mt32Gain(double v) { _p.setDouble(_kMt32Gain, v); notifyListeners(); }
+
+  // libADLMIDI (OPL3) — Réglages → Moteurs → libADLMIDI. Les défauts
+  // reprennent les replis de param() dans rewamp_plugin_adlmidi.cpp.
+  static const _kAdlBank        = 'playback.adl_bank';
+  static const _kAdlEmulator    = 'playback.adl_emulator';
+  static const _kAdlChips       = 'playback.adl_chips';
+  static const _kAdlVolumeModel = 'playback.adl_volume_model';
+  static const _kAdlSoftPan     = 'playback.adl_soft_pan';
+  static const _kAdlGain        = 'playback.adl_gain';
+  /// Banque EMBARQUÉE (index de adl_getBankNames; 0 = AIL, The Fat Man).
+  int get adlBank => _p.getInt(_kAdlBank) ?? 0;
+  set adlBank(int v) { _p.setInt(_kAdlBank, v); notifyListeners(); }
+  /// Émulateur (valeur de ADL_Emulator). Nuked OPL3 sur le bureau, le plus
+  /// fidèle; DOSBox sur téléphone, que l'amont conseille aux machines lentes
+  /// (Nuked × 4 puces y coûte cher).
+  int get adlEmulator =>
+      _p.getInt(_kAdlEmulator) ??
+      ((Platform.isIOS || Platform.isAndroid) ? 2 : 0);
+  set adlEmulator(int v) { _p.setInt(_kAdlEmulator, v); notifyListeners(); }
+  /// Puces OPL3 émulées (1–16): plus de puces = plus de polyphonie.
+  int get adlChips => _p.getInt(_kAdlChips) ?? 4;
+  set adlChips(int v) { _p.setInt(_kAdlChips, v); notifyListeners(); }
+  /// Modèle de volume (ADLMIDI_VolumeModel_*; 0 = auto d'après le format).
+  int get adlVolumeModel => _p.getInt(_kAdlVolumeModel) ?? 0;
+  set adlVolumeModel(int v) { _p.setInt(_kAdlVolumeModel, v); notifyListeners(); }
+  bool get adlSoftPan => _p.getBool(_kAdlSoftPan) ?? true;
+  set adlSoftPan(bool v) { _p.setBool(_kAdlSoftPan, v); notifyListeners(); }
+  /// Gain de sortie: l'OPL3 sort bas (crête médiane ≈ 0,12 à 1× sur 20
+  /// fichiers mesurés), d'où 2× par défaut.
+  double get adlGain => _p.getDouble(_kAdlGain) ?? 2.0;
+  set adlGain(double v) { _p.setDouble(_kAdlGain, v); notifyListeners(); }
 
   // ── Browse preferences ─────────────────────────────────────────────────────
 

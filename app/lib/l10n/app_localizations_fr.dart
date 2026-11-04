@@ -1174,6 +1174,17 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String playChoiceSkippedShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count courtes écartées',
+      one: '$count courte écartée',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get albumLoadingInfo => 'Chargement des infos…';
 
   @override
@@ -1438,6 +1449,16 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get queueClear => 'Vider la file d\'attente';
+
+  @override
+  String get queueAutoplayOn =>
+      'Lecture automatique activée : des morceaux similaires suivent la file';
+
+  @override
+  String get queueAutoplayOff => 'Lecture automatique désactivée';
+
+  @override
+  String get queueAutoplayRow => 'Ajouté par la lecture automatique';
 
   @override
   String get queueClearConfirmTitle => 'Vider la file d\'attente ?';
@@ -2493,6 +2514,80 @@ class AppLocalizationsFr extends AppLocalizations {
   String get localOpsPhaseDeleting => 'effacement des fichiers';
 
   @override
+  String localOpsScanning(String name) {
+    return 'Analyse de $name…';
+  }
+
+  @override
+  String get localOpsPhaseScanning => 'liste des fichiers';
+
+  @override
+  String get linkedRootsSection => 'Dossiers liés';
+
+  @override
+  String get linkedRootAppFolder => 'Dossier Rewamp (app Fichiers)';
+
+  @override
+  String get linkedRootAppFolderHint =>
+      'Placez vos fichiers dans l’app Fichiers › Sur mon iPhone › Rewamp, ou copiez-les depuis un ordinateur avec le Finder. Ils sont lus sur place, rien n’est copié.';
+
+  @override
+  String get linkedRootsLink => 'Lier un dossier…';
+
+  @override
+  String get linkedRootsLinkSubtitle =>
+      'Lu depuis son emplacement, rien n\'est copié';
+
+  @override
+  String linkedRootsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count fichiers',
+      one: '$count fichier',
+      zero: 'Aucun fichier listé pour l\'instant',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get linkedRootUnavailable => 'Inaccessible pour le moment';
+
+  @override
+  String get linkedRootRescan => 'Actualiser';
+
+  @override
+  String get linkedRootRename => 'Renommer';
+
+  @override
+  String get linkedRootUnlink => 'Délier';
+
+  @override
+  String get linkedRootUnlinkConfirmTitle => 'Délier ce dossier ?';
+
+  @override
+  String get linkedRootUnlinkConfirmBody =>
+      'Rien n\'est supprimé du disque. Ses favoris et ses entrées de playlist restent, grisés jusqu\'à ce qu\'il soit lié de nouveau.';
+
+  @override
+  String get linkedRootEmpty => 'Aucun fichier jouable dans ce dossier.';
+
+  @override
+  String get linkedRootSearchHint => 'Rechercher dans ce dossier';
+
+  @override
+  String linkedRootSearchResults(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count résultats',
+      one: '$count résultat',
+      zero: 'Aucun résultat',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get localImportFiles => 'Importer des fichiers';
 
   @override
@@ -2614,6 +2709,57 @@ class AppLocalizationsFr extends AppLocalizations {
   String subsongSkippedShort(int seconds) {
     return 'Non mise en file : moins de $seconds s (Réglages → Lecture)';
   }
+
+  @override
+  String get settingsAutoplaySection => 'Lecture automatique';
+
+  @override
+  String get settingsAutoplayTitle => 'Continuer après la file';
+
+  @override
+  String get settingsAutoplaySubtitle =>
+      'Quand la file approche de sa fin, des morceaux similaires y sont ajoutés. Le bouton ∞ de la file est le même réglage.';
+
+  @override
+  String get settingsAutoplaySize => 'Morceaux ajoutés à chaque fois';
+
+  @override
+  String get settingsAutoplayMode => 'Choix des morceaux';
+
+  @override
+  String get settingsAutoplayModeAuto => 'Automatique';
+
+  @override
+  String get settingsAutoplayModeAutoHint =>
+      'Les mêmes artistes d\'abord, puis leurs groupes, puis la même collection.';
+
+  @override
+  String get settingsAutoplayModeArtist => 'Mêmes artistes';
+
+  @override
+  String get settingsAutoplayModeArtistHint =>
+      'Seulement des morceaux des artistes qui viennent d\'être joués.';
+
+  @override
+  String get settingsAutoplayModeGroup => 'Mêmes groupes';
+
+  @override
+  String get settingsAutoplayModeGroupHint =>
+      'Des morceaux des groupes auxquels ces artistes appartiennent.';
+
+  @override
+  String get settingsAutoplayModeCollection => 'Même collection';
+
+  @override
+  String get settingsAutoplayModeCollectionHint =>
+      'Des morceaux au hasard dans la même collection, même plateforme d\'abord.';
+
+  @override
+  String get settingsAutoplayModeRecent => 'Écoutes récentes';
+
+  @override
+  String get settingsAutoplayModeRecentHint =>
+      'Choisis parmi ce que vous avez écouté récemment, pas seulement dans la file.';
 
   @override
   String get settingsQueuePrefetchSection => 'Téléchargements de la file';
@@ -4727,4 +4873,71 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get libraryFileMissing => 'Fichier manquant';
+
+  @override
+  String get settingsPlayStartSection => 'Lancer la lecture';
+
+  @override
+  String get settingsPlayStartInApp => 'Toucher un morceau dans l\'app';
+
+  @override
+  String get settingsPlayStartInAppHint =>
+      'Un appui long (clic droit) propose toujours le choix.';
+
+  @override
+  String get settingsPlayStartExternal => 'Fichier ouvert depuis le système';
+
+  @override
+  String get settingsPlayStartExternalHint =>
+      'Double-clic, « Ouvrir avec », dépôt sur l\'icône de l\'app.';
+
+  @override
+  String get settingsPlayStartAsk => 'Demander';
+
+  @override
+  String get settingsLaunchWindow => 'Au démarrage';
+
+  @override
+  String get settingsLaunchWindowNormal => 'Fenêtre normale';
+
+  @override
+  String get settingsLaunchWindowMini => 'Mini lecteur';
+
+  @override
+  String get settingsLaunchWindowLast => 'Comme à la fermeture';
+
+  @override
+  String get miniWindowQuit => 'Quitter Rewamp';
+
+  @override
+  String get miniWindowCompact => 'Mini lecteur compact';
+
+  @override
+  String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
+
+  @override
+  String get settingsEngineAdlmidiSubtitle =>
+      'MIDI et musiques de jeux DOS sur une puce OPL3 émulée';
+
+  @override
+  String get settingsAdlBank => 'Banque d\'instruments';
+
+  @override
+  String get settingsAdlEmulator => 'Émulateur';
+
+  @override
+  String get settingsAdlChips => 'Puces émulées';
+
+  @override
+  String get settingsAdlVolumeModel => 'Modèle de volume';
+
+  @override
+  String get settingsAdlVolumeGeneric => 'Générique';
+
+  @override
+  String get settingsAdlSoftPan => 'Panoramique progressif';
+
+  @override
+  String get engineDescAdlmidi =>
+      'MIDI, XMI, MUS DMX, HMI/HMP sur une puce OPL3 émulée (AdLib / Sound Blaster)';
 }

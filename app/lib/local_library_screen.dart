@@ -300,8 +300,8 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
 
   Widget _deleteBackground(ColorScheme cs) => Container(
         color: cs.errorContainer,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
+        alignment: AlignmentDirectional.centerEnd,
+        padding: const EdgeInsetsDirectional.only(end: 20),
         child: Icon(Icons.delete_outline, color: cs.onErrorContainer),
       );
 
@@ -754,7 +754,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
         children: [
           const LocalOpsBanner(),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 16, 4),
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
@@ -775,7 +775,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
           // contenu MÉLANGÉ (pas de station serveur pour du local), surprise
           // = UN morceau au hasard.
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 4),
             child: Row(
               children: [
                 Expanded(

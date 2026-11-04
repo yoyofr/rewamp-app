@@ -115,6 +115,24 @@ REWAMP_EXPORT int rewamp_has_native_loop_support(void);
 // length() already includes it; a catalogue duration does not.
 REWAMP_EXPORT double rewamp_track_end_fade_seconds(void);
 
+// 1 when the CURRENTLY loaded file's plugin length() must win over any
+// external duration (catalogue): it counts loop passes the plugin plays by
+// itself (libvgm on a looping VGM) and/or its own end fade. Independent of
+// the fade: under crossfade the fade is off but the loops still play.
+REWAMP_EXPORT int rewamp_track_length_authoritative(void);
+
+// Seconds of ONE pass of the CURRENTLY loaded file as its plugin reported it
+// BEFORE the forced loop was applied, 0 when unknown. Differs from
+// rewamp_get_duration_seconds under infinite loop: a plugin may lift its own
+// end there (vio2sf) and then reports no length at all.
+REWAMP_EXPORT double rewamp_nominal_duration_seconds(void);
+
+// Infinite loop armed WHILE a track plays: re-applies the loaded plugin's
+// configure_loop live when the plugin declared it safe (it only lifts its
+// own end — the PSF family) and re-reads the producer's end. Returns 1 when
+// the plugin now loops natively, 0 when Dart must keep the generic loop.
+REWAMP_EXPORT int rewamp_lift_end_for_infinite(void);
+
 /* ── Gapless playback ────────────────────────────────────────────────────────
  * Stage the NEXT queue entry: when the current decoder reaches its end, the
  * producer thread closes it, opens this path in place and keeps filling the
@@ -593,6 +611,10 @@ REWAMP_EXPORT void        rewamp_mt32_set_rom_dir(const char* path);
 REWAMP_EXPORT const char* rewamp_mt32_rom_status(void);
 REWAMP_EXPORT const char* rewamp_mt32_identify_rom(const char* path);
 REWAMP_EXPORT const char* rewamp_mt32_lcd(void);
+/* libADLMIDI (OPL3): banques EMBARQUÉES, pour Réglages → OPL3 (l'index est
+ * le paramètre moteur "adlmidi"/"bank"). Nom "" hors bornes. */
+REWAMP_EXPORT int         rewamp_adlmidi_bank_count(void);
+REWAMP_EXPORT const char* rewamp_adlmidi_bank_name(int index);
 REWAMP_EXPORT int         rewamp_openmpt_active_instruments(uint8_t* out, int maxOut);
 REWAMP_EXPORT const char* rewamp_sid_md5(const char* path);
 
