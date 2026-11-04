@@ -132,6 +132,18 @@ abstract class AppLocalizations {
     Locale('zh')
   ];
 
+  /// No description provided for @carPlayNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next track'**
+  String get carPlayNext;
+
+  /// No description provided for @carPlayPrevious.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous track'**
+  String get carPlayPrevious;
+
   /// No description provided for @navHome.
   ///
   /// In en, this message translates to:

@@ -297,18 +297,8 @@ void main([List<String> args = const []]) async {
   final dataDir = await _prepareDataDir();
   final audio = RewampAudio();
   audio.init();
-  // iOS: **une app dont l'unité audio TOURNE est « en lecture » pour le
-  // système**, quoi qu'annonce la session média — c'est la leçon déjà payée
-  // sur la PAUSE (voir rewamp_device_suspend et PlayerController.togglePlay),
-  // et le lancement tombait dans le même trou: `rewamp_init` démarre le device
-  // aussitôt (il rend du silence), donc l'écran verrouillé affichait le glyphe
-  // PAUSE sur une app qui n'avait jamais joué. Ni le `playbackRate` ni
-  // `MPNowPlayingInfoCenter.playbackState` n'y peuvent quoi que ce soit: le
-  // système ne les consulte pas pour cette décision-là.
-  //
-  // On suspend donc le device tant que rien ne joue. Sans risque: `rewamp_play`
-  // est le SEUL chemin qui démarre le son, et il redémarre le device d'abord.
-  if (!kIsWeb && Platform.isIOS) audio.deviceSuspend();
+  // iOS creates its output device on the first playback request, after the
+  // media session activates. Startup and CarPlay browsing stay silent.
   audio.setDataDir(dataDir);
   // SoundFonts (MIDI): apply the persisted selection; if none is installed,
   // quietly fetch the server-default one in the background.

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C4A901002F10000100000006 /* SiriMediaIntentHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4A901002F10000100000007 /* SiriMediaIntentHandler.swift */; };
+		C4A901002F10000100000001 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4A901002F10000100000002 /* CarPlaySceneDelegate.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		2BE0E5129DD67EAD388B2FAC /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A8147CA45C859C737C90887B /* Pods_RunnerTests.framework */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
@@ -44,6 +46,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C4A901002F10000100000007 /* SiriMediaIntentHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiriMediaIntentHandler.swift; sourceTree = "<group>"; };
+		C4A901002F10000100000002 /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
+		C4A901002F10000100000003 /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
+		C4A901002F10000100000004 /* CarPlay.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CarPlay.entitlements; sourceTree = "<group>"; };
+		C4A901002F10000100000005 /* Capabilities.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Capabilities.xcconfig; path = Flutter/Capabilities.xcconfig; sourceTree = "<group>"; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
 		170E2E266E975D82C49FB677 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
@@ -107,6 +114,7 @@
 				3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */,
 				9740EEB21CF90195004384FC /* Debug.xcconfig */,
 				7AFA3C8E1D35360C0083082E /* Release.xcconfig */,
+				C4A901002F10000100000005 /* Capabilities.xcconfig */,
 				9740EEB31CF90195004384FC /* Generated.xcconfig */,
 			);
 			name = Flutter;
@@ -144,6 +152,10 @@
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
+				C4A901002F10000100000002 /* CarPlaySceneDelegate.swift */,
+				C4A901002F10000100000007 /* SiriMediaIntentHandler.swift */,
+				C4A901002F10000100000003 /* Runner.entitlements */,
+				C4A901002F10000100000004 /* CarPlay.entitlements */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
@@ -393,6 +405,8 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
+				C4A901002F10000100000001 /* CarPlaySceneDelegate.swift in Sources */,
+				C4A901002F10000100000006 /* SiriMediaIntentHandler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -487,6 +501,7 @@
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = ZV46EUY73C;
 				ENABLE_BITCODE = NO;
+				CODE_SIGN_ENTITLEMENTS = "$(REWAMP_IOS_ENTITLEMENTS_$(REWAMP_WITH_CARPLAY))";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -670,6 +685,7 @@
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = ZV46EUY73C;
 				ENABLE_BITCODE = NO;
+				CODE_SIGN_ENTITLEMENTS = "$(REWAMP_IOS_ENTITLEMENTS_$(REWAMP_WITH_CARPLAY))";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -693,6 +709,7 @@
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = ZV46EUY73C;
 				ENABLE_BITCODE = NO;
+				CODE_SIGN_ENTITLEMENTS = "$(REWAMP_IOS_ENTITLEMENTS_$(REWAMP_WITH_CARPLAY))";
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

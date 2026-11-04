@@ -1114,7 +1114,11 @@ class PlayerController extends ChangeNotifier {
       // décodeur prime côté C quand il en a une; re-posée à chaque
       // correction asynchrone (songdb UADE, songlengths SID).
       audio.setTrackEndSeconds(_producerTrackEndSecs);
-      if (!adoptHandoff && _autoplayAfterLoad) _playAndConfirmStart();
+      if (!adoptHandoff && _autoplayAfterLoad) {
+        await ensureAudioSession?.call();
+        // A pause/stop may have arrived while session activation was pending.
+        if (_autoplayAfterLoad) _playAndConfirmStart();
+      }
       notifyListeners();
       _notifyTrackChange();
 
@@ -2758,13 +2762,24 @@ class PlayerController extends ChangeNotifier {
 
   List<QueueEntry> _queue    = const [];
   int               _queueIdx = -1;
+  int               _queueRevision = 0;
 
   List<QueueEntry> get queue    => _queue;
   int               get queueIdx => _queueIdx;
+  int               get queueRevision => _queueRevision;
+
+  bool _playbackPreparing = false;
+  bool get playbackPreparing => _playbackPreparing;
+  void setPlaybackPreparing(bool value) {
+    if (_playbackPreparing == value) return;
+    _playbackPreparing = value;
+    notifyListeners();
+  }
 
   void setQueue(List<QueueEntry> entries, {int currentIdx = 0}) {
     _queue    = entries;
     _queueIdx = currentIdx;
+    _queueRevision++;
     notifyListeners();
   }
 
@@ -2796,6 +2811,7 @@ class PlayerController extends ChangeNotifier {
     for (var i = 0; i < _queue.length; i++) {
       if (!identical(next[i], _queue[i])) {
         _queue = next;
+        _queueRevision++;
         notifyListeners();
         return;
       }
@@ -2805,6 +2821,7 @@ class PlayerController extends ChangeNotifier {
   void clearQueue() {
     _queue    = const [];
     _queueIdx = -1;
+    _queueRevision++;
     notifyListeners();
   }
 
@@ -2994,7 +3011,8 @@ class PlayerController extends ChangeNotifier {
     // seek to zero makes no sound, and the button read as broken: that is the
     // case after a queue finishes, and after a queue is restored at launch and
     // sits primed. Both are exactly when a user reaches for "previous".
-    final restartInPlace = isPlaying && position >= _kPrevRestartSecs;
+    final restartInPlace =
+        !playbackPreparing && isPlaying && position >= _kPrevRestartSecs;
     if (_queuePrev != null && !restartInPlace) {
       await _queuePrev!.call();
       return;

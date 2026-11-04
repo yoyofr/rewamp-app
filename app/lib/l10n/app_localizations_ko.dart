@@ -9,6 +9,12 @@ class AppLocalizationsKo extends AppLocalizations {
   AppLocalizationsKo([String locale = 'ko']) : super(locale);
 
   @override
+  String get carPlayNext => 'Next track';
+
+  @override
+  String get carPlayPrevious => 'Previous track';
+
+  @override
   String get navHome => '홈';
 
   @override

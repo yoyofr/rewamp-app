@@ -9,6 +9,12 @@ class AppLocalizationsJa extends AppLocalizations {
   AppLocalizationsJa([String locale = 'ja']) : super(locale);
 
   @override
+  String get carPlayNext => 'Next track';
+
+  @override
+  String get carPlayPrevious => 'Previous track';
+
+  @override
   String get navHome => 'ホーム';
 
   @override

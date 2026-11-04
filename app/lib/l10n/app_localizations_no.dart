@@ -9,6 +9,12 @@ class AppLocalizationsNo extends AppLocalizations {
   AppLocalizationsNo([String locale = 'no']) : super(locale);
 
   @override
+  String get carPlayNext => 'Next track';
+
+  @override
+  String get carPlayPrevious => 'Previous track';
+
+  @override
   String get navHome => 'Hjem';
 
   @override

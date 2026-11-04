@@ -56,12 +56,15 @@ part 'group_screen.dart';
 
 /// Downloads [r] to local storage then calls [onFileReady].
 /// Shows a loading dialog and handles errors via SnackBar.
+/// With [showUI] false, errors propagate to the caller and no phone dialog or
+/// snackbar is presented (CarPlay supplies its own progress/cancel/error UI).
 /// Safe to call from any BuildContext (checks mounted before every UI op).
 Future<void> downloadAndPlay(
   BuildContext    context,
   SearchResult    r,
   OnFileReady     onFileReady, {
   bool            afterSourceRefresh = false,
+  bool            showUI = true,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   final nav       = Navigator.of(context);
@@ -73,27 +76,29 @@ Future<void> downloadAndPlay(
   // otherwise. This is the single choke point of every catalogue play.
   PlayerController.primePodium(r.songId, r.podium);
 
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    useRootNavigator: false,
-    builder: (_) => AlertDialog(
-      content: Row(children: [
-        const CircularProgressIndicator(),
-        const SizedBox(width: 16),
-        Expanded(child: Text(l10n.searchDownloading)),
-      ]),
-      // This dialog is MODAL: its barrier sits over the global download banner,
-      // so without an action here the ✕ down there is unreachable and a
-      // several-hundred-MB album archive can only be waited out.
-      actions: [
-        TextButton(
-          onPressed: RewampDb.cancelAmbientDownloads,
-          child: Text(l10n.downloadsCancel),
-        ),
-      ],
-    ),
-  );
+  if (showUI) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: false,
+      builder: (_) => AlertDialog(
+        content: Row(children: [
+          const CircularProgressIndicator(),
+          const SizedBox(width: 16),
+          Expanded(child: Text(l10n.searchDownloading)),
+        ]),
+        // This dialog is MODAL: its barrier sits over the global download banner,
+        // so without an action here the ✕ down there is unreachable and a
+        // several-hundred-MB album archive can only be waited out.
+        actions: [
+          TextButton(
+            onPressed: RewampDb.cancelAmbientDownloads,
+            child: Text(l10n.downloadsCancel),
+          ),
+        ],
+      ),
+    );
+  }
 
   // Closes the dialog exactly once. `nav` was captured synchronously and
   // showDialog pushes the dialog route synchronously too, so popping works even
@@ -102,7 +107,7 @@ Future<void> downloadAndPlay(
   // the modal. Guarded against the navigator itself being gone.
   var dialogClosed = false;
   void dismiss() {
-    if (dialogClosed) return;
+    if (!showUI || dialogClosed) return;
     dialogClosed = true;
     try { nav.pop(); } catch (_) {}
   }
@@ -255,6 +260,7 @@ Future<void> downloadAndPlay(
             resolved = r;
           }
         } on ArchiveEntryMissingException catch (e) {
+    if (!showUI) rethrow;
     // La tracklist nomme un fichier que l'archive ne contient pas. Dire QUOI
     // manque, et le SIGNALER: c'est une lacune du catalogue (le rip liste ses
     // pistes vocales sans les livrer), pas un incident de téléchargement, et
@@ -275,6 +281,7 @@ Future<void> downloadAndPlay(
       );
     }
   } on DownloadTimeoutException catch (e) {
+    if (!showUI) rethrow;
     // L'origine n'a pas répondu. Le fait UTILE est le nom de l'hôte — pas
     // « TimeoutException after 0:00:20.000000: Future not completed », qui est
     // ce que le bandeau affichait. Rien à signaler au serveur: le fichier
@@ -502,10 +509,12 @@ Future<void> downloadAndPlay(
       // not unsupported, just un-retryable here.
       if (context.mounted) {
         debugPrint('[search] ${e.filename} replaced server-side — retrying');
-        return downloadAndPlay(context, fresh, onFileReady);
+        return downloadAndPlay(context, fresh, onFileReady,
+            showUI: showUI, afterSourceRefresh: afterSourceRefresh);
       }
       return;
     }
+    if (!showUI) rethrow;
     // Fetched fine, but no engine plays it — say so explicitly (file + ext),
     // not "download failed", and report the song. `messenger`/`l10n` were
     // captured at entry, so the snackbar shows even if the triggering context
@@ -538,9 +547,10 @@ Future<void> downloadAndPlay(
         if (fresh != null && context.mounted) {
           debugPrint('[search] ${r.filename} source refreshed after 404 — retrying');
           return downloadAndPlay(context, fresh, onFileReady,
-              afterSourceRefresh: true);
+              afterSourceRefresh: true, showUI: showUI);
         }
       }
+      if (!showUI) rethrow;
       AppSnack.showOn(messenger, l10n.playbackFileGone(p.basename(r.filename)),
           duration: const Duration(seconds: 3));
       final songId = r.songId.split('#').first.split('?').first;
@@ -552,14 +562,18 @@ Future<void> downloadAndPlay(
           detail:       'HTTP ${e.statusCode} at ${e.url}',
         );
       }
+    } else if (!showUI) {
+      rethrow;
     } else if (context.mounted) {
       AppSnack.showOn(messenger, l10n.searchError(e.toString()));
     }
   } on DownloadCancelledException {
     // The user's own gesture — close the dialog and say nothing.
+    if (!showUI) rethrow;
     debugPrint('[search] download cancelled: ${r.filename}');
     dismiss();
   } catch (e, st) {
+    if (!showUI) rethrow;
     debugPrint('[search] download error: $e\n$st');
     dismiss();
     if (context.mounted) {

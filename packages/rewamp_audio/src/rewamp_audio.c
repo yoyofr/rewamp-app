@@ -15,6 +15,9 @@
 #include <ctype.h>
 #include <time.h>   /* clock_gettime — waveform read-head smoothing */
 #include <pthread.h> /* background seek thread — see rewamp_seek_seconds() */
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 #ifdef _WIN32
 /* Sleep, déclarée à la main plutôt que par <windows.h> entier (macros min/max,
  * near/far… qui entrent en collision avec les moteurs inclus plus bas). */
@@ -764,18 +767,28 @@ RewampResult rewamp_init(void) {
     ma_result result = ma_engine_init(&cfg, &g_engine);
     if (result != MA_SUCCESS) return REWAMP_ERROR_INIT_FAILED;
 
-    if (ma_context_init(NULL, 0, NULL, &g_context) != MA_SUCCESS) {
+    ma_context_config context_cfg = ma_context_config_init();
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    /* audio_session owns iOS category/activation. Merely opening the CarPlay
+     * browser must not interrupt the car's radio or another audio app. */
+    context_cfg.coreaudio.sessionCategory = ma_ios_session_category_none;
+    context_cfg.coreaudio.noAudioSessionActivate = MA_TRUE;
+    context_cfg.coreaudio.noAudioSessionDeactivate = MA_TRUE;
+#endif
+    if (ma_context_init(NULL, 0, &context_cfg, &g_context) != MA_SUCCESS) {
         ma_engine_uninit(&g_engine);
         return REWAMP_ERROR_INIT_FAILED;
     }
     g_context_valid = 1;
 
+#if !defined(__APPLE__) || !TARGET_OS_IPHONE
     if (rewamp_create_device(NULL) != MA_SUCCESS) {
         ma_context_uninit(&g_context);
         g_context_valid = 0;
         ma_engine_uninit(&g_engine);
         return REWAMP_ERROR_INIT_FAILED;
     }
+#endif
 
     rewamp_register_builtin_plugins();
     rewamp_channel_data_init();
@@ -1392,6 +1405,10 @@ RewampResult rewamp_play(void) {
     if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
     if (rewamp_load_busy_for_caller()) return REWAMP_ERROR_BUSY;
     if (!g_sound_loaded) return REWAMP_ERROR_NO_SOUND;
+    /* iOS creates the output only after Dart activates the audio session for
+     * an actual playback request. Decoder/library browsing needs no device. */
+    if (!g_device_valid && rewamp_create_device(NULL) != MA_SUCCESS)
+        return REWAMP_ERROR_INIT_FAILED;
     // A pause may have SUSPENDED the whole device (see rewamp_device_suspend —
     // iOS Now Playing ignores playbackRate=0 while the audio unit runs).
     // Restart it before the sound; a no-op when it never stopped.
@@ -1455,7 +1472,7 @@ RewampResult rewamp_device_suspend(void) {
     if (rewamp_load_busy_for_caller()) return REWAMP_ERROR_BUSY;
     /* Only while genuinely paused — a play racing the delayed suspend wins. */
     if (g_sound_loaded && ma_sound_is_playing(&g_sound)) return REWAMP_OK;
-    ma_device_stop(&g_device);
+    if (g_device_valid) ma_device_stop(&g_device);
     g_dev_last_us = 0;   /* else the resume gap logs as a giant device-late */
     return REWAMP_OK;
 }

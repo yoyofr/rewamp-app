@@ -3,9 +3,31 @@ import UIKit
 import AVKit
 import MediaPlayer
 import UniformTypeIdentifiers
+import Intents
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+@objc class AppDelegate: FlutterAppDelegate {
+  // The engine belongs to the process: CarPlay can launch without a phone
+  // scene, and opening the phone later must use the same player and library.
+  let playbackEngine = FlutterEngine(name: "rewamp.playback", project: nil,
+                                    allowHeadlessExecution: true)
+  private let mediaIntents = RewampMediaIntentHandler()
+
+  override func application(_ application: UIApplication, handlerFor intent: INIntent) -> Any? {
+    if intent is INPlayMediaIntent || intent is INSearchForMediaIntent {
+      SiriDiagnostics.record(["stage": "dispatch", "intent": String(describing: type(of: intent)),
+        "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? ""])
+      return mediaIntents
+    }
+    return nil
+  }
+
+  override func application(_ application: UIApplication,
+      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+    playbackEngine.run()
+    registerBridges(with: playbackEngine)
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
   // Channel kept alive for its lifetime + active background tasks by id.
   private var bgChannel: FlutterMethodChannel?
   private var bgTasks: [Int: UIBackgroundTaskIdentifier] = [:]
@@ -40,12 +62,13 @@ import UniformTypeIdentifiers
   private var pendingOpen: [String] = []
   private var openFilesChannel: FlutterMethodChannel?
 
-  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
-    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+  private func registerBridges(with registry: FlutterPluginRegistry) {
+    GeneratedPluginRegistrant.register(with: registry)
+    CarPlayBridge.shared.attach(to: playbackEngine.binaryMessenger)
 
     // beginBackgroundTask bridge so Dart downloads keep running briefly after the
     // app is backgrounded without audio playing (see background_task.dart).
-    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "RewampBackground") {
+    if let registrar = registry.registrar(forPlugin: "RewampBackground") {
       let channel = FlutterMethodChannel(
         name: "rewamp/background", binaryMessenger: registrar.messenger())
       channel.setMethodCallHandler { [weak self] call, result in
@@ -76,7 +99,7 @@ import UniformTypeIdentifiers
     }
 
     // Fichiers ouverts depuis l'extérieur — voir `pendingOpen`.
-    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "RewampOpenFiles") {
+    if let registrar = registry.registrar(forPlugin: "RewampOpenFiles") {
       let channel = FlutterMethodChannel(
         name: "rewamp/open_files", binaryMessenger: registrar.messenger())
       channel.setMethodCallHandler { [weak self] call, result in
@@ -101,7 +124,7 @@ import UniformTypeIdentifiers
     // isIdleTimerDisabled must be touched on the main thread; a channel handler
     // already runs there, but DispatchQueue.main.async makes that explicit and
     // survives the day someone calls this from a background isolate's reply.
-    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "RewampWakelock") {
+    if let registrar = registry.registrar(forPlugin: "RewampWakelock") {
       let channel = FlutterMethodChannel(
         name: "rewamp/wakelock", binaryMessenger: registrar.messenger())
       channel.setMethodCallHandler { call, result in
@@ -127,7 +150,7 @@ import UniformTypeIdentifiers
     // Complément, pas contournement: le rate écrit par le plugin reste juste,
     // il ne suffit simplement plus.
     if let registrar =
-        engineBridge.pluginRegistry.registrar(forPlugin: "RewampNowPlaying") {
+        registry.registrar(forPlugin: "RewampNowPlaying") {
       let channel = FlutterMethodChannel(
         name: "rewamp/now_playing", binaryMessenger: registrar.messenger())
       channel.setMethodCallHandler { call, result in
@@ -154,7 +177,7 @@ import UniformTypeIdentifiers
     }
 
     // Audio route picker (AirPlay / Bluetooth) — see routePicker above.
-    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "RewampRoutePicker") {
+    if let registrar = registry.registrar(forPlugin: "RewampRoutePicker") {
       let channel = FlutterMethodChannel(
         name: "rewamp/route_picker", binaryMessenger: registrar.messenger())
       channel.setMethodCallHandler { [weak self] call, result in
@@ -212,7 +235,7 @@ import UniformTypeIdentifiers
     // D'où deux méthodes: `pick` ouvre la portée et rend le chemin, `release`
     // la referme. C'est l'APPELANT Dart qui décide quand relâcher, parce que
     // c'est lui qui copie — la portée doit tenir pendant toute la copie.
-    if let registrar = engineBridge.pluginRegistry.registrar(
+    if let registrar = registry.registrar(
         forPlugin: "RewampFolderPicker") {
       let channel = FlutterMethodChannel(
         name: "rewamp/folder_picker", binaryMessenger: registrar.messenger())
@@ -236,7 +259,7 @@ import UniformTypeIdentifiers
     // `.withSecurityScope` ici, un signet iOS d'une URL choisie dans Fichiers
     // emporte sa portée tout seul. Il se crée PENDANT la portée du sélecteur
     // (`pick` … `release`), et `resolve` la rouvre pour de bon.
-    if let registrar = engineBridge.pluginRegistry.registrar(
+    if let registrar = registry.registrar(
         forPlugin: "RewampBookmarks") {
       let channel = FlutterMethodChannel(
         name: "rewamp/bookmarks", binaryMessenger: registrar.messenger())

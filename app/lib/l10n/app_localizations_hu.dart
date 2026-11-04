@@ -9,6 +9,12 @@ class AppLocalizationsHu extends AppLocalizations {
   AppLocalizationsHu([String locale = 'hu']) : super(locale);
 
   @override
+  String get carPlayNext => 'Next track';
+
+  @override
+  String get carPlayPrevious => 'Previous track';
+
+  @override
   String get navHome => 'Kezdőlap';
 
   @override

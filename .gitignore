@@ -23,6 +23,7 @@ build/
 **/.symlinks/
 **/Flutter/ephemeral/
 **/Flutter/Generated.xcconfig
+app/ios/Flutter/Local.xcconfig
 **/Flutter/flutter_export_environment.sh
 **/ServiceDefinitions.json
 **/xcuserdata/

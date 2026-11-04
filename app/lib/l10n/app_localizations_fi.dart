@@ -9,6 +9,12 @@ class AppLocalizationsFi extends AppLocalizations {
   AppLocalizationsFi([String locale = 'fi']) : super(locale);
 
   @override
+  String get carPlayNext => 'Next track';
+
+  @override
+  String get carPlayPrevious => 'Previous track';
+
+  @override
   String get navHome => 'Etusivu';
 
   @override

@@ -1,4 +1,6 @@
 {
+  "carPlayNext": "Next track",
+  "carPlayPrevious": "Previous track",
   "@@locale": "en",
   "navHome": "Home",
   "navSearch": "Search",
