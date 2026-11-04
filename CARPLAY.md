@@ -57,11 +57,21 @@ audio session and interrupt the car's other audio source.
 
 ## Signing and distribution
 
-`Runner/Runner.entitlements` requests `com.apple.developer.carplay-audio` and
-`com.apple.developer.siri` in all build configurations. Enable both CarPlay Audio
-and Siri on the distributing App ID and regenerate its profile. An existing
-CarPlay-only profile cannot sign the Siri search update. This file is a request,
-not an Apple approval.
+iOS builds default to `REWAMP_WITH_CARPLAY=0`. They use
+`Runner/Runner.entitlements`, which does not request CarPlay or Siri. Anyone can
+build an ordinary version using their own normal signing setup.
+
+Approved developers opt in by adding `REWAMP_WITH_CARPLAY = 1` to the gitignored
+`app/ios/Flutter/Local.xcconfig`, or passing `REWAMP_WITH_CARPLAY=1` to
+`xcodebuild`. This selects `Runner/CarPlay.entitlements` for the app target in
+Debug, Profile and Release. The override also works with the existing Flutter
+build commands when placed in the local config file. Desktop/Android settings
+and embedded framework entitlements are unaffected.
+
+The opt-in file requests `com.apple.developer.carplay-audio` and
+`com.apple.developer.siri`. Enable both CarPlay Audio and Siri on the distributing
+App ID and regenerate its profile. An existing CarPlay-only profile cannot sign
+the Siri search update. The entitlement file is a request, not an Apple approval.
 
 SiriKit uses scene-based in-app intent handling (`INIntentsSupported`) in
 `AppDelegate`, sharing the normal Flutter engine. `INPlayMediaIntent` resolves
@@ -70,7 +80,7 @@ catalogue or playlist results and supports Siri's disambiguation;
 process-specific resolved identifiers are accepted, preventing an old Siri
 selection from being reused for a different item after relaunch.
 
-The developer distributing a device build must:
+The developer distributing a CarPlay-enabled device build must:
 
 1. Request Apple's CarPlay audio entitlement for their developer account and app.
 2. Enable it on the App ID and obtain a matching development/distribution profile.
@@ -94,7 +104,8 @@ using it on earlier systems is not supported by the audio entitlement.
 
 ## Build and automated validation
 
-Follow the native-library prerequisites in [README.md](README.md), including
+Enable the local opt-in above for CarPlay builds. Follow the native-library
+prerequisites in [README.md](README.md), including
 submodule patches and the iOS ANGLE/libopenmpt/vgmstream XCFrameworks, then:
 
 ```sh
@@ -109,6 +120,10 @@ flutter build ios --simulator --debug --no-codesign
 `tool/check_carplay_ios.sh` can type-check the native host against the installed
 iOS SDK before the decoder libraries are available. It substitutes only the
 generated plugin registrant for that check; it does not link or run the app.
+
+`python3 tool/check_ios_signing.py` checks Xcode's resolved entitlement selection
+for ordinary and opted-in Debug, Profile and Release builds. It requires Xcode
+and the generated Flutter iOS configuration, but does not build or sign the app.
 
 For a real-engine transport smoke test, build with the Xcode build-setting
 override `FLUTTER_TARGET=tool/carplay_audio_smoke.dart`. It generates a quiet WAV

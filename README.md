@@ -250,6 +250,29 @@ without notice. A fork meant for other people should host its own.
 Local playback of your own files needs no server at all — the catalogue is
 entirely optional.
 
+### Optional CarPlay support (iOS)
+
+iOS builds default to `REWAMP_WITH_CARPLAY=0`: they do not request CarPlay or
+Siri entitlements, so CarPlay approval is not needed to build and sign the app.
+Select your own team and bundle identifier in Xcode as usual.
+
+For CarPlay and Siri media search, enable both capabilities on your App ID and
+obtain a matching signing profile. Create or edit the gitignored file
+`app/ios/Flutter/Local.xcconfig` and add:
+
+```xcconfig
+REWAMP_WITH_CARPLAY = 1
+```
+
+Then use the normal Flutter or Xcode build commands. Set it back to `0` or
+remove that local setting for an ordinary build. For a single Xcode build, pass
+`REWAMP_WITH_CARPLAY=1` on the `xcodebuild` command line instead. A Dart define
+does not select signing entitlements.
+
+This option only changes the iOS app's requested entitlements; the CarPlay source
+remains available and desktop/Android builds are unaffected. See
+[CARPLAY.md](CARPLAY.md) for entitlement setup, device testing and validation.
+
 ### Turning engines off
 
 Every decoder is on by default and gated by a flag; set one to `0` to leave it
