@@ -5146,11 +5146,11 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get releaseNotesV11NewEngines =>
-      '新しいエンジン：OPL3（libADLMIDI）とOPN2/OPNA（libOPNMIDI）によるMIDI、Beatnik .rmf、エミュレートしたマシンで動くZX Spectrumの.tapテープとAmstrad CPCの.dskディスク、UnExoticA Mark II。';
+      '新しいエンジン：OPL3（libADLMIDI）とOPN2/OPNA（libOPNMIDI）によるMIDI、Beatnik .rmf、エミュレートしたマシンで動くZX Spectrumの.tapテープとAmstrad CPCの.dskディスク、Amiga Mark IIモジュール（mii.*）。';
 
   @override
   String get releaseNotesV11EngineUpdates =>
-      'エンジンを更新：Namco WSGチップ対応のVGM 1.72、Furnace、AtariAudio 1.27（.ymの既定に）、Amigaモジュールにlibxmpを選択可能、VGMの終わりのフェードを調整可能。';
+      'エンジンを更新：Namco WSGチップ対応の独自VGMエンジン（libvgmのフォーク）、Furnace、AtariAudio 1.27（.ymの既定に）、Amigaモジュールにlibxmpを選択可能、VGMの終わりのフェードを調整可能。';
 
   @override
   String get releaseNotesV11Sleep =>

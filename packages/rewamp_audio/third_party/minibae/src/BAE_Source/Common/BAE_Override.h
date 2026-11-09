@@ -48,6 +48,9 @@ static const BAEOverrideEntry kBAEOverrides[] = {
 #if BAE_CLASSIC_CHORUS
     { "d48b578b13759fecceb6a53d038704484f8fc993", BAE_OVERRIDE_FLAG_CLASSIC_CHORUS_ON | BAE_OVERRIDE_FLAG_FORCE_ZMF },
 #endif
+    /* REWAMP: never-matching sentinel (a SHA1 is 40 hex chars). Without it the
+     * table is EMPTY when BAE_CLASSIC_CHORUS is 0, which MSVC rejects (C7757). */
+    { "", 0 },
 };
 
 static const uint32_t kBAEOverrideCount = (uint32_t)(sizeof(kBAEOverrides) / sizeof(kBAEOverrides[0]));

@@ -5335,11 +5335,11 @@ class AppLocalizationsSv extends AppLocalizations {
 
   @override
   String get releaseNotesV11NewEngines =>
-      'Nya motorer: MIDI på OPL3 (libADLMIDI) och OPN2/OPNA (libOPNMIDI), Beatnik .rmf, ZX Spectrum-kassetter .tap och Amstrad CPC-disketter .dsk på emulerade datorer, UnExoticA Mark II.';
+      'Nya motorer: MIDI på OPL3 (libADLMIDI) och OPN2/OPNA (libOPNMIDI), Beatnik .rmf, ZX Spectrum-kassetter .tap och Amstrad CPC-disketter .dsk på emulerade datorer, Amiga Mark II-moduler (mii.*).';
 
   @override
   String get releaseNotesV11EngineUpdates =>
-      'Uppdaterade motorer: VGM 1.72 med Namco WSG-kretsar, Furnace, AtariAudio 1.27 (nu standard för .ym), libxmp som val för Amiga-moduler, justerbar uttoning i slutet av VGM.';
+      'Uppdaterade motorer: egen VGM-motor (fork av libvgm) med Namco WSG-kretsar, Furnace, AtariAudio 1.27 (nu standard för .ym), libxmp som val för Amiga-moduler, justerbar uttoning i slutet av VGM.';
 
   @override
   String get releaseNotesV11Sleep =>

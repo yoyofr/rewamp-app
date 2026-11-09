@@ -5110,11 +5110,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get releaseNotesV11NewEngines =>
-      '新引擎：OPL3（libADLMIDI）和 OPN2/OPNA（libOPNMIDI）上的 MIDI、Beatnik .rmf、在模拟机器上运行的 ZX Spectrum .tap 磁带和 Amstrad CPC .dsk 磁盘、UnExoticA Mark II。';
+      '新引擎：OPL3（libADLMIDI）和 OPN2/OPNA（libOPNMIDI）上的 MIDI、Beatnik .rmf、在模拟机器上运行的 ZX Spectrum .tap 磁带和 Amstrad CPC .dsk 磁盘、Amiga Mark II 模块（mii.*）。';
 
   @override
   String get releaseNotesV11EngineUpdates =>
-      '引擎更新：支持 Namco WSG 芯片的 VGM 1.72、Furnace、AtariAudio 1.27（现为 .ym 的默认引擎）、Amiga 模块可选 libxmp、VGM 结尾淡出可调。';
+      '引擎更新：支持 Namco WSG 芯片的自定义 VGM 引擎（libvgm 分支）、Furnace、AtariAudio 1.27（现为 .ym 的默认引擎）、Amiga 模块可选 libxmp、VGM 结尾淡出可调。';
 
   @override
   String get releaseNotesV11Sleep => '睡眠定时器：选择时长，音乐淡出后停止——空队列会自动填充。';

@@ -3377,13 +3377,13 @@
   "@releaseNotesV11PlayWith": {
     "description": "Release note: \"Play with\u2026\" picks the engine, SoundFont, MT-32 model or FM bank of a file/album; import WOPL/WOPN banks"
   },
-  "releaseNotesV11NewEngines": "New engines: MIDI on OPL3 (libADLMIDI) and OPN2/OPNA (libOPNMIDI), Beatnik .rmf, ZX Spectrum .tap tapes and Amstrad CPC .dsk disks on emulated machines, UnExoticA Mark II.",
+  "releaseNotesV11NewEngines": "New engines: MIDI on OPL3 (libADLMIDI) and OPN2/OPNA (libOPNMIDI), Beatnik .rmf, ZX Spectrum .tap tapes and Amstrad CPC .dsk disks on emulated machines, Amiga Mark II modules (mii.*).",
   "@releaseNotesV11NewEngines": {
-    "description": "Release note: new engines (libADLMIDI, libOPNMIDI, Beatnik .rmf, ZX Spectrum .tap, Amstrad CPC .dsk, UnExoticA Mark II)"
+    "description": "Release note: new engines (libADLMIDI, libOPNMIDI, Beatnik .rmf, ZX Spectrum .tap, Amstrad CPC .dsk, Amiga Mark II modules (mii.*))"
   },
-  "releaseNotesV11EngineUpdates": "Engines up to date: VGM 1.72 with Namco WSG chips, Furnace, AtariAudio 1.27 (now the default for .ym), libxmp as an option for Amiga modules, adjustable end fade on VGM.",
+  "releaseNotesV11EngineUpdates": "Engines up to date: custom VGM engine (Rewamp's own libvgm fork) with Namco WSG chips, Furnace, AtariAudio 1.27 (now the default for .ym), libxmp as an option for Amiga modules, adjustable end fade on VGM.",
   "@releaseNotesV11EngineUpdates": {
-    "description": "Release note: engine updates (VGM 1.72 + Namco WSG, Furnace, AtariAudio 1.27 default for .ym, libxmp for Amiga, VGM end fade)"
+    "description": "Release note: engine updates (custom libvgm fork + Namco WSG, Furnace, AtariAudio 1.27 default for .ym, libxmp for Amiga, VGM end fade)"
   },
   "releaseNotesV11Sleep": "Sleep timer: pick a duration, the music fades out and stops — and an empty queue fills itself.",
   "@releaseNotesV11Sleep": {

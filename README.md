@@ -284,7 +284,7 @@ apart from the engines and libraries it bundles. Recomputed at every snapshot.
 
                     Rewamp      Bundled        Total
 C                   12,571    1,902,499    1,915,070
-C/C++ Header         2,220    1,423,209    1,425,429
+C/C++ Header         2,220    1,423,210    1,425,430
 C++                 23,835    1,051,251    1,075,086
 Dart                93,690            0       93,690
 Assembly                 0       36,627       36,627
@@ -295,7 +295,7 @@ Kotlin                 672            0          672
 Objective-C             26            0           26
 Others               9,965      264,608      274,573
 
-TOTAL              144,898    4,682,227    4,827,125
+TOTAL              144,898    4,682,228    4,827,126
 ```
 <!-- CODE STATS END -->
 

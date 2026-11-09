@@ -5322,11 +5322,11 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get releaseNotesV11NewEngines =>
-      'नए इंजन: OPL3 (libADLMIDI) और OPN2/OPNA (libOPNMIDI) पर MIDI, Beatnik .rmf, एमुलेट की गई मशीनों पर ZX Spectrum .tap टेप और Amstrad CPC .dsk डिस्क, UnExoticA Mark II।';
+      'नए इंजन: OPL3 (libADLMIDI) और OPN2/OPNA (libOPNMIDI) पर MIDI, Beatnik .rmf, एमुलेट की गई मशीनों पर ZX Spectrum .tap टेप और Amstrad CPC .dsk डिस्क, Amiga Mark II मॉड्यूल (mii.*)।';
 
   @override
   String get releaseNotesV11EngineUpdates =>
-      'इंजन अपडेट: Namco WSG चिप्स के साथ VGM 1.72, Furnace, AtariAudio 1.27 (अब .ym के लिए डिफ़ॉल्ट), Amiga मॉड्यूल के लिए libxmp का विकल्प, VGM के अंत में समायोज्य फ़ेड।';
+      'इंजन अपडेट: Namco WSG चिप्स के साथ कस्टम VGM इंजन (libvgm फ़ोर्क), Furnace, AtariAudio 1.27 (अब .ym के लिए डिफ़ॉल्ट), Amiga मॉड्यूल के लिए libxmp का विकल्प, VGM के अंत में समायोज्य फ़ेड।';
 
   @override
   String get releaseNotesV11Sleep =>

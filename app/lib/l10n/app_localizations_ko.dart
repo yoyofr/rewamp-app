@@ -5144,11 +5144,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get releaseNotesV11NewEngines =>
-      '새 엔진: OPL3(libADLMIDI)와 OPN2/OPNA(libOPNMIDI) 기반 MIDI, Beatnik .rmf, 에뮬레이션된 기기에서 실행되는 ZX Spectrum .tap 테이프와 Amstrad CPC .dsk 디스크, UnExoticA Mark II.';
+      '새 엔진: OPL3(libADLMIDI)와 OPN2/OPNA(libOPNMIDI) 기반 MIDI, Beatnik .rmf, 에뮬레이션된 기기에서 실행되는 ZX Spectrum .tap 테이프와 Amstrad CPC .dsk 디스크, Amiga Mark II 모듈(mii.*).';
 
   @override
   String get releaseNotesV11EngineUpdates =>
-      '엔진 업데이트: Namco WSG 칩을 지원하는 VGM 1.72, Furnace, AtariAudio 1.27(이제 .ym의 기본값), Amiga 모듈용 libxmp 선택 가능, VGM 끝부분 페이드 조절 가능.';
+      '엔진 업데이트: Namco WSG 칩을 지원하는 자체 VGM 엔진(libvgm 포크), Furnace, AtariAudio 1.27(이제 .ym의 기본값), Amiga 모듈용 libxmp 선택 가능, VGM 끝부분 페이드 조절 가능.';
 
   @override
   String get releaseNotesV11Sleep =>

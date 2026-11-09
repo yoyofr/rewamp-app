@@ -5356,11 +5356,11 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get releaseNotesV11NewEngines =>
-      'Nuovi motori: MIDI su OPL3 (libADLMIDI) e OPN2/OPNA (libOPNMIDI), Beatnik .rmf, cassette .tap dello ZX Spectrum e dischi .dsk dell\'Amstrad CPC su macchine emulate, UnExoticA Mark II.';
+      'Nuovi motori: MIDI su OPL3 (libADLMIDI) e OPN2/OPNA (libOPNMIDI), Beatnik .rmf, cassette .tap dello ZX Spectrum e dischi .dsk dell\'Amstrad CPC su macchine emulate, moduli Amiga Mark II (mii.*).';
 
   @override
   String get releaseNotesV11EngineUpdates =>
-      'Motori aggiornati: VGM 1.72 con i chip Namco WSG, Furnace, AtariAudio 1.27 (ora predefinito per i .ym), libxmp a scelta per i moduli Amiga, dissolvenza finale regolabile sui VGM.';
+      'Motori aggiornati: motore VGM personalizzato (fork di libvgm) con i chip Namco WSG, Furnace, AtariAudio 1.27 (ora predefinito per i .ym), libxmp a scelta per i moduli Amiga, dissolvenza finale regolabile sui VGM.';
 
   @override
   String get releaseNotesV11Sleep =>

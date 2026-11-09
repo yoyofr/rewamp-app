@@ -5458,11 +5458,11 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get releaseNotesV11NewEngines =>
-      'Nová jádra: MIDI na OPL3 (libADLMIDI) a OPN2/OPNA (libOPNMIDI), Beatnik .rmf, kazety ZX Spectrum .tap a diskety Amstrad CPC .dsk na emulovaných počítačích, UnExoticA Mark II.';
+      'Nová jádra: MIDI na OPL3 (libADLMIDI) a OPN2/OPNA (libOPNMIDI), Beatnik .rmf, kazety ZX Spectrum .tap a diskety Amstrad CPC .dsk na emulovaných počítačích, moduly Amiga Mark II (mii.*).';
 
   @override
   String get releaseNotesV11EngineUpdates =>
-      'Aktualizovaná jádra: VGM 1.72 s čipy Namco WSG, Furnace, AtariAudio 1.27 (nyní výchozí pro .ym), libxmp na výběr pro moduly Amigy, nastavitelné ztlumení na konci VGM.';
+      'Aktualizovaná jádra: vlastní jádro VGM (fork libvgm) s čipy Namco WSG, Furnace, AtariAudio 1.27 (nyní výchozí pro .ym), libxmp na výběr pro moduly Amigy, nastavitelné ztlumení na konci VGM.';
 
   @override
   String get releaseNotesV11Sleep =>
