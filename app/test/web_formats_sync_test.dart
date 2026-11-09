@@ -33,7 +33,9 @@ String _generate() {
 }
 
 void main() {
-  test('webapp/formats.json suit kEngines', () {
+  // Le dépôt public (rewamp-app) ne porte pas webapp/: rien à synchroniser.
+  final hasWebapp = Directory('../webapp').existsSync();
+  test('webapp/formats.json suit kEngines', skip: hasWebapp ? false : 'pas de webapp/ ici', () {
     final want = _generate();
     final f = File(_out);
     if (Platform.environment['REWAMP_WRITE_WEB_FORMATS'] == '1') {
