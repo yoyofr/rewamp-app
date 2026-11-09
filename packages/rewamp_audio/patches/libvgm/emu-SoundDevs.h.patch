@@ -1,12 +1,16 @@
 diff --git a/emu/SoundDevs.h b/emu/SoundDevs.h
-index 130c52e..0250388 100644
+index 130c52e..63c59ea 100644
 --- a/emu/SoundDevs.h
 +++ b/emu/SoundDevs.h
-@@ -49,6 +49,7 @@
+@@ -49,6 +49,11 @@
  #define DEVID_MSM5232	0x2D
  #define DEVID_BSMT2000	0x2E
  #define DEVID_ICS2115	0x2F
-+#define DEVID_ZSG2		0x30	// ZOOM ZSG-2 with the TMS57002 DSP of the Taito Zoom board
++#define DEVID_NAMCOWSG	0x30	// discrete variant of Namco WSG
++#define DEVID_NAMCOC15	0x31	// also known as Namco 15XX
++#define DEVID_NAMCOC30	0x32	// also known as Namco CUS30, Bit 31 = Stereo
++#define DEVID_NAMCOPPW	0x33	// Namco Pole position specific WSG
++#define DEVID_ZSG2		0x34	// ZOOM ZSG-2 with the TMS57002 DSP of the Taito Zoom board
  #define DEVID_YM2414	0x81	// YM2414 (OPZ), used in TX81Z
  
  #endif	// __SOUNDDEVS_H__

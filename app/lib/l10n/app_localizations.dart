@@ -1380,6 +1380,18 @@ abstract class AppLocalizations {
   /// **'Game Boy GBS/GBR'**
   String get engineDescGbsplay;
 
+  /// No description provided for @engineDescCpc.
+  ///
+  /// In en, this message translates to:
+  /// **'Amstrad CPC — .dsk disks run on an emulated CPC 6128'**
+  String get engineDescCpc;
+
+  /// No description provided for @engineDescZxSpectrum.
+  ///
+  /// In en, this message translates to:
+  /// **'ZX Spectrum — .tap tapes run on an emulated 48K/128K Spectrum'**
+  String get engineDescZxSpectrum;
+
   /// No description provided for @engineDescSidplayfp.
   ///
   /// In en, this message translates to:
@@ -1473,7 +1485,7 @@ abstract class AppLocalizations {
   /// No description provided for @engineDescSndh.
   ///
   /// In en, this message translates to:
-  /// **'Atari ST .sndh — real 68000 emulation + YM2149 + STE DAC'**
+  /// **'Atari ST .sndh — real 68000 emulation + YM2149 + STE DAC · .ym (YM2–YM6, digidrums, SID)'**
   String get engineDescSndh;
 
   /// No description provided for @engineDescLazyusf.
@@ -1511,6 +1523,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cave Story .org — Pixel\'s own engine'**
   String get engineDescOrganya;
+
+  /// Engine description: miniBAE (Beatnik RMF)
+  ///
+  /// In en, this message translates to:
+  /// **'Beatnik .rmf — the Beatnik Audio Engine, late-90s web and game music'**
+  String get engineDescMinibae;
 
   /// Engine description: NoiseTracker GS (Apple IIGS)
   ///
@@ -2358,6 +2376,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Added by autoplay'**
   String get queueAutoplayRow;
+
+  /// Screen-reader label of the glyph marking a queue entry added by a radio station (not by the user).
+  ///
+  /// In en, this message translates to:
+  /// **'Added by the radio'**
+  String get queueRadioRow;
 
   /// Queue panel: empty the queue and stop playback
   ///
@@ -4636,7 +4660,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsDecoderAmigaTrackers.
   ///
   /// In en, this message translates to:
-  /// **'Amiga trackers (mod, med, okt…)'**
+  /// **'Amiga modules (mod, med, okt…)'**
   String get settingsDecoderAmigaTrackers;
 
   /// No description provided for @settingsEngineOpenmptSubtitle.
@@ -4999,6 +5023,18 @@ abstract class AppLocalizations {
   /// **'Quality (nsfplay)'**
   String get settingsNsfQuality;
 
+  /// No description provided for @settingsNsfFade.
+  ///
+  /// In en, this message translates to:
+  /// **'End fade'**
+  String get settingsNsfFade;
+
+  /// No description provided for @settingsNsfFadeHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Fade-out at the end of a track, when the file gives none (an .m3u or NSFe can set its own). It is part of the track\'s length. Off = hard stop.'**
+  String get settingsNsfFadeHelp;
+
   /// No description provided for @settingsLowpassFilter.
   ///
   /// In en, this message translates to:
@@ -5226,6 +5262,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'High-pass filter (gbsplay)'**
   String get settingsGbsHpFilter;
+
+  /// No description provided for @settingsEnginePsgplaySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Atari ST / SNDH — YM2149 channel mix'**
+  String get settingsEnginePsgplaySubtitle;
+
+  /// No description provided for @settingsPsgMix.
+  ///
+  /// In en, this message translates to:
+  /// **'PSG channel mix'**
+  String get settingsPsgMix;
+
+  /// No description provided for @settingsPsgMixEmpiric.
+  ///
+  /// In en, this message translates to:
+  /// **'Empiric (Atari ST)'**
+  String get settingsPsgMixEmpiric;
+
+  /// No description provided for @settingsPsgMixLinear.
+  ///
+  /// In en, this message translates to:
+  /// **'Linear'**
+  String get settingsPsgMixLinear;
+
+  /// No description provided for @settingsPsgMixStereo.
+  ///
+  /// In en, this message translates to:
+  /// **'Stereo'**
+  String get settingsPsgMixStereo;
+
+  /// No description provided for @settingsPsgMixEmpiricHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The three channels mixed as on a real Atari ST (measured levels): a crunchy sound, in mono.'**
+  String get settingsPsgMixEmpiricHint;
+
+  /// No description provided for @settingsPsgMixLinearHint.
+  ///
+  /// In en, this message translates to:
+  /// **'A plain sum of the three channels: a cleaner sound, in mono.'**
+  String get settingsPsgMixLinearHint;
+
+  /// No description provided for @settingsPsgMixStereoHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Linear mix, each channel placed between left and right.'**
+  String get settingsPsgMixStereoHint;
+
+  /// No description provided for @settingsPsgPanVoice.
+  ///
+  /// In en, this message translates to:
+  /// **'Channel {voice}'**
+  String settingsPsgPanVoice(String voice);
+
+  /// No description provided for @settingsPsgPanCentre.
+  ///
+  /// In en, this message translates to:
+  /// **'Centre'**
+  String get settingsPsgPanCentre;
+
+  /// No description provided for @settingsPsgPanLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Left {percent} %'**
+  String settingsPsgPanLeft(int percent);
+
+  /// No description provided for @settingsPsgPanRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Right {percent} %'**
+  String settingsPsgPanRight(int percent);
 
   /// No description provided for @settingsGbsFilterDmg.
   ///
@@ -7255,78 +7363,6 @@ abstract class AppLocalizations {
   /// **'What\'s new'**
   String get releaseNotesTitle;
 
-  /// Release note: slow track no longer freezes the app, loading ring around play/pause
-  ///
-  /// In en, this message translates to:
-  /// **'Opening a slow track no longer freezes the app: a thin ring around play/pause shows that it is still loading.'**
-  String get releaseNotesV10Loading;
-
-  /// Release note: piano visualizer spreads busy songs over more keyboards
-  ///
-  /// In en, this message translates to:
-  /// **'Piano visualizer: songs with many voices or instruments at once are spread over more keyboards.'**
-  String get releaseNotesV10Piano;
-
-  /// Release note: StoneTracker, SUNtronic TSM, Soundtracker 2.6 play; SoundPlayer on iOS
-  ///
-  /// In en, this message translates to:
-  /// **'Amiga: StoneTracker, SUNtronic (TSM rips) and more Soundtracker 2.6 modules now play, and SoundPlayer songs play on iOS.'**
-  String get releaseNotesV10Amiga;
-
-  /// Release note: zxart .mt3 files; ZXTune formats and SAM Coupé .cop on Linux
-  ///
-  /// In en, this message translates to:
-  /// **'ZX Spectrum: zxart\'s .mt3 files play, and on Linux the ZXTune formats and SAM Coupé .cop programs are included.'**
-  String get releaseNotesV10ZxSpectrum;
-
-  /// Release note: every supported format appears in the system Open With menu (macOS, iOS)
-  ///
-  /// In en, this message translates to:
-  /// **'macOS and iOS: every supported format now shows up in “Open With”.'**
-  String get releaseNotesV10OpenWith;
-
-  /// Release note: crash fixed on .mtc files mixing PT3 with TFM or PSG
-  ///
-  /// In en, this message translates to:
-  /// **'Fixed: some .mtc files mixing PT3 with TFM or PSG crashed the app.'**
-  String get releaseNotesV10MtcCrash;
-
-  /// Release note: new Podiums browser (competition winners by party, year, compo kind; hall of fame)
-  ///
-  /// In en, this message translates to:
-  /// **'New “Podiums” browser: demoscene competition winners by party, year or kind of compo, with a hall of fame.'**
-  String get releaseNotesV10Podiums;
-
-  /// Release note: Ensoniq ES5505/ES5506 VGM (Taito F3) play, Apple IIGS VGM crash fixed, engines updated, FM-Kingtracker .fmk
-  ///
-  /// In en, this message translates to:
-  /// **'Arcade: Ensoniq ES5505/ES5506 music (Taito F3…) now plays, Apple IIGS VGM files no longer crash the app, and the engines are up to date (FM-Kingtracker .fmk added).'**
-  String get releaseNotesV10Arcade;
-
-  /// Release note: info panel shows format, engine, channels and loop points first; field names highlighted
-  ///
-  /// In en, this message translates to:
-  /// **'Info panel: format, engine, channels and loop points come first, and field names stand out.'**
-  String get releaseNotesV10InfoPanel;
-
-  /// Release note: collection on album/subsong screens; dropped archives list every track, read Local, no duplicate when replaced
-  ///
-  /// In en, this message translates to:
-  /// **'Album and subsong screens show the collection; a dropped archive lists all its tracks, reads “local”, and no longer shows up twice once replaced.'**
-  String get releaseNotesV10LocalAlbums;
-
-  /// Release note: with crossfade on, very short tracks are heard again
-  ///
-  /// In en, this message translates to:
-  /// **'Fixed: with crossfade on, a track shorter than the fade could not be heard.'**
-  String get releaseNotesV10Crossfade;
-
-  /// Release note: artwork replaced on the server is picked up after re-downloading the file
-  ///
-  /// In en, this message translates to:
-  /// **'Fixed: artwork replaced on the server now shows everywhere after “Re-download file”.'**
-  String get releaseNotesV10Artwork;
-
   /// No description provided for @releaseNotesDataReset.
   ///
   /// In en, this message translates to:
@@ -8047,11 +8083,23 @@ abstract class AppLocalizations {
   /// **'OPL3 FM (AdLib / Sound Blaster)'**
   String get settingsMidiSynthOpl3;
 
+  /// Settings: MIDI synth choice / libOPNMIDI on an emulated OPN2 (proper names)
+  ///
+  /// In en, this message translates to:
+  /// **'OPN2 FM (Mega Drive / Genesis)'**
+  String get settingsMidiSynthOpn2;
+
   /// Settings → Engines: subtitle of the libADLMIDI (OPL3) engine tile
   ///
   /// In en, this message translates to:
   /// **'MIDI and DOS game music on an emulated OPL3 chip'**
   String get settingsEngineAdlmidiSubtitle;
+
+  /// Settings → Engines: subtitle of the libOPNMIDI (OPN2 / OPNA) engine tile
+  ///
+  /// In en, this message translates to:
+  /// **'MIDI on an emulated OPN2 / OPNA chip (Mega Drive, PC-98)'**
+  String get settingsEngineOpnmidiSubtitle;
 
   /// Settings → libADLMIDI: the embedded FM instrument bank
   ///
@@ -8094,6 +8142,720 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'MIDI, XMI, DMX MUS, HMI/HMP on an emulated OPL3 chip (AdLib / Sound Blaster)'**
   String get engineDescAdlmidi;
+
+  /// About → engines: what libOPNMIDI plays
+  ///
+  /// In en, this message translates to:
+  /// **'MIDI on an emulated OPN2 (Mega Drive) or OPNA (PC-98) chip'**
+  String get engineDescOpnmidi;
+
+  /// Settings → FM bank screen: section of the banks embedded in the engine
+  ///
+  /// In en, this message translates to:
+  /// **'Built-in'**
+  String get fmBanksBuiltIn;
+
+  /// Settings → FM bank screen: section of the banks the user imported
+  ///
+  /// In en, this message translates to:
+  /// **'Imported'**
+  String get fmBanksImported;
+
+  /// Settings → FM bank screen: hint of the name filter field
+  ///
+  /// In en, this message translates to:
+  /// **'Filter by name'**
+  String get fmBanksFilterHint;
+
+  /// Settings → FM bank screen: the name filter matches nothing
+  ///
+  /// In en, this message translates to:
+  /// **'No bank matches'**
+  String get fmBanksNoMatch;
+
+  /// Settings → FM bank screen: no imported bank yet, and the three ways to add one
+  ///
+  /// In en, this message translates to:
+  /// **'No imported bank yet. Drop a .wopl or .wopn file on the window, open it with Rewamp, or import it here.'**
+  String get fmBanksImportedEmpty;
+
+  /// Notification: a WOPL/WOPN bank file was imported and selected; engine = libADLMIDI or libOPNMIDI (proper name)
+  ///
+  /// In en, this message translates to:
+  /// **'Bank “{name}” imported and selected for {engine}'**
+  String fmBankImported(String name, String engine);
+
+  /// Notification: the file is not a WOPL or WOPN bank; name = file name
+  ///
+  /// In en, this message translates to:
+  /// **'“{name}” is not a WOPL or WOPN bank'**
+  String fmBankImportInvalid(String name);
+
+  /// Confirmation before deleting an imported FM bank
+  ///
+  /// In en, this message translates to:
+  /// **'Delete the bank “{name}”?'**
+  String fmBankDeleteConfirm(String name);
+
+  /// Settings → libADLMIDI / libOPNMIDI: row that opens the platform file browser to import bank files
+  ///
+  /// In en, this message translates to:
+  /// **'Import banks…'**
+  String get fmBanksImportTile;
+
+  /// Subtitle of the bank import row; ext = the file extension (.wopl or .wopn)
+  ///
+  /// In en, this message translates to:
+  /// **'{ext} files (from Wohlstand\'s bank editors or collections). The file\'s header decides; imported banks can be removed from the bank list.'**
+  String fmBanksImportSubtitle(String ext);
+
+  /// FM emulator tag: very close to the real chip
+  ///
+  /// In en, this message translates to:
+  /// **'Very accurate'**
+  String get fmEmuAccuracyVeryHigh;
+
+  /// FM emulator tag: close to the real chip
+  ///
+  /// In en, this message translates to:
+  /// **'Accurate'**
+  String get fmEmuAccuracyGood;
+
+  /// FM emulator tag: noticeably off the real chip
+  ///
+  /// In en, this message translates to:
+  /// **'Approximate'**
+  String get fmEmuAccuracyApproximate;
+
+  /// FM emulator tag: cheap to run (fine on phones)
+  ///
+  /// In en, this message translates to:
+  /// **'Fast'**
+  String get fmEmuCpuLight;
+
+  /// FM emulator tag: moderate CPU use
+  ///
+  /// In en, this message translates to:
+  /// **'Moderate CPU'**
+  String get fmEmuCpuMedium;
+
+  /// FM emulator tag: needs a lot of CPU (may stutter on phones)
+  ///
+  /// In en, this message translates to:
+  /// **'CPU-heavy'**
+  String get fmEmuCpuHeavy;
+
+  /// Engine settings page: shortcut row to make this engine the default player of a format it shares with others; format = 'MIDI', 'NSF / NSFe'…
+  ///
+  /// In en, this message translates to:
+  /// **'Default player for {format}'**
+  String settingsDefaultFor(String format);
+
+  /// Subtitle of that row when this engine already is the default player
+  ///
+  /// In en, this message translates to:
+  /// **'This engine plays this format'**
+  String get settingsDefaultForActive;
+
+  /// Subtitle of that row when another engine is the default; section = the title of the « Default decoders » settings section
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to play this format with this engine — every choice is also in “{section}”'**
+  String settingsDefaultForSet(String section);
+
+  /// Settings → Default decoders: the DOS game MIDI formats (XMI, DMX MUS, HMI/HMP, GMF), played by libADLMIDI or libOPNMIDI
+  ///
+  /// In en, this message translates to:
+  /// **'DOS game MIDI (XMI, MUS, HMI…)'**
+  String get settingsDecoderDosMidi;
+
+  /// Player options: choose which engine plays this file (when several can) — sheet title and row
+  ///
+  /// In en, this message translates to:
+  /// **'Play with…'**
+  String get playWithTitle;
+
+  /// Play with: the default engine choice; engine = its name (proper name)
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic ({engine})'**
+  String playWithAuto(String engine);
+
+  /// Play with: subtitle of the engine playing the track right now
+  ///
+  /// In en, this message translates to:
+  /// **'Playing now'**
+  String get playWithPlayingNow;
+
+  /// Play with: checkbox to remember the choice
+  ///
+  /// In en, this message translates to:
+  /// **'Remember this choice'**
+  String get playWithRemember;
+
+  /// Play with: subtitle when remembered
+  ///
+  /// In en, this message translates to:
+  /// **'Every time this file (or album) plays'**
+  String get playWithRememberOn;
+
+  /// Play with: subtitle when not remembered
+  ///
+  /// In en, this message translates to:
+  /// **'For this playback only'**
+  String get playWithRememberOff;
+
+  /// Play with: remember for this file
+  ///
+  /// In en, this message translates to:
+  /// **'This file'**
+  String get playWithScopeFile;
+
+  /// Play with: remember for the whole album
+  ///
+  /// In en, this message translates to:
+  /// **'Whole album'**
+  String get playWithScopeAlbum;
+
+  /// Play with: button that restarts the track with the chosen engine
+  ///
+  /// In en, this message translates to:
+  /// **'Play'**
+  String get playWithApply;
+
+  /// Player options: subtitle of the « Play with… » row; engine = the engine playing now
+  ///
+  /// In en, this message translates to:
+  /// **'Engine: {engine}'**
+  String playWithCurrent(String engine);
+
+  /// Settings → Data → reset group: forget the engines remembered with « Play with… »
+  ///
+  /// In en, this message translates to:
+  /// **'Forget « Play with… » choices'**
+  String get settingsForgetPlayWith;
+
+  /// How many « Play with… » choices are remembered
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No remembered choice} one{{count} remembered choice} other{{count} remembered choices}}'**
+  String settingsForgetPlayWithSubtitle(int count);
+
+  /// Confirmation text of that reset
+  ///
+  /// In en, this message translates to:
+  /// **'Everything remembered for a file or an album (engine, bank, SoundFont, model) is forgotten: they play with the defaults again.'**
+  String get settingsForgetPlayWithBody;
+
+  /// « Play with… » sheet: row choosing the FM instrument bank for this file
+  ///
+  /// In en, this message translates to:
+  /// **'Instrument bank'**
+  String get playWithBank;
+
+  /// « Play with… » bank row: no bank chosen, the engine's setting plays (its bank name)
+  ///
+  /// In en, this message translates to:
+  /// **'The setting\'s bank ({name})'**
+  String playWithBankDefault(String name);
+
+  /// Title of the confirmation when deleting a bank chosen for files or albums
+  ///
+  /// In en, this message translates to:
+  /// **'Bank in use'**
+  String get fmBankInUseTitle;
+
+  /// Deleting a bank chosen for files or albums: intro, followed by the counts
+  ///
+  /// In en, this message translates to:
+  /// **'“{name}” is chosen for:'**
+  String fmBankInUseIntro(String name);
+
+  /// How many files use the bank (list line)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} file} other{{count} files}}'**
+  String fmBankInUseFiles(int count);
+
+  /// How many albums use the bank (list line)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} album} other{{count} albums}}'**
+  String fmBankInUseAlbums(int count);
+
+  /// What happens to them, and the question
+  ///
+  /// In en, this message translates to:
+  /// **'They will play with the engine\'s bank setting again. Delete it anyway?'**
+  String get fmBankInUseOutro;
+
+  /// « Play with… »: no SoundFont chosen for this file, the setting's plays (its name)
+  ///
+  /// In en, this message translates to:
+  /// **'The setting\'s SoundFont ({name})'**
+  String playWithSoundfontDefault(String name);
+
+  /// « Play with… » MT-32 model: what the setting plays (MT-32 / CM-32L / automatic)
+  ///
+  /// In en, this message translates to:
+  /// **'Setting: {model}'**
+  String playWithMt32Default(String model);
+
+  /// « Play with… »: segment meaning « as in the settings » (short)
+  ///
+  /// In en, this message translates to:
+  /// **'Setting'**
+  String get playWithOptionSetting;
+
+  /// Title of the confirmation when deleting a SoundFont chosen for files or albums
+  ///
+  /// In en, this message translates to:
+  /// **'SoundFont in use'**
+  String get soundfontInUseTitle;
+
+  /// What happens to those files, and the question
+  ///
+  /// In en, this message translates to:
+  /// **'They will play with the SoundFont of the settings again. Delete it anyway?'**
+  String get soundfontInUseOutro;
+
+  /// Album options: « Play with… » for the whole album (engine, bank… remembered for the album)
+  ///
+  /// In en, this message translates to:
+  /// **'Play album with…'**
+  String get playWithTitleAlbum;
+
+  /// « Play with… » sheet of a track or album not playing: remember the choice without playing
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get playWithSave;
+
+  /// No description provided for @shortcutsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Keyboard shortcuts'**
+  String get shortcutsTitle;
+
+  /// No description provided for @shortcutsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback, visualizer and window keys'**
+  String get shortcutsSubtitle;
+
+  /// No description provided for @shortcutsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Single keys are ignored while a text field has the focus. Visualizer keys only work while the visualizer is shown.'**
+  String get shortcutsHint;
+
+  /// No description provided for @shortcutsGroupTransport.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback'**
+  String get shortcutsGroupTransport;
+
+  /// No description provided for @shortcutsGroupVisualizer.
+  ///
+  /// In en, this message translates to:
+  /// **'Visualizer'**
+  String get shortcutsGroupVisualizer;
+
+  /// No description provided for @shortcutsGroupWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'Window and navigation'**
+  String get shortcutsGroupWindow;
+
+  /// No description provided for @shortcutsKeySpace.
+  ///
+  /// In en, this message translates to:
+  /// **'Space'**
+  String get shortcutsKeySpace;
+
+  /// No description provided for @shortcutsKeyEscape.
+  ///
+  /// In en, this message translates to:
+  /// **'Esc'**
+  String get shortcutsKeyEscape;
+
+  /// No description provided for @shortcutPlayPause.
+  ///
+  /// In en, this message translates to:
+  /// **'Play / pause'**
+  String get shortcutPlayPause;
+
+  /// No description provided for @shortcutPrevTrack.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous track'**
+  String get shortcutPrevTrack;
+
+  /// No description provided for @shortcutNextTrack.
+  ///
+  /// In en, this message translates to:
+  /// **'Next track'**
+  String get shortcutNextTrack;
+
+  /// No description provided for @shortcutSeekBack10.
+  ///
+  /// In en, this message translates to:
+  /// **'Back 10 seconds'**
+  String get shortcutSeekBack10;
+
+  /// No description provided for @shortcutSeekForward10.
+  ///
+  /// In en, this message translates to:
+  /// **'Forward 10 seconds'**
+  String get shortcutSeekForward10;
+
+  /// No description provided for @shortcutSeekBack60.
+  ///
+  /// In en, this message translates to:
+  /// **'Back 1 minute'**
+  String get shortcutSeekBack60;
+
+  /// No description provided for @shortcutSeekForward60.
+  ///
+  /// In en, this message translates to:
+  /// **'Forward 1 minute'**
+  String get shortcutSeekForward60;
+
+  /// Keyboard shortcuts list: the digit row 0-9 seeks to that tenth of the track
+  ///
+  /// In en, this message translates to:
+  /// **'Jump to 0 %…90 % of the track'**
+  String get shortcutSeekPercent;
+
+  /// No description provided for @shortcutRepeat.
+  ///
+  /// In en, this message translates to:
+  /// **'Repeat mode'**
+  String get shortcutRepeat;
+
+  /// No description provided for @shortcutShuffle.
+  ///
+  /// In en, this message translates to:
+  /// **'Shuffle'**
+  String get shortcutShuffle;
+
+  /// No description provided for @shortcutFavorite.
+  ///
+  /// In en, this message translates to:
+  /// **'Favourite'**
+  String get shortcutFavorite;
+
+  /// No description provided for @shortcutSpeedDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Slower'**
+  String get shortcutSpeedDown;
+
+  /// No description provided for @shortcutSpeedUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Faster'**
+  String get shortcutSpeedUp;
+
+  /// No description provided for @shortcutSpeedReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Normal speed'**
+  String get shortcutSpeedReset;
+
+  /// No description provided for @shortcutVizNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next visualizer'**
+  String get shortcutVizNext;
+
+  /// No description provided for @shortcutVizPrev.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous visualizer'**
+  String get shortcutVizPrev;
+
+  /// No description provided for @shortcutVizControls.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the visualizer controls'**
+  String get shortcutVizControls;
+
+  /// No description provided for @shortcutPmNext.
+  ///
+  /// In en, this message translates to:
+  /// **'projectM: next preset'**
+  String get shortcutPmNext;
+
+  /// No description provided for @shortcutPmPrev.
+  ///
+  /// In en, this message translates to:
+  /// **'projectM: previous preset'**
+  String get shortcutPmPrev;
+
+  /// No description provided for @shortcutPmLock.
+  ///
+  /// In en, this message translates to:
+  /// **'projectM: lock the preset'**
+  String get shortcutPmLock;
+
+  /// No description provided for @shortcutPmRandom.
+  ///
+  /// In en, this message translates to:
+  /// **'projectM: random order'**
+  String get shortcutPmRandom;
+
+  /// No description provided for @shortcutPmPicker.
+  ///
+  /// In en, this message translates to:
+  /// **'projectM: preset list'**
+  String get shortcutPmPicker;
+
+  /// No description provided for @shortcutMiniWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'Mini player'**
+  String get shortcutMiniWindow;
+
+  /// No description provided for @shortcutMiniViz.
+  ///
+  /// In en, this message translates to:
+  /// **'Mini player with visualizer'**
+  String get shortcutMiniViz;
+
+  /// No description provided for @shortcutAlwaysOnTop.
+  ///
+  /// In en, this message translates to:
+  /// **'Always on top'**
+  String get shortcutAlwaysOnTop;
+
+  /// No description provided for @shortcutPlayer.
+  ///
+  /// In en, this message translates to:
+  /// **'Open / close the player'**
+  String get shortcutPlayer;
+
+  /// Keyboard shortcuts list: Esc closes whatever is on top (player, queue panel, this list)
+  ///
+  /// In en, this message translates to:
+  /// **'Close the topmost panel'**
+  String get shortcutEscape;
+
+  /// No description provided for @shortcutQueue.
+  ///
+  /// In en, this message translates to:
+  /// **'Queue panel'**
+  String get shortcutQueue;
+
+  /// No description provided for @shortcutSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get shortcutSearch;
+
+  /// No description provided for @shortcutTabs.
+  ///
+  /// In en, this message translates to:
+  /// **'Tabs, in sidebar order'**
+  String get shortcutTabs;
+
+  /// No description provided for @shortcutOpenFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Open files…'**
+  String get shortcutOpenFiles;
+
+  /// No description provided for @shortcutLinkFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Link a folder…'**
+  String get shortcutLinkFolder;
+
+  /// No description provided for @shortcutInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Track info'**
+  String get shortcutInfo;
+
+  /// No description provided for @shortcutSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get shortcutSettings;
+
+  /// No description provided for @shortcutFullscreen.
+  ///
+  /// In en, this message translates to:
+  /// **'Full screen'**
+  String get shortcutFullscreen;
+
+  /// Keyboard shortcuts list: the ? key opens this very list
+  ///
+  /// In en, this message translates to:
+  /// **'This list'**
+  String get shortcutHelp;
+
+  /// Shell tab: the help guide (topics + keyboard shortcuts)
+  ///
+  /// In en, this message translates to:
+  /// **'Help'**
+  String get navHelp;
+
+  /// No description provided for @helpTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Help'**
+  String get helpTitle;
+
+  /// Help tab: link to the online documentation on the website
+  ///
+  /// In en, this message translates to:
+  /// **'Online documentation'**
+  String get helpDocsTitle;
+
+  /// No description provided for @helpDocsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Step-by-step guides with screenshots on rewamp.app (in English)'**
+  String get helpDocsSubtitle;
+
+  /// Player action + sheet title: pauses playback after a chosen duration
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep timer'**
+  String get sleepTimerTitle;
+
+  /// No description provided for @sleepTimerExplain.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback pauses after the chosen time, fading out over the last 30 seconds.'**
+  String get sleepTimerExplain;
+
+  /// No description provided for @sleepTimerMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} minute} other{{count} minutes}}'**
+  String sleepTimerMinutes(int count);
+
+  /// Compact remaining time next to the moon button
+  ///
+  /// In en, this message translates to:
+  /// **'{count} min'**
+  String sleepTimerRemainingMinutes(int count);
+
+  /// Compact remaining seconds in the last minute
+  ///
+  /// In en, this message translates to:
+  /// **'{count} s'**
+  String sleepTimerRemainingSeconds(int count);
+
+  /// No description provided for @sleepTimerActiveRemaining.
+  ///
+  /// In en, this message translates to:
+  /// **'Remaining: {time}'**
+  String sleepTimerActiveRemaining(String time);
+
+  /// No description provided for @sleepTimerOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off'**
+  String get sleepTimerOff;
+
+  /// No description provided for @sleepTimerEnded.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep timer ended — playback paused'**
+  String get sleepTimerEnded;
+
+  /// No description provided for @sleepTimerNothingToPlay.
+  ///
+  /// In en, this message translates to:
+  /// **'No recent listens to start from'**
+  String get sleepTimerNothingToPlay;
+
+  /// Release note: autoplay (∞) keeps playing related tracks after the queue ends
+  ///
+  /// In en, this message translates to:
+  /// **'Autoplay (∞): when the queue ends, playback goes on with related tracks (same artist, group, collection).'**
+  String get releaseNotesV11Autoplay;
+
+  /// Release note: linked folders — play user files in place (desktop, iOS Files/iCloud, Android)
+  ///
+  /// In en, this message translates to:
+  /// **'Linked folders: your files play where they are, without copying — desktop folders, the Files app and iCloud on iOS, any folder on Android.'**
+  String get releaseNotesV11LinkedFolders;
+
+  /// Release note: "Play with…" picks the engine, SoundFont, MT-32 model or FM bank of a file/album; import WOPL/WOPN banks
+  ///
+  /// In en, this message translates to:
+  /// **'“Play with…”: choose the engine of a file or album, as well as its SoundFont, MT-32 model or FM bank (you can import your own WOPL/WOPN banks).'**
+  String get releaseNotesV11PlayWith;
+
+  /// Release note: new engines (libADLMIDI, libOPNMIDI, Beatnik .rmf, ZX Spectrum .tap, Amstrad CPC .dsk, UnExoticA Mark II)
+  ///
+  /// In en, this message translates to:
+  /// **'New engines: MIDI on OPL3 (libADLMIDI) and OPN2/OPNA (libOPNMIDI), Beatnik .rmf, ZX Spectrum .tap tapes and Amstrad CPC .dsk disks on emulated machines, UnExoticA Mark II.'**
+  String get releaseNotesV11NewEngines;
+
+  /// Release note: engine updates (VGM 1.72 + Namco WSG, Furnace, AtariAudio 1.27 default for .ym, libxmp for Amiga, VGM end fade)
+  ///
+  /// In en, this message translates to:
+  /// **'Engines up to date: VGM 1.72 with Namco WSG chips, Furnace, AtariAudio 1.27 (now the default for .ym), libxmp as an option for Amiga modules, adjustable end fade on VGM.'**
+  String get releaseNotesV11EngineUpdates;
+
+  /// Release note: sleep timer
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep timer: pick a duration, the music fades out and stops — and an empty queue fills itself.'**
+  String get releaseNotesV11Sleep;
+
+  /// Release note: desktop keyboard shortcuts, Help tab with online docs, command line, single instance
+  ///
+  /// In en, this message translates to:
+  /// **'Desktop: keyboard shortcuts (list with ?), a Help tab linking to the online documentation, a command line (rewamp --mini --play …) and a single app instance.'**
+  String get releaseNotesV11Desktop;
+
+  /// Release note: library artists synced with the account, with artwork
+  ///
+  /// In en, this message translates to:
+  /// **'The artists in your library sync with your account, with their artwork.'**
+  String get releaseNotesV11ArtistSync;
+
+  /// Release note: long press on a track = play now / next / last; "…" menu next to Play all, Radio, Surprise
+  ///
+  /// In en, this message translates to:
+  /// **'Long press on a track: play it now, next or last; a “…” menu next to Play all, Radio and Surprise.'**
+  String get releaseNotesV11PlayNext;
+
+  /// Release note: composers tappable everywhere; title/author read from imported files
+  ///
+  /// In en, this message translates to:
+  /// **'Composers are tappable on every album and subsong screen; title and author are read from imported files.'**
+  String get releaseNotesV11Composers;
+
+  /// Release note: Hindi added (19 languages), UI ready for right-to-left languages
+  ///
+  /// In en, this message translates to:
+  /// **'The app speaks Hindi (19 languages), and the interface is ready for right-to-left languages.'**
+  String get releaseNotesV11Hindi;
+
+  /// Release note: infinite loop armed mid-track continues through the tune loop point
+  ///
+  /// In en, this message translates to:
+  /// **'Infinite loop turned on mid-track: the tune carries on through its own loop point, and a tune without one starts over.'**
+  String get releaseNotesV11Loops;
+
+  /// Release note: visualizers — 64 voices, MIDI drum colours per instrument, 2SF notes, FM bank instrument names
+  ///
+  /// In en, this message translates to:
+  /// **'Visualizers: up to 64 voices in the oscilloscopes, one colour per MIDI drum instrument, notes for 2SF files, instrument names from FM banks.'**
+  String get releaseNotesV11Visualizers;
+
+  /// Release note: fixes — SSF refused, silent WonderSwan, multi-archive albums, projectM presets after closing the player
+  ///
+  /// In en, this message translates to:
+  /// **'Fixed: some SSF files refused, silent WonderSwan rips, incomplete albums split over several archives, and projectM presets after closing the player.'**
+  String get releaseNotesV11Fixes;
 }
 
 class _AppLocalizationsDelegate

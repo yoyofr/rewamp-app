@@ -4,6 +4,7 @@
 # greffon, et joue un fichier (MIDI, XMI, MUS DMX, HMI/HMP, GMF).
 #   scripts/verify_adlmidi.sh [-s secondes] [-L] [-w out.wav] <fichier>
 #   -L : boucle infinie armée EN VOL, doit tenir 2 × la durée.
+#   PATH_BANK=n / PATH_BANK_FILE=f : banque « Lire avec… » de ce fichier.
 #   ADL_BANK=n ADL_EMU=n ADL_CHIPS=n ADL_GAIN=x : paramètres moteur.
 #   ASAN=1 : build AddressSanitizer séparé.
 set -euo pipefail

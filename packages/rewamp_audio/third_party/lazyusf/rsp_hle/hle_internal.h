@@ -76,6 +76,13 @@ struct hle_t
     uint8_t  mp3_buffer[0x1000];
 
     struct cached_ucodes_t cached_ucodes;
+
+    /* rewamp: the AUDIO microcode last identified (or not) by
+     * try_audio_task_detection, for the info panel. abi 0 = no audio task
+     * seen yet; name NULL with abi != 0 = unknown (the task is dropped). */
+    int         rw_aud_abi;
+    uint32_t    rw_aud_id;
+    const char* rw_aud_name;
 };
 
 /* some mips interface interrupt flags */

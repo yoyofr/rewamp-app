@@ -31,6 +31,7 @@
 #include "../third_party/libvgm/libvgm/utils/DataLoader.h"
 #include "../third_party/libvgm/libvgm/utils/FileLoader.h"
 #include "../third_party/libvgm/libvgm/utils/MemoryLoader.h"
+#include "../third_party/vgm_v3/vgm_v3.h"
 #include "rewamp_assets.h"   /* rewamp_load_asset() -> bundled vgm/yrw801.rom */
 #include "../third_party/libvgm/libvgm/emu/SoundDevs.h"
 #include "../third_party/libvgm/libvgm/emu/SoundEmu.h"   /* SndEmu_GetDevName */
@@ -67,8 +68,10 @@ static uint8_t vgm_voice_available(uint8_t type) {
         case DEVID_SCSP:    case DEVID_WSWAN:   case DEVID_VBOY_VSU:case DEVID_SAA1099:
         case DEVID_ES5503:  case DEVID_ES5506:  case DEVID_X1_010:  case DEVID_C352:
         case DEVID_GA20:    case DEVID_MIKEY:
-        /* ZSG-2 + TMS57002 (Taito Zoom, VGM 1.73), from the user's fork. */
+        /* ZSG-2 + TMS57002 (Taito Zoom, VGM 1.72), from the user's fork. */
         case DEVID_ZSG2:
+        /* Namco WSG family (libvgm PR #151, VGM v3), captures added by us. */
+        case DEVID_NAMCOWSG: case DEVID_NAMCOC15: case DEVID_NAMCOC30: case DEVID_NAMCOPPW:
             return 1;
         default:
             return 0;
@@ -134,6 +137,10 @@ static uint8_t vgm_voices_nb(uint8_t type) {
         case DEVID_MIKEY:   return 4;
         /* 48 voices; 33-48 muted through chnMute[1] (RWUSER_CHN_MUTE_HI). */
         case DEVID_ZSG2:    return 48;
+        case DEVID_NAMCOWSG:return 3;
+        case DEVID_NAMCOC15:
+        case DEVID_NAMCOC30:
+        case DEVID_NAMCOPPW:return 8;
         default:            return 0;
     }
 }
@@ -151,6 +158,9 @@ struct VgmChipSlot {
 struct VgmDecoder {
     PlayerA      player;
     DATA_LOADER* loader;
+    /* A v1 ES55xx / ZSG-2 file converted to v3 at load (vgm_open): the
+     * MemoryLoader only REFERENCES its buffer, so the decoder owns it. */
+    std::vector<uint8_t> v3data;
     int16_t*     renderBuf;       /* scratch buffer for int16 stereo render */
     uint32_t     renderBufFrames; /* size of renderBuf in stereo frames */
     bool         ended;
@@ -163,6 +173,71 @@ struct VgmDecoder {
 
 static const uint32_t kSampleRate    = 44100;
 static const uint32_t kBufSizeSample = 512;   /* SOUND_BUFFER_SIZE_SAMPLE */
+
+/* ── VGM v1 → v3 (ES55xx, ZSG-2) ────────────────────────────────────────── */
+
+/* The ES5505/ES5506/ES5510 and ZSG-2/TMS57002 extensions exist in two
+ * encodings that both announce VGM 1.72: v1 (packs published until
+ * 2026-10-31) and v3 (later captures, reconverted packs). Our libvgm reads v3
+ * — its ZSG-2 left chip id 0x30 and header clock 0x100 to the Namco WSG
+ * family — so a v1 file played as is sounds like a Pac-Man WSG, or nothing.
+ * vgm_v3.h is the converter that rewrote the packs, verified byte for byte by
+ * rendering; it works in memory, the file on disk is untouched, and loop
+ * point, sample count and GD3 are preserved. Same detection as vgm-tools:
+ * header below 0x120 with an ES5505/6 clock (0xD0) or a v1 ZSG-2 header
+ * (0x110 long, clock at 0x100). Anything else passes unchanged. */
+static bool vgm_is_v1_ext(const std::vector<uint8_t>& d) {
+    if (d.size() < 0x40 || memcmp(d.data(), "Vgm ", 4) != 0) return false;
+    uint32_t ver = vgmv3::rd32(d, 0x08);
+    size_t hdr = (ver >= 0x150 && vgmv3::rd32(d, 0x34)) ? 0x34 + vgmv3::rd32(d, 0x34) : 0x40;
+    if (hdr >= 0x120) return false;
+    /* An EXTRA HEADER (1.70+, offset at 0xBC) lives inside the header area:
+     * what follows its start is not a clock. Without this a CPS1 rip whose
+     * extra header begins at 0xC0 read its bytes at 0xD0 as an ES5506 clock
+     * (measured: vgmrips « Street Fighter II »). */
+    if (ver >= 0x170 && hdr > 0xC0 && vgmv3::rd32(d, 0xBC)) {
+        size_t xh = 0xBC + vgmv3::rd32(d, 0xBC);
+        if (xh < hdr) hdr = xh;
+    }
+    bool es  = hdr >= 0xD4  && d.size() >= 0xD4  && vgmv3::rd32(d, 0xD0)  != 0;
+    bool zsg = hdr == 0x110 && d.size() >= 0x110 && vgmv3::rd32(d, 0x100) != 0;
+    return es || zsg;
+}
+
+/* After DataLoader_Load (FileLoader has already inflated a .vgz): swap the
+ * loader for a MemoryLoader over the v3 bytes when the file is v1. A command
+ * with no v3 counterpart (never met in the published packs) leaves the file
+ * as is and says so on stderr rather than converting it wrong. */
+static void vgm_convert_v1_ext(VgmDecoder* dec) {
+    /* DataLoader_Load reads nothing yet: the header first (enough for the
+     * test), the whole file only for a v1 candidate. */
+    DataLoader_ReadUntil(dec->loader, 0x120);
+    UINT8* data = DataLoader_GetData(dec->loader);
+    UINT32 size = DataLoader_GetSize(dec->loader);
+    if (data == NULL || size < 0x40 || memcmp(data, "Vgm ", 4) != 0) return;
+    if (!vgm_is_v1_ext(std::vector<uint8_t>(data, data + size))) return;
+    DataLoader_ReadAll(dec->loader);
+    data = DataLoader_GetData(dec->loader);
+    size = DataLoader_GetSize(dec->loader);
+    std::vector<uint8_t> in(data, data + size);
+    try {
+        int kind = 0;
+        std::vector<uint8_t> out = vgmv3::to_v3(in, kind);
+        if (kind == vgmv3::NONE) return;
+        dec->v3data.swap(out);
+    } catch (const std::exception& e) {
+        fprintf(stderr, "[vgm] v1 -> v3 conversion refused: %s\n", e.what());
+        return;
+    }
+    DATA_LOADER* mem = MemoryLoader_Init(dec->v3data.data(), (UINT32)dec->v3data.size());
+    if (mem == NULL || DataLoader_Load(mem) != 0) {
+        if (mem) DataLoader_Deinit(mem);
+        dec->v3data.clear();
+        return;
+    }
+    DataLoader_Deinit(dec->loader);
+    dec->loader = mem;
+}
 
 /* ── Probe ──────────────────────────────────────────────────────────────── */
 
@@ -275,6 +350,10 @@ static int vgm_voice_detailed_name(uint8_t type, int ch, char* out, size_t len) 
         case DEVID_X1_010:  snprintf(out, len, "Wave %d", ch + 1); return 1;
         case DEVID_ES5506:
         case DEVID_ZSG2:    snprintf(out, len, "Voice %d", ch + 1); return 1;
+        case DEVID_NAMCOWSG:
+        case DEVID_NAMCOC15:
+        case DEVID_NAMCOC30:
+        case DEVID_NAMCOPPW:snprintf(out, len, "Wave %d", ch + 1);  return 1;
         case DEVID_32X_PWM: snprintf(out, len, "PWM %s", ch == 0 ? "L" : "R"); return 1;
         case DEVID_GB_DMG: {
             static const char* const gb[4] =
@@ -544,6 +623,7 @@ static RewampDecoder* vgm_open(const char* path, RewampAudioFormat* outFmt) {
     if (!dec->loader) { delete dec; return NULL; }
 
     DataLoader_Load(dec->loader);
+    vgm_convert_v1_ext(dec);
 
     uint8_t loadRet = dec->player.LoadFile(dec->loader);
     if (loadRet >= 0x80) {

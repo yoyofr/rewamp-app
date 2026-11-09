@@ -85,6 +85,25 @@ void usf_set_hle_audio(void * state, int enable)
     USF_STATE->enable_hle_audio = enable;
 }
 
+/* rewamp: see usf.h. */
+int usf_rewamp_audio_ucode(void * state, char * out, size_t cap)
+{
+    const struct hle_t * hle = &USF_STATE->hle;
+    if (!out || cap == 0) return 0;
+    if (!USF_STATE->enable_hle_audio) {
+        snprintf(out, cap, "full RSP emulation (LLE)");
+        return 1;
+    }
+    if (hle->rw_aud_abi == 0) return 0;
+    if (hle->rw_aud_name)
+        snprintf(out, cap, "%s (ABI%d, %08x)", hle->rw_aud_name,
+                 hle->rw_aud_abi, (unsigned)hle->rw_aud_id);
+    else
+        snprintf(out, cap, "UNKNOWN (ABI%d, %08x) - not emulated, silent",
+                 hle->rw_aud_abi, (unsigned)hle->rw_aud_id);
+    return 1;
+}
+
 void usf_set_trimming_mode(void * state, int enable)
 {
     USF_STATE->enable_trimming_mode = enable;

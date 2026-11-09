@@ -73,4 +73,21 @@ game.nsf::NSF,2,Stage 1,60
     final rows = RewampDb.subsongRowsFromServer(container);
     expect(rows.map((r) => r.subsongIdx).toList(), [0, 1]);
   });
+
+  test('un M3U WSR garde le numéro AW tel quel, base 0 comme base 1', () {
+    // « With You - Mitsumete Itai » (jw_wsr): 0..16, AW=0 est la 1re piste.
+    const withYou = '''
+SWJ-SHLC01.wsr::WSR,0,The Summer We Played Until Evening,3:05,,10
+SWJ-SHLC01.wsr::WSR,1,If You Look Up At the Sky,2:16,,10
+''';
+    expect(RewampDb.parseM3uToSubsongs(withYou, '/tmp').map((s) => s.subsongIdx).toList(), [0, 1],
+        reason: 'base 0: rien à retirer');
+    // « Arc the Lad: Kijin Fukka » (jw_wsr): 1..N, AW=0 y est un emplacement mort.
+    const arc = '''
+SWJ-BANC2A.wsr::WSR,1,BGM #01,1:00,,10
+SWJ-BANC2A.wsr::WSR,2,BGM #02,1:00,,10
+''';
+    expect(RewampDb.parseM3uToSubsongs(arc, '/tmp').map((s) => s.subsongIdx).toList(), [1, 2],
+        reason: 'base 1: ne JAMAIS retirer 1, sinon la 1re ligne vise AW=0 (mort)');
+  });
 }

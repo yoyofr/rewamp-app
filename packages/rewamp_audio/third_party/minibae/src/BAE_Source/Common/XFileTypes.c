@@ -1,0 +1,943 @@
+/*
+    Copyright (c) 2009 Beatnik, Inc All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are
+    met:
+
+    Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the following disclaimer.
+
+    Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+    Neither the name of the Beatnik, Inc nor the names of its contributors
+    may be used to endorse or promote products derived from this software
+    without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+    IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+    TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+    HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+    TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+    PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+    LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+/*
+    Additional modifications © 2021-2026 zefie
+    Licensed under the GNU Lesser General Public License v3.0 or later.
+*/
+
+/*****************************************************************************/
+/*
+**  XFileTypes.c
+**
+**  Content-based file type detection for audio and MIDI files.
+**  
+**  Determines file types based on file content (magic bytes/FOURCCs)
+**  rather than relying solely on file extensions.
+**
+**  Supports:
+**  - MIDI (.mid) - "MThd" header
+**  - RMF (.rmf) - "IREZ" header
+**  - ZMF (.zmf) - "ZREZ" header (RMF with modern codecs)
+**  - RMI (.rmi) - RIFF container with embedded MIDI
+**  - XMF/MXMF (.xmf/.mxmf) - "XMF_" header
+**  - WAV (.wav) - RIFF WAVE container
+**  - AIFF (.aif/.aiff) - FORM AIFF container
+**  - AU (.au) - Sun Audio ".snd" header
+**  - FLAC (.flac) - "fLaC" header
+**  - MP2/MP3 (.mp2/.mp3) - MPEG frame sync or ID3 tags
+**  - OGG (.ogg) - "OggS" header (Vorbis/FLAC only)
+**  - QOA (.qoa) - "qoaf" header (Quite OK Audio)
+**
+*/
+/*****************************************************************************/
+
+#include "X_API.h"
+#include "NeoBAE.h"
+#include "BAE_API.h"
+#include <string.h>
+#include "X_Assert.h"
+
+// Maximum number of bytes to read for file type detection
+#define FILETYPE_PROBE_SIZE 64
+
+// Magic byte signatures for different file types
+#define BAE_FOURCC_MIDI     0x4D546864  // "MThd" - Standard MIDI File
+#define BAE_FOURCC_RMF      0x4952455A  // "IREZ" - Rich Music Format
+#define BAE_FOURCC_ZMF      0x5A52455A  // "ZREZ" - ZMF (RMF with modern codecs)
+#define BAE_FOURCC_MTHC     0x4D546863  // "MThc" - MThc MIDI container
+#define BAE_FOURCC_XMF      0x584D465F  // "XMF_" - eXtensible Music Format
+#define BAE_FOURCC_RIFF     0x52494646  // "RIFF" - Resource Interchange File Format
+#define BAE_FOURCC_FORM     0x464F524D  // "FORM" - IFF FORM container (AIFF)
+#define BAE_FOURCC_AU       0x2E736E64  // ".snd" - Sun Audio
+#define BAE_FOURCC_FLAC     0x664C6143  // "fLaC" - Free Lossless Audio Codec
+#define BAE_FOURCC_OGGS     0x4F676753  // "OggS" - Ogg container
+#define BAE_FOURCC_QOA      0x716F6166  // "qoaf" - Quite OK Audio
+
+// RIFF/IFF subtype FOURCCs
+#define BAE_FOURCC_WAVE     0x57415645  // "WAVE" - RIFF Wave audio
+#define BAE_FOURCC_RMID     0x524D4944  // "RMID" - RIFF MIDI
+#define BAE_FOURCC_AIFF     0x41494646  // "AIFF" - Audio Interchange File Format
+
+// OGG codec identifiers
+#define OGG_VORBIS_MAGIC    0x01766F72  // "\x01vor" - Vorbis identification header
+#define OGG_FLAC_MAGIC      0x7F464C41  // "\x7fFLA" - FLAC mapping header
+#define OGG_OPUS_MAGIC      0x4F707573  // "Opus" - Opus identification header
+
+// Function prototypes for internal helpers
+static BAEFileType PV_DetectRIFFType(const unsigned char *buffer, int32_t bufferSize);
+static BAEFileType PV_DetectOGGType(const unsigned char *buffer, int32_t bufferSize);
+static int PV_IsLikelyMPEGHeader(const unsigned char *header);
+static int PV_StartsWithNoCase(const unsigned char *data, int32_t length, const char *needle);
+static int PV_IsLikelyRTTTL(const unsigned char *data, int32_t length);
+
+/**
+ * Detect specific RIFF file subtypes (WAV, RMI)
+ */
+static BAEFileType PV_DetectRIFFType(const unsigned char *buffer, int32_t bufferSize)
+{
+    uint32_t subtype;
+    
+    if (bufferSize < 12)
+        return BAE_INVALID_TYPE;
+    
+    // Read the RIFF subtype at offset 8
+    subtype = PV_ReadBE32(&buffer[8]);
+    
+    switch (subtype)
+    {
+        case BAE_FOURCC_WAVE:
+            return BAE_WAVE_TYPE;
+            
+        case BAE_FOURCC_RMID:
+            // Verify there's actually MIDI data embedded
+            // Look for "data" chunk followed by "MThd"
+            if (bufferSize >= 24)
+            {
+                for (int i = 12; i < bufferSize - 8; i += 4)
+                {
+                    if (PV_ReadBE32(&buffer[i]) == 0x64617461 && // "data"
+                        i + 12 < bufferSize &&
+                        PV_ReadBE32(&buffer[i + 8]) == BAE_FOURCC_MIDI)
+                    {
+                        return BAE_RMI; // RMI files are treated as MIDI
+                    }
+                }
+            }
+            return BAE_WAVE_TYPE; // Default to WAVE if no MIDI found
+            
+        default:
+            return BAE_WAVE_TYPE; // Unknown RIFF subtype, assume WAVE
+    }
+}
+
+#if USE_OGG_FORMAT == TRUE
+/**
+ * Detect OGG container contents (Vorbis or FLAC)
+ */
+static BAEFileType PV_DetectOGGType(const unsigned char *buffer, int32_t bufferSize)
+{
+    // OGG pages start with "OggS" followed by version, header type, etc.
+    // The actual codec data starts after the OGG page header
+    // We need to find the first page with audio data
+    
+    int offset = 0; // Start at the beginning of the page ("OggS")
+    
+    while (offset + 27 < bufferSize) // Minimum OGG page header size
+    {
+        // Skip OGG page header fields to get to the payload
+        int segmentCount = buffer[offset + 26];
+        
+        if (offset + 27 + segmentCount >= bufferSize)
+            break;
+            
+        // Skip to segment table
+        int segmentTableOffset = offset + 27;
+        
+        // Calculate payload offset by summing segment lengths
+        int payloadOffset = segmentTableOffset + segmentCount;
+        int payloadSize = 0;
+        
+        for (int i = 0; i < segmentCount && segmentTableOffset + i < bufferSize; i++)
+        {
+            payloadSize += buffer[segmentTableOffset + i];
+        }
+        
+        if (payloadOffset + 8 <= bufferSize)
+        {
+#if USE_VORBIS_DECODER == TRUE || USE_FLAC_DECODER == TRUE || USE_OPUS_DECODER == TRUE
+            uint32_t magic = PV_ReadBE32(&buffer[payloadOffset]);
+#endif
+            
+#if USE_VORBIS_DECODER == TRUE
+            // Check for Vorbis identification header
+            if (magic == OGG_VORBIS_MAGIC && payloadOffset + 7 < bufferSize &&
+                buffer[payloadOffset + 4] == 'b' &&
+                buffer[payloadOffset + 5] == 'i' &&
+                buffer[payloadOffset + 6] == 's')
+            {
+                return BAE_VORBIS_TYPE;
+            }
+#endif
+
+#if USE_FLAC_DECODER == TRUE
+            // Check for FLAC in OGG (rare but possible)
+            if (magic == OGG_FLAC_MAGIC && payloadOffset + 4 < bufferSize &&
+                buffer[payloadOffset + 4] == 'C')
+            {
+                return BAE_FLAC_TYPE;
+            }
+#endif
+
+#if USE_OPUS_DECODER == TRUE
+            // Check for Opus identification header
+            if (magic == OGG_OPUS_MAGIC && payloadOffset + 8 < bufferSize &&
+                buffer[payloadOffset + 4] == 'H' &&
+                buffer[payloadOffset + 5] == 'e' &&
+                buffer[payloadOffset + 6] == 'a' &&
+                buffer[payloadOffset + 7] == 'd')
+            {
+                return BAE_OPUS_TYPE;
+            }
+#endif
+        }
+
+        // Look for next OGG page
+        offset = payloadOffset + payloadSize;
+        while (offset + 4 <= bufferSize)
+        {
+            if (PV_ReadBE32(&buffer[offset]) == BAE_FOURCC_OGGS)
+                break;
+            offset++;
+        }
+        
+        if (offset + 4 > bufferSize)
+            break;
+    }
+#if USE_VORBIS_DECODER == TRUE
+    /* Prefer Vorbis by default for .ogg if we can't determine; historically .ogg=>Vorbis */
+    return BAE_VORBIS_TYPE;
+#elif USE_OPUS_DECODER == TRUE
+    /* Fallback to Opus only if Vorbis isn't available */
+    return BAE_OPUS_TYPE;
+#else
+    return BAE_INVALID_TYPE;
+#endif
+
+}
+#endif
+
+/**
+ * Check if header bytes look like an MPEG audio frame
+ */
+static int PV_IsLikelyMPEGHeader(const unsigned char *header)
+{
+    debug_message("[FileType] Checking MPEG header: %02X %02X %02X %02X\n", 
+               header[0], header[1], header[2], header[3]);
+    
+    // Check for ID3v2 tag
+    if (header[0] == 'I' && header[1] == 'D' && header[2] == '3')
+    {
+        debug_message("[FileType] Detected ID3v2 tag\n");
+        return 1;
+    }
+    
+    // Check for specific MPEG pattern: FF F3 40 CC
+    if (header[0] == 0xFF && header[1] == 0xF3 && header[2] == 0x40 && header[3] == 0xCC)
+    {
+        debug_message("[FileType] Detected specific MPEG pattern FF F3 40 CC\n");
+        return 1;
+    }
+        
+    // Check for MPEG frame sync pattern (11 bits of 1s: 0xFFE)
+    if (header[0] == 0xFF && (header[1] & 0xE0) == 0xE0)
+    {
+        debug_message("[FileType] Found MPEG frame sync pattern\n");
+        // Additional validation: check for valid MPEG version and layer
+        unsigned char version = (header[1] >> 3) & 0x03;
+        unsigned char layer = (header[1] >> 1) & 0x03;
+        unsigned char bitrate = (header[2] >> 4) & 0x0F;
+        
+        debug_message("[FileType] MPEG validation - version: %02X, layer: %02X, bitrate: %02X\n", 
+                   version, layer, bitrate);
+        
+        // Version should not be 01 (reserved)
+        // Layer should not be 00 (reserved)  
+        // Bitrate should not be 0000 (free) or 1111 (reserved)
+        if (version != 0x01 && layer != 0x00 && bitrate != 0x00 && bitrate != 0x0F)
+        {
+            debug_message("[FileType] MPEG validation passed\n");
+            return 1;
+        }
+        else
+        {
+            debug_message("[FileType] MPEG validation failed\n");
+        }
+    }
+    
+    debug_message("[FileType] No MPEG pattern detected\n");
+    return 0;
+}
+
+static int PV_StartsWithNoCase(const unsigned char *data, int32_t length, const char *needle)
+{
+    int32_t i;
+    if (!data || !needle)
+        return 0;
+
+    for (i = 0; needle[i] != '\0'; ++i)
+    {
+        char a;
+        char b;
+        if (i >= length)
+            return 0;
+        a = (char)data[i];
+        b = needle[i];
+        if (a >= 'A' && a <= 'Z')
+            a = (char)(a + ('a' - 'A'));
+        if (b >= 'A' && b <= 'Z')
+            b = (char)(b + ('a' - 'A'));
+        if (a != b)
+            return 0;
+    }
+    return 1;
+}
+
+/*
+ * Detect Nokia RTTTL / RTX plain-text ringtone format.
+ *
+ * The canonical structure is:
+ *   <title> : <defaults> : <note-list>
+ * where <defaults> contains comma-separated key=value pairs such as
+ *   d=16,o=5,b=120
+ * with single-letter keys (d/o/b/l/s) and decimal values.
+ *
+ * Detection strategy:
+ *  1. Confirm the probe window is clean ASCII (no binary control bytes).
+ *  2. Find the first colon (end of title).
+ *  3. After it, confirm at least one <letter>=<digits> token before the
+ *     second colon – this is the most distinctive structural marker.
+ *  4. Confirm a second colon exists (separates defaults from note list).
+ */
+static int PV_IsLikelyRTTTL(const unsigned char *data, int32_t length)
+{
+    int32_t i;
+    int32_t sample;
+    int32_t firstColon;
+    int32_t secondColon;
+    int hasKeyValue;
+    unsigned char c;
+
+    if (!data || length <= 0)
+        return 0;
+
+    sample = length < 512 ? length : 512;
+
+    /* 1. Reject any buffer that contains binary control bytes. */
+    for (i = 0; i < sample; ++i)
+    {
+        c = data[i];
+        if (c < 9 || (c > 13 && c < 32))
+            return 0;
+    }
+
+    /* 2. Locate the first colon (title separator). */
+    firstColon = -1;
+    for (i = 0; i < sample; ++i)
+    {
+        if (data[i] == ':')
+        {
+            firstColon = i;
+            break;
+        }
+    }
+    if (firstColon < 0)
+        return 0;
+
+    /* 3. Between first and second colon look for <letter>=<digit(s)>. */
+    hasKeyValue = 0;
+    secondColon = -1;
+    for (i = firstColon + 1; i + 2 < sample; ++i)
+    {
+        if (data[i] == ':')
+        {
+            secondColon = i;
+            break;
+        }
+        c = data[i];
+        /* key: single ASCII letter */
+        if (((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) &&
+            data[i + 1] == '=' &&
+            (data[i + 2] >= '0' && data[i + 2] <= '9'))
+        {
+            hasKeyValue = 1;
+        }
+    }
+
+    /* 4. Must have both structural markers. */
+    if (!hasKeyValue || secondColon < 0)
+        return 0;
+
+    /* A note list must begin after the second colon. */
+    if (secondColon + 1 >= sample)
+        return 0;
+
+    return 1;
+}
+
+/**
+ * Determine file type by analyzing file path/extension
+ * 
+ * @param filePath - Path to file to analyze
+ * @return BAEFileType - Detected file type based on extension or BAE_INVALID_TYPE if unknown
+ */
+BAEFileType X_DetermineFileTypeByPath(const char *filePath)
+{
+    if (filePath == NULL)
+        return BAE_INVALID_TYPE;
+    
+    // Find the last dot for extension
+    const char *ext = strrchr(filePath, '.');
+    if (!ext)
+    {
+        debug_message("[FileType] No extension found in path\n");
+        return BAE_INVALID_TYPE;
+    }
+    
+    debug_message("[FileType] Found extension: %s\n", ext);
+    
+    // Convert extension to lowercase for comparison
+    char extLower[16] = {0};
+    int i = 0;
+    for (const char *p = ext; *p && i < sizeof(extLower) - 1; ++p, ++i)
+    {
+        if (*p >= 'A' && *p <= 'Z')
+            extLower[i] = *p + ('a' - 'A');
+        else
+            extLower[i] = *p;
+    }
+    
+    // Check for audio file extensions
+    if (strcmp(extLower, ".wav") == 0)
+        return BAE_WAVE_TYPE;
+#if USE_ADP_SUPPORT == TRUE
+    else if (strcmp(extLower, ".adp") == 0)
+        return BAE_ADP_TYPE;
+#endif
+#if USE_ADX_SUPPORT == TRUE
+    else if (strcmp(extLower, ".adx") == 0)
+        return BAE_ADX_TYPE;
+#endif
+    else if (strcmp(extLower, ".aif") == 0 || strcmp(extLower, ".aiff") == 0)
+        return BAE_AIFF_TYPE;
+    else if (strcmp(extLower, ".au") == 0)
+        return BAE_AU_TYPE;
+    else if (strcmp(extLower, ".mp2") == 0 || strcmp(extLower, ".mp3") == 0)
+        return BAE_MPEG_TYPE;
+#if USE_FLAC_DECODER == TRUE
+    else if (strcmp(extLower, ".flac") == 0)
+        return BAE_FLAC_TYPE;
+#endif
+#if USE_VORBIS_DECODER == TRUE || USE_OPUS_DECODER == TRUE
+    /* Don't assume .ogg/.oga is Vorbis; let content-based detection decide (could be Opus or Vorbis) */
+    else if (strcmp(extLower, ".ogg") == 0 || strcmp(extLower, ".oga") == 0)
+        return BAE_INVALID_TYPE;
+#endif
+#if USE_OPUS_DECODER == TRUE        
+    else if (strcmp(extLower, ".opus") == 0)
+        return BAE_OPUS_TYPE;
+#endif
+#if USE_QOA_SUPPORT == TRUE
+    else if (strcmp(extLower, ".qoa") == 0)
+        return BAE_QOA_TYPE;
+#endif
+#if USE_WMA_SUPPORT == TRUE
+    else if (strcmp(extLower, ".wma") == 0)
+        return BAE_WMA_TYPE;
+    else if (strcmp(extLower, ".asf") == 0)
+        return BAE_WMA_TYPE;
+#endif
+    // Check for MIDI/music file extensions
+    else if (strcmp(extLower, ".mid") == 0 || strcmp(extLower, ".midi") == 0 || strcmp(extLower, ".kar") == 0)
+        return BAE_MIDI_TYPE;
+#if USE_ZMF_SUPPORT == TRUE
+    else if (strcmp(extLower, ".rmf") == 0 || strcmp(extLower, ".zmf") == 0)
+        return BAE_RMF;
+    else if (strcmp(extLower, ".hsb") == 0 || strcmp(extLower, ".zsb") == 0)
+        return BAE_RMF;
+#else
+    else if (strcmp(extLower, ".rmf") == 0)
+        return BAE_RMF;
+    else if (strcmp(extLower, ".hsb") == 0)
+        return BAE_RMF;
+#endif
+    else if (strcmp(extLower, ".rmi") == 0)
+        return BAE_RMI;        
+#if USE_RETRO_RINGTONE_SUPPORT == TRUE        
+    else if (strcmp(extLower, ".imy") == 0 || strcmp(extLower, ".emy") == 0)
+        return BAE_RINGTONE_IMY;
+    else if (strcmp(extLower, ".rng") == 0)
+        return BAE_RINGTONE_RNG;
+    else if (strcmp(extLower, ".rtx") == 0 || strcmp(extLower, ".rtttl") == 0)
+        return BAE_RINGTONE_RTX;
+#endif        
+#if USE_XMF_SUPPORT == TRUE
+    else if (strcmp(extLower, ".xmf") == 0 || strcmp(extLower, ".mxmf") == 0)
+        return BAE_XMF; // XMF files contain MIDI data
+#endif    
+    return BAE_INVALID_TYPE;
+}
+
+/**
+ * Determine file type by trying extension-based detection first, 
+ * then falling back to content-based detection if needed
+ * 
+ * @param filePath - Path to file to analyze
+ * @return BAEFileType - Detected file type or BAE_INVALID_TYPE if unknown/error
+ */
+BAEFileType X_DetermineFileType(const char *filePath)
+{
+    if (filePath == NULL)
+        return BAE_INVALID_TYPE;
+    
+    debug_message("[FileType] Detecting type for: %s\n", filePath);
+    
+    // Try extension-based detection first (fast)
+    BAEFileType result = X_DetermineFileTypeByPath(filePath);
+    debug_message("[FileType] Extension-based detection result: %s\n", X_GetFileTypeString(result));
+
+#if USE_MTHC_SUPPORT == TRUE
+    /* .mid/.midi often host Nokia MThc containers; prefer content magic. */
+    if (result == BAE_MIDI_TYPE)
+    {
+        XFILENAME fileName;
+        XFILE fileRef;
+
+        XConvertPathToXFILENAME((void *)filePath, &fileName);
+        fileRef = XFileOpenForRead(&fileName);
+        if (fileRef != 0)
+        {
+            unsigned char magic[4];
+            int32_t readResult;
+
+            memset(magic, 0, sizeof(magic));
+            XFileSetPosition(fileRef, 0L);
+            readResult = XFileRead(fileRef, magic, 4);
+            XFileClose(fileRef);
+            if (readResult == 0 &&
+                magic[0] == 'M' && magic[1] == 'T' && magic[2] == 'h' && magic[3] == 'c')
+            {
+                result = BAE_MTHC;
+                debug_message("[FileType] Overrode MIDI extension to MThc by content\n");
+            }
+        }
+    }
+#endif
+    
+    // If extension-based detection failed, try content-based detection
+    if (result == BAE_INVALID_TYPE)
+    {
+        XFILENAME fileName;
+        XFILE fileRef;
+        
+        // Convert path to XFILENAME and open file
+        XConvertPathToXFILENAME((void *)filePath, &fileName);
+        
+        fileRef = XFileOpenForRead(&fileName);
+        
+        if (fileRef != 0)
+        {
+            unsigned char buffer[FILETYPE_PROBE_SIZE];
+            uint32_t originalPosition;
+            int32_t bytesRead = 0;
+            
+            // Save current file position
+            originalPosition = XFileGetPosition(fileRef);
+            
+            // Read from beginning of file
+            XFileSetPosition(fileRef, 0L);
+            
+            // Initialize buffer
+            memset(buffer, 0, FILETYPE_PROBE_SIZE);
+            
+            int32_t readResult = XFileRead(fileRef, buffer, FILETYPE_PROBE_SIZE);
+            
+            if (readResult == 0) // NO_ERR = 0, success
+            {
+                bytesRead = FILETYPE_PROBE_SIZE;
+            }
+            else
+            {
+                // Try a smaller read if the first one failed
+                XFileSetPosition(fileRef, 0L);
+                readResult = XFileRead(fileRef, buffer, 4);
+                if (readResult == 0)
+                {
+                    bytesRead = 4;
+                }
+            }
+            
+            // Restore file position
+            XFileSetPosition(fileRef, originalPosition);
+            
+            if (bytesRead >= 4)
+            {
+                result = X_DetermineFileTypeByData(buffer, bytesRead);
+                debug_message("[FileType] Content-based detection result: %s\n", X_GetFileTypeString(result));
+            }
+            else
+            {
+                debug_message("[FileType] Failed to read enough data for content detection\n");
+            }
+            
+            XFileClose(fileRef);
+        }
+        else
+        {
+            debug_message("[FileType] Failed to open file for content detection\n");
+        }
+    }
+    
+    return result;
+}
+
+
+/**
+ * Determine file type by analyzing raw data buffer
+ * 
+ * @param data - Raw data buffer to analyze
+ * @param length - Length of data buffer in bytes
+ * @return BAEFileType - Detected file type or BAE_INVALID_TYPE if unknown
+ */
+BAEFileType X_DetermineFileTypeByData(const unsigned char *data, int32_t length)
+{
+    uint32_t fourcc;
+    uint32_t offset = 0;
+    
+    if (data == NULL || length < 4)
+    {
+        debug_message("[FileType] Invalid data buffer or insufficient length (%d bytes)\n", length);
+        return BAE_INVALID_TYPE;
+    }
+#if USE_ADP_SUPPORT == TRUE
+    if (length >= 10 && memcmp(data, X_FILETYPE_ADP, 10) == 0)
+    {
+        return BAE_ADP_TYPE;
+    }
+#endif
+#if USE_ADX_SUPPORT == TRUE
+    if (length >= 6 && data[0] == 0x80 && data[1] == 0x00)
+    {
+        return BAE_ADX_TYPE;
+    }
+#endif
+#if USE_RETRO_RINGTONE_SUPPORT == TRUE
+    /* Nokia Smart Messaging binary ringtone starts with 02 4A 3A. */
+    if (length >= 3 &&
+        data[0] == 0x02 &&
+        data[1] == 0x4A &&
+        data[2] == 0x3A)
+    {
+        return BAE_RINGTONE_RNG;
+    }
+#endif
+    // Read the first FOURCC
+    fourcc = PV_ReadBE32(data);
+    // Skip leading null bytes (up to 1024 bytes)
+    if (fourcc == 0)
+    {
+        
+        offset += 4;
+        while (offset + 4 <= length && offset < 1024)
+        {
+            fourcc = PV_ReadBE32(&data[offset]);
+            if (fourcc != 0) {
+                // read next bytes until we get a full FOURCC
+                while (data[offset] == 0) {
+                    offset++;
+                }
+                fourcc = PV_ReadBE32(&data[offset]);
+                break;
+            }                
+            offset += 4;
+        }
+        
+        // If we still have no valid FOURCC, give up
+        if (fourcc == 0)
+        {
+            debug_message("[FileType] No valid FOURCC found in first 1024 bytes\n");
+            return BAE_INVALID_TYPE;
+        }
+        
+        debug_message("[FileType] Found non-zero FOURCC at offset %d: 0x%08X\n", offset, fourcc);
+    }
+        
+    // Check primary magic signatures
+    switch (fourcc)
+    {
+        case BAE_FOURCC_MIDI:
+            return BAE_MIDI_TYPE;
+
+            
+#if USE_MTHC_SUPPORT == TRUE
+        case BAE_FOURCC_MTHC:
+            return BAE_MTHC;
+
+#endif  
+        case BAE_FOURCC_RMF:
+#if USE_ZMF_SUPPORT == TRUE        
+        case BAE_FOURCC_ZMF:
+#endif        
+            return BAE_RMF;
+#if USE_XMF_SUPPORT == TRUE            
+        case BAE_FOURCC_XMF:
+            // Could be XMF or MXMF, both are handled the same way
+            return BAE_XMF;
+#endif            
+        case BAE_FOURCC_RIFF:
+            return PV_DetectRIFFType(data, length);
+            
+        case BAE_FOURCC_FORM:
+            // IFF container, check subtype
+            if (length >= 12)
+            {
+                uint32_t subtype = PV_ReadBE32(&data[8]);
+                if (subtype == BAE_FOURCC_AIFF)
+                    return BAE_AIFF_TYPE;
+            }
+            return BAE_AIFF_TYPE; // Assume AIFF if we can't determine subtype
+            
+        case BAE_FOURCC_AU:
+            return BAE_AU_TYPE;
+            
+#if USE_FLAC_DECODER == TRUE || USE_FLAC_ENCODER == TRUE        
+        case BAE_FOURCC_FLAC:
+            return BAE_FLAC_TYPE;
+#endif
+#if USE_OGG_FORMAT == TRUE            
+        case BAE_FOURCC_OGGS:
+            return PV_DetectOGGType(data, length);
+#endif
+#if USE_QOA_SUPPORT == TRUE
+        case BAE_FOURCC_QOA:
+            return BAE_QOA_TYPE;
+#endif
+#if USE_WMA_SUPPORT == TRUE
+        case 0x3026B275:  /* ASF Header Object GUID first 4 bytes LE */
+            return BAE_WMA_TYPE;
+#endif
+
+        default:
+ #if USE_MPEG_DECODER == TRUE
+            // Check for MPEG audio (MP2/MP3)
+            if (PV_IsLikelyMPEGHeader(&data[offset]))
+            {
+                return BAE_MPEG_TYPE;
+            }
+            
+            // Check for ID3v1 tag at the end (less reliable, but possible)
+            if (data[offset] == 'T' && data[offset+1] == 'A' && data[offset+2] == 'G')
+            {
+                // This could be an MP3 with ID3v1 tag at the beginning
+                // (unusual but not impossible)
+                return BAE_MPEG_TYPE;
+            }
+#endif            
+            break;
+    }
+#if USE_RETRO_RINGTONE_SUPPORT == TRUE
+    if (PV_StartsWithNoCase(data, length, "begin:imelody") ||
+        PV_StartsWithNoCase(data, length, "begin:emelody"))
+    {
+        return BAE_RINGTONE_IMY;
+    }
+
+    if (PV_IsLikelyRTTTL(data, length))
+    {
+        return BAE_RINGTONE_RTX;
+    }
+#endif
+
+    return BAE_INVALID_TYPE;
+}
+
+/**
+ * Determine file type by analyzing file contents
+ * 
+ * @param filePath - Path to file to analyze
+ * @return BAEFileType - Detected file type or BAE_INVALID_TYPE if unknown/error
+ */
+BAEFileType X_DetermineFileTypeFromPath(const char *filePath)
+{
+    XFILENAME fileName;
+    XFILE fileRef;
+    BAEFileType result = BAE_INVALID_TYPE;
+    
+    if (filePath == NULL)
+        return BAE_INVALID_TYPE;
+    
+    // Convert path to XFILENAME
+    XConvertPathToXFILENAME((void *)filePath, &fileName);
+    
+    // Open file for reading
+    fileRef = XFileOpenForRead(&fileName);
+    if (fileRef == 0)
+        return BAE_INVALID_TYPE;
+    
+    // Read file data for analysis
+    unsigned char buffer[FILETYPE_PROBE_SIZE];
+    int32_t bytesRead = 0;
+    
+    // Initialize buffer
+    memset(buffer, 0, FILETYPE_PROBE_SIZE);
+    
+    int32_t readResult = XFileRead(fileRef, buffer, FILETYPE_PROBE_SIZE);
+    
+    if (readResult == 0) // NO_ERR = 0, success
+    {
+        bytesRead = FILETYPE_PROBE_SIZE;
+    }
+    else
+    {
+        // Try a smaller read if the first one failed
+        XFileSetPosition(fileRef, 0L);
+        readResult = XFileRead(fileRef, buffer, 4);
+        if (readResult == 0)
+        {
+            bytesRead = 4;
+        }
+    }
+    
+    if (bytesRead >= 4)
+    {
+        // Determine type from file contents
+        result = X_DetermineFileTypeByData(buffer, bytesRead);
+    }
+    
+    // Close file
+    XFileClose(fileRef);
+    
+    return result;
+}
+
+/**
+ * Get a string representation of a file type
+ * 
+ * @param fileType - BAEFileType to convert to string
+ * @return const char* - String representation of file type
+ */
+const char *X_GetFileTypeString(BAEFileType fileType)
+{
+    switch (fileType)
+    {
+        case BAE_MIDI_TYPE:     return "MIDI";
+        case BAE_RMF:           return "RMF";
+        case BAE_RMI:           return "RMI";
+#if USE_XMF_SUPPORT == TRUE
+        case BAE_XMF:           return "XMF";
+#endif        
+        case BAE_AIFF_TYPE:     return "AIFF";
+        case BAE_WAVE_TYPE:     return "WAVE";
+        case BAE_MPEG_TYPE:     return "MPEG";
+        case BAE_AU_TYPE:       return "AU";
+#if USE_FLAC_DECODER == TRUE || USE_FLAC_ENCODER == TRUE        
+        case BAE_FLAC_TYPE:     return "FLAC";
+#endif
+#if USE_VORBIS_DECODER == TRUE || USE_VORBIS_ENCODER == TRUE        
+        case BAE_VORBIS_TYPE:   return "Vorbis";
+#endif
+#if USE_OPUS_DECODER == TRUE
+        case BAE_OPUS_TYPE:     return "Opus";
+#endif
+#if USE_QOA_SUPPORT == TRUE
+        case BAE_QOA_TYPE:      return "QOA";
+#endif
+#if USE_WMA_SUPPORT == TRUE
+        case BAE_WMA_TYPE:      return "WMA/ASF";
+#endif
+#if USE_MTHC_SUPPORT == TRUE
+        case BAE_MTHC:          return "Nokia Compressed MIDI";
+#endif
+#if USE_ADP_SUPPORT == TRUE
+        case BAE_ADP_TYPE:      return "Nokia ADP (RotR2 G.722)";
+#endif
+#if USE_ADX_SUPPORT == TRUE
+        case BAE_ADX_TYPE:      return "CRI ADX";
+#endif
+#if USE_RETRO_RINGTONE_SUPPORT == TRUE
+        case BAE_RINGTONE_IMY:  return "iMelody";
+        case BAE_RINGTONE_RNG:  return "Nokia RNG";
+        case BAE_RINGTONE_RTX:  return "Nokia RTX/RTTTL";
+#endif    
+        case BAE_GROOVOID:      return "Groovoid";
+        case BAE_RAW_PCM:       return "Raw PCM";
+        case BAE_INVALID_TYPE:  return "Unknown";
+        default:                return "Invalid";
+    }
+}
+
+/**
+ * Convert a file type string constant to BAEFileType enum
+ * This is useful for legacy compatibility with X_FILETYPE_* constants
+ * 
+ * @param typeString - String constant like X_FILETYPE_MIDI ("MThd")
+ * @return BAEFileType - Corresponding file type enum
+ */
+BAEFileType X_ConvertFileTypeString(const char *typeString)
+{
+    if (typeString == NULL)
+        return BAE_INVALID_TYPE;
+    
+    if (strcmp(typeString, X_FILETYPE_MIDI) == 0)
+        return BAE_MIDI_TYPE;
+    else if (strcmp(typeString, X_FILETYPE_RMF) == 0)
+        return BAE_RMF;
+#if USE_XMF_SUPPORT == TRUE
+    else if (strcmp(typeString, X_FILETYPE_XMF) == 0)
+        return BAE_XMF;
+#endif
+#if USE_MTHC_SUPPORT == TRUE
+    else if (strcmp(typeString, X_FILETYPE_MTHC) == 0)
+        return BAE_MTHC;
+#endif   
+    else if (strcmp(typeString, X_FILETYPE_AIFF) == 0)
+        return BAE_AIFF_TYPE;
+    else if (strcmp(typeString, X_FILETYPE_WAVE) == 0)
+        return BAE_WAVE_TYPE;
+#if USE_OPUS_DECODER == TRUE
+    else if (strcmp(typeString, X_FILETYPE_OPUS) == 0)
+        return BAE_OPUS_TYPE;
+#endif
+#if USE_QOA_SUPPORT == TRUE
+    else if (strcmp(typeString, "QOA") == 0 || strcmp(typeString, "qoaf") == 0)
+        return BAE_QOA_TYPE;
+#endif
+#if USE_VORBIS_DECODER == TRUE || USE_VORBIS_ENCODER == TRUE        
+    else if (strcmp(typeString, X_FILETYPE_VORBIS) == 0)
+        return BAE_VORBIS_TYPE;
+#endif
+#if USE_FLAC_DECODER == TRUE || USE_FLAC_ENCODER == TRUE        
+    else if (strcmp(typeString, X_FILETYPE_FLAC) == 0)
+        return BAE_FLAC_TYPE;
+#endif
+#if USE_ADP_SUPPORT == TRUE
+    else if (strcmp(typeString, X_FILETYPE_ADP) == 0)
+        return BAE_ADP_TYPE;
+#endif
+#if USE_RETRO_RINGTONE_SUPPORT == TRUE
+    else if (strcmp(typeString, "IMY") == 0 || strcmp(typeString, "iMelody") == 0)
+        return BAE_RINGTONE_IMY;
+    else if (strcmp(typeString, "RNG") == 0)
+        return BAE_RINGTONE_RNG;
+    else if (strcmp(typeString, "RTX") == 0 || strcmp(typeString, "RTTTL") == 0)
+        return BAE_RINGTONE_RTX;
+#endif        
+    return BAE_INVALID_TYPE;
+}

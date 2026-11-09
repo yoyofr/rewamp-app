@@ -1609,8 +1609,9 @@
 
 /* EFTYPE est une valeur errno BSD: elle existe sur Darwin, PAS sur Linux —
    ni bionic ni la glibc. On la mappe sur un équivalent raisonnable pour que
-   les lecteurs d'archives compilent. Apple n'est pas concerné. */
-#if defined(__linux__)
+   les lecteurs d'archives compilent. Apple n'est pas concerné. Emscripten
+   (musl) ne l'a pas non plus. */
+#if defined(__linux__) || defined(__EMSCRIPTEN__)
 #  ifndef EFTYPE
 #    define EFTYPE EILSEQ
 #  endif
@@ -1625,7 +1626,8 @@
    POSIX.1e façon Darwin, pas de copyfile, pas de xattr Darwin. Les rares
    points où la glibc diffère de bionic sont traités dans le bloc suivant.
    ===== */
-#ifdef __linux__
+/* Emscripten (musl, cible web) partage ces écarts avec Darwin: même bloc. */
+#if defined(__linux__) || defined(__EMSCRIPTEN__)
 /* No CommonCrypto / LibSystem digest backends on bionic. */
 #  undef ARCHIVE_CRYPTO_MD5_LIBSYSTEM
 #  undef ARCHIVE_CRYPTO_SHA1_LIBSYSTEM
@@ -1688,7 +1690,19 @@
 #  undef HAVE_ACL_SET_TAG_TYPE
 #  undef HAVE_ACL_T
 #  undef HAVE_ACL_TAG_T
-#endif /* __linux__ */
+#endif /* __linux__ || __EMSCRIPTEN__ */
+
+/* ===== Emscripten uniquement (cible web) ===== */
+#ifdef __EMSCRIPTEN__
+/* Aucune libbz2 dans le sysroot: le filtre bzip2 part (7z/zip passent par
+   lzma/zlib), comme sur Android. */
+#  undef HAVE_BZLIB_H
+#  undef HAVE_LIBBZ2
+/* BSD/Darwin, absents de musl. */
+#  undef HAVE_ARC4RANDOM_BUF
+#  undef HAVE_CHFLAGS
+#  undef HAVE_LCHFLAGS
+#endif
 
 /* ===== glibc uniquement: ce que bionic n'avait pas besoin qu'on corrige ===== */
 #if defined(__linux__) && !defined(__ANDROID__)

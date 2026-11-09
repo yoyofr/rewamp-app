@@ -745,6 +745,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
+  String get engineDescCpc => 'Amstrad CPC — 에뮬레이션된 CPC 6128에서 실행하는 .dsk 디스크';
+
+  @override
+  String get engineDescZxSpectrum =>
+      'ZX Spectrum — 에뮬레이션된 Spectrum 48K/128K에서 실행하는 .tap 테이프';
+
+  @override
   String get engineDescSidplayfp => 'Commodore 64 SID (reSIDfp 엔진)';
 
   @override
@@ -793,7 +800,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get engineDescSndh =>
-      'Atari ST .sndh — 실제 68000 에뮬레이션 + YM2149 + STE DAC';
+      'Atari ST .sndh — 실제 68000 에뮬레이션 + YM2149 + STE DAC · .ym (YM2–YM6, digidrums, SID)';
 
   @override
   String get engineDescLazyusf => 'Nintendo 64 .usf — R4300 에뮬레이션 + RSP 오디오';
@@ -813,6 +820,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get engineDescOrganya => 'Cave Story .org — Pixel의 자체 엔진';
+
+  @override
+  String get engineDescMinibae =>
+      'Beatnik .rmf — Beatnik Audio Engine, 90년대 후반 웹·게임 음악';
 
   @override
   String get engineDescNtgs => 'Apple IIGS (Ensoniq 5503) — NoiseTracker GS 모듈';
@@ -1403,6 +1414,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get queueAutoplayRow => '자동 재생으로 추가됨';
+
+  @override
+  String get queueRadioRow => '라디오로 추가됨';
 
   @override
   String get queueClearConfirmTitle => '대기열을 비울까요?';
@@ -2734,7 +2748,7 @@ class AppLocalizationsKo extends AppLocalizations {
       '일부 포맷은 여러 엔진이 재생할 수 있습니다. 기본으로 사용할 엔진을 선택하세요 — 나머지 포맷은 자동으로 배정됩니다.';
 
   @override
-  String get settingsDecoderAmigaTrackers => 'Amiga 트래커 (mod, med, okt…)';
+  String get settingsDecoderAmigaTrackers => 'Amiga 모듈 (mod, med, okt…)';
 
   @override
   String get settingsEngineOpenmptSubtitle => '트래커 — MOD, XM, S3M, IT…';
@@ -2923,6 +2937,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsNsfQuality => '품질 (nsfplay)';
 
   @override
+  String get settingsNsfFade => '끝 페이드';
+
+  @override
+  String get settingsNsfFadeHelp =>
+      '파일에 지정이 없을 때 곡 끝에서 페이드아웃합니다(.m3u 또는 NSFe는 자체 지정 가능). 곡 길이에 포함됩니다. 끄기 = 즉시 정지.';
+
+  @override
   String get settingsLowpassFilter => '로우패스 필터';
 
   @override
@@ -3035,6 +3056,49 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get settingsGbsHpFilter => '하이패스 필터 (gbsplay)';
+
+  @override
+  String get settingsEnginePsgplaySubtitle => 'Atari ST / SNDH — YM2149 채널 믹스';
+
+  @override
+  String get settingsPsgMix => 'PSG 채널 믹스';
+
+  @override
+  String get settingsPsgMixEmpiric => '실측 (Atari ST)';
+
+  @override
+  String get settingsPsgMixLinear => '선형';
+
+  @override
+  String get settingsPsgMixStereo => '스테레오';
+
+  @override
+  String get settingsPsgMixEmpiricHint =>
+      '실제 Atari ST처럼 세 채널을 믹스 (실측 레벨): 거친 소리, 모노.';
+
+  @override
+  String get settingsPsgMixLinearHint => '세 채널의 단순 합: 더 깨끗한 소리, 모노.';
+
+  @override
+  String get settingsPsgMixStereoHint => '선형 믹스, 각 채널을 왼쪽과 오른쪽 사이에 배치.';
+
+  @override
+  String settingsPsgPanVoice(String voice) {
+    return '채널 $voice';
+  }
+
+  @override
+  String get settingsPsgPanCentre => '가운데';
+
+  @override
+  String settingsPsgPanLeft(int percent) {
+    return '왼쪽 $percent %';
+  }
+
+  @override
+  String settingsPsgPanRight(int percent) {
+    return '오른쪽 $percent %';
+  }
 
   @override
   String get settingsGbsFilterDmg => 'DMG (클래식 GB)';
@@ -4215,54 +4279,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get releaseNotesTitle => '새로운 기능';
 
   @override
-  String get releaseNotesV10Loading =>
-      '느리게 불러오는 곡을 열어도 앱이 더 이상 멈추지 않습니다. 재생/일시정지 주위의 얇은 고리가 아직 불러오는 중임을 알려 줍니다.';
-
-  @override
-  String get releaseNotesV10Piano =>
-      '피아노 시각화: 동시에 울리는 성부나 악기가 많은 곡은 더 많은 건반에 나뉘어 표시됩니다.';
-
-  @override
-  String get releaseNotesV10Amiga =>
-      'Amiga: StoneTracker, SUNtronic(TSM 립), 더 많은 Soundtracker 2.6 모듈이 재생되며, SoundPlayer 곡도 iOS에서 재생됩니다.';
-
-  @override
-  String get releaseNotesV10ZxSpectrum =>
-      'ZX Spectrum: zxart의 .mt3 파일이 재생되며, Linux에서는 ZXTune 형식과 SAM Coupé .cop 프로그램도 포함됩니다.';
-
-  @override
-  String get releaseNotesV10OpenWith =>
-      'macOS 및 iOS: 지원하는 모든 형식이 이제 \'다음으로 열기\'에 표시됩니다.';
-
-  @override
-  String get releaseNotesV10MtcCrash =>
-      '수정: PT3와 TFM 또는 PSG를 섞은 일부 .mtc 파일에서 앱이 종료되는 문제가 있었습니다.';
-
-  @override
-  String get releaseNotesV10Podiums =>
-      '새 ‘포디움’ 탐색기: 데모씬 대회 입상작을 파티·연도·부문별로, 명예의 전당과 함께.';
-
-  @override
-  String get releaseNotesV10Arcade =>
-      '아케이드: Ensoniq ES5505/ES5506 음악(Taito F3 등)이 재생되고, Apple IIGS VGM 파일로 앱이 종료되지 않으며, 엔진이 최신으로 업데이트되었습니다(FM-Kingtracker .fmk 추가).';
-
-  @override
-  String get releaseNotesV10InfoPanel =>
-      '정보 패널: 형식, 엔진, 채널, 루프 지점이 맨 위에 표시되고 항목 이름이 강조됩니다.';
-
-  @override
-  String get releaseNotesV10LocalAlbums =>
-      '앨범 및 하위 곡 화면에 컬렉션이 표시됩니다. 끌어다 놓은 압축 파일은 모든 트랙을 보여 주고 ‘로컬’로 표시되며, 교체 후 두 번 나타나지 않습니다.';
-
-  @override
-  String get releaseNotesV10Crossfade =>
-      '수정: 크로스페이드 사용 시 페이드보다 짧은 트랙이 들리지 않던 문제.';
-
-  @override
-  String get releaseNotesV10Artwork =>
-      '수정: 서버에서 교체한 아트워크가 ‘파일 다시 다운로드’ 후 모든 곳에 표시됩니다.';
-
-  @override
   String get releaseNotesDataReset =>
       '이번 버전을 위해 로컬 데이터를 초기화했습니다. 라이브러리와 재생목록은 계정에서 다시 구성되며, 다운로드는 다시 받아야 합니다.';
 
@@ -4703,8 +4719,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
 
   @override
+  String get settingsMidiSynthOpn2 => 'OPN2 FM (Mega Drive / Genesis)';
+
+  @override
   String get settingsEngineAdlmidiSubtitle =>
       '에뮬레이션된 OPL3 칩으로 MIDI와 DOS 게임 음악 재생';
+
+  @override
+  String get settingsEngineOpnmidiSubtitle =>
+      '에뮬레이션된 OPN2 / OPNA 칩으로 MIDI 재생 (메가 드라이브, PC-98)';
 
   @override
   String get settingsAdlBank => '악기 뱅크';
@@ -4727,4 +4750,439 @@ class AppLocalizationsKo extends AppLocalizations {
   @override
   String get engineDescAdlmidi =>
       '에뮬레이션된 OPL3 칩으로 MIDI, XMI, DMX MUS, HMI/HMP 재생 (AdLib / Sound Blaster)';
+
+  @override
+  String get engineDescOpnmidi =>
+      '에뮬레이션된 OPN2(메가 드라이브) 또는 OPNA(PC-98) 칩으로 MIDI 재생';
+
+  @override
+  String get fmBanksBuiltIn => '내장';
+
+  @override
+  String get fmBanksImported => '가져옴';
+
+  @override
+  String get fmBanksFilterHint => '이름으로 필터';
+
+  @override
+  String get fmBanksNoMatch => '일치하는 뱅크가 없습니다';
+
+  @override
+  String get fmBanksImportedEmpty =>
+      '가져온 뱅크가 아직 없습니다. .wopl 또는 .wopn 파일을 창에 끌어다 놓거나, Rewamp로 열거나, 여기서 가져오세요.';
+
+  @override
+  String fmBankImported(String name, String engine) {
+    return '뱅크 \"$name\"을(를) 가져와 $engine에 선택했습니다';
+  }
+
+  @override
+  String fmBankImportInvalid(String name) {
+    return '\"$name\"은(는) WOPL 또는 WOPN 뱅크가 아닙니다';
+  }
+
+  @override
+  String fmBankDeleteConfirm(String name) {
+    return '뱅크 \"$name\"을(를) 삭제할까요?';
+  }
+
+  @override
+  String get fmBanksImportTile => '뱅크 가져오기…';
+
+  @override
+  String fmBanksImportSubtitle(String ext) {
+    return '$ext 파일(Wohlstand의 뱅크 편집기나 모음집). 파일 헤더로 판단하며, 가져온 뱅크는 뱅크 목록에서 제거할 수 있습니다.';
+  }
+
+  @override
+  String get fmEmuAccuracyVeryHigh => '매우 정확';
+
+  @override
+  String get fmEmuAccuracyGood => '정확';
+
+  @override
+  String get fmEmuAccuracyApproximate => '근사';
+
+  @override
+  String get fmEmuCpuLight => '빠름';
+
+  @override
+  String get fmEmuCpuMedium => 'CPU 부하 보통';
+
+  @override
+  String get fmEmuCpuHeavy => 'CPU 부하 높음';
+
+  @override
+  String settingsDefaultFor(String format) {
+    return '$format 기본 플레이어';
+  }
+
+  @override
+  String get settingsDefaultForActive => '이 엔진이 이 형식을 재생합니다';
+
+  @override
+  String settingsDefaultForSet(String section) {
+    return '탭하면 이 형식을 이 엔진으로 재생합니다 — 모든 선택은 ‘$section’에도 있습니다';
+  }
+
+  @override
+  String get settingsDecoderDosMidi => 'DOS 게임 MIDI (XMI, MUS, HMI…)';
+
+  @override
+  String get playWithTitle => '다음으로 재생…';
+
+  @override
+  String playWithAuto(String engine) {
+    return '자동 ($engine)';
+  }
+
+  @override
+  String get playWithPlayingNow => '재생 중';
+
+  @override
+  String get playWithRemember => '이 선택 기억하기';
+
+  @override
+  String get playWithRememberOn => '이 파일(또는 앨범)을 재생할 때마다';
+
+  @override
+  String get playWithRememberOff => '이번 재생에만';
+
+  @override
+  String get playWithScopeFile => '이 파일';
+
+  @override
+  String get playWithScopeAlbum => '앨범 전체';
+
+  @override
+  String get playWithApply => '재생';
+
+  @override
+  String playWithCurrent(String engine) {
+    return '엔진: $engine';
+  }
+
+  @override
+  String get settingsForgetPlayWith => '‘다음으로 재생’ 선택 지우기';
+
+  @override
+  String settingsForgetPlayWithSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '기억된 선택 $count개',
+      zero: '기억된 선택 없음',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsForgetPlayWithBody =>
+      '파일이나 앨범에 기억된 모든 항목(엔진, 뱅크, SoundFont, 모델)이 지워집니다. 기본 설정으로 다시 재생됩니다.';
+
+  @override
+  String get playWithBank => '악기 뱅크';
+
+  @override
+  String playWithBankDefault(String name) {
+    return '설정의 뱅크 ($name)';
+  }
+
+  @override
+  String get fmBankInUseTitle => '사용 중인 뱅크';
+
+  @override
+  String fmBankInUseIntro(String name) {
+    return '‘$name’이(가) 다음에 선택되어 있습니다:';
+  }
+
+  @override
+  String fmBankInUseFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '파일 $count개',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fmBankInUseAlbums(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '앨범 $count개',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fmBankInUseOutro => '엔진 설정의 뱅크로 다시 재생됩니다. 그래도 삭제할까요?';
+
+  @override
+  String playWithSoundfontDefault(String name) {
+    return '설정의 SoundFont ($name)';
+  }
+
+  @override
+  String playWithMt32Default(String model) {
+    return '설정: $model';
+  }
+
+  @override
+  String get playWithOptionSetting => '설정';
+
+  @override
+  String get soundfontInUseTitle => '사용 중인 SoundFont';
+
+  @override
+  String get soundfontInUseOutro => '설정의 SoundFont로 다시 재생됩니다. 그래도 삭제할까요?';
+
+  @override
+  String get playWithTitleAlbum => '앨범 재생 방식…';
+
+  @override
+  String get playWithSave => '저장';
+
+  @override
+  String get shortcutsTitle => '키보드 단축키';
+
+  @override
+  String get shortcutsSubtitle => '재생, 시각화, 창 키';
+
+  @override
+  String get shortcutsHint =>
+      '텍스트 입력란에 포커스가 있으면 단일 키는 무시됩니다. 시각화 키는 시각화가 표시될 때만 동작합니다.';
+
+  @override
+  String get shortcutsGroupTransport => '재생';
+
+  @override
+  String get shortcutsGroupVisualizer => '시각화';
+
+  @override
+  String get shortcutsGroupWindow => '창과 탐색';
+
+  @override
+  String get shortcutsKeySpace => '스페이스';
+
+  @override
+  String get shortcutsKeyEscape => 'Esc';
+
+  @override
+  String get shortcutPlayPause => '재생 / 일시정지';
+
+  @override
+  String get shortcutPrevTrack => '이전 트랙';
+
+  @override
+  String get shortcutNextTrack => '다음 트랙';
+
+  @override
+  String get shortcutSeekBack10 => '10초 뒤로';
+
+  @override
+  String get shortcutSeekForward10 => '10초 앞으로';
+
+  @override
+  String get shortcutSeekBack60 => '1분 뒤로';
+
+  @override
+  String get shortcutSeekForward60 => '1분 앞으로';
+
+  @override
+  String get shortcutSeekPercent => '트랙의 0 %…90 % 지점으로 이동';
+
+  @override
+  String get shortcutRepeat => '반복 모드';
+
+  @override
+  String get shortcutShuffle => '셔플';
+
+  @override
+  String get shortcutFavorite => '즐겨찾기';
+
+  @override
+  String get shortcutSpeedDown => '느리게';
+
+  @override
+  String get shortcutSpeedUp => '빠르게';
+
+  @override
+  String get shortcutSpeedReset => '보통 속도';
+
+  @override
+  String get shortcutVizNext => '다음 시각화';
+
+  @override
+  String get shortcutVizPrev => '이전 시각화';
+
+  @override
+  String get shortcutVizControls => '시각화 컨트롤 표시';
+
+  @override
+  String get shortcutPmNext => 'projectM: 다음 프리셋';
+
+  @override
+  String get shortcutPmPrev => 'projectM: 이전 프리셋';
+
+  @override
+  String get shortcutPmLock => 'projectM: 프리셋 고정';
+
+  @override
+  String get shortcutPmRandom => 'projectM: 무작위 순서';
+
+  @override
+  String get shortcutPmPicker => 'projectM: 프리셋 목록';
+
+  @override
+  String get shortcutMiniWindow => '미니 플레이어';
+
+  @override
+  String get shortcutMiniViz => '시각화가 있는 미니 플레이어';
+
+  @override
+  String get shortcutAlwaysOnTop => '항상 위에';
+
+  @override
+  String get shortcutPlayer => '플레이어 열기 / 닫기';
+
+  @override
+  String get shortcutEscape => '맨 위 패널 닫기';
+
+  @override
+  String get shortcutQueue => '대기열 패널';
+
+  @override
+  String get shortcutSearch => '검색';
+
+  @override
+  String get shortcutTabs => '탭(사이드바 순서)';
+
+  @override
+  String get shortcutOpenFiles => '파일 열기…';
+
+  @override
+  String get shortcutLinkFolder => '폴더 연결…';
+
+  @override
+  String get shortcutInfo => '트랙 정보';
+
+  @override
+  String get shortcutSettings => '설정';
+
+  @override
+  String get shortcutFullscreen => '전체 화면';
+
+  @override
+  String get shortcutHelp => '이 목록';
+
+  @override
+  String get navHelp => '도움말';
+
+  @override
+  String get helpTitle => '도움말';
+
+  @override
+  String get helpDocsTitle => '온라인 문서';
+
+  @override
+  String get helpDocsSubtitle => 'rewamp.app의 스크린샷이 포함된 단계별 가이드(영어)';
+
+  @override
+  String get sleepTimerTitle => '취침 타이머';
+
+  @override
+  String get sleepTimerExplain =>
+      '선택한 시간이 지나면 재생을 일시정지하며, 마지막 30초 동안 서서히 작아집니다.';
+
+  @override
+  String sleepTimerMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count분',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sleepTimerRemainingMinutes(int count) {
+    return '$count분';
+  }
+
+  @override
+  String sleepTimerRemainingSeconds(int count) {
+    return '$count초';
+  }
+
+  @override
+  String sleepTimerActiveRemaining(String time) {
+    return '남은 시간: $time';
+  }
+
+  @override
+  String get sleepTimerOff => '끄기';
+
+  @override
+  String get sleepTimerEnded => '취침 타이머 종료 — 재생 일시정지됨';
+
+  @override
+  String get sleepTimerNothingToPlay => '시작할 최근 재생 기록이 없습니다';
+
+  @override
+  String get releaseNotesV11Autoplay =>
+      '자동 재생(∞): 대기열이 끝나면 비슷한 곡(같은 아티스트, 그룹, 컬렉션)으로 재생이 이어집니다.';
+
+  @override
+  String get releaseNotesV11LinkedFolders =>
+      '연결된 폴더: 파일을 복사하지 않고 있는 그대로 재생합니다 — 데스크톱 폴더, iOS의 파일 앱과 iCloud, Android의 모든 폴더.';
+
+  @override
+  String get releaseNotesV11PlayWith =>
+      '“다음으로 재생…”: 파일이나 앨범의 엔진과 SoundFont, MT-32 모델 또는 FM 뱅크를 고를 수 있습니다(직접 만든 WOPL/WOPN 뱅크도 가져올 수 있음).';
+
+  @override
+  String get releaseNotesV11NewEngines =>
+      '새 엔진: OPL3(libADLMIDI)와 OPN2/OPNA(libOPNMIDI) 기반 MIDI, Beatnik .rmf, 에뮬레이션된 기기에서 실행되는 ZX Spectrum .tap 테이프와 Amstrad CPC .dsk 디스크, UnExoticA Mark II.';
+
+  @override
+  String get releaseNotesV11EngineUpdates =>
+      '엔진 업데이트: Namco WSG 칩을 지원하는 VGM 1.72, Furnace, AtariAudio 1.27(이제 .ym의 기본값), Amiga 모듈용 libxmp 선택 가능, VGM 끝부분 페이드 조절 가능.';
+
+  @override
+  String get releaseNotesV11Sleep =>
+      '취침 타이머: 시간을 고르면 음악이 서서히 작아지다 멈춥니다. 빈 대기열은 자동으로 채워집니다.';
+
+  @override
+  String get releaseNotesV11Desktop =>
+      '데스크톱: 키보드 단축키(?로 목록 보기), 온라인 문서로 연결되는 도움말 탭, 명령줄(rewamp --mini --play …), 앱 인스턴스는 하나만 실행.';
+
+  @override
+  String get releaseNotesV11ArtistSync =>
+      '보관함의 아티스트가 계정과 동기화되며 아트워크도 함께 표시됩니다.';
+
+  @override
+  String get releaseNotesV11PlayNext =>
+      '곡을 길게 누르기: 지금, 다음에, 마지막에 재생. 모두 재생·라디오·서프라이즈 옆에 “…” 메뉴.';
+
+  @override
+  String get releaseNotesV11Composers =>
+      '모든 앨범 및 하위 곡 화면에서 작곡가를 탭할 수 있으며, 가져온 파일에서 제목과 작곡가를 읽습니다.';
+
+  @override
+  String get releaseNotesV11Hindi =>
+      '힌디어 지원(19개 언어), 오른쪽에서 왼쪽으로 쓰는 언어에도 인터페이스가 대응합니다.';
+
+  @override
+  String get releaseNotesV11Loops =>
+      '재생 중에 무한 반복을 켜면 곡이 자체 루프 지점에서 이어지고, 루프가 없는 곡은 처음부터 다시 재생됩니다.';
+
+  @override
+  String get releaseNotesV11Visualizers =>
+      '비주얼라이저: 오실로스코프 최대 64개 보이스, MIDI 드럼 악기별 색상, 2SF 파일의 음표, FM 뱅크의 악기 이름.';
+
+  @override
+  String get releaseNotesV11Fixes =>
+      '수정: 일부 SSF 파일이 거부되던 문제, 무음 WonderSwan 립, 여러 압축 파일로 나뉜 앨범이 불완전하던 문제, 플레이어를 닫은 뒤의 projectM 프리셋.';
 }

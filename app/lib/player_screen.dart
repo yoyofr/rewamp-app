@@ -1,6 +1,8 @@
+import 'dart:math' as math;
 import 'dart:io' show File, Platform;
 import 'dart:ui';
 import 'app_snack.dart';
+import 'sheet_handle.dart';
 import 'transport_log.dart';
 import 'sync_service.dart';
 import 'artist_links.dart';
@@ -21,6 +23,8 @@ import 'competition_screen.dart' show podiumColor;
 import 'info_text_keys.dart';
 import 'l10n.dart';
 import 'podium_badge.dart';
+import 'engine_choices.dart' show enginePluginLabel;
+import 'play_with_sheet.dart';
 import 'player_controller.dart' show PlayerController, QueueEntry;
 import 'playlist_picker.dart';
 import 'scrolling_text.dart';
@@ -28,6 +32,7 @@ import 'settings_screen.dart' show kEngineSettingsPages, pushEngineSettings;
 import 'viz_selector_widget.dart';
 import 'screen_wakelock.dart';
 import 'user_settings.dart';
+import 'app_shortcuts.dart' show ShortcutTargets, PlayerShortcutTarget;
 import 'artwork_image.dart';
 import 'artwork_palette.dart';
 import 'artwork_viewer.dart';
@@ -52,6 +57,7 @@ import 'video_screen.dart';
 import 'transport_buttons.dart';
 import 'voices_sheet.dart';
 import 'loading_ring.dart';
+import 'sleep_timer_button.dart';
 
 // TODO(artwork-bg): when the C backend exposes vizSetArtworkTexture(pixels,w,h,opacity),
 // pass the current artwork bitmap here so the GL renderer composites it as a
@@ -208,7 +214,8 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver 
+    implements PlayerShortcutTarget {
   late bool _showVisualizer;
   // Inline demozoo-video mode: the video plays in the SAME frame as the
   // visualizer/artwork; fullscreen is an explicit button. Auto-exits when the
@@ -341,6 +348,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   void initState() {
     super.initState();
+    // Cible du raccourci ⌘I (app_shortcuts.dart) le temps que le lecteur est
+    // monté.
+    ShortcutTargets.player = this;
     _flightCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 420));
     // Plain symmetric cubic: emphasized's steep mid-flight acceleration read
@@ -398,6 +408,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   void dispose() {
+    if (identical(ShortcutTargets.player, this)) ShortcutTargets.player = null;
     _routeAnim?.removeStatusListener(_onRouteAnimStatus);
     // The sheet can be dismissed with rotation unlocked (viz visible, delete
     // flow, playerUiCloser) — restore the phone portrait lock.
@@ -1837,6 +1848,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                 // lecteur reste ouvert dessous et revient tel quel).
                 if (MiniWindow.instance.available)
                   const MiniWindowButton(key: ValueKey('ps-act-miniwin')),
+                // Mode veille: lune, accent + temps restant quand armé.
+                const SleepTimerButton(key: ValueKey('ps-act-sleep')),
                 IconButton(
                   key: const ValueKey('ps-act-info'),
                   icon: const Icon(Icons.info_outline),
@@ -2193,31 +2206,109 @@ class _PlayerScreenState extends State<PlayerScreen>
     return '${(kb / 1024).toStringAsFixed(1)} MB';
   }
 
+  /// Le navigateur qui porte la feuille ⓘ tant qu'elle est ouverte: ⌘I la
+  /// referme au second appui.
+  NavigatorState? _infoSheetNav;
+
+  @override
+  void toggleInfo() {
+    if (!mounted) return;
+    final nav = _infoSheetNav;
+    if (nav != null) {
+      nav.pop();
+      return;
+    }
+    _showTrackInfo(context, widget.controller);
+  }
+
+  @override
+  bool get queueOpen => _showQueue;
+
+  @override
+  void toggleQueue() {
+    if (mounted) _toggleQueue();
+  }
+
   Future<void> _showTrackInfo(BuildContext context, PlayerController ctrl) async {
-    showModalBottomSheet<void>(
+    _infoSheetNav = Navigator.of(context);
+    try {
+      await _showTrackInfoSheet(context, ctrl);
+    } finally {
+      _infoSheetNav = null;
+    }
+  }
+
+  Future<void> _showTrackInfoSheet(
+      BuildContext context, PlayerController ctrl) {
+    // Largeur AU CONTENU: la feuille Material a une largeur FIXE (640 au plus
+    // en M3) quelle que soit la longueur des lignes, et un texte d'infos
+    // court laissait la moitié du panneau vide. La feuille elle-même est donc
+    // TRANSPARENTE et pleine largeur; le panneau visible est centré dessous,
+    // à la largeur que le corps MESURE une fois son texte connu (il arrive en
+    // différé et change avec la piste). Un DraggableScrollableSheet ne sait
+    // pas rendre une largeur intrinsèque: la mesure est la nôtre.
+    final width = ValueNotifier<double>(_kInfoSheetMaxWidth);
+    final panel = PlayerTint.panel(context);
+    return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: PlayerTint.panel(context),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      constraints: const BoxConstraints(maxWidth: double.infinity),
       // The modal is a separate route: it does NOT inherit the player's dark
       // tint theme, so it gets its own (black text on the deep panel otherwise).
       builder: (ctx) => PlayerTint.wrap(
         ctx,
-        DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.6,
-          maxChildSize: 0.95,
-          builder: (ctx, scroll) => _TrackInfoSheetBody(
-              ctrl: ctrl,
-              scroll: scroll,
-              onNavigateTag: widget.onNavigateTag,
-              onLeavePlayer: () {
-                Navigator.pop(ctx); // the info sheet only
-                _dismiss();         // the player overlay, through its host
-              }),
+        // Les bandes transparentes de part et d'autre FERMENT, comme la
+        // barrière au-dessus (la feuille les couvre, la barrière n'y est pas).
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => Navigator.of(ctx).maybePop(),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            heightFactor: 1,
+            child: ValueListenableBuilder<double>(
+              valueListenable: width,
+              builder: (ctx, w, child) => AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                curve: Curves.easeOut,
+                width: w,
+                child: child,
+              ),
+              // Un tap DANS le panneau ne ferme pas: ce détecteur, plus
+              // profond, gagne l'arène contre celui des bandes.
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {},
+                child: Material(
+                  color: panel,
+                  clipBehavior: Clip.antiAlias,
+                  shape: const RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(28))),
+                  child: SheetWithHandle(
+                    child: DraggableScrollableSheet(
+                      expand: false,
+                      initialChildSize: 0.6,
+                      maxChildSize: 0.95,
+                      builder: (ctx, scroll) => _TrackInfoSheetBody(
+                          ctrl: ctrl,
+                          scroll: scroll,
+                          width: width,
+                          onNavigateTag: widget.onNavigateTag,
+                          onLeavePlayer: () {
+                            Navigator.pop(ctx); // the info sheet only
+                            _dismiss(); // the player overlay, through its host
+                          }),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
-    );
+    ).whenComplete(width.dispose);
   }
 
   // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -3585,6 +3676,14 @@ class QueuePanelState extends State<QueuePanel> {
                       size: 12,
                       color: cs.onSurfaceVariant,
                       semanticLabel: ctx.l10n.queueAutoplayRow),
+                )
+              else if (e.radio)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 4),
+                  child: Icon(Icons.radio,
+                      size: 12,
+                      color: cs.onSurfaceVariant,
+                      semanticLabel: ctx.l10n.queueRadioRow),
                 ),
               Expanded(
                 child: ScrollingText(
@@ -3868,6 +3967,8 @@ class _PlayerOptionsSheet extends StatefulWidget {
 }
 
 class _PlayerOptionsSheetState extends State<_PlayerOptionsSheet> {
+  /// Engines able to play the current file (« Lire avec… »), read once.
+  late final List<String> _playWith = playWithCandidates(widget.ctrl);
   bool _inLibrary = false;
   bool _loading   = true;
 
@@ -4081,6 +4182,19 @@ class _PlayerOptionsSheetState extends State<_PlayerOptionsSheet> {
                 onTap: _toggleLibrary,
               ),
 
+              // « Lire avec… » — only when several engines can play this file.
+              if (_playWith.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.alt_route),
+                  title: Text(l10n.playWithTitle),
+                  subtitle: Text(l10n.playWithCurrent(
+                      enginePluginLabel(ctrl.audio.backendName))),
+                  onTap: () {
+                    Navigator.pop(context);
+                    showPlayWithSheet(context, ctrl);
+                  },
+                ),
+
               // View album — un vrai album de catalogue (albumId connu), OU un
               // album LOCAL que la base connaît par son NOM: un import n'a
               // aucune identité serveur, et exiger l'uuid retirait l'entrée à
@@ -4243,6 +4357,11 @@ class _PlayerOptionsSheetState extends State<_PlayerOptionsSheet> {
 
 // ── Track info sheet body — live-refreshes when the track changes ───────────
 
+/// Bornes de la largeur du panneau ⓘ (voir `_fitWidth`): 640 = le plafond
+/// Material d'une feuille, 360 = de quoi tenir le titre et des puces.
+const double _kInfoSheetMaxWidth = 640;
+const double _kInfoSheetMinWidth = 360;
+
 class _TrackInfoSheetBody extends StatefulWidget {
   final PlayerController  ctrl;
   final ScrollController  scroll;
@@ -4252,10 +4371,12 @@ class _TrackInfoSheetBody extends StatefulWidget {
   /// Navigator.pop used to pop the SCREEN UNDERNEATH the player instead
   /// (black screen).
   final VoidCallback?     onLeavePlayer;
+  /// Largeur du panneau, posée par le corps d'après son contenu MESURÉ.
+  final ValueNotifier<double>? width;
 
   const _TrackInfoSheetBody(
       {required this.ctrl, required this.scroll, this.onNavigateTag,
-       this.onLeavePlayer});
+       this.onLeavePlayer, this.width});
 
   @override
   State<_TrackInfoSheetBody> createState() => _TrackInfoSheetBodyState();
@@ -4337,14 +4458,45 @@ class _TrackInfoSheetBodyState extends State<_TrackInfoSheetBody> {
         widget.ctrl.songProductions.where((p) => p.kind != 'own').toList();
     final text =
         await _PlayerScreenState._buildInfoText(widget.ctrl, context.l10n);
-    if (mounted) setState(() => _text = text);
+    if (!mounted) return;
+    setState(() => _text = text);
+    _fitWidth();
+  }
+
+  static const _textStyle =
+      TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.35);
+  static const _gutterW = 14.0;
+  static const _hPad = 20.0;
+
+  /// Largeur du panneau = la plus longue ligne du texte (+ gouttière des
+  /// instruments, + marges), bornée entre [_kInfoSheetMinWidth] (titre,
+  /// puces) et [_kInfoSheetMaxWidth], et jamais plus que la fenêtre. Mesurée
+  /// dans le style EFFECTIF (fusion avec DefaultTextStyle: repli CJK) et à
+  /// l'échelle de texte de l'utilisateur; les intitulés « Clé: » sont en
+  /// gras, d'où une mesure en gras (le plus large des deux).
+  void _fitWidth() {
+    final notifier = widget.width;
+    if (notifier == null) return;
+    final style = DefaultTextStyle.of(context)
+        .style
+        .merge(_textStyle.copyWith(fontWeight: FontWeight.w700));
+    final tp = TextPainter(
+      text: TextSpan(text: _text, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final textW = tp.maxIntrinsicWidth;
+    tp.dispose();
+    final screenW = MediaQuery.sizeOf(context).width;
+    final want = textW + (_isOpenmpt ? _gutterW : 0) + 2 * _hPad + 8;
+    final maxW = math.min(_kInfoSheetMaxWidth, screenW);
+    notifier.value = want.clamp(math.min(_kInfoSheetMinWidth, maxW), maxW);
   }
 
   /// Renders the info text; inside the "Instruments:" / "Samples:" sections
   /// the lines whose "NN:" prefix is currently sounding get highlighted.
   Widget _buildText(BuildContext context) {
-    const base = TextStyle(
-        fontFamily: 'monospace', fontSize: 12, height: 1.35);
+    const base = _textStyle;
     final primary = Theme.of(context).colorScheme.primary;
     final hi = base.copyWith(color: primary, fontWeight: FontWeight.bold);
     // Intitulés « Clé: » en avant (voir info_text_keys.dart).
@@ -4354,7 +4506,7 @@ class _TrackInfoSheetBodyState extends State<_TrackInfoSheetBody> {
     // bullet would fall back to a non-monospace glyph of a different advance
     // and push the line right. Every list line reserves the same gutter; only
     // the sounding ones fill it with a dot.
-    const gutterW = 14.0;
+    const gutterW = _gutterW;
     final lineH = (base.fontSize ?? 12) * (base.height ?? 1.0);
     InlineSpan gutter(bool active) => WidgetSpan(
           alignment: PlaceholderAlignment.middle,
@@ -4412,7 +4564,7 @@ class _TrackInfoSheetBodyState extends State<_TrackInfoSheetBody> {
     final cs = Theme.of(context).colorScheme;
     return SingleChildScrollView(
       controller: widget.scroll,
-      padding: const EdgeInsetsDirectional.fromSTEB(20, 0, 20, 24),
+      padding: const EdgeInsetsDirectional.fromSTEB(_hPad, 0, _hPad, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import 'artwork_palette.dart';
 import 'l10n.dart';
+import 'sheet_handle.dart';
 import 'user_settings.dart';
 
 /// Compact voice-control sheet: voices grouped by chip, one small pill per
@@ -19,10 +20,9 @@ class VoicesSheet extends StatefulWidget {
   const VoicesSheet({super.key, required this.audio});
 
   static void show(BuildContext context, RewampAudio audio) {
-    showModalBottomSheet<void>(
+    showHandleSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
       // Follows the player's artwork tint when one is active (null = theme).
       backgroundColor: PlayerTint.panel(context),
       shape: const RoundedRectangleBorder(

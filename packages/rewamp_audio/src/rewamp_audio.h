@@ -561,6 +561,10 @@ REWAMP_EXPORT void  rewamp_projectm_set_playlist(const char* paths,
 /* Texture search dirs joined by '\n' (bundle dir + installed pack bundles).
  * Empty/NULL = default <datadir>/projectm/textures. Survives uninit. */
 REWAMP_EXPORT void  rewamp_projectm_set_texture_dirs(const char* dirs);
+/* APPEND presets (absolute *.milk paths joined by '\n') to the active list
+ * WITHOUT reloading or clearing the history — set_playlist switches at once.
+ * Web app: presets of a server pack fetched a few at a time. Render thread. */
+REWAMP_EXPORT void  rewamp_projectm_append_presets(const char* paths);
 
 /* Flutter texture integration — call from Dart via FFI.
  * rewamp_viz_register    : init GL + register FlutterTexture → returns textureId.
@@ -615,6 +619,22 @@ REWAMP_EXPORT const char* rewamp_mt32_lcd(void);
  * le paramètre moteur "adlmidi"/"bank"). Nom "" hors bornes. */
 REWAMP_EXPORT int         rewamp_adlmidi_bank_count(void);
 REWAMP_EXPORT const char* rewamp_adlmidi_bank_name(int index);
+/* Banque IMPORTÉE (.wopl dans le dossier de données) — "" = la banque
+ * embarquée du paramètre "bank". Prise à l'ouverture suivante. */
+REWAMP_EXPORT void        rewamp_adlmidi_set_bank_file(const char* path);
+/* libOPNMIDI (OPN2/OPNA): banques WOPN EMBARQUÉES (rewamp/opnmidi_banks.c),
+ * index = paramètre moteur "opnmidi"/"bank". Nom "" hors bornes. */
+REWAMP_EXPORT int         rewamp_opnmidi_bank_count(void);
+REWAMP_EXPORT const char* rewamp_opnmidi_bank_name(int index);
+/* Banque IMPORTÉE (.wopn) — "" = la banque embarquée. */
+REWAMP_EXPORT void        rewamp_opnmidi_set_bank_file(const char* path);
+/* « Lire avec… »: la banque d'UN fichier (chemin exact, sans ?subsong=), par
+ * moteur — [index] embarquée, ou [file] importée (index ignoré); index < 0 et
+ * file "" = l'oublier. Prise à son ouverture suivante. */
+REWAMP_EXPORT void        rewamp_adlmidi_set_path_bank(const char* path, int index, const char* file);
+REWAMP_EXPORT void        rewamp_adlmidi_clear_path_banks(void);
+REWAMP_EXPORT void        rewamp_opnmidi_set_path_bank(const char* path, int index, const char* file);
+REWAMP_EXPORT void        rewamp_opnmidi_clear_path_banks(void);
 REWAMP_EXPORT int         rewamp_openmpt_active_instruments(uint8_t* out, int maxOut);
 REWAMP_EXPORT const char* rewamp_sid_md5(const char* path);
 

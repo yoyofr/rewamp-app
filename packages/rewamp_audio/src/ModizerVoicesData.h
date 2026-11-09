@@ -58,6 +58,18 @@ extern int               m_voice_fadeout_factor;
 /* ── muting masks ─────────────────────────────────────────────────────── */
 extern int64_t           generic_mute_mask;
 extern int               m_voicesForceOfs;
+/* rewamp (zxtune): first global voice of the chip BEING BUILT. A
+ * MultiTrackContainer (.mtc) plays several modules at once, each with its own
+ * chip; the container sets this before creating each delegate (sum of the
+ * previous delegates' voices), and every chip copies it at construction as its
+ * voice base. 0 for a lone module. */
+extern int               rewamp_zx_voice_base;
+/* rewamp: forget the notes of voices [first, first+count) — what a chip does at
+ * the start of its frame. Never the whole array: in a MultiTrackContainer the
+ * chips render one after the other, and a whole-array memset by the second
+ * erased what the first had just published (only the LAST delegate's notes
+ * reached the piano). */
+void rewamp_voice_notes_clear(int first, int count);
 
 /* ── timing helpers (used by some chip cores) ─────────────────────────── */
 extern int64_t           mdz_ratio_fp_cnt, mdz_ratio_fp_inc, mdz_ratio_fp_inv_inc;
@@ -88,6 +100,10 @@ extern void             *m_sid_chipId[MAXSID_CHIPS];
 extern int               m_sid_chipNb;
 extern char              mSIDSeekInProgress;
 extern int               sid_v4;
+/* reSIDfp: each voice ALONE through the filter and the mixer (Filter::clock),
+ * what the voice oscilloscope draws — rewamp patch. */
+extern int               sid_scope_v[3];
+extern int               sid_scope_filter_on;   /* set per decode step by SID::clock */
 
 /* ── ProjectM audio buffer (unused in rewamp but declared for linkage) ── */
 extern short int         pmBuffer[PM_BUFFER_SIZE * 2];

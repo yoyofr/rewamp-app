@@ -98,6 +98,12 @@ private:
     /// Time until #voiceSync must be run.
     unsigned int nextVoiceSync;
 
+    // REWAMP: voice oscilloscope after the filter — DC blocker state per
+    // voice, and the gain from the mixer's 16-bit scale to the 8-bit ring.
+    float m_scopeDcX[3] = { 0.f, 0.f, 0.f };
+    float m_scopeDcY[3] = { 0.f, 0.f, 0.f };
+    static constexpr float kScopeGain = 1.0f / 64.0f;
+
     unsigned int offset_6581;
 
     /// Currently active chip model.
@@ -462,10 +468,6 @@ int SID::clock(unsigned int cycles, int16_t* buf)
                     clockWaveGen();
                     clockEnvGen();
 
-                    const float sid_v1 = voice[0].output();
-                    const float sid_v2 = voice[1].output();
-                    const float sid_v3 = voice[2].output();
-
                     // During fast-forward seek, skip the expensive analog filter
                     // and resampler pipelines entirely: only oscillator and
                     // envelope state need to advance for musical correctness.
@@ -474,9 +476,30 @@ int SID::clock(unsigned int cycles, int16_t* buf)
                         if (unlikely(resampler->input(output)))
                         {
                             buf[s++] = resampler->getOutput(scaleFactor);
-                            m_voice_buff[sid_idx+0][(m_voice_current_ptr[sid_idx+0]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(sid_v1*127));
-                            m_voice_buff[sid_idx+1][(m_voice_current_ptr[sid_idx+1]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(sid_v2*127));
-                            m_voice_buff[sid_idx+2][(m_voice_current_ptr[sid_idx+2]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(sid_v3*127));
+                            // REWAMP: the voice AFTER the filter, mixer and
+                            // volume (sid_scope_v, Filter::clock) — what is
+                            // heard of it, not its raw waveform. A voice alone
+                            // is unipolar (the DACs output one polarity), so a
+                            // DC blocker (~7 Hz) centres it like the audio's
+                            // own high-pass does.
+                            if (sid_scope_filter_on)
+                                filter->scopeOutput(voice[0], voice[1], voice[2]);
+                            for (int j = 0; j < 3; j++)
+                            {
+                                if (!sid_scope_filter_on)
+                                {
+                                    // Nobody looks: the raw voice (waveform ×
+                                    // envelope), the capture that costs nothing.
+                                    m_voice_buff[sid_idx+j][(m_voice_current_ptr[sid_idx+j]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(voice[j].output()*127));
+                                    continue;
+                                }
+                                const float x = (float)sid_scope_v[j];
+                                float& px = m_scopeDcX[j];
+                                float& py = m_scopeDcY[j];
+                                const float y = x - px + 0.999f * py;
+                                px = x; py = y;
+                                m_voice_buff[sid_idx+j][(m_voice_current_ptr[sid_idx+j]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((int)(y * kScopeGain));
+                            }
                             m_voice_buff[sid_idx+3][(m_voice_current_ptr[sid_idx+3]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*8-1)]=LIMIT8((sid_v4>>7));
                             for (int j=0;j<4;j++) m_voice_current_ptr[sid_idx+j]+=smplIncr;
                         }

@@ -55,6 +55,33 @@ extern "C" {
  * period into Hz for the notes display. */
 #define PSG_DIGITAL_HZ 250332.0
 
+/* How the three PSG channels are mixed — upstream's three PSG filters
+ * (`--psg-mix`, `--psg-balance`), from the engine settings:
+ *   0 = empiric: the level table measured on an Atari ST (default; mono, the
+ *       three channels are looked up TOGETHER, so they cannot be placed);
+ *   1 = linear: a plain sum, cleaner;
+ *   2 = stereo: linear too (upstream forces it), each channel placed between
+ *       -1 (left) and +1 (right).
+ * Read at open and again by param_changed: the callback reads it per chunk,
+ * so a change is heard within a few milliseconds. The STE DMA sound and the
+ * LMC1992 mixer are not PSG channels and keep their own path. */
+struct PsgMix {
+    int model;
+    struct psgplay_psg_stereo_balance balance;
+};
+
+static float psg_clampf(double v, float lo, float hi) {
+    return v < lo ? lo : (v > hi ? hi : (float)v);
+}
+
+static void psg_read_mix(PsgMix* m) {
+    const int model = (int)rewamp_get_engine_param("psgplay", "mix", 0);
+    m->model = model < 0 || model > 2 ? 0 : model;
+    m->balance.a = psg_clampf(rewamp_get_engine_param("psgplay", "pan_a", -0.4), -1.f, 1.f);
+    m->balance.b = psg_clampf(rewamp_get_engine_param("psgplay", "pan_b",  0.0), -1.f, 1.f);
+    m->balance.c = psg_clampf(rewamp_get_engine_param("psgplay", "pan_c",  0.4), -1.f, 1.f);
+}
+
 struct RewampDecoder {
     struct psgplay* pp;
     int      subsong;      /* 1-based, SNDH's own convention */
@@ -64,6 +91,7 @@ struct RewampDecoder {
     size_t   size;
     double   speed;        /* native playback speed, 0 = 1× */
     double   posFrac;
+    PsgMix   mix;          /* the three PSG channels' mix (engine settings) */
 };
 
 /* ── Per-voice capture ─────────────────────────────────────────────────────
@@ -104,7 +132,7 @@ static inline void psg_cap_write(int v, int value) {
 static void psg_mix_cb(struct psgplay* pp, struct psgplay_stereo* stereo,
                        const struct psgplay_digital* digital,
                        size_t count, void* arg) {
-    (void)arg;
+    const PsgMix* mix = (const PsgMix*)arg;
     const uint64_t mute = generic_mute_mask;
     const double   decim = PSG_DIGITAL_HZ / (double)PSG_RATE;
 
@@ -156,7 +184,17 @@ static void psg_mix_cb(struct psgplay* pp, struct psgplay_stereo* stereo,
             g_psg_digital_idx++;
         }
 
-        psgplay_digital_to_stereo_empiric(pp, stereo + off, tmp, n, NULL);
+        switch (mix ? mix->model : 0) {
+        case 1:
+            psgplay_digital_to_stereo_linear(pp, stereo + off, tmp, n, NULL);
+            break;
+        case 2:
+            psgplay_digital_to_stereo_balance(pp, stereo + off, tmp, n,
+                                              (void*)&mix->balance);
+            break;
+        default:
+            psgplay_digital_to_stereo_empiric(pp, stereo + off, tmp, n, NULL);
+        }
     }
     vgm_last_vol[3] = 0;   /* DMA level is a sample, not an envelope */
 }
@@ -243,9 +281,10 @@ static RewampDecoder* psg_open(const char* path, RewampAudioFormat* outFormat) {
     rewamp_voice_set_name(3, "DMA");
     psg_cap_reset();
 
+    psg_read_mix(&dec->mix);
     dec->pp = psgplay_init(dec->data, dec->size, dec->subsong, PSG_RATE);
     if (!dec->pp) { free(dec->data); delete dec; return NULL; }
-    psgplay_digital_to_stereo_callback(dec->pp, psg_mix_cb, NULL);
+    psgplay_digital_to_stereo_callback(dec->pp, psg_mix_cb, &dec->mix);
 
     float secs = 0;
     if (sndh_tag_subtune_time(&secs, dec->subsong, dec->data, dec->size) && secs > 0)
@@ -312,7 +351,7 @@ static void psg_seek(RewampDecoder* dec, uint64_t frameIndex) {
         psgplay_free(dec->pp);
         dec->pp = psgplay_init(dec->data, dec->size, dec->subsong, PSG_RATE);
         if (!dec->pp) return;
-        psgplay_digital_to_stereo_callback(dec->pp, psg_mix_cb, NULL);
+        psgplay_digital_to_stereo_callback(dec->pp, psg_mix_cb, &dec->mix);
         psg_cap_reset();
         dec->framePos = 0;
     }
@@ -356,6 +395,12 @@ static void psg_close(RewampDecoder* dec) {
     delete dec;
 }
 
+/* Live: the mix is read by the callback at every chunk. */
+static void psg_param_changed(RewampDecoder* dec, const char* key) {
+    (void)key;
+    if (dec) psg_read_mix(&dec->mix);
+}
+
 static const RewampPluginVTable kPsgPlayVTable = {
     "psgplay",
     psg_probe,
@@ -366,8 +411,8 @@ static const RewampPluginVTable kPsgPlayVTable = {
     psg_close,
     NULL,             /* configure_loop */
     0,                /* supportsNativeFadeout */
-    NULL,             /* engine_id */
-    NULL,             /* param_changed */
+    "psgplay",        /* engine_id */
+    psg_param_changed, /* live settings */
     NULL, NULL, NULL, NULL, NULL, /* pattern view */
     NULL,             /* probe_path */
     0,                /* noPrefixProbe */

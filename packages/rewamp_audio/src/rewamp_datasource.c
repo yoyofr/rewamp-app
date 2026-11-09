@@ -413,6 +413,10 @@ static void ds_configure_speed(RewampDataSource* ds, double want) {
     g_playback_speed_mode = ds->speedMode;
 }
 
+/* Un engine a demandé qu'on lui repose la vitesse (rewamp_plugin.h). */
+static volatile int g_speed_renegotiate = 0;
+void rewamp_speed_renegotiate(void) { g_speed_renegotiate = 1; }
+
 /* La vitesse demandée par Dart, bornée. */
 static double ds_wanted_speed(void) {
     double v = g_playback_speed;
@@ -723,7 +727,10 @@ static void* ds_producer_main(void* arg) {
         // là que l'oreille l'entendra, une avance d'anneau plus tard.
         {
             const double want = ds_wanted_speed();
-            if (ds->decoder != NULL && fabs(want - ds->appliedSpeed) > 1e-6) {
+            const int again = g_speed_renegotiate;
+            if (ds->decoder != NULL &&
+                (again || fabs(want - ds->appliedSpeed) > 1e-6)) {
+                g_speed_renegotiate = 0;
                 pthread_mutex_lock(&ds->decodeLock);
                 ds_configure_speed(ds, want);
                 ring_lock(&ds->ringLock);

@@ -1,62 +1,122 @@
 diff --git a/player/vgmplayer_cmdhandler.cpp b/player/vgmplayer_cmdhandler.cpp
-index ab6325a..99e9fec 100644
+index ab6325a..6293a9c 100644
 --- a/player/vgmplayer_cmdhandler.cpp
 +++ b/player/vgmplayer_cmdhandler.cpp
+@@ -89,16 +89,16 @@
+ 	{0x2B, 0x03, &VGMPlayer::Cmd_Ofs4_Data12},          // 42 K005289 register write
+ 	{0x2D, 0x03, &VGMPlayer::Cmd_Ofs8_Data8},           // 43 MSM5232 register write
+ 	{0x2F, 0x03, &VGMPlayer::Cmd_Ofs8_Data8},           // 44 ICS2115 register write
+-	{0xFF, 0x03, &VGMPlayer::Cmd_unknown},              // 45
+-	{0xFF, 0x03, &VGMPlayer::Cmd_unknown},              // 46
+-	{0xFF, 0x03, &VGMPlayer::Cmd_unknown},              // 47
+-	{0xFF, 0x03, &VGMPlayer::Cmd_unknown},              // 48
+-	{0xFF, 0x03, &VGMPlayer::Cmd_unknown},              // 49
+-	{0xFF, 0x03, &VGMPlayer::Cmd_unknown},              // 4A
+-	{0xFF, 0x03, &VGMPlayer::Cmd_unknown},              // 4B
+-	{0xFF, 0x03, &VGMPlayer::Cmd_unknown},              // 4C
+-	{0xFF, 0x03, &VGMPlayer::Cmd_unknown},              // 4D
+-	{0xFF, 0x03, &VGMPlayer::Cmd_unknown},              // 4E
++	{0x30, 0x03, &VGMPlayer::Cmd_Ofs8_Data8},           // 45 Namco WSG register write
++	{0x31, 0x03, &VGMPlayer::Cmd_Ofs8_Data8},           // 46 Namco C15 register write
++	{0x32, 0x03, &VGMPlayer::Cmd_Ofs8_Data8},           // 47 Namco C30 register write
++	{0x33, 0x03, &VGMPlayer::Cmd_Ofs8_Data8},           // 48 Namco Pole Position WSG register write
++	{0x25, 0x03, &VGMPlayer::Cmd_V3_ES5506_Bank},    // 49 ES5506 external bank of a voice (v3)
++	{0x25, 0x03, &VGMPlayer::Cmd_V3_ES5506_RgnMap},  // 4A ES5506 region map (v3)
++	{0x25, 0x03, &VGMPlayer::Cmd_V3_ES5510_Halt},    // 4B ES5510 ESPHALT line (v3, ESP attached to the ES5506)
++	{0x34, 0x03, &VGMPlayer::Cmd_V3_ZSG2_Ctrl},      // 4C ZSG-2 control: reset (v3)
++	{0x34, 0x03, &VGMPlayer::Cmd_V3_TMS57002_Data},  // 4D TMS57002 host data write (v3)
++	{0x34, 0x03, &VGMPlayer::Cmd_V3_TMS57002_Lines}, // 4E TMS57002 control lines (v3)
+ 	{0x00, 0x02, &VGMPlayer::Cmd_GGStereo},             // 4F GameGear stereo mask
+ 	{0x00, 0x02, &VGMPlayer::Cmd_SN76489},              // 50 SN76489 register write
+ 	{0x01, 0x03, &VGMPlayer::Cmd_Reg8_Data8},           // 51 YM2413 register write
+@@ -222,10 +222,10 @@
+ 	{0x22, 0x04, &VGMPlayer::Cmd_Ofs16_Data8},          // C7 VSU-VUE (Virtual Boy) register write
+ 	{0x26, 0x04, &VGMPlayer::Cmd_Ofs16_Data8},          // C8 X1-010 register write
+ 	{0x2E, 0x04, &VGMPlayer::Cmd_BSMT2000_Reg},         // C9 BSMT2000 register write
+-	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},              // CA
+-	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},              // CB
+-	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},              // CC
+-	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},              // CD
++	{0x30, 0x04, &VGMPlayer::Cmd_Ofs16_Data8},          // CA Namco WSG memory write
++	{0x32, 0x04, &VGMPlayer::Cmd_Ofs16_Data8},          // CB Namco C30 memory write
++	{0x25, 0x04, &VGMPlayer::Cmd_V3_ES5510_Host},    // CC ES5510 host write (v3)
++	{0x34, 0x04, &VGMPlayer::Cmd_V3_TMS57002_PreRun}, // CD TMS57002 pre-run (v3)
+ 	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},              // CE
+ 	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},              // CF
+ 	{0x0D, 0x04, &VGMPlayer::Cmd_Port_Reg8_Data8},      // D0 YMF278B register write
 @@ -235,8 +235,8 @@
  	{0x1C, 0x04, &VGMPlayer::Cmd_Ofs16_Data8},          // D4 C140 register write
  	{0x24, 0x04, &VGMPlayer::Cmd_Port_Ofs8_Data8},      // D5 ES5503 register write
  	{0x25, 0x04, &VGMPlayer::Cmd_Ofs8_Data16},          // D6 ES5506 register write (16-bit data)
 -	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},              // D7
 -	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},              // D8
-+	{0x25, 0x04, &VGMPlayer::Cmd_ES5506_Ext},           // D7 ES5506 extension (bank/window/alias/IRQ ack)
-+	{0x25, 0x04, &VGMPlayer::Cmd_ES5510},               // D8 ES5510 (ESP) command
++	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},           // D7
++	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},           // D8
  	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},              // D9
  	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},              // DA
  	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},              // DB
-@@ -247,8 +247,8 @@
+@@ -246,9 +246,9 @@
+ 	{0xFF, 0x04, &VGMPlayer::Cmd_unknown},              // DF
  	{0xFF, 0x05, &VGMPlayer::Cmd_YM2612PCM_Seek},       // E0 set YM2612 PCM data offset
  	{0x27, 0x05, &VGMPlayer::Cmd_Ofs16_Data16},         // E1 C352 register write
- 	{0xFF, 0x05, &VGMPlayer::Cmd_unknown},              // E2
+-	{0xFF, 0x05, &VGMPlayer::Cmd_unknown},              // E2
 -	{0xFF, 0x05, &VGMPlayer::Cmd_unknown},              // E3
 -	{0xFF, 0x05, &VGMPlayer::Cmd_unknown},              // E4
-+	{0x25, 0x05, &VGMPlayer::Cmd_ES5506_Gain},          // E3 ES5506 output gain
-+	{0x30, 0x05, &VGMPlayer::Cmd_Ofs16_Data16},         // E4 ZSG-2 register write / TMS57002 / mixer gain (16-bit offset, 16-bit data)
++	{0xFF, 0x05, &VGMPlayer::Cmd_V3_Route},          // E2 serial routing: DSP dd input ii <- chip ss output cc (v3)
++	{0xFF, 0x05, &VGMPlayer::Cmd_V3_Gain},           // E3 output gain: chip tt channel cc, 8.8 (v3)
++	{0x34, 0x05, &VGMPlayer::Cmd_V3_ZSG2_Reg},       // E4 ZSG-2 register write: 16-bit word offset, 16-bit data (v3)
  	{0xFF, 0x05, &VGMPlayer::Cmd_unknown},              // E5
  	{0xFF, 0x05, &VGMPlayer::Cmd_unknown},              // E6
  	{0xFF, 0x05, &VGMPlayer::Cmd_unknown},              // E7
-@@ -372,8 +372,8 @@
+@@ -289,7 +289,7 @@
+ 	0x20,	// 06 SCSP
+ 	0x14,	// 07 NES APU
+ 	0x2B,	// 08 MSM5205
+-	0xFF,	// 09
++	0x32,	// 09 Namco C30
+ 	0xFF,	// 0A
+ 	0xFF,	// 0B
+ 	0xFF,	// 0C
+@@ -372,11 +372,11 @@
  	{0x2A, 0},	// 94 K007232
  	{0x2E, 0},	// 95 BSMT2000
  	{0x2F, 0},	// 96 ICS2115
 -	{0xFF, 0},	// 97
--	{0xFF, 0},	// 98
-+	{0x30, 0},	// 97 ZSG-2
-+	{0x30, 1},	// 98 ZSG-2 DSP state (TMS57002)
- 	{0xFF, 0},	// 99
- 	{0xFF, 0},	// 9A
- 	{0xFF, 0},	// 9B
-@@ -441,8 +441,8 @@
- 	0xFF,	// D4
- 	0xFF,	// D5
- 	0xFF,	// D6
--	0xFF,	// D7
--	0xFF,	// D8
-+	0x25,	// D7 ES5506
-+	0x25,	// D8 ES5506/ES5510
- 	0xFF,	// D9
- 	0xFF,	// DA
- 	0xFF,	// DB
-@@ -454,8 +454,8 @@
++	{0x34, 0},	// 97 ZSG-2
+ 	{0xFF, 0},	// 98
+-	{0xFF, 0},	// 99
+-	{0xFF, 0},	// 9A
+-	{0xFF, 0},	// 9B
++	{0x25, 0},	// 99 ES5506 region 1
++	{0x25, 0},	// 9A ES5506 region 2
++	{0x25, 0},	// 9B ES5506 region 3
+ 	{0xFF, 0},	// 9C
+ 	{0xFF, 0},	// 9D
+ 	{0xFF, 0},	// 9E
+@@ -422,10 +422,10 @@
+ 	0x10,	// C1 RF5C164
+ 	0x14,	// C2 NES APU
+ 	0x2B,	// C3 K005289
+-	0xFF,	// C4
+-	0xFF,	// C5
+-	0xFF,	// C6
+-	0xFF,	// C7
++	0x30,	// C4 Namco WSG
++	0x31,	// C5 Namco C15
++	0x32,	// C6 Namco C30
++	0x33,	// C7 Namco Pole Position WSG
+ 	0xFF,	// C8
+ 	0xFF,	// C9
+ 	0xFF,	// CA
+@@ -453,7 +453,7 @@
+ 	// --- RAM --- (32-bit addressing)
  	0x20,	// E0 SCSP
  	0x24,	// E1 ES5503
- 	0xFF,	// E2
--	0xFF,	// E3
--	0xFF,	// E4
-+	0x25,	// E3 ES5506
-+	0x30,	// E4 ZSG-2
+-	0xFF,	// E2
++	0x34,	// E2 TMS57002 memory image (ZSG-2 device)
+ 	0xFF,	// E3
+ 	0xFF,	// E4
  	0xFF,	// E5
- 	0xFF,	// E6
- 	0xFF,	// E7
 @@ -506,6 +506,12 @@ INLINE UINT16 ReadBE16(const UINT8* data)
  #endif
  }
@@ -70,53 +130,185 @@ index ab6325a..99e9fec 100644
  INLINE UINT32 ReadLE24(const UINT8* data)
  {
  	// read 24-Bit Word (Little Endian/Intel Byte Order)
-@@ -1092,6 +1098,45 @@ void VGMPlayer::Cmd_Ofs8_Data8(void)
+@@ -759,6 +765,8 @@ void VGMPlayer::Cmd_DataBlock(void)
+ 		dataOfs = ReadLE32(&fData[0x04]);
+ 		dataPtr = &fData[0x08];
+ 		dataLen = dblkLen - 0x08;
++		if (dblkType >= 0x99 && dblkType <= 0x9B)
++			dataOfs |= (UINT32)(dblkType - 0x98) << 28;	// ES5506 region 1-3 (device: offset bits 28-29)
+ 		if (chipType == 0x1C && dataLen && (cDev->flags & 0x01))
+ 		{
+ 			// chip == ASIC 219 (ID 0x1C + flags 0x01): byte-swap sample data
+@@ -800,6 +808,15 @@ void VGMPlayer::Cmd_DataBlock(void)
+ 			dataLen = dblkLen - 0x04;
+ 			dataPtr = &fData[0x04];
+ 		}
++		if (dblkType == 0xE2)
++		{
++			// TMS57002 memory image of the ZSG-2 device
++			if (cDev->romSizeB != NULL)
++				cDev->romSizeB(cDev->base.defInf.dataPtr, dataLen);
++			if (cDev->romWriteB != NULL && dataLen)
++				cDev->romWriteB(cDev->base.defInf.dataPtr, dataOfs, dataLen, dataPtr);
++			break;
++		}
+ 		DoRAMOfsPatches(chipType, chipID, dataOfs, dataLen);
+ 		cDev->romWrite(cDev->base.defInf.dataPtr, dataOfs, dataLen, dataPtr);
+ 		break;
+@@ -1092,6 +1109,152 @@ void VGMPlayer::Cmd_Ofs8_Data8(void)
  	return;
  }
  
-+void VGMPlayer::Cmd_ES5506_Ext(void)
++// ---- VGM v3 extension commands (ES5505/ES5506 + ES5510, ZSG-2 + TMS57002) ----
++// The ES5510 (chip 0x35) is emulated inside the ES5506 device (chip 0x25) it is wired to, the TMS57002
++// (chip 0x36) inside the ZSG-2 device (chip 0x34). The v3 commands are translated to the device's
++// extension entry points (see es5506.h / zsg2.h).
++
++static void SendES5506Ext(VGMPlayer::CHIP_DEVICE* cDev, UINT8 sub, UINT8 aa, UINT8 data)
 +{
-+	// D7 pp aa dd: ES5506 extension command pp (bit 7 = chip ID)
-+	UINT8 chipType = _CMD_INFO[fData[0x00]].chipType;
-+	UINT8 chipID = (fData[0x01] & 0x80) >> 7;
-+	CHIP_DEVICE* cDev = GetDevicePtr(chipType, chipID);
-+	if (cDev == NULL || cDev->writeExt == NULL)
-+		return;
-+	
-+	cDev->writeExt(cDev->base.defInf.dataPtr, ((fData[0x01] & 0x7F) << 8) | fData[0x02], fData[0x03]);
-+	return;
++	if (cDev != NULL && cDev->writeExt != NULL)
++		cDev->writeExt(cDev->base.defInf.dataPtr, (sub << 8) | aa, data);
 +}
 +
-+void VGMPlayer::Cmd_ES5510(void)
++static void SendES5510(VGMPlayer::CHIP_DEVICE* cDev, UINT8 sub, UINT8 aa, UINT8 data)
 +{
-+	// D8 pp aa dd: ES5510 command pp (bit 7 = chip ID of the ES5506 the ESP is attached to)
-+	UINT8 chipType = _CMD_INFO[fData[0x00]].chipType;
-+	UINT8 chipID = (fData[0x01] & 0x80) >> 7;
-+	CHIP_DEVICE* cDev = GetDevicePtr(chipType, chipID);
-+	if (cDev == NULL || cDev->writeEsp == NULL)
-+		return;
-+	
-+	cDev->writeEsp(cDev->base.defInf.dataPtr, ((fData[0x01] & 0x7F) << 8) | fData[0x02], fData[0x03]);
-+	return;
++	if (cDev != NULL && cDev->writeEsp != NULL)
++		cDev->writeEsp(cDev->base.defInf.dataPtr, (sub << 8) | aa, data);
 +}
 +
-+void VGMPlayer::Cmd_ES5506_Gain(void)
++static void SendES5506Gain(VGMPlayer::CHIP_DEVICE* cDev, UINT8 cc, UINT16 gain)
 +{
-+	// E3 pp cc gggg: output gain of channel cc, 8.8 fixed point (big endian), pp bit 7 = chip ID
-+	UINT8 chipType = _CMD_INFO[fData[0x00]].chipType;
-+	UINT8 chipID = (fData[0x01] & 0x80) >> 7;
-+	CHIP_DEVICE* cDev = GetDevicePtr(chipType, chipID);
-+	if (cDev == NULL || cDev->writeGain == NULL)
-+		return;
++	if (cDev != NULL && cDev->writeGain != NULL)
++		cDev->writeGain(cDev->base.defInf.dataPtr, cc, gain);
++}
++
++static void SendZSG2Ext(VGMPlayer::CHIP_DEVICE* cDev, UINT8 sub, UINT8 aa, UINT16 data)
++{
++	if (cDev != NULL && cDev->writeM16 != NULL)
++		cDev->writeM16(cDev->base.defInf.dataPtr, (sub << 8) | aa, data);
++}
++
++void VGMPlayer::Cmd_V3_ES5506_Bank(void)
++{
++	// 49 vv bb: voice vv (bits 0-4, bit 7 = 2nd chip) reads with an external bank of bb x 1M words
++	SendES5506Ext(GetDevicePtr(0x25, fData[0x01] >> 7), 0x00, fData[0x01] & 0x1F, fData[0x02]);
++}
++
++void VGMPlayer::Cmd_V3_ES5506_RgnMap(void)
++{
++	// 4A rr mm: region rr (bits 0-1, bit 7 = 2nd chip) reads region (mm & 3) at word offset (mm >> 2) x 1M
++	CHIP_DEVICE* cDev = GetDevicePtr(0x25, fData[0x01] >> 7);
++	UINT8 rr = fData[0x01] & 0x03;
++	SendES5506Ext(cDev, 0x01, rr, fData[0x02] >> 2);
++	SendES5506Ext(cDev, 0x02, rr, fData[0x02] & 0x03);
++}
++
++void VGMPlayer::Cmd_V3_ES5510_Halt(void)
++{
++	// 4B cc hh: ESPHALT line of ES5510 cc (bit 7 = 2nd chip)
++	SendES5510(GetDevicePtr(0x25, fData[0x01] >> 7), 0x01, 0x00, fData[0x02] ? 1 : 0);
++}
++
++void VGMPlayer::Cmd_V3_ES5510_Host(void)
++{
++	// CC cc aa dd: ES5510 host register write
++	SendES5510(GetDevicePtr(0x25, fData[0x01] >> 7), 0x00, fData[0x02], fData[0x03]);
++}
++
++void VGMPlayer::Cmd_V3_ZSG2_Ctrl(void)
++{
++	// 4C cc rr: bit 0 = ZSG-2 reset pulse
++	if (fData[0x02] & 0x01)
++		SendZSG2Ext(GetDevicePtr(0x34, fData[0x01] >> 7), 0x0A, 0x00, 0);
++}
++
++void VGMPlayer::Cmd_V3_TMS57002_Data(void)
++{
++	// 4D cc dd: TMS57002 host data write
++	SendZSG2Ext(GetDevicePtr(0x34, fData[0x01] >> 7), 0x04, 0x00, fData[0x02]);
++}
++
++void VGMPlayer::Cmd_V3_TMS57002_Lines(void)
++{
++	// 4E cc ll: bit 2 set = DSP reset pulse (bits 0-1 ignored), else bit 0 = PLOAD, bit 1 = CLOAD levels
++	CHIP_DEVICE* cDev = GetDevicePtr(0x34, fData[0x01] >> 7);
++	if (fData[0x02] & 0x04)
++		SendZSG2Ext(cDev, 0x09, 0x00, 0);
++	else
++		SendZSG2Ext(cDev, 0x05, 0x00, fData[0x02] & 0x03);
++}
++
++void VGMPlayer::Cmd_V3_TMS57002_PreRun(void)
++{
++	// CD cc nnnn: run nnnn sample periods of the DSP program with silent inputs (big endian)
++	SendZSG2Ext(GetDevicePtr(0x34, fData[0x01] >> 7), 0x08, 0x00, ReadBE16(&fData[0x02]));
++}
++
++void VGMPlayer::Cmd_V3_ZSG2_Reg(void)
++{
++	// E4 oooo dddd: ZSG-2 register write, 16-bit word offset (bit 15 = 2nd chip), big endian
++	UINT16 ofs = ReadBE16(&fData[0x01]);
++	SendZSG2Ext(GetDevicePtr(0x34, ofs >> 15), (ofs >> 8) & 0x03, ofs & 0xFF, ReadBE16(&fData[0x03]));
++}
++
++void VGMPlayer::Cmd_V3_Route(void)
++{
++	// E2 dd ii ss cc: serial input ii of DSP dd takes output channel cc of chip ss (0xFF = none)
++	UINT8 dd = fData[0x01];
++	UINT8 ii = fData[0x02];
++	UINT8 ss = fData[0x03];
++	UINT8 cc = fData[0x04];
 +	
-+	cDev->writeGain(cDev->base.defInf.dataPtr, ((fData[0x01] & 0x7F) << 8) | fData[0x02], ReadBE16(&fData[0x03]));
-+	return;
++	switch(dd & 0x7F)
++	{
++	case 0x35:	// ES5510: inputs come from the ES5506 it is attached to
++		if (cc != 0xFF && ss != (0x25 | (dd & 0x80)))
++			break;
++		SendES5510(GetDevicePtr(0x25, dd >> 7), 0x02, ii, cc);
++		break;
++	case 0x36:	// TMS57002 of the ZSG-2 device: fixed wiring, ZSG-2 output n -> DSP input n
++		if (ss != (0x34 | (dd & 0x80)) || ii != cc)
++			emu_logf(&_logger, PLRLOG_WARN, "Unsupported TMS57002 routing: input %u <- chip 0x%02X output %u\n", ii, ss, cc);
++		break;
++	}
++}
++
++void VGMPlayer::Cmd_V3_Gain(void)
++{
++	// E3 tt cc gggg: gain of output channel cc of chip tt into the mix, 8.8 big endian (even = left, odd = right)
++	UINT8 tt = fData[0x01];
++	UINT8 cc = fData[0x02];
++	UINT16 gain = ReadBE16(&fData[0x03]);
++	
++	switch(tt & 0x7F)
++	{
++	case 0x25:	// ES5505/ES5506: channels 0-11, 0xFE/0xFF = direct mix bus left/right
++		if (cc < 12)
++			SendES5506Gain(GetDevicePtr(0x25, tt >> 7), cc, gain);
++		else if (cc == 0xFE || cc == 0xFF)
++			SendES5506Gain(GetDevicePtr(0x25, tt >> 7), 0x12 | (cc & 1), gain);
++		break;
++	case 0x35:	// ES5510: serial outputs 6/7
++		if (cc == 6 || cc == 7)
++			SendES5506Gain(GetDevicePtr(0x25, tt >> 7), 0x10 | (cc & 1), gain);
++		break;
++	case 0x34:	// ZSG-2: outputs 0-3 straight to the mix (DSP bypass)
++		if (cc < 4)
++			SendZSG2Ext(GetDevicePtr(0x34, tt >> 7), 0x06, ((cc & 1) ? 0x24 : 0x20) + cc, gain);
++		break;
++	case 0x36:	// TMS57002: outputs 0-3 to the mix, 0x80-0x83 = serial input attenuation
++		if (cc < 4)
++			SendZSG2Ext(GetDevicePtr(0x34, tt >> 7), 0x06, ((cc & 1) ? 0x14 : 0x10) + cc, gain);
++		else if (cc >= 0x80 && cc < 0x84)
++			SendZSG2Ext(GetDevicePtr(0x34, tt >> 7), 0x06, cc & 0x03, gain);
++		break;
++	}
 +}
 +
  void VGMPlayer::Cmd_Ofs16_Data8(void)
  {
  	UINT8 chipType = _CMD_INFO[fData[0x00]].chipType;
-@@ -1113,7 +1158,9 @@ void VGMPlayer::Cmd_Ofs8_Data16(void)
+@@ -1113,7 +1276,9 @@ void VGMPlayer::Cmd_Ofs8_Data16(void)
  	if (cDev == NULL || cDev->writeD16 == NULL)
  		return;
  	

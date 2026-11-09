@@ -1756,7 +1756,8 @@ class RewampRpcException implements Exception {
 }
 
 /// One identity row of `user_library_ids` (migration 180): what is in the
-/// library, stripped to its key. `kind` = song | album | playlist; an
+/// library, stripped to its key. `kind` = song | album | playlist | artist
+/// (artist: mig serveur 296); an
 /// out-of-catalogue row has a null [id] and a non-null [extKey].
 class LibraryIdRow {
   final String kind;
@@ -2000,6 +2001,41 @@ class UserLibraryAlbum {
         platform:   j['platform'] as String?,
         artworkUrl: j['artwork_url'] as String?,
         zipUrl:     j['zip_url'] as String?,
+        inLibrary:  j['in_library'] != false,
+        favourite:  j['favourite'] == true,
+        addedAt:    DateTime.tryParse(j['added_at'] as String? ?? ''),
+        updatedAt:  DateTime.tryParse(j['updated_at'] as String? ?? ''),
+      );
+}
+
+/// Un artiste de la bibliothèque du compte (`user_artists`, mig serveur 296).
+/// Seule source de son NOM: `user_library_ids` ne porte que l'identité.
+class UserLibraryArtist {
+  final String artistId;
+  final String name;
+  final String? artworkUrl;
+  final int songCount;
+  final bool inLibrary;
+  final bool favourite;
+  final DateTime? addedAt;
+  final DateTime? updatedAt;
+
+  const UserLibraryArtist({
+    required this.artistId,
+    required this.name,
+    this.artworkUrl,
+    this.songCount = 0,
+    this.inLibrary = true,
+    this.favourite = false,
+    this.addedAt,
+    this.updatedAt,
+  });
+
+  factory UserLibraryArtist.fromJson(Map<String, dynamic> j) => UserLibraryArtist(
+        artistId:   (j['artist_id'] as String?) ?? '',
+        name:       (j['name'] as String?) ?? '',
+        artworkUrl: j['artwork_url'] as String?,
+        songCount:  (j['song_count'] as num?)?.toInt() ?? 0,
         inLibrary:  j['in_library'] != false,
         favourite:  j['favourite'] == true,
         addedAt:    DateTime.tryParse(j['added_at'] as String? ?? ''),
@@ -3089,6 +3125,9 @@ class ArtistTag {
 /// "Groupes" chips clickable. `collections`/`countries` stay display-only.
 class ArtistDetails {
   final String        name;
+  /// La pochette STOCKÉE de l'artiste (migs serveur 297/298), la même que
+  /// `user_artists` et `search_artists`. Null sur un serveur plus ancien.
+  final String?       artworkUrl;
   final String?       country;
   final String?       bio;
   final String?       birthDate;
@@ -3119,6 +3158,7 @@ class ArtistDetails {
 
   const ArtistDetails({
     required this.name,
+    this.artworkUrl,
     this.country,
     this.bio,
     this.birthDate,
@@ -3186,6 +3226,7 @@ class ArtistDetails {
     }
     return ArtistDetails(
       name:         (j['name'] ?? '').toString(),
+      artworkUrl:   _str(j['artwork_url']),
       country:      _str(j['country']),
       bio:          _str(j['bio']),
       birthDate:    _str(j['birth_date']),
@@ -3505,6 +3546,10 @@ class AlbumDetails {
   final int? year;
   final String? description;
   final List<String> composerNames;
+  /// Uuid de chaque compositeur, ALIGNÉ sur [composerNames] (mig serveur 293);
+  /// `''` à la position d'un compositeur sans uuid, liste vide quand le serveur
+  /// ne l'envoie pas encore — lire par `artistIdAt`, jamais par index nu.
+  final List<String> composerIds;
   final List<String> developerNames;
   final List<String> publisherNames;
   final List<String> chipNames;
@@ -3514,6 +3559,10 @@ class AlbumDetails {
   final String? zipUrl;
   /// R2/CDN mirror of [zipUrl]; same 404-fallback policy.
   final String? mirrorZipUrl;
+  /// Taille de l'archive [zipUrl] d'après le catalogue (`file_size` de
+  /// get_album_details), 0 si inconnue. C'est ELLE que la sonde HEAD de
+  /// [downloadAndExtractZip] doit comparer — pas la taille d'une piste.
+  final int zipSize;
   final String? packPageUrl;
   final String collection;
   final List<AlbumAlias> aliases;
@@ -3534,6 +3583,7 @@ class AlbumDetails {
     this.year,
     this.description,
     required this.composerNames,
+    this.composerIds = const [],
     required this.developerNames,
     required this.publisherNames,
     required this.chipNames,
@@ -3542,6 +3592,7 @@ class AlbumDetails {
     this.artworkUrl,
     this.zipUrl,
     this.mirrorZipUrl,
+    this.zipSize = 0,
     this.packPageUrl,
     required this.collection,
     this.aliases = const [],
@@ -3557,6 +3608,7 @@ class AlbumDetails {
         description: j['description'] as String?,
         podium: CompoPodium.fromJson(j['compo_podium']),
         composerNames: _toStrList(j['composer_names']),
+        composerIds: alignedComposerIds(j['composer_names'], j['composer_ids']),
         developerNames: _toStrList(j['developer_names']),
         publisherNames: _toStrList(j['publisher_names']),
         chipNames: _toStrList(j['chip_names']),
@@ -3565,11 +3617,30 @@ class AlbumDetails {
         artworkUrl: j['artwork_url'] as String?,
         zipUrl: j['zip_url'] as String?,
         mirrorZipUrl: j['mirror_zip_url'] as String?,
+        zipSize: (j['file_size'] as num?)?.toInt() ?? 0,
         packPageUrl: j['pack_page_url'] as String?,
         collection: j['collection'] as String,
         aliases: ArtistAlbum._toAliasList(j['aliases']),
         productions: ProductionRef.listFrom(j['productions']),
       );
+
+  /// Les uuid de `composer_ids` recalés sur les noms que [_toStrList] GARDE:
+  /// un nom écarté (null, vide, « null ») emporte son uuid, sinon tout ce qui
+  /// suit serait décalé d'un cran et ouvrirait le mauvais artiste.
+  @visibleForTesting
+  static List<String> alignedComposerIds(dynamic names, dynamic ids) {
+    if (names is! List || ids is! List) return const [];
+    final out = <String>[];
+    for (var i = 0; i < names.length; i++) {
+      final n = names[i];
+      if (n == null) continue;
+      final s = n.toString();
+      if (s.isEmpty || s.toLowerCase() == 'null') continue;
+      final id = i < ids.length ? ids[i] : null;
+      out.add(id == null ? '' : id.toString());
+    }
+    return out;
+  }
 
   static List<String> _toStrList(dynamic v) {
     if (v is List) {
@@ -4576,7 +4647,7 @@ class RewampDb {
   /// Items of a curated preset playlist, ordered by `item_position` (that is
   /// the column name — not `position`).
   static Future<List<PresetInfo>> getPresetPlaylistItems(String id) async {
-    final json = await _rpc('get_preset_playlist_items', {'p_id': id});
+    final json = await _rpc('get_preset_playlist_items', {'p_playlist_id': id});
     if (json is! List) return const [];
     final items = [
       for (final row in json)
@@ -5876,8 +5947,8 @@ class RewampDb {
       if (remote > 0 && remote != expect) {
         debugPrint('[fetch] $label: HEAD says $remote, expected $expect '
             '— skipping the stale copy, fetching cache-busted');
-        final busted = await _fetchToFileMirror(
-            null, cacheBusted(originUrl), dest, label: label, cap: cap);
+        final busted = await _fetchBustedOrMirror(
+            mirrorUrl, originUrl, dest, label: label, cap: cap);
         _rememberArchiveSize(key, busted.$1, expectedSize, label);
         return busted;
       }
@@ -5887,10 +5958,53 @@ class RewampDb {
     if (expect <= 0 || got.$1 == expect) return got;
     debugPrint('[fetch] $label: ${got.$1} bytes but expected $expect '
         '— stale CDN copy, refetching cache-busted');
-    final fresh = await _fetchToFileMirror(
-        null, cacheBusted(originUrl), dest, label: label, cap: cap);
+    final fresh = await _fetchBustedOrMirror(
+        mirrorUrl, originUrl, dest, label: label, cap: cap);
     _rememberArchiveSize(key, fresh.$1, expectedSize, label);
     return fresh;
+  }
+
+  /// La taille attendue de l'archive d'un album, pour la sonde HEAD de
+  /// [_fetchArchiveVerified]. Celle du catalogue (`get_album_details`) d'abord;
+  /// sinon celle de la première ligne, mais SEULEMENT si cette ligne EST
+  /// l'archive (un conteneur joshw: son `download_url` est le `.7z`). Une
+  /// ligne d'album en fichiers séparés (vgmrips: un `.vgz` par piste) porte la
+  /// taille de SA piste — 6 812 octets contre 803 770 pour le zip de « Sonic
+  /// the Hedgehog 2 »: la sonde concluait à une copie périmée, abandonnait le
+  /// miroir et repartait sur l'origine seule, qui répondait 410. 0 = inconnue,
+  /// pas de sonde. Pure, testée (album_archive_size_test.dart).
+  static int albumArchiveExpectedSize(String zipUrl, int zipSize,
+      String? firstRowUrl, int firstRowSize) {
+    if (zipSize > 0) return zipSize;
+    if (firstRowUrl != null && firstRowUrl.isNotEmpty &&
+        archiveKeyForUrl(firstRowUrl) == archiveKeyForUrl(zipUrl)) {
+      return firstRowSize;
+    }
+    return 0;
+  }
+
+  /// L'origine cache-bustée, et si elle a DISPARU (vgmrips répond 410 sur un
+  /// pack remplacé) la copie du miroir plutôt qu'un échec: une archive dont
+  /// la taille surprend vaut mieux que pas d'album du tout, et l'extraction
+  /// suivie du contrat de tracklist dira si elle convient.
+  static Future<(int, Uint8List)> _fetchBustedOrMirror(
+    String? mirrorUrl,
+    String originUrl,
+    File dest, {
+    required String label,
+    required Duration cap,
+  }) async {
+    try {
+      return await _fetchToFileMirror(
+          null, cacheBusted(originUrl), dest, label: label, cap: cap);
+    } on DownloadCancelledException {
+      rethrow;
+    } catch (e) {
+      if (mirrorUrl == null || mirrorUrl.isEmpty) rethrow;
+      debugPrint('[fetch] $label: origin failed ($e) — falling back to the '
+          'mirror copy');
+      return _fetchToFile(mirrorUrl, dest, label: label, cap: cap);
+    }
   }
 
   /// Une descente cache-bustée dit ce que l'ORIGINE sert vraiment. Si ça ne
@@ -6197,7 +6311,8 @@ class RewampDb {
       {String? staleUrl}) async {
     var deleted = 0;
     try {
-      final rec = await LocalDb.instance.getTrackByOnlineId(songId);
+      final rec = await LocalDb.instance
+          .getTrackByOnlineId(songId, filename: oldRow.filename);
       final freshPath = await _localPath(freshRow);
       final direct = <String>{
         if (rec != null && rec.filePath.isNotEmpty) rec.filePath,
@@ -6343,6 +6458,26 @@ class RewampDb {
   static Future<SearchResult> debugPreferRecordedOverride(SearchResult r) =>
       _preferRecordedOverride(r);
 
+  /// Deux urls désignent-elles le MÊME fichier à deux adresses ? Même dernier
+  /// segment de chemin (décodé), hors override (un override est un AUTRE
+  /// fichier, rendu par nous). PURE et testée.
+  static bool sourceUrlIsRelocation(String? oldUrl, String? newUrl) {
+    if (oldUrl == null || newUrl == null) return false;
+    if (oldUrl.isEmpty || newUrl.isEmpty || oldUrl == newUrl) return false;
+    if (_isOverrideUrl(oldUrl) || _isOverrideUrl(newUrl)) return false;
+    String last(String url) {
+      final path = url.split('?').first.split('#').first;
+      final seg = path.substring(path.lastIndexOf('/') + 1);
+      try {
+        return Uri.decodeComponent(seg);
+      } catch (_) {
+        return seg;
+      }
+    }
+    final a = last(oldUrl), b = last(newUrl);
+    return a.isNotEmpty && a == b;
+  }
+
   static Future<void> _purgeIfSourceUrlChanged(SearchResult r) async {
     try {
       // A row with NO url of its own says nothing about the source having
@@ -6362,7 +6497,27 @@ class RewampDb {
             "l'override reste la source");
         return;
       }
+      final fresh = r.downloadUrl!;
+      // Même fichier, autre ADRESSE (le serveur a fait de son miroir
+      // l'url principale: 2sf.joshw.info/a/X.7z → files.rewamp.app/2sf/a/X.7z).
+      // Ce n'est pas un remplacement: rien à effacer, on note la nouvelle url.
+      // Un contenu remplacé SOUS LE MÊME NOM reste couvert par les filets de
+      // l'album (HEAD contre file_size, contrat de tracklist).
+      if (sourceUrlIsRelocation(stored, fresh)) {
+        final n =
+            await LocalDb.instance.rewriteDownloadSourceUrl(stored, fresh);
+        debugPrint('[RewampDb] source relocated for ${r.songId} '
+            '($n entr${n > 1 ? 'ies' : 'y'}): $stored → $fresh');
+        return;
+      }
       debugPrint('[RewampDb] source url changed for ${r.songId} (was: $stored)');
+      // UNE détection par archive, pas une par piste: les entrées qui
+      // partageaient l'ancienne url sont réécrites AVANT le balayage, sinon
+      // chacune revidait le dossier à sa première lecture (voir
+      // rewriteDownloadSourceUrl).
+      if (_isArchiveUrl(stored) || _isArchiveUrl(fresh)) {
+        await LocalDb.instance.rewriteDownloadSourceUrl(stored, fresh);
+      }
       await _purgeSongDownload(r, r, r.songId, staleUrl: stored);
     } catch (e) {
       debugPrint('[RewampDb] _purgeIfSourceUrlChanged error: $e');
@@ -6556,7 +6711,14 @@ class RewampDb {
       String? got;
       try { got = await inflight; } catch (_) {}
       // MÊME fichier: ses octets sont là où l'autre ligne les a posés.
-      if (sameFile && got != null && await File(got).exists()) {
+      // ⚠️ Pour une ARCHIVE, le même uuid ne dit PAS le même fichier: les
+      // entrées `<uuid>#<i>` d'un album en .7z sont des MEMBRES distincts, et
+      // rendre `got` servait à « 08 Sunshine Street » le chemin de « 40 Waltz
+      // in Dim Light », qui avait lancé l'extraction. Il faut alors le chemin
+      // de CETTE ligne; sinon run() le résout depuis le disque.
+      final sameBytes = got != null &&
+          (!_isArchiveUrl(key) || p.equals(got, lp));
+      if (sameFile && sameBytes && await File(got).exists()) {
         _statusClear();
         await _ensureAuxFiles(r, got);
         return got;
@@ -6575,6 +6737,38 @@ class RewampDb {
     _inFlightDownloads[key] = fut;
     _inFlightSongIds[key] = fileId;
     return fut;
+  }
+
+  /// Le fichier qu'une ligne `tracks` a retenu pour cet id est-il bien celui
+  /// que la ligne DEMANDE ? Le repli « chemin connu en base » existe pour un
+  /// chemin DÉRIVÉ qui a bougé (même fichier, autre dossier), pas pour
+  /// substituer un autre morceau.
+  ///
+  /// Cas mesuré (UnExoticA « Denaris », 2026-11-06): les entrées d'une
+  /// tracklist serveur s'identifient par RANG (`<uuid>#<i>`). Le serveur a
+  /// retiré le player Amiga qui occupait le rang 0: tous les rangs ont glissé,
+  /// mais les lignes locales gardaient l'ancien fichier de chaque rang. Le
+  /// rang 0 (désormais `mii.game_end`) rejouait le PLAYER, le rang 1
+  /// (`mii.title`) rejouait `dz.title`, et les `mii.*` n'étaient jamais
+  /// extraits puisque chaque demande trouvait « son » fichier sur disque.
+  ///
+  /// Même nom de fichier ⇒ oui. Archive jouée EN PLACE (`.rsn`: la ligne
+  /// nomme un membre `.spc`, le fichier est l'archive) ⇒ oui. Même radical
+  /// avec une extension de FORMAT différente (le catalogue dit `.wav`,
+  /// l'archive livre `.ogg`) ⇒ oui. Le reste ⇒ non — et ⚠️ le radical seul ne
+  /// suffit pas pour un nom Amiga à PRÉFIXE: `dz.title` et `dz.game_end` ont
+  /// le même radical « dz », d'où l'exigence que l'extension demandée soit un
+  /// vrai format.
+  static bool knownPathFitsRow(String knownPath, String filename) {
+    if (filename.isEmpty) return true;
+    final known = p.basename(knownPath).toLowerCase();
+    final want = p.basename(filename.replaceAll('\\', '/')).toLowerCase();
+    if (known == want) return true;
+    if (p.extension(known) == '.rsn') return true;
+    final wantExt = p.extension(want).replaceFirst('.', '');
+    return p.basenameWithoutExtension(known) ==
+            p.basenameWithoutExtension(want) &&
+        kExtractedAudioExts.contains(wantExt);
   }
 
   static Future<String> _downloadToLibraryImpl(SearchResult r,
@@ -6609,11 +6803,13 @@ class RewampDb {
     // Checked AFTER the purge in downloadToLibrary(), so a genuine server-side
     // replacement still wins: it deletes the file first, and this misses too.
     if (!force && r.songId.isNotEmpty) {
-      final known = await LocalDb.instance.getTrackByOnlineId(r.songId);
+      final known = await LocalDb.instance
+          .getTrackByOnlineId(r.songId, filename: r.filename);
       final knownPath = known?.filePath;
       if (knownPath != null &&
           knownPath.isNotEmpty &&
           knownPath != localPath &&
+          knownPathFitsRow(knownPath, r.filename) &&
           await File(knownPath).exists()) {
         debugPrint('[RewampDb] ${r.songId}: reusing $knownPath '
             '(computed path moved to $localPath)');
@@ -6640,39 +6836,56 @@ class RewampDb {
         return _downloadAndExtractSingle(r, localPath, force: force);
       }
 
-      var bytes = await _fetchBytesMirror(
-          force ? null : r.mirrorUrl,
-          force ? cacheBusted(r.downloadUrl!) : r.downloadUrl!,
-          label: r.displayTitle);
-      // Soft 404: some origins answer a gone file with 200 + an HTML error page
-      // (scene.org does). Writing that as the "audio" would fail to decode and
-      // mis-report as an unsupported format — treat it as gone instead.
-      if (_looksLikeHtml(bytes)) {
-        throw DownloadHttpException(404, r.downloadUrl!);
-      }
-      // AMP (amp.dascene.net) serves each module gzip-wrapped through a php
-      // endpoint: magic 1f 8b, no .gz anywhere in URL or filename. Saved raw,
-      // no decoder can probe it. Unwrap transparently — unless the row's own
-      // format IS a gzip container played compressed natively (.vgz/.gz VGM).
-      final extLower =
-          p.extension(localPath).replaceFirst('.', '').toLowerCase();
-      const gzipNativeExts = {'gz', 'vgz', 'tgz'};
-      if (bytes.length > 2 && bytes[0] == 0x1f && bytes[1] == 0x8b &&
-          !gzipNativeExts.contains(extLower)) {
-        try {
-          bytes = Uint8List.fromList(gzip.decode(bytes));
-        } catch (_) {
-          // Not actually gzip (or corrupt) — keep the raw bytes.
+      Uint8List? fetched;
+      try {
+        fetched = await _fetchBytesMirror(
+            force ? null : r.mirrorUrl,
+            force ? cacheBusted(r.downloadUrl!) : r.downloadUrl!,
+            label: r.displayTitle);
+        // Soft 404: some origins answer a gone file with 200 + an HTML error
+        // page (scene.org does). Writing that as the "audio" would fail to
+        // decode and mis-report as an unsupported format — treat it as gone.
+        if (_looksLikeHtml(fetched)) {
+          throw DownloadHttpException(404, r.downloadUrl!);
         }
+      } on DownloadHttpException catch (e) {
+        // Le fichier a DISPARU de l'origine, mais c'est le membre d'un album
+        // dont l'ARCHIVE peut encore exister (le miroir garde le zip d'un pack
+        // vgmrips remplacé, alors que chaque `.vgz` répond 410 et n'a pas de
+        // copie à lui — « Sonic the Hedgehog 2 », 2026-11-03): on passe par
+        // la voie d'album ci-dessous au lieu d'échouer.
+        if (!e.isGone || r.album == null || r.album!.isEmpty) rethrow;
+        debugPrint('[download] ${r.displayTitle}: $e — trying the album '
+            'archive instead');
+        fetched = null;
       }
-      await file.parent.create(recursive: true);
-      await file.writeAsBytes(bytes, flush: true);
-      // Download auxiliary siblings into the same dir before the file is played.
-      await _ensureAuxFiles(r, localPath);
-      return localPath;
+      if (fetched != null) {
+        var bytes = fetched;
+        // AMP (amp.dascene.net) serves each module gzip-wrapped through a php
+        // endpoint: magic 1f 8b, no .gz anywhere in URL or filename. Saved raw,
+        // no decoder can probe it. Unwrap transparently — unless the row's own
+        // format IS a gzip container played compressed natively (.vgz/.gz VGM).
+        final extLower =
+            p.extension(localPath).replaceFirst('.', '').toLowerCase();
+        const gzipNativeExts = {'gz', 'vgz', 'tgz'};
+        if (bytes.length > 2 && bytes[0] == 0x1f && bytes[1] == 0x8b &&
+            !gzipNativeExts.contains(extLower)) {
+          try {
+            bytes = Uint8List.fromList(gzip.decode(bytes));
+          } catch (_) {
+            // Not actually gzip (or corrupt) — keep the raw bytes.
+          }
+        }
+        await file.parent.create(recursive: true);
+        await file.writeAsBytes(bytes, flush: true);
+        // Download auxiliary siblings into the same dir before the file is played.
+        await _ensureAuxFiles(r, localPath);
+        return localPath;
+      }
     }
 
-    // No direct URL — track lives inside an album archive (e.g. SID in zip).
+    // No direct URL — or the direct file is GONE (see above) — the track
+    // lives inside an album archive (e.g. SID in zip).
     if (r.album == null) {
       throw Exception('No download URL and no album for ${r.filename}');
     }
@@ -6683,6 +6896,7 @@ class RewampDb {
     final zipUrl  = details.isNotEmpty ? details.first.zipUrl : null;
     final mirrorZip =
         details.isNotEmpty ? details.first.mirrorZipUrl : null;
+    final zipSize = details.isNotEmpty ? details.first.zipSize : 0;
     if (zipUrl == null) {
       throw Exception('No zip URL for album ${r.album}');
     }
@@ -6694,7 +6908,7 @@ class RewampDb {
     );
     final firstTrack = songs.isEmpty ? r : songs.first;
     await downloadAndExtractZip(zipUrl, songs.isEmpty ? [r] : songs,
-        mirrorZipUrl: mirrorZip, force: force);
+        mirrorZipUrl: mirrorZip, zipSize: zipSize, force: force);
 
     // RSN albums (snesmusic .rsn = RAR of SPC files) are NOT unpacked into
     // individual .spc files — the whole .rsn plays in place, each track a
@@ -6818,6 +7032,11 @@ class RewampDb {
   static Future<String?> _findByStem(String dir, String filename) async {
     final want = p.basenameWithoutExtension(filename).toLowerCase();
     if (want.isEmpty) return null;
+    // Le radical n'identifie que si l'extension est un FORMAT. Un nom Amiga à
+    // préfixe porte son format AVANT le point: « dz.title » et « dz.game_end »
+    // ont le même radical « dz » — on servirait un morceau pour l'autre.
+    final wantExt = p.extension(filename).replaceFirst('.', '').toLowerCase();
+    if (!kExtractedAudioExts.contains(wantExt)) return null;
     final hits = <String>[];
     try {
       await for (final e in Directory(dir).list(recursive: true)) {
@@ -6936,7 +7155,14 @@ class RewampDb {
     // deleted (exact + salvage both missed above), a surviving sibling must NOT
     // be substituted; uniqueOnly ⇒ null ⇒ fall through and re-extract the real
     // one from the archive.
-    final cached = force
+    //
+    // ⚠️ Jamais pour une ligne qui NOMME son membre (entrée de tracklist
+    // serveur: `<uuid>#<rang>`, ou chemin relatif dans l'archive). « Le seul
+    // fichier de ce format » n'y prouve rien: UnExoticA « Denaris » n'a pas de
+    // `format_ext`, `dz.game_end` passait pour `mii.game_end` absent, et
+    // l'archive n'était jamais ré-extraite — les `mii.*` ne revenaient pas.
+    final namesMember = r.songId.contains('#') || r.filename.contains('/');
+    final cached = force || namesMember
         ? null
         : await _findExtractedAudio(audioDir, r.formatExt, uniqueOnly: true);
     if (cached != null) {
@@ -7267,10 +7493,11 @@ class RewampDb {
   /// c'est donc le source qui sortait — que rien ne sait jouer.
   ///
   /// ⚠️ **La seconde chance `rewamp_can_play` ne rattrape PAS ce cas**, et c'est
-  /// la leçon générale: vgmstream réclame TOUTE extension qu'il ne connaît pas
-  /// (score 50, `kSkipExts` mis à part), donc le registre répond « oui » pour
-  /// presque n'importe quoi. Le veto par moteur trie les formats que quelqu'un
-  /// REFUSE, pas ceux que le fourre-tout accepte sans savoir les décoder.
+  /// la leçon générale: un moteur qui RÉCLAME une extension ne dit pas qu'il
+  /// sait DÉCODER ce fichier-là — le `.sng` est aussi l'extension du
+  /// ZoundMonitor AMIGA, qu'UADE réclame. (vgmstream réclamait en plus TOUTE
+  /// extension inconnue jusqu'au 2026-11-01; il se limite désormais aux
+  /// siennes, `libvgmstream_is_valid`, ou à un fichier décrit par un `.txth`.)
   ///
   /// D'où une règle NÉGATIVE, sur le CONTENU comme [_isTextStub]: un `.sng` qui
   /// commence par « GTS » est un morceau GoatTracker (C64, `GTS3`/`GTS4`/`GTS5`)
@@ -7690,12 +7917,13 @@ class RewampDb {
     List<SearchResult> tracks, {
     String? mirrorZipUrl,
     String? albumId,
+    int zipSize = 0,
     bool force = false,
   }) =>
       BackgroundTask.guard(() async {
         try {
           final res = await _downloadAndExtractZipImpl(
-              zipUrl, tracks, mirrorZipUrl, albumId, force);
+              zipUrl, tracks, mirrorZipUrl, albumId, force, zipSize);
           _statusClear();
           return res;
         } on DownloadCancelledException {
@@ -7714,6 +7942,7 @@ class RewampDb {
     String? mirrorZipUrl,
     String? albumId,
     bool force,
+    int zipSize,
   ) async {
     if (tracks.isEmpty) return null;
 
@@ -7763,7 +7992,8 @@ class RewampDb {
     final (head, archivePath) = await _fetchArchiveShared(
         force ? null : mirrorZipUrl, zipUrl,
         label: '$albumLabel (album)',
-        expectedSize: tracks.first.fileSize,
+        expectedSize: albumArchiveExpectedSize(
+            zipUrl, zipSize, tracks.first.downloadUrl, tracks.first.fileSize),
         cap: const Duration(minutes: 10),
         bustCache: force);
 
@@ -8485,9 +8715,26 @@ class RewampDb {
     String? albumId,
   }) async {
     final expanded = <SearchResult>[];
+    // Conteneur à tracklist serveur → chemins de ses entrées ACTUELLES, pour
+    // retirer ensuite les lignes dont le rang ne désigne plus le fichier
+    // (voir LocalDb.dropRanksOutsideTracklist). RSN exclu: ses lignes sont
+    // clés sur le .rsn, jamais sur un chemin par piste.
+    final tracklists = <String, (String, Set<String>)>{};
     for (final r in rows) {
       if (r.subsongs.isNotEmpty) {
-        expanded.addAll(subsongRowsFromServer(r));
+        final kids = subsongRowsFromServer(r);
+        expanded.addAll(kids);
+        if (r.collection != 'snesmusic' &&
+            r.songId.isNotEmpty &&
+            !r.songId.contains('#')) {
+          try {
+            final paths = <String>{};
+            for (final k in kids) {
+              paths.add(k.localPath ?? await _localPath(k));
+            }
+            tracklists[r.songId] = (await artworkDirForResult(r), paths);
+          } catch (_) {}
+        }
       } else {
         expanded.add(r);
       }
@@ -8544,6 +8791,14 @@ class RewampDb {
         // tracks 0), donc invisibles dans la playlist Favoris pour toujours.
         firstError ??= e;
       }
+    }
+    // APRÈS l'upsert: une ligne encore listée a été ré-étiquetée à son
+    // nouveau rang, seule reste l'entrée que le serveur a retirée.
+    for (final e in tracklists.entries) {
+      try {
+        await LocalDb.instance
+            .dropRanksOutsideTracklist(e.key, e.value.$1, e.value.$2);
+      } catch (_) {}
     }
     if (written < expanded.length) {
       debugPrint('[RewampDb] materialise "$albumName": $written/'
@@ -8628,7 +8883,8 @@ class RewampDb {
         if (zipUrl != null) {
           final reordered =
               await downloadAndExtractZip(zipUrl, songs,
-                  mirrorZipUrl: mirrorZip, force: force);
+                  mirrorZipUrl: mirrorZip,
+                  zipSize: details.first.zipSize, force: force);
           if (reordered != null) return reordered;
         }
       }
@@ -9023,6 +9279,12 @@ class RewampDb {
   static const kAbsoluteSongNumberExts = {
     'kss', 'mgs', 'bgm', 'mpk', 'mbm', 'opx', 'mus',   // libkss
     'hes', 'sgc',                                      // NEZplug++
+    // WonderSwan: le numéro EST la valeur du registre AW que lit le pilote, et
+    // les rips n'ont pas la même base (Arc the Lad 1..N, « With You -
+    // Mitsumete Itai » 0..16). La règle « −1 si ça commence à 1 » décalait
+    // tout d'un cran sur un rip à base 0 (chaque ligne jouait la suivante, la
+    // dernière rien). Le greffon passe le numéro tel quel (AW = N).
+    'wsr',
   };
 
   static List<SubsongInfo> parseM3uToSubsongs(String m3u, String dir) {
@@ -9520,6 +9782,16 @@ class RewampDb {
     }
     return container;
   }
+
+  /// Cette ligne se DÉPLIE-t-elle selon la tracklist serveur (`tracks`)?
+  /// C'est la question que pose la FILE (`_subsongEntries` d'AppShell) avant
+  /// d'appeler [subsongRowsFromServer], et l'écran d'album la pose aussi pour
+  /// afficher ce que la file jouera: une seule règle, sinon la liste affichée
+  /// et la file divergent (toucher la piste 3 en jouerait une autre). Une
+  /// ligne déjà résolue (`<uuid>#<i>` ou `resolvedSubsong`) ne se redéplie
+  /// jamais.
+  static bool expandsFromServerTracklist(SearchResult r) =>
+      !(r.songId.contains('#') || r.resolvedSubsong) && r.subsongs.isNotEmpty;
 
   static List<SearchResult> subsongRowsFromServer(SearchResult container,
       {String? extractedDir}) {
@@ -10217,6 +10489,19 @@ class RewampDb {
 
   /// Full directory path where artwork for [r] should be stored.
   /// Matches _localPath() — artwork lives in the same folder as the tracks.
+  /// Le dossier de l'ALBUM d'une piste téléchargée — celui que « supprimer les
+  /// fichiers » et « re-télécharger » doivent vider. Pas le parent du fichier:
+  /// une piste d'archive peut vivre dans un SOUS-DOSSIER (UnExoticA
+  /// « Denaris »: `Denaris/Mark_II_Version/mii.game_end`), et vider ce
+  /// sous-dossier laissait le reste de l'album sur le disque. Repli sur le
+  /// parent quand le fichier n'est pas sous le dossier calculé (ligne
+  /// synthétisée depuis une extraction posée ailleurs).
+  static Future<String> albumDirForTrack(SearchResult r) async {
+    final path = r.localPath ?? await _localPath(r);
+    final albumDir = await artworkDirForResult(r);
+    return p.isWithin(albumDir, path) ? albumDir : p.dirname(path);
+  }
+
   static Future<String> artworkDirForResult(SearchResult r) async {
     final base = await _baseDir();
     return p.joinAll([base.path, ..._dirSegments(r)]);
@@ -10700,6 +10985,33 @@ class RewampDb {
     return [
       for (final row in json)
         if (row is Map) UserLibraryAlbum.fromJson(Map<String, dynamic>.from(row)),
+    ];
+  }
+
+  /// Artistes de la bibliothèque du compte (`user_artists`, mig serveur 296).
+  /// Voir [userSongs] pour [since].
+  ///
+  /// Rend **null quand le serveur n'a pas la RPC** (404 / PGRST202): c'est le
+  /// signal de capacité — tant qu'il manque, `set_library` refuserait
+  /// `item_type: 'artist'` en 23514, geste jeté donc PERDU, et les artistes
+  /// restent locaux. Une liste vide, elle, veut dire « rien au compte ».
+  static Future<List<UserLibraryArtist>?> userArtists(
+      {bool? inLibrary = true, DateTime? since}) async {
+    if (!UserSettings.instance.hasAuthToken) return const [];
+    final dynamic json;
+    try {
+      json = await _rpc('user_artists', {
+        if (inLibrary != null) 'p_in_library': inLibrary,
+        if (since != null) 'p_since': since.toUtc().toIso8601String(),
+      });
+    } on RewampRpcException catch (e) {
+      if (e.statusCode == 404 || e.code == 'PGRST202') return null;
+      rethrow;
+    }
+    if (json is! List) return const [];
+    return [
+      for (final row in json)
+        if (row is Map) UserLibraryArtist.fromJson(Map<String, dynamic>.from(row)),
     ];
   }
 

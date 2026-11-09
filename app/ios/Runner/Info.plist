@@ -415,6 +415,7 @@
 					<string>dsc</string>
 					<string>dsf</string>
 					<string>dsflib</string>
+					<string>dsk</string>
 					<string>dsm</string>
 					<string>dsp</string>
 					<string>dspw</string>
@@ -724,6 +725,7 @@
 					<string>mic</string>
 					<string>mid</string>
 					<string>midi</string>
+					<string>mii</string>
 					<string>mini2sf</string>
 					<string>minidsf</string>
 					<string>minigsf</string>
@@ -1011,6 +1013,7 @@
 					<string>rk</string>
 					<string>rkb</string>
 					<string>rkv</string>
+					<string>rmf</string>
 					<string>rmi</string>
 					<string>rmt</string>
 					<string>rof</string>
@@ -1073,6 +1076,7 @@
 					<string>scd</string>
 					<string>sch</string>
 					<string>sci</string>
+					<string>scl</string>
 					<string>scn</string>
 					<string>scr</string>
 					<string>sct</string>
@@ -1230,6 +1234,7 @@
 					<string>szd1</string>
 					<string>szd3</string>
 					<string>tad</string>
+					<string>tap</string>
 					<string>tar</string>
 					<string>tcb</string>
 					<string>tf</string>
@@ -1262,6 +1267,7 @@
 					<string>tpu</string>
 					<string>tra</string>
 					<string>trc</string>
+					<string>trd</string>
 					<string>trk</string>
 					<string>tro</string>
 					<string>tron</string>
@@ -1359,6 +1365,8 @@
 					<string>wlv</string>
 					<string>wmw</string>
 					<string>wn</string>
+					<string>wopl</string>
+					<string>wopn</string>
 					<string>wow</string>
 					<string>wp2</string>
 					<string>wpd</string>

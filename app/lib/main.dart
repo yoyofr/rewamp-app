@@ -23,6 +23,7 @@ import 'release_notes.dart';
 import 'preset_manager.dart';
 import 'soundfont_manager.dart';
 import 'mt32_rom_manager.dart';
+import 'fm_bank_manager.dart';
 import 'launch_window.dart';
 import 'mini_window.dart';
 import 'user_settings.dart';
@@ -316,6 +317,8 @@ void main([List<String> args = const []]) async {
   unawaited(SoundfontManager.instance.applyStartup());
   Mt32RomManager.instance.init(dataDir, audio);
   Mt32RomManager.instance.applyStartup();
+  // Banques FM importées (WOPL / WOPN): AppShell en passe le chemin au moteur.
+  FmBankManager.instance.init(dataDir);
   // projectM presets: stage the persisted source + texture dirs so the first
   // visualizer init picks them up. No network.
   PresetManager.instance.init(dataDir, audio);
@@ -409,6 +412,12 @@ class _RewampAppState extends State<RewampApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Rewamp',
+      // Captures de la doc en ligne (rewamp_web/scripts/docs_screenshots.py):
+      // le simulateur iOS ne fait tourner que des builds DEBUG, dont le
+      // bandeau « DEBUG » finirait sur chaque image.
+      // `flutter run --dart-define=REWAMP_SCREENSHOTS=true` le retire.
+      debugShowCheckedModeBanner:
+          !const bool.fromEnvironment('REWAMP_SCREENSHOTS'),
       // App-level navigator: AppSnack falls back to its overlay when a call
       // site's own context is defunct (e.g. a download that outlived its screen).
       navigatorKey: AppSnack.navigatorKey,

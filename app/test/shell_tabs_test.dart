@@ -11,7 +11,8 @@ void main() {
     expect(ids.toSet().length, ids.length);
     // Persistés: les renommer invaliderait les préférences déjà écrites.
     expect(ids, [
-      'home', 'search', 'local', 'library', 'stats', 'settings', 'about',
+      'home', 'search', 'local', 'library', 'stats', 'settings', 'help',
+      'about',
     ]);
   });
 

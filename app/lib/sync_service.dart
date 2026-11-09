@@ -13,6 +13,21 @@ import 'portable_path.dart';
 import 'rewamp_db.dart';
 import 'user_settings.dart';
 
+final RegExp _kArtistUuid = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+
+/// L'id SERVEUR d'une entrée d'artiste de la bibliothèque, ou null.
+///
+/// Le ref_id d'un artiste est son UUID quand l'écran qui l'a enregistré le
+/// connaissait, son NOM sinon (lignes anciennes, contextes sans id). Un nom
+/// n'est pas une identité (homonymes): une telle entrée reste LOCALE, comme un
+/// album sans album_id — jamais devinée. Minuscules: c'est la forme que le
+/// serveur rend, et les ensembles de la réconciliation comparent des chaînes.
+String? artistServerIdOf(String refId) {
+  final t = refId.trim();
+  return _kArtistUuid.hasMatch(t) ? t.toLowerCase() : null;
+}
+
 /// Background synchronisation of everything the account holds: library
 /// (favourites), playlists, and the client organisation state.
 ///
@@ -322,6 +337,9 @@ class SyncService extends ChangeNotifier {
       // behind at the next sign-in would arrive through the back door. Where it
       // goes is decided at sign-in, not here.
       debugPrint('[SyncService] local data kept, unpublished (signed out)');
+      // Même règle pour les artistes: l'amorçage (`_pullLibrary`) les
+      // publierait sinon dès que le serveur saura les prendre.
+      UserSettings.instance.artistLibrarySeeded = true;
       return 0;
     }
     if (action == LocalDataAction.drop) {
@@ -336,6 +354,7 @@ class SyncService extends ChangeNotifier {
       }
       debugPrint('[SyncService] clean switch: $wiped local account item(s) '
           'dropped; the joined account will fill them back in');
+      UserSettings.instance.artistLibrarySeeded = true;   // plus rien à publier
       return 0;
     }
 
@@ -354,6 +373,11 @@ class SyncService extends ChangeNotifier {
     }
 
     var queued = 0;
+    // Artistes: seulement si le serveur les connaît (mig 296) — sinon chaque
+    // geste serait refusé en 23514, jeté, et perdu. Pas encore su ⇒
+    // l'amorçage de `_pullLibrary` les publiera à la première détection.
+    final artistsOn = UserSettings.instance.artistLibrarySupported;
+    UserSettings.instance.artistLibrarySeeded = artistsOn;
     for (final item in await LocalDb.instance.getLibraryItems()) {
       final refId = item.refId;
       switch (item.type) {
@@ -381,11 +405,126 @@ class SyncService extends ChangeNotifier {
           await LocalDb.instance.queueLibraryChange(
             itemType: 'playlist', itemId: refId, value: true);
           queued++;
+        case 'artist':
+          if (!artistsOn) continue;
+          if (await _queueLocalArtist(item)) queued++;
         default:
-          continue;   // 'artist' has no server-side library counterpart
+          continue;
       }
     }
     return queued;
+  }
+
+  /// Enfile UNE entrée d'artiste locale vers le compte. Seule une entrée
+  /// identifiée par son UUID de catalogue part: un ref_id qui n'est qu'un NOM
+  /// n'a pas d'identité serveur (homonymes), il reste local — comme un album
+  /// sans album_id. Un ♥ part en ♥ (il emporte l'entrée côté serveur), sinon
+  /// en appartenance: une seule ligne d'outbox par item (index unique).
+  static Future<bool> _queueLocalArtist(LibraryItem item) async {
+    final id = artistServerIdOf(item.refId);
+    if (id == null) return false;
+    await LocalDb.instance.queueLibraryChange(
+      itemType:  'artist',
+      itemId:    id,
+      value:     true,
+      favourite: item.isFavorite ? true : null,
+    );
+    return true;
+  }
+
+  /// Noms déjà cherchés dans ce processus (trouvés ou non): une passe de
+  /// synchro par retour au premier plan ne doit pas reposer la même question
+  /// au serveur (60 req/min derrière nginx).
+  final Set<String> _artistNamesTried = {};
+  static const _kArtistResolvePerRun = 10;
+
+  Future<void> _resolveNameOnlyArtists() async {
+    var asked = 0, resolved = 0;
+    for (final item
+        in await LocalDb.instance.getLibraryItems(type: 'artist')) {
+      if (artistServerIdOf(item.refId) != null) continue;
+      final name = item.refId.trim();
+      if (name.isEmpty || !_artistNamesTried.add(name.toLowerCase())) continue;
+      if (asked++ >= _kArtistResolvePerRun) {
+        _artistNamesTried.remove(name.toLowerCase());   // à la passe suivante
+        break;
+      }
+      final String? id;
+      try {
+        final found = await RewampDb.searchArtists(name, limit: 10);
+        final exact = found
+            .where((a) => a.name.trim().toLowerCase() == name.toLowerCase())
+            .map((a) => artistServerIdOf(a.artistId))
+            .whereType<String>()
+            .toSet();
+        id = exact.length == 1 ? exact.first : null;
+      } catch (e) {
+        _artistNamesTried.remove(name.toLowerCase());   // erreur réseau: retenter
+        debugPrint('[SyncService] artist name lookup failed ($name): $e');
+        continue;
+      }
+      if (id == null) {
+        debugPrint('[SyncService] artist "$name": no single catalogue match, '
+            'stays local');
+        continue;
+      }
+      // Même geste que LibraryButton: la ligne de NOM est absorbée par celle
+      // de l'UUID (sinon deux entrées pour un artiste), ♥ compris.
+      await LocalDb.instance.removeFromLibrary('artist', item.refId);
+      await LocalDb.instance.addToLibrary(
+        type:       'artist',
+        refId:      id,
+        name:       item.name.trim().isEmpty ? name : item.name,
+        artworkUrl: item.artworkUrl,
+        explicit:   true,
+      );
+      if (item.isFavorite) {
+        await LocalDb.instance.setLibraryItemFavorite('artist', id,
+            value: true, name: item.name.trim().isEmpty ? name : item.name);
+      }
+      await recordArtistMembership(
+          refId: id, value: true, favourite: item.isFavorite ? true : null);
+      resolved++;
+    }
+    if (resolved > 0) {
+      debugPrint('[SyncService] $resolved name-only artist(s) resolved to '
+          'their catalogue id and queued');
+      nudge(delay: const Duration(seconds: 3));
+    }
+  }
+
+  /// La capacité « artistes au compte » (mig serveur 296), sondée UNE fois par
+  /// processus: `user_artists` présent ou 404. La réponse est mémorisée en
+  /// préférence pour les gestes faits avant la sonde du lancement suivant.
+  /// Une erreur réseau ne tranche rien: on garde la dernière réponse connue
+  /// et on resondera à la passe suivante.
+  bool? _artistsProbed;
+
+  Future<bool> _probeArtistLibrary() async {
+    final known = _artistsProbed;
+    if (known != null) return known;
+    if (!UserSettings.instance.hasAuthToken) {
+      return UserSettings.instance.artistLibrarySupported;
+    }
+    try {
+      // `p_since` = maintenant: la réponse est vide ou presque, seul compte
+      // « la fonction existe-t-elle ».
+      final rows = await RewampDb.userArtists(since: DateTime.now());
+      _setArtistsSupported(rows != null);
+    } catch (e) {
+      debugPrint('[SyncService] artist capability probe failed: $e');
+      return UserSettings.instance.artistLibrarySupported;
+    }
+    return _artistsProbed!;
+  }
+
+  void _setArtistsSupported(bool v) {
+    if (_artistsProbed != v) {
+      debugPrint('[SyncService] server artist library: '
+          '${v ? "supported" : "absent (404) — artists stay local"}');
+    }
+    _artistsProbed = v;
+    UserSettings.instance.artistLibrarySupported = v;
   }
 
   /// Delivers the queued library changes. A change is deleted only once the
@@ -1062,6 +1201,31 @@ class SyncService extends ChangeNotifier {
   /// see [UserSettings.libraryCursor]). On a server without it, everything comes
   /// back and the cursor stays null: correct, just not cheap.
   Future<void> _pullLibrary() async {
+    // Artistes (mig serveur 296). Sondés AVANT `canRemove`: l'amorçage
+    // ci-dessous ENFILE les artistes locaux, et c'est ce qui interdit de juger
+    // les retraits pendant cette passe — sinon la réconciliation retirerait
+    // d'ici ceux que le compte n'a pas encore reçus.
+    final artistsOn = await _probeArtistLibrary();
+    final artistSeeding =
+        artistsOn && !UserSettings.instance.artistLibrarySeeded;
+    if (artistSeeding) {
+      var n = 0;
+      for (final item
+          in await LocalDb.instance.getLibraryItems(type: 'artist')) {
+        if (await _queueLocalArtist(item)) n++;
+      }
+      debugPrint('[SyncService] artist library seeding: $n local artist(s) '
+          'queued, account artists pulled uncapped');
+      // Le drain de CETTE passe est déjà passé: livrer sans attendre la suivante.
+      if (n > 0) nudge(delay: const Duration(seconds: 3));
+    }
+    // Artistes connus par leur seul NOM (écran ouvert par un lien de
+    // compositeur, lignes anciennes): sans identité serveur ils ne partaient
+    // JAMAIS — vu: « Robert Prince » ajouté sur l'iPhone, absent du web. On
+    // cherche l'UUID au catalogue; un SEUL artiste de ce nom exact ⇒ l'entrée
+    // passe sous son UUID et part au compte. Ambigu ou introuvable ⇒ reste
+    // locale (un nom n'est pas une identité: jamais deviné entre homonymes).
+    if (artistsOn) await _resolveNameOnlyArtists();
     // Removals can only be judged when everything this device decided is
     // already server-side: otherwise a favourite made here and not yet
     // delivered looks exactly like one removed elsewhere.
@@ -1125,7 +1289,7 @@ class SyncService extends ChangeNotifier {
       for (final r in ids) {
         trackCursor(r.updatedAt);
       }
-      await _reconcileRemovals(ids);
+      await _reconcileRemovals(ids, artists: artistsOn);
       // …et la même photo sert à repérer ce qui MANQUE ici. Sans ça, le
       // curseur est un cul-de-sac: il n'avance que sur ce qu'on a vu, donc une
       // entrée du compte que cet appareil n'a jamais appliquée (elle est plus
@@ -1137,7 +1301,7 @@ class SyncService extends ChangeNotifier {
       // Le remède est le même dans les deux cas: redemander le delta SANS
       // curseur cette fois-ci. Tout apply est idempotent, donc le seul coût
       // est un pull plus gros, et seulement quand un écart existe vraiment.
-      if (await _accountHasWhatWeLack(ids)) {
+      if (await _accountHasWhatWeLack(ids, artists: artistsOn)) {
         debugPrint('[SyncService] library drift detected — pulling uncapped');
         cursor = null;
       }
@@ -1389,6 +1553,27 @@ class SyncService extends ChangeNotifier {
       }
     }
 
+    // Artistes: même modèle que l'album. `user_artists` est la SEULE source
+    // de leur nom (la photo d'identités n'en porte pas). Pendant l'amorçage,
+    // sans curseur: un artiste ajouté ailleurs avant que cet appareil ne
+    // sache les lire est sous le curseur, aucun delta ne le ramènerait.
+    var artistCount = 0;
+    if (artistsOn) {
+      final artists = await RewampDb.userArtists(
+          inLibrary: null, since: artistSeeding ? null : cursor);
+      if (artists == null) {
+        _setArtistsSupported(false);   // retiré entre la sonde et ici
+      } else {
+        artistCount = artists.length;
+        for (final a in artists) {
+          trackCursor(a.updatedAt);
+          if (a.updatedAt == null) continue;
+          await _applyAccountArtist(a, canRemove: canRemove);
+        }
+        if (artistSeeding) UserSettings.instance.artistLibrarySeeded = true;
+      }
+    }
+
     // After the cursor work, so a failing purge can never cost a pull.
     final purged = await _purgeFabricatedKeys();
 
@@ -1416,8 +1601,48 @@ class SyncService extends ChangeNotifier {
     }
     if (maxSeen != null) UserSettings.instance.libraryCursor = maxSeen;
     debugPrint('[SyncService] library pulled: ${songs.length} songs, '
-        '${albums.length} albums (${auditExt ? "audit+" : ""}'
+        '${albums.length} albums, $artistCount artists '
+        '(${auditExt ? "audit+" : ""}'
         '${full ? "full+" : ""}delta, cursor ${maxSeen ?? cursor})');
+  }
+
+  /// Applique UNE ligne `user_artists` à la bibliothèque locale. L'entrée
+  /// locale est clée par l'UUID (forme que le bouton de l'écran artiste
+  /// cherche en premier); une ancienne entrée clée par le NOM du même artiste
+  /// est ABSORBÉE, comme le fait `LibraryButton` à l'ajout — sinon l'onglet
+  /// Artistes le montrerait deux fois. Un retrait ne vise que l'UUID: une
+  /// entrée de nom n'a jamais été au compte, le compte ne peut pas la retirer.
+  Future<void> _applyAccountArtist(UserLibraryArtist a,
+      {required bool canRemove}) async {
+    final id = artistServerIdOf(a.artistId);
+    if (id == null) return;
+    final localWins = await _arbitrate(
+      itemType: 'artist',
+      itemId: id,
+      serverUpdatedAt: a.updatedAt!,
+    );
+    if (!a.inLibrary) {
+      if (canRemove) await LocalDb.instance.removeFromLibrary('artist', id);
+      return;
+    }
+    if (localWins) return;   // un geste local plus récent part d'abord
+    final name = a.name.trim().isEmpty ? id : a.name;
+    if (name != id) await LocalDb.instance.removeFromLibrary('artist', name);
+    await LocalDb.instance.addToLibrary(
+      type:       'artist',
+      refId:      id,
+      name:       name,
+      artworkUrl: a.artworkUrl,
+      explicit:   true,
+    );
+    // Datée du COMPTE: réappliquer la même ligne (delta inclusif) ne réécrit
+    // ni ne notifie rien.
+    await LocalDb.instance.setLibraryItemFavorite(
+      'artist', id,
+      value:     a.favourite,
+      name:      name,
+      changedAt: a.updatedAt!.millisecondsSinceEpoch ~/ 1000,
+    );
   }
 
   /// Drops a queued change that the account has already overtaken. Keeping it
@@ -1845,7 +2070,11 @@ class SyncService extends ChangeNotifier {
   /// Only rows with a server identity are candidates: a favourite on the
   /// user's own file is compared by ext_key, and one with neither is left
   /// alone.
-  Future<void> _reconcileRemovals(List<LibraryIdRow> ids) async {
+  ///
+  /// [artists]: le serveur porte les artistes (mig 296). Faux ⇒ la photo n'en
+  /// contient aucun, et les comparer retirerait TOUS ceux d'ici.
+  Future<void> _reconcileRemovals(List<LibraryIdRow> ids,
+      {bool artists = false}) async {
     // An EMPTY account cannot mean "everything was removed elsewhere": removals
     // travel as deltas, and no legitimate sequence turns a populated library
     // into a blank snapshot in one step. It is, on the other hand, exactly what
@@ -1860,6 +2089,7 @@ class SyncService extends ChangeNotifier {
     final serverExt = <String>{};
     final serverAlbums = <String>{};
     final serverPlaylists = <String>{};
+    final serverArtists = <String>{};
     for (final r in ids) {
       if (r.extKey != null && r.extKey!.isNotEmpty) {
         serverExt.add(r.extKey!);
@@ -1867,6 +2097,7 @@ class SyncService extends ChangeNotifier {
         if (r.kind == 'song') serverSongs.add(r.id!);
         if (r.kind == 'album') serverAlbums.add(r.id!);
         if (r.kind == 'playlist') serverPlaylists.add(r.id!);
+        if (r.kind == 'artist') serverArtists.add(r.id!.toLowerCase());
       }
     }
 
@@ -1937,6 +2168,22 @@ class SyncService extends ChangeNotifier {
       await LocalDb.instance.removeFromLibrary('playlist', item.refId, notify: false);
       removed++;
     }
+    // Artistes: seulement ceux qu'identifie un UUID. Une entrée de NOM n'est
+    // jamais allée au compte, son absence de la photo ne prouve rien.
+    // ⚠️ Le serveur ramène un alias à sa fiche principale (artist_canon): une
+    // entrée locale sous l'id d'un ALIAS part ici, et la fiche principale
+    // revient par le delta — `_accountHasWhatWeLack` la voit manquer et
+    // redemande sans curseur dans la même passe.
+    if (artists) {
+      for (final item
+          in await LocalDb.instance.getLibraryItems(type: 'artist')) {
+        final id = artistServerIdOf(item.refId);
+        if (id == null || serverArtists.contains(id)) continue;
+        await LocalDb.instance
+            .removeFromLibrary('artist', item.refId, notify: false);
+        removed++;
+      }
+    }
     if (removed > 0) {
       debugPrint('[SyncService] $removed library item(s) removed elsewhere');
       // UNE notification pour tout le lot: chaque retrait en émettait une, et
@@ -1954,7 +2201,8 @@ class SyncService extends ChangeNotifier {
   /// Ne CORRIGE rien: dit seulement s'il faut repasser sans curseur. La
   /// correction reste au delta, qui a les métadonnées (nom, pochette) qu'une
   /// photo d'identités n'a pas.
-  Future<bool> _accountHasWhatWeLack(List<LibraryIdRow> ids) async {
+  Future<bool> _accountHasWhatWeLack(List<LibraryIdRow> ids,
+      {bool artists = false}) async {
     if (ids.isEmpty) return false;
     // Les entrées locales, par identité serveur.
     // Clé morceau = identité SERVEUR complète, sous-chanson comprise: deux
@@ -1978,6 +2226,14 @@ class SyncService extends ChangeNotifier {
       final id = item.albumId;
       if (id != null && id.isNotEmpty) localAlbums[id] = item.isFavorite;
     }
+    final localArtists = <String, bool>{};
+    if (artists) {
+      for (final item
+          in await LocalDb.instance.getLibraryItems(type: 'artist')) {
+        final id = artistServerIdOf(item.refId);
+        if (id != null) localArtists[id] = item.isFavorite;
+      }
+    }
     for (final r in ids) {
       // Le hors catalogue est laissé de côté: son identité locale est un
       // chemin de fichier, qui n'existe pas forcément sur cet appareil — un
@@ -1985,10 +2241,13 @@ class SyncService extends ChangeNotifier {
       if (r.extKey != null && r.extKey!.isNotEmpty) continue;
       final id = r.id;
       if (id == null) continue;
-      if (r.kind != 'song' && r.kind != 'album') continue;
+      final isArtist = artists && r.kind == 'artist';
+      if (r.kind != 'song' && r.kind != 'album' && !isArtist) continue;
       final local = r.kind == 'song'
           ? localSongs['$id#${r.subsongIndex ?? 0}']
-          : localAlbums[id];
+          : isArtist
+              ? localArtists[id.toLowerCase()]
+              : localAlbums[id];
       if (local == null) return true;              // entrée jamais appliquée
       if (r.favourite && !local) return true;      // ♥ du compte jamais vu
       // Entrée appliquée mais sans ligne `tracks`: elle n'apparaît nulle part.
@@ -2330,6 +2589,29 @@ class SyncService extends ChangeNotifier {
       itemId:     base,
       value:      value,
       subsongIdx: sub ?? 0,
+    );
+  }
+
+  /// Le geste d'un artiste (＋ / ♥) vers le compte. Rien ne part tant que le
+  /// serveur ne connaît pas les artistes (mig 296: `set_library` refuserait en
+  /// 23514, geste jeté donc perdu) — l'amorçage de `_pullLibrary` publiera la
+  /// bibliothèque locale à la première détection. Rien non plus pour une
+  /// entrée de NOM: pas d'identité serveur (voir [artistServerIdOf]).
+  /// [favourite] non nul = geste de ♥ (même sémantique que l'album).
+  static Future<void> recordArtistMembership({
+    required String refId,
+    required bool value,
+    bool? favourite,
+  }) async {
+    if (!UserSettings.instance.hasAuthToken) return;
+    if (!UserSettings.instance.artistLibrarySupported) return;
+    final id = artistServerIdOf(refId);
+    if (id == null) return;
+    await recordLibraryChange(
+      itemType:  'artist',
+      itemId:    id,
+      value:     value,
+      favourite: favourite,
     );
   }
 

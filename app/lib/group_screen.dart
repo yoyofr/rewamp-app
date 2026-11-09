@@ -85,29 +85,27 @@ class _GroupScreenState extends State<GroupScreen>
   GroupDetails? _details;
   bool _detailsLoading = true;
   bool _noteExpanded   = false;
+  /// Membres: une ligne qui défile par défaut — un groupe en a jusqu'à 200,
+  /// et dépliés ils prenaient la place des listes. Le libellé « N membres »
+  /// déplie.
+  bool _membersExpanded = false;
 
   /// Tabs actually shown, derived from the counts. Empty until the profile
   /// lands; the TabController is rebuilt with it (length is fixed at creation).
   List<_GroupTab> _shown = const [];
   TabController?  _tabs;
 
-  // Songs
-  final _songs = ValueNotifier<List<SearchResult>>([]);
-  int  _songTotal = -1, _songOffset = 0;
-  bool _songsLoading = false, _songsLoaded = false;
-  bool _songHasMore = false, _songLoadingMore = false;
+  // Songs and Albums are the facet screens EMBEDDED (BrowseResultsScreen,
+  // CollectionAlbumsScreen) under the group tag: title filter, podium chip,
+  // platform/collection pickers, play-all/radio/surprise — a group with 8 700
+  // songs (Razor 1911) was a flat list with nothing to narrow it by. Both load
+  // lazily by construction (built when their tab first appears).
 
   // Artists
   List<ArtistResult> _artists = [];
   int  _artistTotal = -1, _artistOffset = 0;
   bool _artistsLoading = false, _artistsLoaded = false;
   bool _artistHasMore = false, _artistLoadingMore = false;
-
-  // Albums
-  List<_AlbumId> _albums = [];
-  int  _albumTotal = -1, _albumOffset = 0;
-  bool _albumsLoading = false, _albumsLoaded = false;
-  bool _albumHasMore = false, _albumLoadingMore = false;
 
   // Playlists
   List<Playlist> _playlists = [];
@@ -135,7 +133,6 @@ class _GroupScreenState extends State<GroupScreen>
   @override
   void dispose() {
     _tabs?.dispose();
-    _songs.dispose();
     super.dispose();
   }
 
@@ -182,58 +179,15 @@ class _GroupScreenState extends State<GroupScreen>
   /// five listings when the user came for its productions.
   void _loadTab(_GroupTab tab) {
     switch (tab) {
-      case _GroupTab.songs:       if (!_songsLoaded)       _loadSongs();
+      case _GroupTab.songs:       break;   // embedded screen loads itself
       case _GroupTab.artists:     if (!_artistsLoaded)     _loadArtists();
-      case _GroupTab.albums:      if (!_albumsLoaded)      _loadAlbums();
+      case _GroupTab.albums:      break;   // idem
       case _GroupTab.playlists:   if (!_playlistsLoaded)   _loadPlaylists();
       case _GroupTab.productions: if (!_productionsLoaded) _loadProductions();
     }
   }
 
   // ---- Loaders --------------------------------------------------------------
-
-  Future<void> _loadSongs({int offset = 0}) async {
-    if (offset == 0) {
-      if (_songsLoading) return;
-      setState(() => _songsLoading = true);
-    }
-    try {
-      // browse_music, not search_music: there is no text here, and a q=name
-      // search would drag in the whole cross-entity FTS (slow, and it matches
-      // titles that merely contain the group name).
-      final res = await RewampDb.browse(
-        tags:          [_name],
-        tagCategories: const ['group'],
-        sortBy:        'name',
-        limit:         _kPage,
-        offset:        offset,
-      );
-      if (!mounted) return;
-      setState(() {
-        _songs.value = offset == 0 ? res : [..._songs.value, ...res];
-        if (offset == 0) _songTotal = res.isEmpty ? 0 : res.first.totalCount;
-        _songOffset      = _songs.value.length;
-        _songHasMore     = res.length >= _kPage;
-        _songsLoading    = false;
-        _songLoadingMore = false;
-        _songsLoaded     = true;
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _songsLoading = false;
-          _songLoadingMore = false;
-          _songsLoaded = true;
-        });
-      }
-    }
-  }
-
-  Future<void> _loadMoreSongs() async {
-    if (_songLoadingMore || !_songHasMore) return;
-    setState(() => _songLoadingMore = true);
-    await _loadSongs(offset: _songOffset);
-  }
 
   Future<void> _loadArtists({int offset = 0}) async {
     if (offset == 0) {
@@ -273,51 +227,6 @@ class _GroupScreenState extends State<GroupScreen>
     if (_artistLoadingMore || !_artistHasMore) return;
     setState(() => _artistLoadingMore = true);
     await _loadArtists(offset: _artistOffset);
-  }
-
-  Future<void> _loadAlbums({int offset = 0}) async {
-    if (offset == 0) {
-      if (_albumsLoading) return;
-      setState(() => _albumsLoading = true);
-    }
-    try {
-      final res = await RewampDb.searchAlbums(
-        '',
-        tags:          [_name],
-        tagCategories: const ['group'],
-        limit:         _kPage,
-        offset:        offset,
-      );
-      if (!mounted) return;
-      final albums = res
-          .map((a) => _AlbumId(a.name, a.collection, a.platform, a.artworkUrl,
-              a.aliases, a.albumId, a.artistNames, a.format, a.fileSize,
-              a.matchReason, a.hasVideo, a.podium))
-          .toList();
-      setState(() {
-        _albums = offset == 0 ? albums : [..._albums, ...albums];
-        if (offset == 0) _albumTotal = res.isEmpty ? 0 : res.first.totalCount;
-        _albumOffset      = _albums.length;
-        _albumHasMore     = res.length >= _kPage;
-        _albumsLoading    = false;
-        _albumLoadingMore = false;
-        _albumsLoaded     = true;
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _albumsLoading = false;
-          _albumLoadingMore = false;
-          _albumsLoaded = true;
-        });
-      }
-    }
-  }
-
-  Future<void> _loadMoreAlbums() async {
-    if (_albumLoadingMore || !_albumHasMore) return;
-    setState(() => _albumLoadingMore = true);
-    await _loadAlbums(offset: _albumOffset);
   }
 
   Future<void> _loadPlaylists({int offset = 0}) async {
@@ -425,23 +334,6 @@ class _GroupScreenState extends State<GroupScreen>
     ));
   }
 
-  void _pushAlbum(_AlbumId album) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => AlbumDetailScreen(
-        albumName:       album.name,
-        albumId:         album.albumId,
-        platformName:    album.platform,
-        collectionSlug:  album.collection,
-        artworkUrl:      album.artworkUrl,
-        onTap:           _onSongTap,
-        onPlayAlbum:     widget.onPlayAlbum,
-        onQueueAdd:      widget.onQueueAdd,
-        onAlbumQueueAdd: widget.onAlbumQueueAdd,
-        onArtistTap:     (n) => _pushArtist(n),
-      ),
-    ));
-  }
-
   Future<void> _openPlaylist(BuildContext ctx, Playlist pl) async {
     await Navigator.of(ctx).push(MaterialPageRoute(
       builder: (_) => PlaylistTracksScreen(
@@ -468,11 +360,11 @@ class _GroupScreenState extends State<GroupScreen>
       // ⚠️ counts.artists (artists WITH a track), never artist_count, which is
       // the member count that goes with the header chips.
       _GroupTab.songs =>
-        (l10n.tabAll, c?.songs ?? 0, _songTotal),
+        (l10n.tabAll, c?.songs ?? 0, -1),
       _GroupTab.artists =>
         (l10n.tabArtists, c?.artists ?? 0, _artistTotal),
       _GroupTab.albums =>
-        (l10n.tabAlbums, c?.albums ?? 0, _albumTotal),
+        (l10n.tabAlbums, c?.albums ?? 0, -1),
       _GroupTab.playlists =>
         (l10n.libraryPlaylists, c?.playlists ?? 0, _playlistTotal),
       _GroupTab.productions =>
@@ -485,31 +377,20 @@ class _GroupScreenState extends State<GroupScreen>
   }
 
   Widget _tabView(_GroupTab t) {
-    final l10n = context.l10n;
     switch (t) {
       case _GroupTab.songs:
-        if (_songsLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        return ValueListenableBuilder<List<SearchResult>>(
-          valueListenable: _songs,
-          builder: (_, rows, __) => _PaginatedListView(
-            itemCount:   rows.length,
-            total:       _songTotal,
-            hasMore:     _songHasMore,
-            loadingMore: _songLoadingMore,
-            loadMore:    _loadMoreSongs,
-            empty:       Center(child: Text(l10n.searchNoSongs)),
-            itemBuilder: (_, i) => SongTile(
-              result:           rows[i],
-              onTap:            _onSongTap,
-              onQueueAdd:       widget.onQueueAdd,
-              onPlayAlbum:      widget.onPlayAlbum,
-              // browse_music rows are tracks, never album-level matches.
-              albumRowsAllowed: false,
-              showCollection:   true,
-            ),
-          ),
+        // tag_categories ['group'] is MANDATORY (see the class doc): the
+        // same tag resolved across categories would also match a party.
+        return BrowseResultsScreen(
+          key:           ValueKey('songs:$_name'),
+          label:         _name,
+          tags:          [_name],
+          tagCategories: const ['group'],
+          sortBy:        'name',
+          showFilter:    true,
+          embedded:      true,
+          onTap:         _onSongTap,
+          onPlayAlbum:   widget.onPlayAlbum,
         );
       case _GroupTab.artists:
         if (_artistsLoading) {
@@ -524,17 +405,15 @@ class _GroupScreenState extends State<GroupScreen>
           onTap:       (a) => _pushArtist(a.name, artistId: a.artistId),
         );
       case _GroupTab.albums:
-        if (_albumsLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        return _AlbumList(
-          items:       _albums,
-          total:       _albumTotal,
-          hasMore:     _albumHasMore,
-          loadingMore: _albumLoadingMore,
-          loadMore:    _loadMoreAlbums,
-          onTap:       _pushAlbum,
-          onPlay:      widget.onPlayAlbum,
+        return CollectionAlbumsScreen(
+          key:           ValueKey('albums:$_name'),
+          collection:    null,
+          title:         _name,
+          tags:          [_name],
+          tagCategories: const ['group'],
+          embedded:      true,
+          onTap:         _onSongTap,
+          onPlayAlbum:   widget.onPlayAlbum,
         );
       case _GroupTab.playlists:
         if (_playlistsLoading) {
@@ -629,32 +508,59 @@ class _GroupScreenState extends State<GroupScreen>
         children: [
           if (d.artists.isNotEmpty) ...[
             // artist_count IS the member count (it goes with artists[]).
-            Text(l10n.groupMembersCount(d.artistCount),
-                style: tt.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.18,
-              ),
-              child: SingleChildScrollView(
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: -4,
-                  children: [
-                    for (final a in d.artists)
-                      ActionChip(
-                        avatar: const Icon(Icons.person_outline, size: 16),
-                        label: Text(a.name),
-                        labelStyle: tt.bodySmall,
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize:
-                            MaterialTapTargetSize.shrinkWrap,
-                        onPressed: () => _pushArtist(a.name, artistId: a.id),
-                      ),
-                  ],
-                ),
+            // Tapping the count unfolds the chips; folded, they are ONE row
+            // that scrolls sideways, so the lists below keep the screen.
+            InkWell(
+              onTap: () =>
+                  setState(() => _membersExpanded = !_membersExpanded),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(children: [
+                  Text(l10n.groupMembersCount(d.artistCount),
+                      style:
+                          tt.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+                  Icon(
+                    _membersExpanded
+                        ? Icons.arrow_drop_up
+                        : Icons.arrow_drop_down,
+                    size: 20,
+                    color: cs.onSurfaceVariant,
+                  ),
+                ]),
               ),
             ),
+            Builder(builder: (_) {
+              final chips = [
+                for (final a in d.artists)
+                  ActionChip(
+                    avatar: const Icon(Icons.person_outline, size: 16),
+                    label: Text(a.name),
+                    labelStyle: tt.bodySmall,
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    onPressed: () => _pushArtist(a.name, artistId: a.id),
+                  ),
+              ];
+              if (!_membersExpanded) {
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: [
+                    for (final c in chips)
+                      Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 6),
+                          child: c),
+                  ]),
+                );
+              }
+              return ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.3,
+                ),
+                child: SingleChildScrollView(
+                  child: Wrap(spacing: 6, runSpacing: -4, children: chips),
+                ),
+              );
+            }),
           ],
           if (d.note != null) ...[
             const SizedBox(height: 4),

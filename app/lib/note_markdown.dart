@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'app_snack.dart';
 import 'l10n.dart';
 import 'rewamp_db.dart' show SongNote;
+import 'sheet_handle.dart';
 
 /// Open an external link (same UX as the artist screen / credits): normalise
 /// scheme-less urls to https, clipboard fallback when the launch is refused.
@@ -29,10 +30,9 @@ Future<void> openExternalLink(BuildContext context, String raw) async {
 /// server-ordered). Each note: title + placed badge + Markdown body + a link
 /// to its demozoo page.
 Future<void> showSongNotesSheet(BuildContext context, List<SongNote> notes) {
-  return showModalBottomSheet<void>(
+  return showHandleSheet<void>(
     context: context,
     isScrollControlled: true,
-    showDragHandle: true,
     builder: (ctx) {
       final l10n = ctx.l10n;
       final tt = Theme.of(ctx).textTheme;

@@ -894,6 +894,32 @@ void SPU::Mix(u32 spucycles)
 
 #ifdef REWAMP_WITH_VIO2SF
         rewamp_vio2sf_capture(chval);   // per-voice scope + mute (zeroes muted chval)
+        /* YOYOFR (rewamp): NOTES par voie pour la notation, le piano et la
+         * grille — absentes jusqu'ici (seul l'oscilloscope était capté), donc
+         * ces trois visualiseurs restaient VIDES sur tout 2SF. Modizer le
+         * faisait dans son SPU desmume (vio2sf_SPU.cpp), jamais porté ici:
+         *   - fréquence: cadence du canal = ARM7_CLOCK/2 / (0x10000 - timer);
+         *     un ÉCHANTILLON n'a pas de hauteur connue, on garde la règle de
+         *     Modizer (lu à 44,1 kHz natif = la 440 — relatif mais cohérent
+         *     par instrument); un canal PSG (format 3, onde carrée sur 8 pas)
+         *     a sa VRAIE fréquence, cadence / 8; le bruit n'en a pas.
+         *   - instrument: dérivé de l'ADRESSE de l'échantillon (1..255), pas du
+         *     canal: un même son garde sa couleur quel que soit le canal.
+         *   - volume: celui du canal (0..127 → 0..254). */
+        for (int c = 0; c < 16; c++) {
+            const SPUChannel& ch = Channels[c];
+            if (!(ch.Cnt & (1u << 31))) { vgm_last_note[c] = 0; vgm_last_instr[c] = 0; vgm_last_vol[c] = 0; continue; }
+            const double rate = 33513982.0 / 2.0 / (double)(0x10000 - (u32)ch.TimerReload);
+            const u32 fmt = (ch.Cnt >> 29) & 3;
+            if (fmt == 3) {
+                vgm_last_note[c] = (c >= 14) ? 0 : (unsigned int)(rate / 8.0);   // canaux 14-15: bruit
+                vgm_last_instr[c] = (unsigned char)(c >= 14 ? 250 : 240 + ((ch.Cnt >> 24) & 7));   // duty
+            } else {
+                vgm_last_note[c] = (unsigned int)(440.0 * rate / 44100.0);
+                vgm_last_instr[c] = (unsigned char)(1 + ((ch.SrcAddr >> 2) * 2654435761u >> 24) % 230);
+            }
+            vgm_last_vol[c] = (unsigned int)ch.Volume * 2;
+        }
 #endif
         s32 ch0 = chval[0], ch1 = chval[1], ch2 = chval[2], ch3 = chval[3];
 

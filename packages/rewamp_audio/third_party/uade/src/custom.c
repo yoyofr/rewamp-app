@@ -1220,6 +1220,22 @@ static void adjust_array_sizes (void)
 volatile double uade_rewamp_speed = 1.0;
 static double rewamp_vb_lines = 0.0;
 
+/* rewamp: 1 when the replay can only be paced by Paula's AUDIO interrupts,
+ * which no speed reaches — they fall at the end of each sample, so their
+ * rate IS the pitch. TFMX uses voice 3 as its timer this way (measured on
+ * "Turrican 2 level 0-intro": intena = VERTB + AUD3, 60 AUD3/s at 1x and
+ * at 2x, the music unchanged). The score always enables VERTB for its own
+ * play loop, so the only tell is: audio interrupts on, no CIA interrupt
+ * (PORTS = CIA-A, EXTER = CIA-B). The host then refuses the native speed
+ * and the generic resampler takes over (tempo AND pitch). */
+int uade_rewamp_audio_paced(void)
+{
+    const uae_u16 en = intena;
+    if (!(en & 0x4000) || !(en & 0x0780))
+	return 0;
+    return (en & (0x0008 | 0x2000)) == 0;
+}
+
 static void vsync_handler (void)
 {
     if (currprefs.m68k_speed == -1)

@@ -144,6 +144,7 @@
         //params->SetValue(Parameters::ZXTune::Sound::LOOPED, 1);
 		
       const BufferRender::Ptr buffer = boost::make_shared<BufferRender>();
+      rewamp_zx_voice_base = 0;   //YOYOFR (rewamp): see ModizerVoicesData.h
       const Module::Renderer::Ptr renderer = holder->CreateRenderer(params, buffer);
       return boost::make_shared<PlayerWrapper>(params, renderer, buffer);
     }

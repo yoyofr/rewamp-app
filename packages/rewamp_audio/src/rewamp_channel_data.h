@@ -182,6 +182,8 @@ int rewamp_channel_count_raw(void);
  * Returns the number of bytes copied, or 0 on error.
  */
 int rewamp_channel_buf(int ch, int8_t* out, int outLen);
+/* 1 while a voice oscilloscope reads the rings (see rewamp_channel_data.c). */
+int rewamp_voice_scope_wanted(void);
 
 /* Same as rewamp_channel_buf but applies a correlation-based trigger to
  * stabilise the waveform display.  Stores a per-channel template and aligns

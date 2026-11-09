@@ -10,6 +10,8 @@
 
 //local includes
 #include "multi_base.h"
+#include "core/plugins/players/tracking.h"   //rewamp: delegates of the pattern view
+#include "ModizerVoicesData.h"               //rewamp: rewamp_zx_voice_base
 //common includes
 #include <contract.h>
 //library includes
@@ -438,14 +440,25 @@ namespace Module
         const CompositeReceiver::Ptr receiver = boost::make_shared<CompositeReceiver>(target, bufSize);
         const Parameters::Accessor::Ptr forcedLoop = boost::make_shared<ForcedLoopParam>();
         RenderersArray delegates(size);
+        /* rewamp: the delegates play TOGETHER, so their voices are laid out
+         * end to end — each chip built here copies rewamp_zx_voice_base as its
+         * first voice, and the pattern view learns which delegate each track
+         * model came from (tracking.h). */
+        int voiceBase = 0;
         for (std::size_t idx = 0; idx != size; ++idx)
         {
           const Holder::Ptr holder = holders[idx];
           const Parameters::Accessor::Ptr delegateParams = idx == 0
             ? params
             : Parameters::CreateMergedAccessor(forcedLoop, params);
+          RewampDelegateBegin(idx);
+          rewamp_zx_voice_base = voiceBase;
           delegates[idx] = holder->CreateRenderer(delegateParams, receiver);
+          const int hw = delegates[idx]->GetHWChannels();
+          RewampDelegateEnd(idx, hw > 0 ? (uint_t)hw : 0u);
+          voiceBase += hw > 0 ? hw : 0;
         }
+        rewamp_zx_voice_base = 0;
         return boost::make_shared<MultiRenderer>(delegates.begin(), delegates.end(), receiver);
       }
     }

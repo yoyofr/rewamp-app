@@ -25,6 +25,8 @@
 */
 
 #include <vio2sf/FreeBIOS.h>
+// rewamp: libc++ ne fournit plus cet en-tete en transitif (vu sous Emscripten).
+#include <algorithm>  // std::copy
 
 namespace melonDS
 {

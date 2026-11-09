@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <ctype.h>
+#include <pthread.h>
 
 /* Must stay comfortably above the number of rewamp_register_plugin() calls in
  * rewamp_register_builtin_plugins() — there are 35 with every engine enabled
@@ -24,6 +25,25 @@
 
 static const RewampPluginVTable* g_plugins[REWAMP_MAX_PLUGINS];
 static int g_plugin_count = 0;
+
+/* « Lire avec… »: a plugin forced for ONE file (exact clean path), set from
+ * the UI thread before a load / a gapless arm, read on the loader or the
+ * producer thread — hence the lock. Small table: Dart sets the entries of
+ * what it is about to play (current + next) and clears them, it does not
+ * mirror its whole store here. */
+#define REWAMP_MAX_PATH_OVERRIDES 32
+typedef struct { char path[1024]; char plugin_name[32]; } PathOverride;
+static PathOverride    g_path_overrides[REWAMP_MAX_PATH_OVERRIDES];
+static int             g_path_override_count = 0;
+static pthread_mutex_t g_path_override_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* « Lire avec… »: one OPTION of a plugin chosen for ONE file — the SoundFont
+ * of FluidLite, the model of the MT-32 — read by that plugin's open() above
+ * its own setting. Same life as the table above (Dart rebuilds it before a
+ * load, adds the next file before a gapless arm), same lock. */
+typedef struct { char path[1024]; char plugin_name[32]; char value[1024]; } PathOption;
+static PathOption g_path_options[REWAMP_MAX_PATH_OVERRIDES];
+static int        g_path_option_count = 0;
 
 typedef struct { char ext[16]; char plugin_name[32]; } PluginOverride;
 static PluginOverride g_overrides[REWAMP_MAX_OVERRIDES];
@@ -50,6 +70,12 @@ const RewampPluginVTable* rewamp_nsfplay_plugin(void);
 #endif
 #ifdef REWAMP_WITH_GBSPLAY
 const RewampPluginVTable* rewamp_gbsplay_plugin(void);
+#endif
+#ifdef REWAMP_WITH_CPC
+const RewampPluginVTable* rewamp_cpc_plugin(void);
+#endif
+#ifdef REWAMP_WITH_ZXSPECTRUM
+const RewampPluginVTable* rewamp_zxspectrum_plugin(void);
 #endif
 #ifdef REWAMP_WITH_HIGHLYEXP
 const RewampPluginVTable* rewamp_highlyexp_plugin(void);
@@ -94,6 +120,9 @@ const RewampPluginVTable* rewamp_mt32_plugin(void);
 #ifdef REWAMP_WITH_ADLMIDI
 const RewampPluginVTable* rewamp_adlmidi_plugin(void);
 #endif
+#ifdef REWAMP_WITH_OPNMIDI
+const RewampPluginVTable* rewamp_opnmidi_plugin(void);
+#endif
 #ifdef REWAMP_WITH_GSF
 const RewampPluginVTable* rewamp_gsf_plugin(void);
 #endif
@@ -111,6 +140,7 @@ const RewampPluginVTable* rewamp_adplug_plugin(void);
 #endif
 #ifdef REWAMP_WITH_SNDH
 const RewampPluginVTable* rewamp_sndh_plugin(void);
+const RewampPluginVTable* rewamp_atariaudio_ym_plugin(void);
 #endif
 #ifdef REWAMP_WITH_PSGPLAY
 const RewampPluginVTable* rewamp_psgplay_plugin(void);
@@ -132,6 +162,9 @@ const RewampPluginVTable* rewamp_libpt3_plugin(void);
 #endif
 #ifdef REWAMP_WITH_ORGANYA
 const RewampPluginVTable* rewamp_organya_plugin(void);
+#endif
+#ifdef REWAMP_WITH_MINIBAE
+const RewampPluginVTable* rewamp_minibae_plugin(void);
 #endif
 #ifdef REWAMP_WITH_NTGS
 const RewampPluginVTable* rewamp_ntgs_plugin(void);
@@ -191,6 +224,17 @@ void rewamp_register_builtin_plugins(void) {
 #ifdef REWAMP_WITH_GBSPLAY
     // Registered before GME so gbsplay wins on .gbs files (score 100 vs 60).
     rewamp_register_plugin(rewamp_gbsplay_plugin());
+#endif
+#ifdef REWAMP_WITH_CPC
+    // Amstrad CPC .dsk, claimed on the image MAGIC only (.dsk is also Apple
+    // II, MSX, Atari ST…), so no rival can lose a file to it.
+    rewamp_register_plugin(rewamp_cpc_plugin());
+#endif
+#ifdef REWAMP_WITH_ZXSPECTRUM
+    // ZX Spectrum .tap, RUN on an emulated 48K/128K. Claimed with the file:
+    // the whole block chain must hold (lengths + checksums) — .tap is also
+    // Commodore and Oric.
+    rewamp_register_plugin(rewamp_zxspectrum_plugin());
 #endif
 #ifdef REWAMP_WITH_HIGHLYEXP
     rewamp_register_plugin(rewamp_highlyexp_plugin());
@@ -281,6 +325,12 @@ void rewamp_register_builtin_plugins(void) {
     // GMF). A `.mus` without the DMX magic stays with SID/KSS/vgmstream.
     rewamp_register_plugin(rewamp_adlmidi_plugin());
 #endif
+#ifdef REWAMP_WITH_OPNMIDI
+    // Fourth .mid engine: libOPNMIDI on an emulated OPN2 (Mega Drive) / OPNA
+    // (PC-98). 94 on a plain MIDI: only « Synthé MIDI: OPN2 » (a pin) selects
+    // it. 90 on the DOS formats, under libADLMIDI's 100: an OPL wrote them.
+    rewamp_register_plugin(rewamp_opnmidi_plugin());
+#endif
 #ifdef REWAMP_WITH_GSF
     // GBA .gsf/.minigsf via VBA (PSF 0x22 magic → 110/100). Before highlyexp
     // (which claims generic PSF) — distinct magic byte, no real conflict.
@@ -313,6 +363,10 @@ void rewamp_register_builtin_plugins(void) {
     // Atari ST .sndh (score 100 on SNDH magic / 90 ext-only) — exclusive
     // extension, no conflict with any other plugin.
     rewamp_register_plugin(rewamp_sndh_plugin());
+    // .ym through the same library: 90 on a YM header (LZH, LeOnArD!, YM2/3),
+    // 60 on the extension alone — above zxtune's 55 either way, so AtariAudio
+    // is the default; « Décodeurs par défaut » pins zxtune back.
+    rewamp_register_plugin(rewamp_atariaudio_ym_plugin());
 #endif
 #ifdef REWAMP_WITH_PSGPLAY
     // Second .sndh engine (psgplay): whole-machine emulation with the STE
@@ -356,6 +410,11 @@ void rewamp_register_builtin_plugins(void) {
     // Cave Story .org (magic "Org-01".."Org-03" -> 110/90) — exclusive
     // extension, no conflict with any other plugin.
     rewamp_register_plugin(rewamp_organya_plugin());
+#endif
+#ifdef REWAMP_WITH_MINIBAE
+    // Beatnik RMF (magic "IREZ" -> 110 with .rmf, 90 without) — no other
+    // plugin claims either the extension or the magic.
+    rewamp_register_plugin(rewamp_minibae_plugin());
 #endif
 #ifdef REWAMP_WITH_NTGS
     // NoiseTracker GS 1.x (Apple IIGS): reconnu par le CONTENU (« FTA
@@ -507,8 +566,169 @@ void rewamp_registry_set_preferred_plugin(const char* ext, const char* plugin_na
     g_override_count++;
 }
 
+void rewamp_registry_set_path_plugin(const char* path, const char* plugin_name) {
+    if (path == NULL || !path[0]) return;
+    pthread_mutex_lock(&g_path_override_lock);
+    int at = -1;
+    for (int i = 0; i < g_path_override_count; i++)
+        if (strcmp(g_path_overrides[i].path, path) == 0) { at = i; break; }
+    if (plugin_name == NULL || !plugin_name[0]) {
+        if (at >= 0) {
+            for (int j = at; j < g_path_override_count - 1; j++)
+                g_path_overrides[j] = g_path_overrides[j + 1];
+            g_path_override_count--;
+        }
+    } else {
+        if (at < 0) {
+            if (g_path_override_count >= REWAMP_MAX_PATH_OVERRIDES) {
+                /* Oldest out: Dart only keeps what it is about to play. */
+                for (int j = 0; j < g_path_override_count - 1; j++)
+                    g_path_overrides[j] = g_path_overrides[j + 1];
+                g_path_override_count--;
+                fprintf(stderr, "[registry] path override table full, oldest dropped\n");
+            }
+            at = g_path_override_count++;
+            strncpy(g_path_overrides[at].path, path, sizeof(g_path_overrides[at].path) - 1);
+            g_path_overrides[at].path[sizeof(g_path_overrides[at].path) - 1] = '\0';
+        }
+        strncpy(g_path_overrides[at].plugin_name, plugin_name, 31);
+        g_path_overrides[at].plugin_name[31] = '\0';
+    }
+    pthread_mutex_unlock(&g_path_override_lock);
+}
+
+void rewamp_registry_clear_path_plugins(void) {
+    pthread_mutex_lock(&g_path_override_lock);
+    g_path_override_count = 0;
+    pthread_mutex_unlock(&g_path_override_lock);
+}
+
+void rewamp_registry_set_path_option(const char* path, const char* plugin_name,
+                                     const char* value) {
+    if (path == NULL || !path[0] || plugin_name == NULL || !plugin_name[0]) return;
+    pthread_mutex_lock(&g_path_override_lock);
+    int at = -1;
+    for (int i = 0; i < g_path_option_count; i++)
+        if (strcmp(g_path_options[i].path, path) == 0 &&
+            strcmp(g_path_options[i].plugin_name, plugin_name) == 0) { at = i; break; }
+    if (value == NULL || !value[0]) {
+        if (at >= 0) {
+            for (int j = at; j < g_path_option_count - 1; j++)
+                g_path_options[j] = g_path_options[j + 1];
+            g_path_option_count--;
+        }
+    } else {
+        if (at < 0) {
+            if (g_path_option_count >= REWAMP_MAX_PATH_OVERRIDES) {
+                for (int j = 0; j < g_path_option_count - 1; j++)
+                    g_path_options[j] = g_path_options[j + 1];
+                g_path_option_count--;
+                fprintf(stderr, "[registry] path option table full, oldest dropped\n");
+            }
+            at = g_path_option_count++;
+            snprintf(g_path_options[at].path, sizeof(g_path_options[at].path), "%s", path);
+            snprintf(g_path_options[at].plugin_name, sizeof(g_path_options[at].plugin_name),
+                     "%s", plugin_name);
+        }
+        snprintf(g_path_options[at].value, sizeof(g_path_options[at].value), "%s", value);
+    }
+    pthread_mutex_unlock(&g_path_override_lock);
+}
+
+void rewamp_registry_clear_path_options(void) {
+    pthread_mutex_lock(&g_path_override_lock);
+    g_path_option_count = 0;
+    pthread_mutex_unlock(&g_path_override_lock);
+}
+
+int rewamp_registry_path_option(const char* path, const char* plugin_name,
+                                char* out, size_t outSize) {
+    if (out && outSize) out[0] = '\0';
+    if (path == NULL || plugin_name == NULL || out == NULL || outSize == 0) return 0;
+    int found = 0;
+    pthread_mutex_lock(&g_path_override_lock);
+    for (int i = 0; i < g_path_option_count; i++)
+        if (strcmp(g_path_options[i].path, path) == 0 &&
+            strcmp(g_path_options[i].plugin_name, plugin_name) == 0) {
+            snprintf(out, outSize, "%s", g_path_options[i].value);
+            found = 1;
+            break;
+        }
+    pthread_mutex_unlock(&g_path_override_lock);
+    return found;
+}
+
+/* Copies the forced plugin of [path] into [out] (empty when none). */
+static void path_override_for(const char* path, char out[32]) {
+    out[0] = '\0';
+    pthread_mutex_lock(&g_path_override_lock);
+    for (int i = 0; i < g_path_override_count; i++)
+        if (strcmp(g_path_overrides[i].path, path) == 0) {
+            memcpy(out, g_path_overrides[i].plugin_name, 32);
+            break;
+        }
+    pthread_mutex_unlock(&g_path_override_lock);
+}
+
+static int select_ranked_core(const char* path, const RewampPluginVTable** out,
+                              int maxOut);
+
+/* « Lire avec… »: the plugin chosen for THIS file goes first — above an
+ * extension pin and an exclusive identification too, since a person picked it
+ * for this very file. Only among the plugins that claim it (probe > 0): one
+ * that cannot read the file is not forced on it. The others stay behind, so a
+ * failed open still cascades. ⚠️ Ranked on the FULL list, truncated after:
+ * rewamp_registry_select asks for ONE candidate, and the forced plugin, second
+ * by score, was cut before it could be lifted (caught by the harness). */
+static int select_ranked_impl(const char* path, const RewampPluginVTable** out,
+                              int maxOut, int usePathOverride) {
+    char forced[32] = "";
+    if (usePathOverride && path) path_override_for(path, forced);
+    if (!forced[0]) return select_ranked_core(path, out, maxOut);
+    const RewampPluginVTable* all[REWAMP_MAX_PLUGINS];
+    const int n = select_ranked_core(path, all, REWAMP_MAX_PLUGINS);
+    for (int k = 0; k < n; k++) {
+        if (all[k]->name && strcmp(all[k]->name, forced) == 0) {
+            const RewampPluginVTable* f = all[k];
+            for (int m = k; m > 0; m--) all[m] = all[m - 1];
+            all[0] = f;
+            break;
+        }
+    }
+    const int outN = n < maxOut ? n : maxOut;
+    for (int k = 0; k < outN; k++) out[k] = all[k];
+    return outN;
+}
+
 int rewamp_registry_select_ranked(const char* path,
                                   const RewampPluginVTable** out, int maxOut) {
+    return select_ranked_impl(path, out, maxOut, 1);
+}
+
+/* The default order (no « Lire avec… » override), names joined by '\n' —
+ * what the UI offers, the first being the engine that plays it by default.
+ * Static buffer: one caller at a time (the UI thread). */
+const char* rewamp_registry_candidates(const char* path) {
+    static char buf[1024];
+    buf[0] = '\0';
+    if (path == NULL) return buf;
+    const RewampPluginVTable* c[REWAMP_MAX_PLUGINS];
+    const int n = select_ranked_impl(path, c, REWAMP_MAX_PLUGINS, 0);
+    size_t len = 0;
+    for (int i = 0; i < n; i++) {
+        if (!c[i]->name) continue;
+        const size_t l = strlen(c[i]->name);
+        if (len + l + 2 >= sizeof(buf)) break;
+        if (len) buf[len++] = '\n';
+        memcpy(buf + len, c[i]->name, l);
+        len += l;
+        buf[len] = '\0';
+    }
+    return buf;
+}
+
+static int select_ranked_core(const char* path, const RewampPluginVTable** out,
+                              int maxOut) {
     if (path == NULL || out == NULL || maxOut <= 0 || g_plugin_count == 0)
         return 0;
 
@@ -615,6 +835,7 @@ int rewamp_registry_select_ranked(const char* path,
         out[outN++] = cand[i];
     if (preferred && outN < maxOut) out[outN++] = preferred;
     for (; i < n && outN < maxOut; ++i) out[outN++] = cand[i];
+
     return outN;
 }
 

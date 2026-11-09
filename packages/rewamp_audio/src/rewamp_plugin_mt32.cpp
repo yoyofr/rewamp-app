@@ -31,6 +31,7 @@
 #include "rewamp_plugin.h"
 #include "rewamp_mt32_detect.h"   /* « ce MIDI vise-t-il le MT-32 ? », partagé avec FluidLite */
 #include "rewamp_registry.h"
+#include "rewamp_gm_drums.h"
 #include "rewamp_channel_data.h"
 #include "rewamp_assets.h"
 #include "rewamp_audio.h"            /* extern "C" exports — FFI linkage rule */
@@ -61,7 +62,6 @@ using namespace MT32Emu;
  * FluidLite. Elle valait 0 — « aucun instrument » — donc en mode « par
  * instrument » la légende n'avait rien à nommer pour elle et un solo sur
  * « Rhythm » affichait le libellé d'une autre voix (constaté 2026-09-12). */
-#define MT32_RHYTHM_INSTR 129u
 #define MT32_RING_SIZE   (SOUND_BUFFER_SIZE_SAMPLE * 4 * 2)   /* power of 2 */
 #define MT32_FP          MODIZER_OSCILLO_OFFSET_FIXEDPOINT
 
@@ -385,6 +385,9 @@ typedef struct {
     double                 out_frac;      /* sub-frame remainder of out_pos */
     int64_t                mute_applied;  /* generic_mute_mask last pushed */
     uint8_t                chan_prog[16]; /* piano « par instrument » */
+    /* A note-on was queued for this part during the current read: the poll
+     * publishes an ATTACK column (volume 255) once — see mt32_poll_notes. */
+    uint8_t                attack[16];
     int                    remap_gm;      /* channel 1 used, channel 9 free: GM layout */
     unsigned char*         bank;          /* companion MT-32 setup: F0..F7 messages, back to back */
     size_t                 bank_len;
@@ -450,6 +453,12 @@ static int mt32_is_channel_msg(const tml_message* m) {
 static void mt32_note_prog(Mt32Dec* d, const tml_message* m) {
     if (m->type == TML_PROGRAM_CHANGE && m->channel < 16)
         d->chan_prog[m->channel] = (uint8_t)m->program;
+    /* Parts 1-8 listen to channels 2-9, the rhythm part to channel 10. */
+    if (m->type == TML_NOTE_ON && m->velocity > 0 && m->channel < 16) {
+        const int p = (m->channel >= 1 && m->channel <= 8) ? m->channel - 1
+                    : m->channel == 9 ? 8 : -1;
+        if (p >= 0) d->attack[p] = 1;
+    }
 }
 
 /* Returns 0 when the synth queue is full (caller renders, then retries). */
@@ -495,16 +504,22 @@ static void mt32_poll_notes(Mt32Dec* d) {
         if (n == 0 || ((generic_mute_mask >> p) & 1)) {
             vgm_last_note[p] = 0;
             vgm_last_vol[p]  = 0;
+            d->attack[p]     = 0;
             continue;
         }
         unsigned key = keys[n - 1], vel = 0;   /* the newest poly */
         for (Bit32u i = 0; i < n; i++) if (vels[i] > vel) vel = vels[i];
         vgm_last_note[p] = (unsigned int)(440.0 * pow(2.0, ((int)key - 69) / 12.0) + 0.5);
-        vgm_last_vol[p]  = vel;
+        /* ATTACK column (255) after a note-on, the velocity otherwise: the
+         * notation and piano cut a note when its volume RISES, so the same
+         * key struck again read as one held note. */
+        vgm_last_vol[p]  = d->attack[p] ? 255u : vel;
+        d->attack[p]     = 0;
         /* Program of the MIDI channel this part listens to by default
-         * (parts 1-8 = channels 2-9); the rhythm part has its OWN index. */
+         * (parts 1-8 = channels 2-9); the rhythm part gets one index per
+         * KEY (rewamp_gm_drums.h) — the newest key struck. */
         vgm_last_instr[p] = p < 8 ? (unsigned int)d->chan_prog[p + 1] + 1u
-                                  : MT32_RHYTHM_INSTR;
+                                  : rewamp_drum_instr_index((int)key);
         /* Nom de l'instrument pour la légende « par instrument » des viz: le
          * PATCH de la partie, tel que le synthé l'a appliqué — c'est le nom
          * que le vrai matériel affiche, et il vaut mieux que « Inst 42 » sur
@@ -697,17 +712,31 @@ static int mt32_open_synth(Mt32Dec* d) {
 }
 
 static RewampDecoder* mt32_open(const char* path, RewampAudioFormat* outFormat) {
-    RomFile* files = (RomFile*)calloc(MT32_MAX_ROM_FILES, sizeof(RomFile));   /* heap: see rom_status */
-    if (!files) return NULL;
-    int nfiles = mt32_scan_roms(files, MT32_MAX_ROM_FILES);
-    RomSet set;
-    if (nfiles == 0 || !mt32_select_set(files, nfiles, mt32_model_param(), &set)) { free(files); return NULL; }
-
     char clean[4096];
     strncpy(clean, path, sizeof(clean) - 1);
     clean[sizeof(clean) - 1] = '\0';
     char* q = strchr(clean, '?');
     if (q) *q = '\0';
+
+    /* « Lire avec… »: a model chosen for THIS file (1 MT-32, 2 CM-32L) above
+     * the setting; its ROMs missing ⇒ whichever set is there (auto). */
+    int model = mt32_model_param();
+    char opt[16];
+    if (rewamp_registry_path_option(clean, "mt32", opt, sizeof(opt))) {
+        const int m = atoi(opt);
+        if (m >= 0 && m <= 2) model = m;
+    }
+
+    RomFile* files = (RomFile*)calloc(MT32_MAX_ROM_FILES, sizeof(RomFile));   /* heap: see rom_status */
+    if (!files) return NULL;
+    int nfiles = mt32_scan_roms(files, MT32_MAX_ROM_FILES);
+    RomSet set;
+    if (nfiles == 0 || (!mt32_select_set(files, nfiles, model, &set) &&
+                        (model == mt32_model_param() ||
+                         !mt32_select_set(files, nfiles, mt32_model_param(), &set)))) {
+        free(files);
+        return NULL;
+    }
 
     Mt32Dec* d = (Mt32Dec*)calloc(1, sizeof(Mt32Dec));
     if (!d) { free(files); return NULL; }
@@ -778,9 +807,9 @@ static RewampDecoder* mt32_open(const char* path, RewampAudioFormat* outFormat) 
         char nm[MODIZ_VOICE_NAME_MAX_CHAR];
         if (p == 8) {
             snprintf(nm, sizeof(nm), "Rhythm");
-            /* Le même nom pour l'INSTRUMENT de la partie: un kit, pas un
-             * timbre — l'instrument y est porté par la touche. */
-            rewamp_instrument_set_name((int)MT32_RHYTHM_INSTR, "Rhythm");
+            /* Les INSTRUMENTS de la partie sont ses touches: la carte GM,
+             * qui descend de celle du MT-32 (voir rewamp_gm_drums.h). */
+            rewamp_drum_register_names();
         }
         else if (pn && pn[0]) snprintf(nm, sizeof(nm), "%.*s", (int)sizeof(nm) - 1, pn);
         else snprintf(nm, sizeof(nm), "Part %d", p + 1);

@@ -1,12 +1,13 @@
-/*--------------------------------------------------------------------
-	Atari Audio Library
-	Small & accurate ATARI-ST audio emulation
-	Arnaud Carré aka Leonard/Oxygene
-	@leonard_coder
---------------------------------------------------------------------*/
+//----------------------------------------------------------
+//
+//	AtariAudio 1.27
+//	Small & accurate ATARI-ST audio emulation
+//	by Arnaud Carré aka Leonard/Oxygene (@leonard_coder)
+//
+//----------------------------------------------------------
 #pragma once
 
-#include "Ym2149c.h"
-#include "AtariMachine.h"
-#include "SndhFile.h"
+#define	ATARI_AUDIO_VERSION		"1.27"
 
+#include "SndhRenderer.h"
+#include "YmRenderer.h"

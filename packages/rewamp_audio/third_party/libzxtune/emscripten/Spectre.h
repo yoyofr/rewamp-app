@@ -90,6 +90,12 @@ public:
     int  pattern_rows(int pattern);
     int  pattern_cells(int pattern, ZxPatternCell *out, int maxCells);
     void pattern_cursor(int *order, int *row);
+    //Layout of the grid, for the harness (verify_zxtune_voices): one model per
+    //tracked delegate (two for a TurboSound pair), each on its delegate's columns.
+    int  pattern_model_count();
+    int  pattern_model_width(int m);
+    int  pattern_model_offset(int m);     // -1 = the model has no column
+    int  pattern_model_delegate(int m);
     
     const char *get_channel_name(int chan);
     const char *get_system_name();

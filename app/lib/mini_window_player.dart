@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'media_direction.dart';
-import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'artwork_image.dart';
@@ -61,15 +60,10 @@ class MiniWindowHost extends StatelessWidget {
         final menuTitle =
             AppLocalizations.of(context)?.settingsAlwaysOnTopTitle;
         if (menuTitle != null) mw.setMenuTitle(menuTitle);
-        return CallbackShortcuts(
-          bindings: {
-            // Pas Cmd+M seul: c'est « réduire dans le Dock » sur macOS.
-            const SingleActivator(LogicalKeyboardKey.keyM,
-                meta: true, shift: true): () => _toggle(context),
-            const SingleActivator(LogicalKeyboardKey.keyM,
-                control: true, shift: true): () => _toggle(context),
-          },
-          child: Stack(
+        // Le raccourci ⇧⌘M vit dans app_shortcuts.dart (répartiteur global):
+        // un `CallbackShortcuts` ici ne partait qu'avec le focus sous lui,
+        // c'est-à-dire après un clic sur un bouton.
+        return Stack(
             fit: StackFit.expand,
             children: [
               Offstage(
@@ -91,16 +85,11 @@ class MiniWindowHost extends StatelessWidget {
               ),
               if (mini) this.mini,
             ],
-          ),
-        );
+          );
       },
     );
   }
 
-  static void _toggle(BuildContext context) {
-    if (!MiniWindow.instance.available) return;
-    MiniWindow.instance.toggle(MediaQuery.sizeOf(context));
-  }
 }
 
 /// Bouton d'ENTRÉE dans le mini lecteur — le même partout (barre du bureau,

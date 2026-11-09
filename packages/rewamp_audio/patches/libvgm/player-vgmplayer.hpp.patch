@@ -1,5 +1,5 @@
 diff --git a/player/vgmplayer.hpp b/player/vgmplayer.hpp
-index 404e6b1..82bf646 100644
+index 404e6b1..040c762 100644
 --- a/player/vgmplayer.hpp
 +++ b/player/vgmplayer.hpp
 @@ -75,6 +75,10 @@ public:
@@ -13,26 +13,43 @@ index 404e6b1..82bf646 100644
  		DEVLOG_CB_DATA logCbData;
  	};
  	struct DACSTRM_DEV
-@@ -273,6 +277,9 @@ protected:
+@@ -273,6 +277,17 @@ protected:
  	void Cmd_K007232_Reg(void);				// command 41 - K007232 register write (Ofs8_Data8 with minor fixes)
  	void Cmd_AY_Stereo(void);				// command 30 - set AY8910 stereo mask
  	void Cmd_BSMT2000_Reg(void);			// command C9 - BSMT2000 register write (16-bit data, 8-bit offset)
-+	void Cmd_ES5506_Ext(void);				// command D7 - ES5506 extension (bank/window/alias/IRQ ack)
-+	void Cmd_ES5510(void);					// command D8 - ES5510 (ESP) host write / halt / routing
-+	void Cmd_ES5506_Gain(void);				// command E3 - ES5506 output gain
++	void Cmd_V3_ES5506_Bank(void);			// command 49 - ES5506 external bank of a voice
++	void Cmd_V3_ES5506_RgnMap(void);		// command 4A - ES5506 region map
++	void Cmd_V3_ES5510_Halt(void);			// command 4B - ES5510 ESPHALT line
++	void Cmd_V3_ZSG2_Ctrl(void);			// command 4C - ZSG-2 control (reset)
++	void Cmd_V3_TMS57002_Data(void);		// command 4D - TMS57002 host data write
++	void Cmd_V3_TMS57002_Lines(void);		// command 4E - TMS57002 control lines
++	void Cmd_V3_ES5510_Host(void);			// command CC - ES5510 host write
++	void Cmd_V3_TMS57002_PreRun(void);		// command CD - TMS57002 pre-run
++	void Cmd_V3_Route(void);				// command E2 - serial routing (DSP input <- chip output)
++	void Cmd_V3_Gain(void);					// command E3 - output gain of a chip channel
++	void Cmd_V3_ZSG2_Reg(void);				// command E4 - ZSG-2 register write
  	void Cmd_BSMT2000_Mode(void);			// command 32 - BSMT2000 mode change (8-bit data)
  
  	CPCONV* _cpcUTF16;	// UTF-16 LE -> UTF-8 codepage conversion
-@@ -284,9 +291,9 @@ protected:
+@@ -284,9 +299,9 @@ protected:
  	
  	enum
  	{
 -		_HDR_BUF_SIZE = 0x100,
 -		_OPT_DEV_COUNT = 0x30,
 -		_CHIP_COUNT = 0x30,
-+		_HDR_BUF_SIZE = 0x110,
-+		_OPT_DEV_COUNT = 0x31,
-+		_CHIP_COUNT = 0x31,
++		_HDR_BUF_SIZE = 0x200,
++		_OPT_DEV_COUNT = 0x35,
++		_CHIP_COUNT = 0x35,
  		_PCM_BANK_COUNT = 0x40
  	};
  	
+@@ -339,7 +354,7 @@ protected:
+ 	//PLAYER_FILEREQ_CB _fileReqCbFunc;
+ 	//void* _fileReqCbParam;
+ 	
+-	static const DEV_ID _OPT_DEV_LIST[_OPT_DEV_COUNT];	// list of configurable libvgm devices (different from VGM chip list]
++	static const DEV_ID _OPT_DEV_LIST[_OPT_DEV_COUNT];	// list of configurable libvgm devices (different from VGM chip list)
+ 	static const DEV_ID _DEV_LIST[_CHIP_COUNT];	// VGM chip ID -> libvgm device ID
+ 	static const UINT32 _CHIPCLK_OFS[_CHIP_COUNT];	// file offsets for chip clocks in VGM header
+ 	static const UINT16 _CHIP_VOLUME[_CHIP_COUNT];	// default volume for chips

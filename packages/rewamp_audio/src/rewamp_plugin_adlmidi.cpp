@@ -34,6 +34,7 @@
 
 #include "rewamp_plugin.h"
 #include "rewamp_registry.h"
+#include "rewamp_gm_drums.h"
 #include "rewamp_channel_data.h"
 #include "rewamp_audio.h"            /* extern "C" exports — FFI linkage rule */
 #include "ModizerVoicesData.h"
@@ -41,13 +42,23 @@
 
 #include "adlmidi.h"
 #include "../third_party/libadlmidi/rewamp/adlmidi_scope.h"
+#include "rewamp_path_bank.h"         /* « Lire avec… » bank per file */
+/* The bank file reader, for the INSTRUMENT names (the synth API gives none).
+ * Its symbols carry the library's rename prefix (rewamp/adlmidi_rename.h, not
+ * included whole here: it also renames names this file uses); a renamed
+ * prefix fails the link, not silently. */
+#define WOPL_LoadBankFromMem rwadl_WOPL_LoadBankFromMem
+#define WOPL_Free            rwadl_WOPL_Free
+#include "../third_party/libadlmidi/src/wopl/wopl_file.h"
 #include "tml.h"                     /* implementation lives in rewamp_tml.c */
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <new>
+#include <string>
 #include <strings.h>
 
 extern "C" int g_force_loop_mode;
@@ -57,7 +68,6 @@ extern "C" int g_force_loop_native_veto;
 #define ADL_CHANNELS  16
 #define ADL_BATCH     2048           /* frames per adl_playFormat call */
 #define ADL_DRUM_CH   9
-#define ADL_DRUM_INSTR_BASE 129      /* same instrument index space as FluidLite */
 #define ADL_SCOPE_CHIPS 16           /* = the « chips » setting's maximum */
 #define ADL_CHIP_CHANNELS 23         /* libADLMIDI NUM_OF_CHANNELS (18 + 5 rhythm) */
 #define ADL_RING_SIZE (SOUND_BUFFER_SIZE_SAMPLE * 4 * 2)   /* power of 2 */
@@ -76,9 +86,36 @@ struct AdlDec {
     int             voiceCount = 0;
     uint8_t         prog[ADL_CHANNELS];
     int             noteCount[ADL_CHANNELS];
+    /* Velocity to restore after an attack column (see on_event), 0 = none. */
+    unsigned        attackVel[ADL_CHANNELS];
+    std::string     bankLabel;        /* user bank file name, "" = embedded */
+    bool            userBankFailed = false;
+    /* Melodic instrument names of the bank in use (index = program), "" =
+     * unnamed. Only what the BANK says: a program number is not a General
+     * MIDI instrument for a bank written for one game. */
+    std::string     instName[128];
+    int             bankIndex = 0;    /* embedded bank in use */
 };
 
 ADLMIDI_AudioFormat kF32 = { ADLMIDI_SampleType_F32, 4, 8 };
+
+/* User bank (a .wopl the user imported), set from the UI thread, read by
+ * open() on the producer thread. Empty = the embedded bank of param "bank". */
+std::mutex  g_bank_file_lock;
+std::string g_bank_file;
+
+std::string bank_file() {
+    std::lock_guard<std::mutex> lk(g_bank_file_lock);
+    return g_bank_file;
+}
+
+/* « Lire avec… »: the bank chosen for one file, above the setting. */
+PathBankTable g_path_banks;
+
+const char* base_name(const std::string& path) {
+    const size_t s = path.find_last_of("/\\");
+    return s == std::string::npos ? path.c_str() : path.c_str() + s + 1;
+}
 
 /* Oscilloscope state. One decoder plays at a time (the producer opens the
  * next track only after closing this one), and every hook runs on the
@@ -138,7 +175,45 @@ void apply_live(AdlDec* d) {
     adl_setAutoArpeggio(d->dev, param("auto_arpeggio", 0) != 0);
 }
 
-void apply_open(AdlDec* d) {
+/* Names of the melodic bank MIDI bank 0 selects (else the first one). */
+void read_inst_names(AdlDec* d, const void* mem, size_t size) {
+    for (auto& n : d->instName) n.clear();
+    if (!mem || size == 0) return;
+    int err = 0;
+    WOPLFile* f = WOPL_LoadBankFromMem(const_cast<void*>(mem), size, &err);
+    if (!f) return;
+    const WOPLBank* b = nullptr;
+    for (int i = 0; i < f->banks_count_melodic; i++) {
+        const WOPLBank& c = f->banks_melodic[i];
+        if (c.bank_midi_msb == 0 && c.bank_midi_lsb == 0) { b = &c; break; }
+    }
+    if (!b && f->banks_count_melodic > 0) b = &f->banks_melodic[0];
+    if (b) {
+        for (int p = 0; p < 128; p++) {
+            std::string n(b->ins[p].inst_name);
+            while (!n.empty() && (n.back() == ' ' || n.back() == '\t')) n.pop_back();
+            /* Wohlstand's banks mark entries « * Name »: the mark only
+             * eats the voice name's few characters. */
+            size_t s = 0;
+            while (s < n.size() && (n[s] == ' ' || n[s] == '*')) s++;
+            d->instName[p] = n.substr(s);
+        }
+    }
+    WOPL_Free(f);
+}
+
+void read_inst_names_file(AdlDec* d, const std::string& file) {
+    FILE* fp = fopen(file.c_str(), "rb");
+    if (!fp) { read_inst_names(d, nullptr, 0); return; }
+    std::string buf;
+    char chunk[65536];
+    size_t n;
+    while ((n = fread(chunk, 1, sizeof(chunk), fp)) > 0) buf.append(chunk, n);
+    fclose(fp);
+    read_inst_names(d, buf.data(), buf.size());
+}
+
+void apply_open(AdlDec* d, const char* path) {
     int emu = (int)param("emulator", ADLMIDI_EMU_NUKED);
     if (emu < 0 || emu >= ADLMIDI_EMU_end || adl_switchEmulator(d->dev, emu) < 0)
         adl_switchEmulator(d->dev, ADLMIDI_EMU_DOSBOX);   /* compiled everywhere */
@@ -147,8 +222,31 @@ void apply_open(AdlDec* d) {
     if (chips > 16) chips = 16;
     adl_setNumChips(d->dev, chips);
     int bank = (int)param("bank", 0);
+    std::string file = bank_file();
+    /* « Lire avec… »: a bank chosen for THIS file replaces the setting's. */
+    PathBank pb;
+    if (g_path_banks.get(path, pb)) {
+        file = pb.file;
+        if (pb.file.empty()) bank = pb.index;
+    }
     if (bank < 0 || bank >= adl_getBanksCount()) bank = 0;
-    adl_setBank(d->dev, bank);
+    d->bankIndex = bank;
+    /* A user bank replaces the embedded one; unreadable ⇒ the embedded one,
+     * said in ⓘ (d->bankLabel) rather than a silent synth. */
+    d->userBankFailed = false;
+    d->bankLabel.clear();
+    read_inst_names(d, nullptr, 0);   /* the embedded banks carry no names */
+    if (!file.empty()) {
+        if (adl_openBankFile(d->dev, file.c_str()) == 0) {
+            d->bankLabel = base_name(file);
+            read_inst_names_file(d, file);
+        } else {
+            d->userBankFailed = true;
+            adl_setBank(d->dev, bank);
+        }
+    } else {
+        adl_setBank(d->dev, bank);
+    }
     adl_setNumFourOpsChn(d->dev, (int)param("four_op", -1));   /* -1 = auto */
     adl_setVolumeRangeModel(d->dev, (int)param("volume_model", ADLMIDI_VolumeModel_AUTO));
     adl_setScaleModulators(d->dev, param("scale_modulators", 0) != 0);
@@ -174,9 +272,17 @@ void on_event(void* ud, ADL_UInt8 type, ADL_UInt8 /*subtype*/, ADL_UInt8 ch,
                 d->noteCount[v]++;
                 vgm_last_note[v] = (unsigned int)
                     (440.0 * pow(2.0, (data[0] - 69) / 12.0) + 0.5);
-                vgm_last_vol[v]   = data[1];
+                /* ATTACK: 255 for the column captured after this read, the
+                 * velocity from the next one on. The notation and piano cut a
+                 * note when its volume RISES (rewamp_notes_render.cpp): with
+                 * the velocity alone, the same key struck again at the same
+                 * velocity — a repeated bass note, a drum — read as ONE held
+                 * note (« The Healer Stalks », voice 1). UADE's rule. */
+                vgm_last_vol[v]   = 255;
+                d->attackVel[v]   = data[1];
+                /* Canal 10: une case par TOUCHE (rewamp_gm_drums.h). */
                 vgm_last_instr[v] = ch == ADL_DRUM_CH
-                    ? ADL_DRUM_INSTR_BASE + d->prog[ch]
+                    ? rewamp_drum_instr_index(data[0])
                     : d->prog[ch] + 1u;
                 break;
             }
@@ -207,6 +313,7 @@ void silence_notes(AdlDec* d) {
         d->noteCount[v] = 0;
         vgm_last_note[v] = 0;
         vgm_last_vol[v]  = 0;
+        d->attackVel[v]  = 0;
     }
 }
 
@@ -326,7 +433,7 @@ RewampDecoder* adl_open_fn(const char* path, RewampAudioFormat* outFormat) {
     if (!d) return nullptr;
     d->dev = adl_init(ADL_RATE);
     if (!d->dev) { delete d; return nullptr; }
-    apply_open(d);
+    apply_open(d, clean);
     adl_setRawEventHook(d->dev, on_event, d);
     if (sub >= 0) adl_selectSongNum(d->dev, sub);
     if (adl_openFile(d->dev, clean) < 0) {
@@ -356,6 +463,11 @@ RewampDecoder* adl_open_fn(const char* path, RewampAudioFormat* outFormat) {
         else                  snprintf(nm, sizeof(nm), "Ch %d", c + 1);
         rewamp_voice_set_name(d->chan2voice[c], nm);
     }
+    /* Same index as vgm_last_instr (program + 1); unnamed ⇒ « Inst n ». */
+    for (int p = 0; p < 128; p++)
+        if (!d->instName[p].empty())
+            rewamp_instrument_set_name(p + 1, d->instName[p].c_str());
+    rewamp_drum_register_names();   /* la batterie, touche par touche */
 
     const double total = adl_totalTimeLength(d->dev);
     const char* title = adl_metaMusicTitle(d->dev);
@@ -366,11 +478,15 @@ RewampDecoder* adl_open_fn(const char* path, RewampAudioFormat* outFormat) {
     if (copy && copy[0])   rewamp_track_message_append("Copyright: %s\n", copy);
     const int songs = adl_getSongsCount(d->dev);
     if (songs > 1) rewamp_track_message_append("Songs: %d\n", songs);
-    {
-        const int bank = (int)param("bank", 0);
+    if (!d->bankLabel.empty()) {
+        rewamp_track_message_append("Bank: %s (imported)\n", d->bankLabel.c_str());
+    } else {
+        const int bank = d->bankIndex;
         const char* const* names = adl_getBankNames();
         if (names && bank >= 0 && bank < adl_getBanksCount())
-            rewamp_track_message_append("Bank: %s\n", names[bank]);
+            rewamp_track_message_append("Bank: %s%s\n", names[bank],
+                                        d->userBankFailed
+                                            ? " (imported bank unreadable)" : "");
     }
     rewamp_track_message_append("Synth: Yamaha OPL3 — %s, %d chip(s)\n",
                                 adl_chipEmulatorName(d->dev),
@@ -394,6 +510,12 @@ RewampDecoder* adl_open_fn(const char* path, RewampAudioFormat* outFormat) {
 uint64_t adl_read_fn(RewampDecoder* rd, float* out, uint64_t frameCount) {
     AdlDec* d = reinterpret_cast<AdlDec*>(rd);
     if (!d || !d->dev) return 0;
+    /* The attack columns were captured after the previous read: back to the
+     * velocity (a note released since then stays at 0). */
+    for (int v = 0; v < d->voiceCount; v++) {
+        if (d->attackVel[v] && vgm_last_vol[v] == 255) vgm_last_vol[v] = d->attackVel[v];
+        d->attackVel[v] = 0;
+    }
     /* Mute: one MIDI channel per voice, pushed when the mask moves. */
     if (d->muteApplied != generic_mute_mask) {
         for (int c = 0; c < ADL_CHANNELS; c++) {
@@ -517,6 +639,23 @@ extern "C" int rewamp_adlmidi_probe_subsong_count(const char* path) {
 
 /* Embedded bank names, for Settings → OPL3 (index = engine param "bank"). */
 extern "C" REWAMP_EXPORT int rewamp_adlmidi_bank_count(void) { return adl_getBanksCount(); }
+
+/* A user bank file (.wopl, imported into the data dir) — "" = back to the
+ * embedded bank. Applied at the next open, like the other bank settings. */
+extern "C" REWAMP_EXPORT void rewamp_adlmidi_set_bank_file(const char* path) {
+    std::lock_guard<std::mutex> lk(g_bank_file_lock);
+    g_bank_file = path ? path : "";
+}
+
+/* « Lire avec… »: the bank of ONE file — an embedded [index], or an imported
+ * [file] (index ignored); index < 0 and no file = forget [path]. Exact path,
+ * without ?subsong=. Applied at its next open. */
+extern "C" REWAMP_EXPORT void rewamp_adlmidi_set_path_bank(const char* path, int index,
+                                                           const char* file) {
+    g_path_banks.set(path, index, file);
+}
+
+extern "C" REWAMP_EXPORT void rewamp_adlmidi_clear_path_banks(void) { g_path_banks.clear(); }
 
 extern "C" REWAMP_EXPORT const char* rewamp_adlmidi_bank_name(int index) {
     const char* const* names = adl_getBankNames();

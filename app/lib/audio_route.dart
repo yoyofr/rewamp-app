@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:rewamp_audio/rewamp_audio.dart';
 
 import 'l10n.dart';
+import 'sheet_handle.dart';
 
 /// Audio output ("route") picker, per platform:
 /// - iOS: the system AVRoutePickerView (AirPlay / Bluetooth) — a hidden native
@@ -51,9 +52,8 @@ class AudioRoute {
     final devices = audio.outputDevices();
     if (devices.isEmpty) return;
     final explicit = devices.any((d) => d.selected);
-    await showModalBottomSheet<void>(
+    await showHandleSheet<void>(
       context: context,
-      showDragHandle: true,
       builder: (ctx) {
         final l10n = ctx.l10n;
         return SafeArea(

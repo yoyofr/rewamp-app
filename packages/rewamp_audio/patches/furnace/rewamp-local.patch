@@ -1,0 +1,315 @@
+diff --git a/src/engine/fileOps/dmf.cpp b/src/engine/fileOps/dmf.cpp
+index 762ef1ec2..8293d3a2d 100644
+--- a/src/engine/fileOps/dmf.cpp
++++ b/src/engine/fileOps/dmf.cpp
+@@ -89,6 +89,67 @@ static double samplePitches[11]={
+   2, 3, 4, 5, 6
+ };
+ 
++// REWAMP: resynchronisation des en-têtes de samples d'un .dmf abîmé.
++//
++// Environ 19 % des .dmf de modland (341 sur 1 807, surtout Genesis) ont une
++// Adler-32 de fin fausse, et ce n'est PAS qu'une somme: le flux deflate se
++// décode en entier mais rend quelques octets de moins (ou de plus) DANS les
++// données PCM d'un sample (mesuré: -1, -3, -77). Le format ne porte aucune
++// marque de synchronisation: la lecture se décale, l'en-tête suivant est lu au
++// mauvais endroit (« sample pitch is wrong », « depth is wrong ») et tout finit
++// en « premature end of file » — le module entier est refusé pour un défaut de
++// quelques octets dans un échantillon.
++//
++// Un en-tête de sample est très contraint (longueur bornée, nom imprimable,
++// débit 0-5, pitch 0-10, volume 0-100, profondeur 8/16), et on exige en plus
++// qu'il ENCHAÎNE: ses données doivent finir là où commence un autre en-tête
++// plausible, ou sur la fin du fichier pour le dernier. On cherche donc le plus
++// proche autour de la position courante. Le prix est un clic dans le sample
++// abîmé, au lieu d'un morceau qui ne joue pas.
++static bool dmfSampleHeaderEnd(const unsigned char* buf, size_t len, size_t pos, int version, size_t* dataEnd) {
++  if (pos+4>len) return false;
++  int length=(int)((unsigned int)buf[pos]|((unsigned int)buf[pos+1]<<8)|((unsigned int)buf[pos+2]<<16)|((unsigned int)buf[pos+3]<<24));
++  if (length<0 || length>(1<<24)) return false;
++  size_t p=pos+4;
++  if (version>0x16) {
++    if (p>=len) return false;
++    size_t nl=buf[p++];
++    if (p+nl>len) return false;
++    for (size_t k=0; k<nl; k++) {
++      if (buf[p+k]<0x20 || buf[p+k]==0x7f) return false;
++    }
++    p+=nl;
++  }
++  if (version>=0x0b) {
++    if (p+3>len) return false;
++    if (buf[p]>5 || buf[p+1]>10 || buf[p+2]>100) return false;
++    p+=3;
++  }
++  if (version>0x15) {
++    if (p>=len) return false;
++    if (buf[p]!=8 && buf[p]!=16) return false;
++    p++;
++  }
++  if (version>=0x1b) p+=8;
++  size_t bytes=(version>=0x0b)?(size_t)length*2:(size_t)length;
++  *dataEnd=p+bytes;
++  return true;
++}
++
++// Plausible ET chaîné: `remaining` en-têtes restent à lire, celui-ci compris.
++static bool dmfSampleHeaderChains(const unsigned char* buf, size_t len, size_t pos, int version, int remaining) {
++  size_t end=0;
++  if (!dmfSampleHeaderEnd(buf,len,pos,version,&end)) return false;
++  if (remaining<=1) {
++    // dernier: les données finissent sur la fin (un octet de queue est
++    // normal), ou un peu au-delà si le fichier a perdu des octets.
++    return end+1>=len ? (end<=len+256) : (len-end<=256);
++  }
++  size_t next=0;
++  if (!dmfSampleHeaderEnd(buf,len,end,version,&next)) return false;
++  return true;
++}
++
+ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
+   SafeReader reader=SafeReader(file,len);
+   warnings="";
+@@ -779,8 +840,8 @@ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
+       if (chan.effectCols>4 || chan.effectCols<1) {
+         logE("invalid effect column count %d. are you sure everything is ok?",chan.effectCols);
+         lastError="file is corrupt or unreadable at effect columns";
+-        delete[] file;
+-        return false;
++        //delete[] file;
++        //return false;
+       }
+       for (int j=0; j<ds.subsong[0]->ordersLen; j++) {
+         DivPattern* pat=chan.getPattern(ds.subsong[0]->orders.ord[i][j],true);
+@@ -920,6 +981,25 @@ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
+     }
+     if (ds.sampleLen>0) ds.sample.reserve(ds.sampleLen);
+     for (int i=0; i<ds.sampleLen; i++) {
++      // REWAMP: voir dmfSampleHeaderChains — un sample abîmé décale la lecture.
++      {
++        const size_t here=reader.tell();
++        const int remaining=ds.sampleLen-i;
++        if (!dmfSampleHeaderChains(file,len,here,ds.version,remaining)) {
++          size_t found=(size_t)-1;
++          for (size_t d=1; d<=512 && found==(size_t)-1; d++) {
++            if (d<=here && dmfSampleHeaderChains(file,len,here-d,ds.version,remaining)) found=here-d;
++            else if (dmfSampleHeaderChains(file,len,here+d,ds.version,remaining)) found=here+d;
++          }
++          if (found==(size_t)-1) {
++            logW("%d: sample header lost (at %x) — keeping the %d sample(s) read so far",i,(unsigned int)here,i);
++            ds.sampleLen=i;
++            break;
++          }
++          logW("%d: sample header resynchronized %+d bytes (damaged sample data before it)",i,(int)((long long)found-(long long)here));
++          reader.seek(found,SEEK_SET);
++        }
++      }
+       DivSample* sample=new DivSample;
+       int length=reader.readI();
+       int cutStart=0;
+@@ -984,7 +1064,19 @@ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
+             length/=2;
+           } else {
+             data=new short[length];
+-            reader.read(data,length*2);
++            // REWAMP: un DERNIER sample tronqué (octets perdus) se complète
++            // par du silence au lieu de lever « premature end of file ».
++            {
++              const size_t want=(size_t)length*2;
++              const size_t avail=reader.size()-reader.tell();
++              if (avail<want) {
++                logW("%d: sample data truncated (%d of %d bytes) — padding with silence",i,(int)avail,(int)want);
++                memset(data,0,want);
++                reader.read(data,avail);
++              } else {
++                reader.read(data,want);
++              }
++            }
+           }
+           
+ #ifdef TA_BIG_ENDIAN
+diff --git a/src/engine/fileOps/fileOpsCommon.cpp b/src/engine/fileOps/fileOpsCommon.cpp
+index 9a6b76940..8017dce42 100644
+--- a/src/engine/fileOps/fileOpsCommon.cpp
++++ b/src/engine/fileOps/fileOpsCommon.cpp
+@@ -72,6 +72,7 @@ bool DivEngine::load(unsigned char* f, size_t slen, const char* nameHint) {
+     }
+ 
+     std::vector<InflateBlock*> blocks;
++    bool inflateEnded=false;
+     while (true) {
+       InflateBlock* ib=new InflateBlock(DIV_READ_SIZE);
+       zl.next_out=ib->buf;
+@@ -79,26 +80,39 @@ bool DivEngine::load(unsigned char* f, size_t slen, const char* nameHint) {
+ 
+       nextErr=inflate(&zl,Z_SYNC_FLUSH);
+       if (nextErr!=Z_OK && nextErr!=Z_STREAM_END) {
+-        if (zl.msg==NULL) {
+-          logD("zlib error: unknown error! %d",nextErr);
+-          lastError="unknown decompression error";
++        // Z_DATA_ERROR at end of input (avail_in==0) with already-decompressed
++        // blocks means the adler32 checksum is wrong but the data is intact.
++        // This is common with slightly corrupted .dmf files — salvage the data.
++        ib->blockSize=ib->len-zl.avail_out;
++        if (nextErr==Z_DATA_ERROR && zl.avail_in==0 && (!blocks.empty() || ib->blockSize>0)) {
++          logD("zlib checksum error — attempting to use decompressed data anyway");
++          if (ib->blockSize>0) blocks.push_back(ib); else delete ib;
++          inflateEnd(&zl);
++          inflateEnded=true;
++          nextErr=Z_STREAM_END;
+         } else {
+-          logD("zlib inflate: %s",zl.msg);
+-          lastError=fmt::sprintf("decompression error: %s",zl.msg);
++          if (zl.msg==NULL) {
++            logD("zlib error: unknown error! %d",nextErr);
++            lastError="unknown decompression error";
++          } else {
++            logD("zlib inflate: %s",zl.msg);
++            lastError=fmt::sprintf("decompression error: %s",zl.msg);
++          }
++          for (InflateBlock* i: blocks) delete i;
++          blocks.clear();
++          delete ib;
++          inflateEnd(&zl);
++          throw NotZlibException(0);
+         }
+-        for (InflateBlock* i: blocks) delete i;
+-        blocks.clear();
+-        delete ib;
+-        inflateEnd(&zl);
+-        throw NotZlibException(0);
++      } else {
++        ib->blockSize=ib->len-zl.avail_out;
++        blocks.push_back(ib);
+       }
+-      ib->blockSize=ib->len-zl.avail_out;
+-      blocks.push_back(ib);
+       if (nextErr==Z_STREAM_END) {
+         break;
+       }
+     }
+-    nextErr=inflateEnd(&zl);
++    if (!inflateEnded) nextErr=inflateEnd(&zl); else nextErr=Z_OK;
+     if (nextErr!=Z_OK) {
+       if (zl.msg==NULL) {
+         logD("zlib end error: unknown error! %d",nextErr);
+diff --git a/src/engine/filePlayer.h b/src/engine/filePlayer.h
+index b3a8b7456..876f5105e 100644
+--- a/src/engine/filePlayer.h
++++ b/src/engine/filePlayer.h
+@@ -22,6 +22,9 @@
+ 
+ #include "../ta-utils.h"
+ #include "../timeutils.h"
++// rewamp: UINT_MAX vient de <climits>. libc++ (Apple) le tire
++// transitivement par un autre en-tête, libstdc++ (Linux) non.
++#include <climits>
+ #include <thread>
+ #include <mutex>
+ #include <condition_variable>
+@@ -30,8 +33,20 @@
+ #include "sfWrapper.h"
+ #else
+ typedef void SNDFILE;
++typedef long long sf_count_t;
+ struct SF_INFO {
+   int invalid;
++  int samplerate;
++  int channels;
++  sf_count_t frames;
++  int seekable;
++};
++enum { SFM_READ = 0x10 };
++inline sf_count_t sf_seek(SNDFILE*, sf_count_t, int) { return -1; }
++inline sf_count_t sf_readf_float(SNDFILE*, float*, sf_count_t) { return 0; }
++struct SFWrapper {
++  SNDFILE* doOpen(const char*, int, SF_INFO*) { return nullptr; }
++  void doClose() {}
+ };
+ #endif
+ 
+diff --git a/src/engine/playback.cpp b/src/engine/playback.cpp
+index 00212700e..190c0e01a 100644
+--- a/src/engine/playback.cpp
++++ b/src/engine/playback.cpp
+@@ -2288,7 +2288,7 @@ bool DivEngine::nextTick(bool noAccum, bool inhibitLowLat) {
+             }
+             // ...and now process the next row!
+             nextRow();
+-            break;
++            //break;
+           }
+         }
+         // under no circumstances shall the accumulator become this large
+diff --git a/src/engine/song.cpp b/src/engine/song.cpp
+index 5eaef6d53..6afc53278 100644
+--- a/src/engine/song.cpp
++++ b/src/engine/song.cpp
+@@ -21,6 +21,7 @@
+ #include "../ta-log.h"
+ #include <inttypes.h>
+ #include <string.h>
++#include <climits>   // rewamp: INT_MAX — non tiré transitivement par libstdc++
+ #include <chrono>
+ 
+ static DivCompatFlags defaultFlags;
+diff --git a/src/fileutils/abstract.cpp b/src/fileutils/abstract.cpp
+index 9670b145e..4ea01fe07 100644
+--- a/src/fileutils/abstract.cpp
++++ b/src/fileutils/abstract.cpp
+@@ -18,6 +18,8 @@
+  */
+ 
+ #include "../fileutils.h"
++#include <errno.h>    // rewamp: errno/ENXIO et memset — l'amont les tient de son
++#include <string.h>   // en-tête précompilé (pch.h), que nous ne compilons pas
+ 
+ size_t TAFile::read(void* ptr, size_t count) {
+   throw ENXIO;
+diff --git a/src/fileutils/cfile.cpp b/src/fileutils/cfile.cpp
+index 13208cd76..86cccc1f6 100644
+--- a/src/fileutils/cfile.cpp
++++ b/src/fileutils/cfile.cpp
+@@ -18,6 +18,8 @@
+  */
+ 
+ #include "../fileutils.h"
++#include <errno.h>    // rewamp: errno/ENXIO et memset — l'amont les tient de son
++#include <string.h>   // en-tête précompilé (pch.h), que nous ne compilons pas
+ 
+ // the only implementation for now
+ class TAFilePOSIX: public TAFile {
+diff --git a/src/log.cpp b/src/log.cpp
+index 8b91813c2..e8d80626f 100644
+--- a/src/log.cpp
++++ b/src/log.cpp
+@@ -75,7 +75,12 @@ void appendLogBuf(const LogEntry& entry) {
+   const char* msg=toWrite.c_str();
+   size_t len=toWrite.size();
+ 
+-  int remaining=(logFilePosO-logFilePosI-1)&TA_LOGFILE_BUF_SIZE;
++  // REWAMP: &MASK, pas &SIZE. La taille est une puissance de deux, donc ce ET
++  // ne pouvait rendre que 0 ou SIZE — soit « place restante nulle » presque
++  // toujours, et le `len>=remaining` juste dessous imprimait « line too long »
++  // pour CHAQUE ligne journalisée (des centaines de printf par ouverture de
++  // module). Les trois lignes suivantes utilisent bien le masque.
++  int remaining=(logFilePosO-logFilePosI-1)&TA_LOGFILE_BUF_MASK;
+ 
+   if (len>=(unsigned int)remaining) {
+     printf("line too long to fit in log buffer!\n");
+@@ -102,13 +107,13 @@ int writeLog(int level, const char* msg, fmt::printf_args args) {
+ #if FMT_VERSION >= 100100
+ #ifdef _MSVC_LANG
+ #if _MSVC_LANG >= 201703L
+-  logEntries[pos].text.assign(fmt::vsprintf(std::basic_string_view(msg),args));
++  logEntries[pos].text.assign(fmt::vsprintf(fmt::basic_string_view<char>(msg),args));
+ #else
+   logEntries[pos].text.assign(fmt::vsprintf(fmt::basic_string_view<char>(msg),args));
+ #endif
+ #else
+ #if __cplusplus >= 201703L
+-  logEntries[pos].text.assign(fmt::vsprintf(std::basic_string_view(msg),args));
++  logEntries[pos].text.assign(fmt::vsprintf(fmt::basic_string_view<char>(msg),args));
+ #else
+   logEntries[pos].text.assign(fmt::vsprintf(fmt::basic_string_view<char>(msg),args));
+ #endif

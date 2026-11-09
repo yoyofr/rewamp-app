@@ -5,6 +5,7 @@ import 'artwork_image.dart';
 import 'l10n.dart';
 import 'local_db.dart';
 import 'play_start.dart';
+import 'sheet_handle.dart';
 import 'shell_insets.dart';
 import 'sync_service.dart';
 import 'competition_screen.dart' show globalOnPlayOnlineSong;
@@ -235,9 +236,8 @@ class _StatsScreenState extends State<StatsScreen> {
     if (!mounted || months.isEmpty) return;
     final years = months.map((m) => m.substring(0, 4)).toSet().toList()
       ..sort((a, b) => b.compareTo(a));
-    final picked = await showModalBottomSheet<_Period>(
+    final picked = await showHandleSheet<_Period>(
       context: context,
-      showDragHandle: true,
       builder: (ctx) {
         final l10n = ctx.l10n;
         return SafeArea(

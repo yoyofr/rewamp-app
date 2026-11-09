@@ -37,6 +37,7 @@ import 'artwork_image.dart' show ArtworkCache;
 import 'folder_picker.dart';
 import 'l10n.dart';
 import 'm3u_info.dart';
+import 'header_tags.dart';
 import 'local_db.dart';
 import 'local_ops.dart';
 import 'uade_info.dart' show isUadePrefixToken;
@@ -427,12 +428,22 @@ Future<void> _registerAll(List<LocalImportPendingTrack> items, LocalImportResult
           .map((e) => e.path)
           .toList();
   LocalOps.instance.phase(LocalOpPhase.registering, total: items.length);
+  // Titre/auteur d'EN-TÊTE (SID, NSF, GBS, SPC, modules, VGM), lus AVANT la
+  // transaction: des entrées/sorties fichier n'ont rien à faire sous le
+  // verrou de la base. Ce qu'un M3U a dit garde la priorité.
+  final headerTags = <String, HeaderTags>{};
+  for (final it in items) {
+    if (it.title != null && it.artist != null) continue;
+    final t = await readHeaderTagsFromFile(it.filePath);
+    if (t != null) headerTags[it.filePath] = t;
+  }
   var registered = 0;
   await LocalDb.instance.runBatchWrites((db) async {
     for (final it in items) {
       LocalOps.instance.progress(registered++);
       try {
         final title = p.basename(it.filePath);
+        final shown = it.title ?? headerTags[it.filePath]?.title ?? title;
         String? artwork;
         try {
           artwork = ArtworkCache.localArtworkFromListing(
@@ -441,8 +452,8 @@ Future<void> _registerAll(List<LocalImportPendingTrack> items, LocalImportResult
         await LocalDb.instance.upsertTrack(
           db:           db,
           filePath:     it.filePath,
-          title:        it.title ?? title,
-          artist:       it.artist,
+          title:        shown,
+          artist:       it.artist ?? headerTags[it.filePath]?.artist,
           metaAlbum:    it.album,
           position:     it.position,
           formatExt:    it.formatExt,
@@ -468,7 +479,7 @@ Future<void> _registerAll(List<LocalImportPendingTrack> items, LocalImportResult
           notify:     false,
           type:       'track',
           refId:      refId,
-          name:       title,
+          name:       shown,
           formatExt:  it.formatExt,
           filename:   title,
           artworkUrl: artwork,
@@ -477,7 +488,7 @@ Future<void> _registerAll(List<LocalImportPendingTrack> items, LocalImportResult
           db:        db,
           refId:     refId,
           value:     true,
-          title:     title,
+          title:     shown,
           formatExt: it.formatExt,
         );
       } catch (e) {

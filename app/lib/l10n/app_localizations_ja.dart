@@ -746,6 +746,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
+  String get engineDescCpc => 'Amstrad CPC — エミュレートした CPC 6128 で実行する .dsk ディスク';
+
+  @override
+  String get engineDescZxSpectrum =>
+      'ZX Spectrum — エミュレートした Spectrum 48K/128K で実行する .tap テープ';
+
+  @override
   String get engineDescSidplayfp => 'Commodore 64 SID（reSIDfp エンジン）';
 
   @override
@@ -794,7 +801,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get engineDescSndh =>
-      'Atari ST .sndh — 実機同等の 68000 エミュレーション + YM2149 + STE DAC';
+      'Atari ST .sndh — 実機同等の 68000 エミュレーション + YM2149 + STE DAC · .ym (YM2–YM6, digidrums, SID)';
 
   @override
   String get engineDescLazyusf =>
@@ -815,6 +822,10 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get engineDescOrganya => 'Cave Story .org — Pixel 純正エンジン';
+
+  @override
+  String get engineDescMinibae =>
+      'Beatnik .rmf — Beatnik Audio Engine、90年代後半のウェブ・ゲーム音楽';
 
   @override
   String get engineDescNtgs =>
@@ -1405,6 +1416,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get queueAutoplayRow => '自動再生で追加';
+
+  @override
+  String get queueRadioRow => 'ラジオで追加';
 
   @override
   String get queueClearConfirmTitle => 'キューを空にしますか？';
@@ -2734,7 +2748,7 @@ class AppLocalizationsJa extends AppLocalizations {
       '一部のフォーマットは複数のエンジンで再生できます。デフォルトで使うエンジンを選んでください。他のフォーマットは自動で振り分けられます。';
 
   @override
-  String get settingsDecoderAmigaTrackers => 'Amiga トラッカー（mod, med, okt…）';
+  String get settingsDecoderAmigaTrackers => 'Amiga モジュール（mod, med, okt…）';
 
   @override
   String get settingsEngineOpenmptSubtitle => 'トラッカー — MOD, XM, S3M, IT…';
@@ -2924,6 +2938,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get settingsNsfQuality => '品質 (nsfplay)';
 
   @override
+  String get settingsNsfFade => '終了時のフェード';
+
+  @override
+  String get settingsNsfFadeHelp =>
+      'ファイルが指定しない場合の曲末尾のフェードアウト（.m3u や NSFe は独自に指定可能）。曲の長さに含まれます。オフ = 即停止。';
+
+  @override
   String get settingsLowpassFilter => 'ローパスフィルタ';
 
   @override
@@ -3036,6 +3057,50 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get settingsGbsHpFilter => 'ハイパスフィルタ (gbsplay)';
+
+  @override
+  String get settingsEnginePsgplaySubtitle =>
+      'Atari ST / SNDH — YM2149 のチャンネルミックス';
+
+  @override
+  String get settingsPsgMix => 'PSG チャンネルミックス';
+
+  @override
+  String get settingsPsgMixEmpiric => '実測(Atari ST)';
+
+  @override
+  String get settingsPsgMixLinear => 'リニア';
+
+  @override
+  String get settingsPsgMixStereo => 'ステレオ';
+
+  @override
+  String get settingsPsgMixEmpiricHint =>
+      '実機の Atari ST と同じように 3 チャンネルをミックス(実測レベル):ざらついた音、モノラル。';
+
+  @override
+  String get settingsPsgMixLinearHint => '3 チャンネルの単純な合計:よりクリーンな音、モノラル。';
+
+  @override
+  String get settingsPsgMixStereoHint => 'リニアミックスで、各チャンネルを左右の間に配置。';
+
+  @override
+  String settingsPsgPanVoice(String voice) {
+    return 'チャンネル $voice';
+  }
+
+  @override
+  String get settingsPsgPanCentre => '中央';
+
+  @override
+  String settingsPsgPanLeft(int percent) {
+    return '左 $percent %';
+  }
+
+  @override
+  String settingsPsgPanRight(int percent) {
+    return '右 $percent %';
+  }
 
   @override
   String get settingsGbsFilterDmg => 'DMG（クラシック GB）';
@@ -4216,53 +4281,6 @@ class AppLocalizationsJa extends AppLocalizations {
   String get releaseNotesTitle => '新着情報';
 
   @override
-  String get releaseNotesV10Loading =>
-      '読み込みの遅い曲でもアプリが固まらなくなりました。再生/一時停止の周りの細いリングが読み込み中であることを示します。';
-
-  @override
-  String get releaseNotesV10Piano => 'ピアノ表示：同時に鳴る声部や楽器が多い曲は、より多くの鍵盤に振り分けられます。';
-
-  @override
-  String get releaseNotesV10Amiga =>
-      'Amiga：StoneTracker、SUNtronic（TSMリップ）、さらに多くの Soundtracker 2.6 モジュールが再生できるようになり、SoundPlayer の曲も iOS で鳴ります。';
-
-  @override
-  String get releaseNotesV10ZxSpectrum =>
-      'ZX Spectrum：zxart の .mt3 ファイルが再生でき、Linux では ZXTune 形式と SAM Coupé の .cop プログラムも使えます。';
-
-  @override
-  String get releaseNotesV10OpenWith =>
-      'macOS と iOS：対応するすべての形式が「このアプリケーションで開く」に表示されるようになりました。';
-
-  @override
-  String get releaseNotesV10MtcCrash =>
-      '修正：PT3 と TFM または PSG を組み合わせた一部の .mtc ファイルでアプリが終了していました。';
-
-  @override
-  String get releaseNotesV10Podiums =>
-      '新しい「表彰台」ブラウザー：デモシーンのコンペ入賞作をパーティー・年・部門別に、殿堂入りランキングとともに。';
-
-  @override
-  String get releaseNotesV10Arcade =>
-      'アーケード：Ensoniq ES5505/ES5506 の音楽（タイトー F3 など）が再生でき、Apple IIGS の VGM でアプリが終了しなくなり、エンジンも最新に（FM-Kingtracker .fmk を追加）。';
-
-  @override
-  String get releaseNotesV10InfoPanel =>
-      '情報パネル：フォーマット・エンジン・チャンネル・ループ位置を先頭に表示し、項目名を強調。';
-
-  @override
-  String get releaseNotesV10LocalAlbums =>
-      'アルバム画面とサブソング画面にコレクションを表示。ドロップしたアーカイブは全トラックを表示し、「ローカル」と表示され、差し替え後に二重表示されなくなりました。';
-
-  @override
-  String get releaseNotesV10Crossfade =>
-      '修正：クロスフェード有効時、フェードより短いトラックが聞こえませんでした。';
-
-  @override
-  String get releaseNotesV10Artwork =>
-      '修正：サーバーで差し替えたアートワークが「ファイルを再ダウンロード」後にどこでも表示されます。';
-
-  @override
   String get releaseNotesDataReset =>
       'このバージョンのためにローカルデータを初期化しました。ライブラリとプレイリストはアカウントから再構築されます。ダウンロードはやり直しです。';
 
@@ -4704,8 +4722,15 @@ class AppLocalizationsJa extends AppLocalizations {
   String get settingsMidiSynthOpl3 => 'OPL3 FM（AdLib / Sound Blaster）';
 
   @override
+  String get settingsMidiSynthOpn2 => 'OPN2 FM（Mega Drive / Genesis）';
+
+  @override
   String get settingsEngineAdlmidiSubtitle =>
       'エミュレートされたOPL3チップでMIDIとDOSゲーム音楽を再生';
+
+  @override
+  String get settingsEngineOpnmidiSubtitle =>
+      'エミュレートされたOPN2 / OPNAチップでMIDIを再生（メガドライブ、PC-98）';
 
   @override
   String get settingsAdlBank => '音色バンク';
@@ -4728,4 +4753,438 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get engineDescAdlmidi =>
       'エミュレートされたOPL3チップでMIDI・XMI・DMX MUS・HMI/HMP（AdLib / Sound Blaster）';
+
+  @override
+  String get engineDescOpnmidi => 'エミュレートされたOPN2（メガドライブ）またはOPNA（PC-98）チップでMIDI';
+
+  @override
+  String get fmBanksBuiltIn => '内蔵';
+
+  @override
+  String get fmBanksImported => 'インポート済み';
+
+  @override
+  String get fmBanksFilterHint => '名前で絞り込み';
+
+  @override
+  String get fmBanksNoMatch => '一致するバンクはありません';
+
+  @override
+  String get fmBanksImportedEmpty =>
+      'インポートしたバンクはまだありません。.wopl または .wopn ファイルをウィンドウにドロップするか、Rewamp で開くか、ここからインポートしてください。';
+
+  @override
+  String fmBankImported(String name, String engine) {
+    return 'バンク「$name」をインポートし、$engine に設定しました';
+  }
+
+  @override
+  String fmBankImportInvalid(String name) {
+    return '「$name」は WOPL / WOPN バンクではありません';
+  }
+
+  @override
+  String fmBankDeleteConfirm(String name) {
+    return 'バンク「$name」を削除しますか？';
+  }
+
+  @override
+  String get fmBanksImportTile => 'バンクをインポート…';
+
+  @override
+  String fmBanksImportSubtitle(String ext) {
+    return '$ext ファイル（Wohlstand のバンクエディタやコレクションのもの）。判定はファイルのヘッダーで行います。インポートしたバンクはバンク一覧から削除できます。';
+  }
+
+  @override
+  String get fmEmuAccuracyVeryHigh => '非常に忠実';
+
+  @override
+  String get fmEmuAccuracyGood => '忠実';
+
+  @override
+  String get fmEmuAccuracyApproximate => '近似';
+
+  @override
+  String get fmEmuCpuLight => '高速';
+
+  @override
+  String get fmEmuCpuMedium => 'CPU負荷 中';
+
+  @override
+  String get fmEmuCpuHeavy => 'CPU負荷 高';
+
+  @override
+  String settingsDefaultFor(String format) {
+    return '$format の既定のプレーヤー';
+  }
+
+  @override
+  String get settingsDefaultForActive => 'このエンジンがこの形式を再生します';
+
+  @override
+  String settingsDefaultForSet(String section) {
+    return 'タップするとこの形式をこのエンジンで再生します（すべての選択肢は「$section」にもあります）';
+  }
+
+  @override
+  String get settingsDecoderDosMidi => 'DOSゲームのMIDI（XMI、MUS、HMI…）';
+
+  @override
+  String get playWithTitle => '再生エンジンを選ぶ…';
+
+  @override
+  String playWithAuto(String engine) {
+    return '自動（$engine）';
+  }
+
+  @override
+  String get playWithPlayingNow => '再生中';
+
+  @override
+  String get playWithRemember => 'この選択を記憶する';
+
+  @override
+  String get playWithRememberOn => 'このファイル（またはアルバム）を再生するたびに';
+
+  @override
+  String get playWithRememberOff => '今回の再生のみ';
+
+  @override
+  String get playWithScopeFile => 'このファイル';
+
+  @override
+  String get playWithScopeAlbum => 'アルバム全体';
+
+  @override
+  String get playWithApply => '再生';
+
+  @override
+  String playWithCurrent(String engine) {
+    return 'エンジン：$engine';
+  }
+
+  @override
+  String get settingsForgetPlayWith => '「再生エンジンを選ぶ」の選択を消去';
+
+  @override
+  String settingsForgetPlayWithSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '記憶された選択：$count 件',
+      zero: '記憶された選択はありません',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsForgetPlayWithBody =>
+      'ファイルやアルバムに記憶したもの（エンジン、バンク、SoundFont、モデル）をすべて消去します。既定の設定で再生されるようになります。';
+
+  @override
+  String get playWithBank => '音色バンク';
+
+  @override
+  String playWithBankDefault(String name) {
+    return '設定のバンク（$name）';
+  }
+
+  @override
+  String get fmBankInUseTitle => '使用中のバンク';
+
+  @override
+  String fmBankInUseIntro(String name) {
+    return '「$name」は次に選ばれています：';
+  }
+
+  @override
+  String fmBankInUseFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 個のファイル',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fmBankInUseAlbums(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 枚のアルバム',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fmBankInUseOutro => 'これらはエンジン設定のバンクで再生されるようになります。それでも削除しますか？';
+
+  @override
+  String playWithSoundfontDefault(String name) {
+    return '設定の SoundFont（$name）';
+  }
+
+  @override
+  String playWithMt32Default(String model) {
+    return '設定：$model';
+  }
+
+  @override
+  String get playWithOptionSetting => '設定';
+
+  @override
+  String get soundfontInUseTitle => '使用中の SoundFont';
+
+  @override
+  String get soundfontInUseOutro =>
+      'これらは設定の SoundFont で再生されるようになります。それでも削除しますか？';
+
+  @override
+  String get playWithTitleAlbum => 'アルバムを次で再生…';
+
+  @override
+  String get playWithSave => '保存';
+
+  @override
+  String get shortcutsTitle => 'キーボードショートカット';
+
+  @override
+  String get shortcutsSubtitle => '再生、ビジュアライザー、ウィンドウのキー';
+
+  @override
+  String get shortcutsHint =>
+      'テキスト欄にフォーカスがある間、単独のキーは無視されます。ビジュアライザーのキーは表示中のみ有効です。';
+
+  @override
+  String get shortcutsGroupTransport => '再生';
+
+  @override
+  String get shortcutsGroupVisualizer => 'ビジュアライザー';
+
+  @override
+  String get shortcutsGroupWindow => 'ウィンドウとナビゲーション';
+
+  @override
+  String get shortcutsKeySpace => 'スペース';
+
+  @override
+  String get shortcutsKeyEscape => 'Esc';
+
+  @override
+  String get shortcutPlayPause => '再生 / 一時停止';
+
+  @override
+  String get shortcutPrevTrack => '前のトラック';
+
+  @override
+  String get shortcutNextTrack => '次のトラック';
+
+  @override
+  String get shortcutSeekBack10 => '10 秒戻る';
+
+  @override
+  String get shortcutSeekForward10 => '10 秒進む';
+
+  @override
+  String get shortcutSeekBack60 => '1 分戻る';
+
+  @override
+  String get shortcutSeekForward60 => '1 分進む';
+
+  @override
+  String get shortcutSeekPercent => 'トラックの 0 %…90 % へ移動';
+
+  @override
+  String get shortcutRepeat => 'リピートモード';
+
+  @override
+  String get shortcutShuffle => 'シャッフル';
+
+  @override
+  String get shortcutFavorite => 'お気に入り';
+
+  @override
+  String get shortcutSpeedDown => '遅く';
+
+  @override
+  String get shortcutSpeedUp => '速く';
+
+  @override
+  String get shortcutSpeedReset => '通常速度';
+
+  @override
+  String get shortcutVizNext => '次のビジュアライザー';
+
+  @override
+  String get shortcutVizPrev => '前のビジュアライザー';
+
+  @override
+  String get shortcutVizControls => 'ビジュアライザーの操作を表示';
+
+  @override
+  String get shortcutPmNext => 'projectM: 次のプリセット';
+
+  @override
+  String get shortcutPmPrev => 'projectM: 前のプリセット';
+
+  @override
+  String get shortcutPmLock => 'projectM: プリセットをロック';
+
+  @override
+  String get shortcutPmRandom => 'projectM: ランダム順';
+
+  @override
+  String get shortcutPmPicker => 'projectM: プリセット一覧';
+
+  @override
+  String get shortcutMiniWindow => 'ミニプレーヤー';
+
+  @override
+  String get shortcutMiniViz => 'ビジュアライザー付きミニプレーヤー';
+
+  @override
+  String get shortcutAlwaysOnTop => '常に最前面';
+
+  @override
+  String get shortcutPlayer => 'プレーヤーを開く / 閉じる';
+
+  @override
+  String get shortcutEscape => '最前面のパネルを閉じる';
+
+  @override
+  String get shortcutQueue => 'キューパネル';
+
+  @override
+  String get shortcutSearch => '検索';
+
+  @override
+  String get shortcutTabs => 'タブ（サイドバーの順）';
+
+  @override
+  String get shortcutOpenFiles => 'ファイルを開く…';
+
+  @override
+  String get shortcutLinkFolder => 'フォルダをリンク…';
+
+  @override
+  String get shortcutInfo => 'トラック情報';
+
+  @override
+  String get shortcutSettings => '設定';
+
+  @override
+  String get shortcutFullscreen => '全画面';
+
+  @override
+  String get shortcutHelp => 'この一覧';
+
+  @override
+  String get navHelp => 'ヘルプ';
+
+  @override
+  String get helpTitle => 'ヘルプ';
+
+  @override
+  String get helpDocsTitle => 'オンラインドキュメント';
+
+  @override
+  String get helpDocsSubtitle => 'rewamp.app のスクリーンショット付きガイド（英語）';
+
+  @override
+  String get sleepTimerTitle => 'スリープタイマー';
+
+  @override
+  String get sleepTimerExplain => '選んだ時間が過ぎると再生を一時停止します。最後の30秒でフェードアウトします。';
+
+  @override
+  String sleepTimerMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count分',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sleepTimerRemainingMinutes(int count) {
+    return '$count分';
+  }
+
+  @override
+  String sleepTimerRemainingSeconds(int count) {
+    return '$count秒';
+  }
+
+  @override
+  String sleepTimerActiveRemaining(String time) {
+    return '残り: $time';
+  }
+
+  @override
+  String get sleepTimerOff => 'オフにする';
+
+  @override
+  String get sleepTimerEnded => 'スリープタイマー終了 — 再生を一時停止しました';
+
+  @override
+  String get sleepTimerNothingToPlay => '最近再生した曲がありません';
+
+  @override
+  String get releaseNotesV11Autoplay =>
+      '自動再生（∞）：キューが終わると、関連する曲（同じアーティスト、グループ、コレクション）で再生が続きます。';
+
+  @override
+  String get releaseNotesV11LinkedFolders =>
+      'リンクしたフォルダー：ファイルをコピーせず、その場所のまま再生できます。デスクトップのフォルダー、iOSの「ファイル」アプリとiCloud、Androidの任意のフォルダーに対応。';
+
+  @override
+  String get releaseNotesV11PlayWith =>
+      '「再生エンジンを選ぶ…」：ファイルやアルバムごとにエンジン、SoundFont、MT-32モデル、FMバンクを選べます（独自のWOPL/WOPNバンクも読み込めます）。';
+
+  @override
+  String get releaseNotesV11NewEngines =>
+      '新しいエンジン：OPL3（libADLMIDI）とOPN2/OPNA（libOPNMIDI）によるMIDI、Beatnik .rmf、エミュレートしたマシンで動くZX Spectrumの.tapテープとAmstrad CPCの.dskディスク、UnExoticA Mark II。';
+
+  @override
+  String get releaseNotesV11EngineUpdates =>
+      'エンジンを更新：Namco WSGチップ対応のVGM 1.72、Furnace、AtariAudio 1.27（.ymの既定に）、Amigaモジュールにlibxmpを選択可能、VGMの終わりのフェードを調整可能。';
+
+  @override
+  String get releaseNotesV11Sleep =>
+      'スリープタイマー：時間を選ぶと音楽がフェードアウトして止まります。空のキューは自動で埋まります。';
+
+  @override
+  String get releaseNotesV11Desktop =>
+      'デスクトップ：キーボードショートカット（?で一覧）、オンラインドキュメントへのリンクを含むヘルプタブ、コマンドライン（rewamp --mini --play …）、アプリは常に1つだけ起動。';
+
+  @override
+  String get releaseNotesV11ArtistSync =>
+      'ライブラリのアーティストがアカウントと同期され、アートワークも表示されます。';
+
+  @override
+  String get releaseNotesV11PlayNext =>
+      '曲を長押し：今すぐ、次に、最後に再生。「すべて再生」「ラジオ」「サプライズ」の横に「…」メニュー。';
+
+  @override
+  String get releaseNotesV11Composers =>
+      'すべてのアルバム画面とサブソング画面で作曲者をタップできます。読み込んだファイルからタイトルと作者を読み取ります。';
+
+  @override
+  String get releaseNotesV11Hindi =>
+      'ヒンディー語に対応（19言語）。右から左に書く言語にもインターフェースが対応しました。';
+
+  @override
+  String get releaseNotesV11Loops =>
+      '再生中に無限ループをオンにすると、曲は自身のループポイントで続き、ループのない曲は最初から再生されます。';
+
+  @override
+  String get releaseNotesV11Visualizers =>
+      'ビジュアライザー：オシロスコープは最大64ボイス、MIDIのドラム楽器ごとに色分け、2SFファイルの音符、FMバンクの楽器名。';
+
+  @override
+  String get releaseNotesV11Fixes =>
+      '修正：一部のSSFファイルが拒否される問題、無音のWonderSwanリップ、複数のアーカイブに分かれたアルバムが不完全になる問題、プレーヤーを閉じた後のprojectMプリセット。';
 }

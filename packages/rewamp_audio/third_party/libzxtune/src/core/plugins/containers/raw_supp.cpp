@@ -10,6 +10,8 @@
 
 //local includes
 #include "container_supp_common.h"
+// rewamp: libc++ ne fournit plus cet en-tete en transitif (vu sous Emscripten).
+#include <ctime>  // std::clock_t
 #include <core/src/callback.h>
 #include <core/plugins/enumerator.h>
 #include <core/plugins/registrator.h>

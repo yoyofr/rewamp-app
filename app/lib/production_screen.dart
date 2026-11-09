@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show Random;
 
 import 'package:flutter/material.dart';
 
@@ -10,6 +11,7 @@ import 'note_markdown.dart' show openExternalLink;
 import 'player_controller.dart';
 import 'rewamp_db.dart';
 import 'play_start.dart';
+import 'radio_surprise_buttons.dart';
 import 'track_options_sheet.dart';
 import 'video_screen.dart';
 import 'scrolling_text.dart';
@@ -162,6 +164,20 @@ class _ProductionScreenState extends State<ProductionScreen> {
     await play(context, List.of(tracks), startIndex: idx);
   }
 
+  Future<void> _playShuffled() async {
+    final tracks = _tracks;
+    final play = _playAlbum;
+    if (tracks == null || tracks.isEmpty || play == null) return;
+    await play(context, List.of(tracks)..shuffle(Random()));
+  }
+
+  Future<void> _playSurprise() async {
+    final tracks = _tracks;
+    final play = _playAlbum;
+    if (tracks == null || tracks.isEmpty || play == null) return;
+    await play(context, [tracks[Random().nextInt(tracks.length)]]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -199,16 +215,20 @@ class _ProductionScreenState extends State<ProductionScreen> {
                     if (_tracks!.isNotEmpty && idx == leading - 1) {
                       return Padding(
                         padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 4),
+                        // La rangée standard des écrans de résultats: tout
+                        // lire / radio / surprise. Radio = les morceaux de la
+                        // production MÉLANGÉS (pas de station serveur pour
+                        // une production), surprise = UN morceau au hasard.
                         child: Row(children: [
-                          FilledButton.icon(
-                            onPressed:
-                                _tracks!.isEmpty ? null : () => _playFrom(null),
-                            icon: const Icon(Icons.play_arrow),
-                            label: Text(l10n.commonPlayAll),
+                          Expanded(
+                            child: Text(l10n.playlistTrackCount(_tracks!.length),
+                                style: TextStyle(color: cs.onSurfaceVariant)),
                           ),
-                          const Spacer(),
-                          Text(l10n.playlistTrackCount(_tracks!.length),
-                              style: TextStyle(color: cs.onSurfaceVariant)),
+                          RadioSurpriseButtons(
+                            onPlayAll: () => _playFrom(null),
+                            onRadio: _playShuffled,
+                            onSurprise: _playSurprise,
+                          ),
                         ]),
                       );
                     }

@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'competition_screen.dart' show podiumColor;
 import 'l10n.dart';
 import 'rewamp_db.dart' show CompoPodium, FacetCount, PodiumCriteria;
+import 'sheet_handle.dart';
 
 // ---------------------------------------------------------------------------
 // Dimensions d'un podium (mig serveur 285, navigateur « Podiums »): nature,
@@ -194,9 +195,8 @@ Future<int?> showPodiumPicker(BuildContext context,
   // isScrollControlled: sans lui une feuille modale est plafonnée à ~9/16 de
   // l'écran, et les cinq lignes débordaient d'une fenêtre basse (221 px sur
   // macOS). Le défilement couvre les écrans vraiment courts.
-  return showModalBottomSheet<int>(
+  return showHandleSheet<int>(
     context: context,
-    showDragHandle: true,
     isScrollControlled: true,
     builder: (ctx) => SafeArea(
       child: SingleChildScrollView(

@@ -21,16 +21,18 @@ without regenerating turns the suite red.)
 See [LICENSING.md](LICENSING.md) for how these licences combine,
 and for the two that constrain what may be redistributed.
 
-## Playback engines (46)
+## Playback engines (50)
 
-1254 file extensions across all of them.
+1260 file extensions across all of them.
 
 | Engine | Licence | Authors | Role |
 | --- | --- | --- | --- |
 | [AdPlug + libbinio](https://adplug.github.io/) | LGPL-2.1 | Simon Peter et al. | AdLib OPL2/OPL3 (.d00/.hsc/.cmf/.a2m/.rol/…) |
 | [ASAP](https://asap.sourceforge.net/) | GPL-2.0 | Piotr Fusik | Atari 8-bit POKEY (.sap/.rmt/.cmc/.tmc/…) |
-| [AtariAudio (Arnaud Carré)](https://github.com/arnaud-carre/sndh-player) | aucune licence explicite ; Musashi MIT | Arnaud Carré (Leonard/Oxygene) | Atari ST .sndh — vraie émulation 68000 + YM2149 + DAC STE |
+| [AtariAudio (Arnaud Carré)](https://github.com/arnaud-carre/AtariAudio) | MIT (AtariAudio 1.27, Musashi compris) | Arnaud Carré (Leonard/Oxygene) | Atari ST .sndh — vraie émulation 68000 + YM2149 + DAC et blitter STE; .ym (YM2 à YM6, digimix, YM Tracker) avec les effets Atari |
 | [beetle-wswan (Mednafen)](https://github.com/libretro/beetle-wswan-libretro) | GPL-2.0+ ; Blip_Buffer LGPL-2.1+ | Mednafen team (Ryphecha) ; portage libretro ; Blip_Buffer : Shay Green | WonderSwan .wsr — émulation NEC V30MZ |
+| [chips (CPC 6128)](https://github.com/floooh/chips) | zlib | Andre Weissflog | Amstrad CPC — disquettes .dsk lancées sur un CPC 6128 émulé |
+| [chips (ZX Spectrum)](https://github.com/floooh/chips) | zlib | Andre Weissflog | ZX Spectrum — cassettes .tap lancées sur un Spectrum 48K/128K émulé |
 | [eupmini](https://github.com/gzaffin/eupmini) | GPL-2.0 (+ mame / Nuked-OPN2) | eupmini : Giuseppe Zaffin (gzaffin) | FM Towns EUPHONY — YM2612 + PCM (.eup) |
 | [FluidLite + TinyMidiLoader](https://github.com/divideconcept/FluidLite) | LGPL-2.1 (FluidLite) / MIT (tml.h) | Robin Lobel (FluidLite) ; Bernhard Schelling (tml.h) | MIDI standard + SoundFont (.mid/.midi/.kar/.rmi) |
 | [FMP (98fmplayer)](https://github.com/myon98/98fmplayer) | BSD-2-Clause (98fmplayer) | あぼ (Abo) ; 98fmplayer : myon98 | PC-98 FMP — OPNA + PPZ8 (.opi/.ovi/.ozi) |
@@ -46,6 +48,7 @@ and for the two that constrain what may be redistributed.
 | [libkss](https://github.com/digital-sound-antiques/libkss) | ISC (kss-drivers non couverts) | Mitsutaka Okazaki | Chiptunes MSX (KSS/MGS/BGM/MPK/MBM/OPX) |
 | [libLazyusf (Mupen64plus)](https://github.com/losnoco/Cog) | GPL-2.0 | Chris Moeller (kode54) ; Mupen64Plus team | Nintendo 64 .usf — émulation R4300 + RSP audio |
 | [libopenmpt](https://lib.openmpt.org/libopenmpt/) | BSD-3-Clause | OpenMPT team | Modules tracker (MOD/XM/S3M/IT/…) |
+| [libOPNMIDI](https://github.com/Wohlstand/libOPNMIDI) | GPL-3.0-or-later (cœur) · émulateurs LGPL-2.1+ / GPL-2.0+ / BSD · séquenceur et WOPN MIT · banques MIT / BSD-3 | Vitaliy Novichkov (Wohlstand) et al. | MIDI sur une puce OPN2 (Mega Drive) ou OPNA (PC-98) émulée |
 | [libpt3 (ayumi)](https://github.com/true-grue/ayumi) | ayumi MIT ; libpt3 sans licence explicite | Peter Sovietov (ayumi) | ZX Spectrum .pt3 — vrai synthé AY-3-8910/YM2149 |
 | [libsidplayfp](https://github.com/libsidplayfp/libsidplayfp) | GPL-2.0 | Leandro Nini ; reSIDfp : Dag Lem, Antti Lankila | Commodore 64 SID (moteur reSIDfp) |
 | [libvgm](https://github.com/ValleyBell/libvgm) | GPL-2.0 | ValleyBell | VGM/S98/GYM/DRO — puces sonores, scope par canal |
@@ -54,6 +57,7 @@ and for the two that constrain what may be redistributed.
 | [miniaudio](https://miniaud.io/) | MIT-0 / domaine public | David Reid | PCM/MP3/FLAC/OGG — décodeur de repli |
 | [Monkey's Audio (MACLib)](https://monkeysaudio.com/) | propriétaire (source dispo) | Matthew T. Ashland | Lossless .ape |
 | [munt mt32emu](https://github.com/munt/munt) | LGPL-2.1 | Dean Beeler, Jerome Fisher, Sergey V. Mikayev | Émulation Roland MT-32 / CM-32L pour le MIDI (.mid/.midi/.kar/.rmi) |
+| [NeoBAE (Beatnik)](https://github.com/zefie/NeoBAE) | BSD-3 (Beatnik) ; modifications LGPL-3.0+ (zefie) ; minimp3 CC0 ; adpcm-xq BSD-3 | Beatnik, Inc. ; fork NeoBAE : zefie | Beatnik .rmf — Beatnik Audio Engine |
 | [NEZplug++](https://bitbucket.org/wothke/webnez/src/master/) | PDS (domaine public) | Mamiya ; portage webNEZ : Jürgen Wothke | PC-Engine HES + Sega SGC (SN76489/YM2413) |
 | [NoiseTracker GS](https://www.whatisthe2gs.apple2.org.za/noisetracker/index.html) | GPL-3.0-or-later (lecteur Rewamp) | Format: Olivier Goguel · FTA (1991-92) · lecteur Rewamp | Apple IIGS (Ensoniq 5503) — modules NoiseTracker GS |
 | [NSFPlay (libnsfplay)](https://github.com/bbbradsmith/nsfplay) | réutilisation libre, sans licence formelle | Brad Smith, Brezza | NES NSF/NSFe — voix par canal |
@@ -74,7 +78,7 @@ and for the two that constrain what may be redistributed.
 | [vio2sf (Cog / melonDS)](https://github.com/losnoco/Cog) | GPL-3.0 | Chris Moeller (kode54) ; melonDS : Arisotura | Nintendo DS .2sf/.mini2sf |
 | [ZXTune](https://zxtune.bitbucket.io/) | GPL-3.0 | Vitamin/CAIG | ZX Spectrum / AY (.ay/.vtx/.pt3/.stc/…) + .chp |
 
-## Bundled components (23)
+## Bundled components (25)
 
 Everything the binary redistributes that is not a decoder:
 archive handling, the visualizer, fonts, shaders, data sets.
@@ -96,6 +100,8 @@ archive handling, the visualizer, fonts, shaders, data sets.
 | [Milkwave (motifs de transition)](https://github.com/IkeC/Milkwave) | BSD-3-Clause | Milkwave (fork de BeatDrop) |
 | [projectM](https://github.com/projectM-visualizer/projectm) | LGPL-2.1 | projectM team |
 | [ProWizard (libxmp)](https://xmp.sourceforge.net/) | MIT | Claudio Matsuoka ; ProWizard : Sylvain 'Asle' Chipaux |
+| [ROM Amstrad CPC 6128 (OS, BASIC, AMSDOS)](https://github.com/maziac/DeZog/blob/main/documentation/amstrad-rom-permissions.txt) | © 1985 Amstrad / Locomotive Software. Amstrad a gracieusement autorisé la redistribution de son code sous copyright, dont il conserve la propriété | Amstrad Consumer Electronics, Locomotive Software |
+| [ROM ZX Spectrum (48K, 128K)](https://github.com/maziac/DeZog/blob/main/documentation/amstrad-rom-permissions.txt) | © Amstrad (droits Sinclair Research). Amstrad a gracieusement autorisé la redistribution de son code sous copyright, dont il conserve la propriété | Sinclair Research, Amstrad |
 | [ScummVM (table MT-32 → General MIDI)](https://github.com/scummvm/scummvm) | GPL-2.0-or-later | ScummVM team |
 | [stb_truetype (rastérisation)](https://github.com/nothings/stb) | domaine public / MIT | Sean Barrett |
 | [StoneTracker (stonepacker.library)](https://aminet.net/package/mus/edit/stonefree1) | gratuiciel, redistribution libre avec son readme | Michael Lavaire, Emmanuel Marty |

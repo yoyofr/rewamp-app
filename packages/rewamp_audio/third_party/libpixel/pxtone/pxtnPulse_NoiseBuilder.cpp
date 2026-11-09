@@ -75,6 +75,9 @@ void _set_ocsillator( _OSCILLATOR *p_to, pxNOISEDESIGN_OSCILLATOR *p_from, int32
 	// offset
 	if( p_to->ran_type != _RANDOM_None ) p_to->offset = 0;
 	else                                 p_to->offset = (double) _smp_num * ( p_from->offset / 100 );
+	// rewamp: an offset of 100 % lands ON the table's end (index _smp_num,
+	// one past it): wrap to 0, the same phase.
+	if( p_to->offset >= _smp_num ) p_to->offset = 0;
 
 	p_to->volume     = p_from->volume / 100;
 	p_to->p_smp      = p_tbl;
@@ -82,6 +85,7 @@ void _set_ocsillator( _OSCILLATOR *p_to, pxNOISEDESIGN_OSCILLATOR *p_from, int32
 
 	p_to->rdm_start  = 0;
 	p_to->rdm_index  = (int32_t)( (double)(_smp_num_rand) * ( p_from->offset / 100 ) );
+	if( p_to->rdm_index >= _smp_num_rand ) p_to->rdm_index = 0; // rewamp: idem
 	p = p_tbl_rand;
 	p_to->rdm_margin = p[ p_to->rdm_index ];
 
@@ -90,7 +94,9 @@ void _set_ocsillator( _OSCILLATOR *p_to, pxNOISEDESIGN_OSCILLATOR *p_from, int32
 void _incriment( _OSCILLATOR *p_osc, double incriment, const short *p_tbl_rand )
 {
 	p_osc->offset += incriment;
-	if( p_osc->offset > _smp_num )
+	// rewamp: >=, not > (an offset of exactly _smp_num was read as index
+	// _smp_num, one past the table: heap overread, seen under ASan).
+	if( p_osc->offset >= _smp_num )
 	{
 		p_osc->offset     -= _smp_num;
 		if( p_osc->offset >= _smp_num ) p_osc->offset = 0;

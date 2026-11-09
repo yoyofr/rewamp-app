@@ -13,7 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'portable_path.dart';
 
-import 'artwork_image.dart' show ArtworkCache, RailArtwork;
+import 'artwork_image.dart' show ArtworkCache, ArtworkImage, RailArtwork;
 import 'cancel_field.dart';
 import 'l10n.dart';
 import 'formats.dart';
@@ -195,12 +195,25 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
   /// s'affiche tout de suite, les vignettes arrivent ensuite, et un dossier
   /// sans image garde son icône. Vaut aussi pour les téléchargements, dont
   /// le dossier d'album porte son `artwork.jpg`.
+  ///
+  /// Sans image sur le disque qui vaille pour le DOSSIER, la pochette que
+  /// toutes ses pistes partagent en base: un album téléchargé n'a souvent
+  /// QUE des pochettes de piste (`<piste>.jpg`, posées quand le morceau a été
+  /// joué hors de l'écran d'album), que la règle de dossier écarte à raison —
+  /// ou rien du tout (pochette dans le cache). Une seule url pour tout le
+  /// sous-arbre, sinon rien: deux pochettes différentes = on ne devine pas.
   Future<void> _loadFolderArt() async {
     final names = <String>{};
-    for (final (rel, _) in _subtree) {
+    final urls = <String, Set<String?>>{};
+    for (final (rel, t) in _subtree) {
       final rest = rel.substring(widget.prefix.length);
       final slash = rest.indexOf('/');
-      if (slash > 0) names.add(rest.substring(0, slash));
+      if (slash > 0) {
+        final n = rest.substring(0, slash);
+        names.add(n);
+        final u = t.artworkUrl;
+        (urls[n] ??= {}).add(u == null || u.isEmpty ? null : u);
+      }
     }
     final root = await _rootPath();
     final art = <String, String>{};
@@ -209,7 +222,12 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
         ArtworkCache.instance
             .findFolderArtwork(p.join(joinPortable(root, widget.prefix), n))
             .then((a) {
-          if (a != null) art[n] = a;
+          final shared = urls[n];
+          if (a != null) {
+            art[n] = a;
+          } else if (shared != null && shared.length == 1 && shared.first != null) {
+            art[n] = shared.first!;
+          }
         }),
     ]);
     if (!mounted || mapEquals(art, _folderArt)) return;
@@ -230,15 +248,19 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
-            child: Image.file(
-              File(art),
-              width: 40,
-              height: 40,
-              fit: BoxFit.cover,
-              cacheWidth: 120,
-              gaplessPlayback: true,
-              errorBuilder: (_, __, ___) => icon,
-            ),
+            // An image on disk, or the tracks' shared cover (an url, or a
+            // local path that ArtworkImage checks).
+            child: art.startsWith('http')
+                ? ArtworkImage(url: art, size: 40, placeholder: icon)
+                : Image.file(
+                    File(art),
+                    width: 40,
+                    height: 40,
+                    fit: BoxFit.cover,
+                    cacheWidth: 120,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, __, ___) => icon,
+                  ),
           ),
           Positioned(
             right: -4,
@@ -784,15 +806,9 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.play_arrow, size: 21),
-                  tooltip: l10n.browsePlayAll,
-                  visualDensity: VisualDensity.compact,
-                  onPressed:
-                      displayed.isEmpty ? null : () => _playAll(displayed),
-                ),
-                const SizedBox(width: 8),
                 RadioSurpriseButtons(
+                  onPlayAll:
+                      displayed.isEmpty ? null : () => _playAll(displayed),
                   onRadio: displayed.isEmpty
                       ? null
                       : () =>

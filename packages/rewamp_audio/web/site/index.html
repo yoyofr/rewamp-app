@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rewamp Web</title>
+<style>
+:root{--bg:#111318;--fg:#e8e8ea;--mut:#9aa0aa;--acc:#7aa2ff;--box:#1b1e25}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px system-ui;padding:16px;max-width:760px}
+#drop{border:2px dashed var(--mut);border-radius:10px;padding:24px;text-align:center;color:var(--mut)}
+#drop.on{border-color:var(--acc);color:var(--fg)}
+button{background:var(--acc);border:0;color:#000;padding:8px 12px;border-radius:6px;font-weight:600;margin:10px 4px 0 0}
+#now{margin-top:12px;font-weight:600}#meta,#stats{color:var(--mut);font-size:13px}
+input[type=range]{width:100%}
+label{font-size:13px;color:var(--mut);margin-right:12px}
+pre{background:var(--box);padding:10px;border-radius:8px;white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto}
+</style></head><body>
+<h2>Rewamp — moteur réel en wasm</h2>
+<div id="drop">Dépose des morceaux (+ compagnons : .psflib, smpl.*, .usflib…) ou <input type="file" id="pick" multiple>
+  <div><label><input type="checkbox" id="append"> ajouter à la file</label></div></div>
+<div><button id="prev">⏮</button><button id="toggle">⏯</button><button id="next">⏭</button>
+  <button id="viz">Visualiseur</button><button id="np">Preset suivant</button></div>
+<div id="now">—</div><div id="meta"></div>
+<input type="range" id="seek" min="0" max="1000" value="0">
+<div><label>Fondu enchaîné <select id="xf"><option value="0">gapless</option><option>2</option><option>4</option><option>8</option></select> s</label>
+  <label>Vitesse <input type="range" id="spd" min="20" max="300" value="100" style="width:140px"> <span id="spdv">1.00×</span></label></div>
+<div id="stats"></div>
+<canvas id="cv" width="640" height="360" style="display:block;margin-top:12px;max-width:100%;background:#000"></canvas>
+<pre id="log">chargement du moteur…</pre>
+<script>
+const $ = id => document.getElementById(id);
+const log = s => { const l = $('log'); l.textContent += '\n' + s; l.scrollTop = 1e9; };
+const W = new Worker('engine-worker.js');
+let ctx, node, ready = null, H = null, seeking = false;
+W.onerror = e => log('worker: ' + e.message);
+const fmt = t => !(t > 0) ? '--:--' : `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+W.onmessage = e => {
+  const m = e.data;
+  if (m.type === 'ready') { ready = m; H = new Int32Array(m.buffer, m.ring, 8); log('moteur prêt (isolé: ' + crossOriginIsolated + ')'); }
+  else if (m.type === 'error') log('erreur: ' + m.msg);
+  else if (m.type === 'print') log('· ' + m.s);
+  else if (m.type === 'state') {
+    $('now').textContent = m.title ? `${m.idx + 1}/${m.n} · ${m.title}` : '—';
+    $('meta').textContent = `${m.backend} · ${fmt(m.pos)} / ${fmt(m.dur)} · ${m.playing ? 'lecture' : 'pause'}`;
+    if (!seeking) $('seek').value = m.dur > 0 ? Math.min(1000, m.pos / m.dur * 1000) : 0;
+    $('seek').dataset.dur = m.dur;
+    $('stats').textContent = `sous-alim. sortie ${H ? H[6] : 0} · moteur ${m.underruns} · pire écart pompe ${m.devGapMs.toFixed(1)} ms`
+      + (m.vizFps ? ` · viz ${m.vizFps} img/s, ${m.vizMs.toFixed(1)} ms/img` : '');
+  }
+};
+// L'AudioContext ne démarre que sur un geste: créé au premier dépôt / clic.
+async function ensureAudio() {
+  if (ctx) { if (ctx.state !== 'running') await ctx.resume(); return; }
+  ctx = new AudioContext({ sampleRate: 44100, latencyHint: 'playback' });
+  await ctx.audioWorklet.addModule('out-worklet.js');
+  node = new AudioWorkletNode(ctx, 'rewamp-out', { outputChannelCount: [2], processorOptions: { buffer: ready.buffer, ring: ready.ring } });
+  node.connect(ctx.destination);
+  log(`AudioContext ${ctx.sampleRate} Hz, latence de base ${(ctx.baseLatency * 1000).toFixed(1)} ms`);
+}
+const isCompanion = n => /lib$|^smpl\.|\.smpl$|\.(ins|txt|m3u|nfo|jpg|png)$/i.test(n);
+async function add(list) {
+  if (!ready) return log('moteur pas encore prêt');
+  await ensureAudio();
+  const files = await Promise.all([...list].map(async f => ({ name: f.name, data: await f.arrayBuffer() })));
+  const tracks = files.map(f => f.name).filter(n => !isCompanion(n)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  W.postMessage({ type: 'add', files, tracks, replace: !$('append').checked }, files.map(f => f.data));
+}
+const d = $('drop');
+d.ondragover = e => { e.preventDefault(); d.classList.add('on'); };
+d.ondragleave = () => d.classList.remove('on');
+d.ondrop = e => { e.preventDefault(); d.classList.remove('on'); add(e.dataTransfer.files); };
+$('pick').onchange = e => add(e.target.files);
+$('toggle').onclick = async () => { await ensureAudio(); W.postMessage({ type: 'toggle' }); };
+$('next').onclick = () => W.postMessage({ type: 'next' });
+$('prev').onclick = () => W.postMessage({ type: 'prev' });
+$('seek').oninput = () => (seeking = true);
+$('seek').onchange = e => { seeking = false; const dur = +e.target.dataset.dur; if (dur > 0) W.postMessage({ type: 'seek', t: e.target.value / 1000 * dur }); };
+$('xf').onchange = e => W.postMessage({ type: 'crossfade', s: +e.target.value });
+$('spd').oninput = e => { const v = e.target.value / 100; $('spdv').textContent = v.toFixed(2) + '×'; W.postMessage({ type: 'speed', v }); };
+$('viz').onclick = () => { const c = $('cv').transferControlToOffscreen(); W.postMessage({ type: 'viz', canvas: c }, [c]); $('viz').disabled = true; };
+$('np').onclick = () => W.postMessage({ type: 'nextpreset' });
+</script></body></html>

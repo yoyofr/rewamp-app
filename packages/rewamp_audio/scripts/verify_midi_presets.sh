@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Oracle hors ligne du greffon FluidLite: preset réellement actif par canal.
 #   scripts/verify_midi_presets.sh <fichier.mid> <soundfont.sf2>
+#   PATH_SOUNDFONT=<sf2> : SoundFont « Lire avec… » de ce fichier (devant la 2e).
 # Le canal 10 doit porter un KIT (Standard, Room, Orchestra…), jamais un piano.
 set -euo pipefail
 pkg="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,7 +17,7 @@ for n in fluid_init fluid_chan fluid_chorus fluid_conv fluid_defsfont fluid_dsp_
     -I"$fl/include" -I"$fl/src" -I"$pkg/src" -c "$fl/src/$n.c" -o "$o"
   objs+=("$o")
 done
-for s in "$pkg/src/rewamp_tml.c" "$pkg/src/rewamp_channel_data.c" "$pkg/src/rewamp_loaded_files.c"; do
+for s in "$pkg/src/rewamp_tml.c" "$pkg/src/rewamp_channel_data.c" "$pkg/src/rewamp_loaded_files.c" "$pkg/src/rewamp_mt32_detect.c"; do
   o="$out/$(basename "$s").o"
   [ "$o" -nt "$s" ] || cc -std=gnu11 -O1 -w -I"$pkg/src" -I"$pkg/third_party/tml" -c "$s" -o "$o"
   objs+=("$o")

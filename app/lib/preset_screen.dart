@@ -10,6 +10,7 @@ import 'app_snack.dart';
 import 'l10n.dart';
 import 'local_db.dart';
 import 'preset_manager.dart';
+import 'sheet_handle.dart';
 import 'user_settings.dart';
 import 'cancel_field.dart';
 import 'scrolling_text.dart';
@@ -115,9 +116,8 @@ Future<String?> pickPmPlaylist(BuildContext context) async {
   final l10n = context.l10n;
   final playlists = await LocalDb.instance.pmPlaylists();
   if (!context.mounted) return null;
-  final picked = await showModalBottomSheet<String>(
+  final picked = await showHandleSheet<String>(
     context: context,
-    showDragHandle: true,
     builder: (sheetCtx) => SafeArea(
       child: ListView(
         shrinkWrap: true,

@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:rewamp_audio/rewamp_audio.dart';
 
@@ -19,9 +18,11 @@ import 'channel_scope_widget.dart';
 import 'notes_scope_widget.dart';
 import 'pattern_scope_widget.dart';
 import 'projectm_widget.dart';
+import 'sheet_handle.dart';
 import 'spectrum_widget.dart';
 import 'piano_widget.dart';
 import 'user_settings.dart';
+import 'app_shortcuts.dart' show ShortcutTargets, VizShortcutTarget;
 import 'waveform_icons.dart';
 import 'viz_gl_ownership.dart';
 import 'cancel_field.dart';
@@ -148,7 +149,8 @@ class VizSelectorWidget extends StatefulWidget {
 }
 
 class _VizSelectorWidgetState extends State<VizSelectorWidget>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin
+    implements VizShortcutTarget {
   late VizEffect _active;
   late final AnimationController _fadeCtrl;
   late final Animation<double>   _fadeAnim;
@@ -205,7 +207,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     // switch swaps them out, or the next one rebuilds it from scratch.
     kVizGlOwnedBySelector = true;
     UserSettings.instance.addListener(_onOpacityChanged);
-    HardwareKeyboard.instance.addHandler(_onKey);
+    ShortcutTargets.viz = this;
     _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
     // L'écouteur ne rend que les CHANGEMENTS: l'état de départ se lit à part.
     final ls = WidgetsBinding.instance.lifecycleState;
@@ -218,88 +220,79 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     _loadArtwork();
   }
 
-  /// N / P / H / S / L while projectM is on screen: next preset, previous
-  /// preset, lock toggle (H as in "hold" — L reads as "list" and is the
-  /// picker), shuffle toggle (ordered presets vs random) and the quick preset
-  /// picker. Same actions as the on-screen arrows, the padlock and the
-  /// magnifier, plus the "random next preset" setting.
-  ///
-  /// A global handler rather than a [Focus] subtree: the visualizer holds no
-  /// focus of its own (its surface is a platform view or a texture, and the
-  /// controls that DO take focus are buttons), so a focus-scoped shortcut would
-  /// only fire after the user happened to click the right thing.
-  ///
-  /// Being global, it must stay out of the way of text entry: a search field or
-  /// a "name this playlist" dialog can be open over the player, and eating its
-  /// letters would be worse than having no shortcut at all. Same for any
-  /// modified combination, which belongs to the platform's menus.
-  bool _onKey(KeyEvent event) {
-    if (event is! KeyDownEvent) return false;
-    final keyboard = HardwareKeyboard.instance;
-    if (keyboard.isControlPressed ||
-        keyboard.isMetaPressed ||
-        keyboard.isAltPressed) {
-      return false;
-    }
-    // Text entry wins, always: the preset picker has a filter field, and there
-    // are naming dialogs over the player. A bare
-    // "primaryFocus.context.widget is EditableText" does NOT detect it — the
-    // focused node's context is the Focus widget INSIDE EditableText, so the
-    // test never matched and typing "hello" in the filter jumped presets and
-    // toggled the lock instead of writing anything.
-    final focusContext = FocusManager.instance.primaryFocus?.context;
-    if (focusContext != null &&
-        (focusContext.widget is EditableText ||
-            focusContext.findAncestorWidgetOfExactType<EditableText>() !=
-                null)) {
-      return false;
-    }
+  // ── Raccourcis clavier ─────────────────────────────────────────────────
+  //
+  // Les touches vivent dans app_shortcuts.dart (une table, un répartiteur
+  // global); ce widget ne fait que s'y inscrire comme CIBLE le temps qu'il
+  // est monté. Les gardes (champ texte focalisé, modificateurs) sont là-bas.
+  // Historique: N / P / H / S / L étaient lus ici par un handler global
+  // propre — S est devenu X, S étant l'aléatoire de la FILE.
 
-    final key = event.logicalKey;
+  @override
+  bool get projectmActive =>
+      _effective == VizEffect.projectm && widget.audio.hasProjectM;
 
-    // Reveal, and nothing else — the keyboard equivalent of tapping the panel.
-    // Deliberately BEFORE the projectM gate below: the tap that brings the
-    // controls up (`onTap: _showOverlay` on the whole stack) knows nothing
-    // about the current effect, so its keyboard twin must not either. Without
-    // a pointer there is otherwise no way to see the buttons at all.
-    if (key == LogicalKeyboardKey.f1 || key == LogicalKeyboardKey.keyI) {
-      _showOverlay();
-      return true;
-    }
+  /// Montrer les contrôles, et rien d'autre: l'équivalent clavier du tap sur
+  /// le panneau. Sans pointeur il n'y a sinon aucun moyen de voir les boutons.
+  @override
+  void showControls() => _showOverlay();
 
-    // Everything past here drives projectM and only makes sense there.
-    if (_effective != VizEffect.projectm || !widget.audio.hasProjectM) {
-      return false;
-    }
+  List<VizEffect> get _availableEffects =>
+      VizEffect.values.where(_availableFor).toList();
 
-    if (key == LogicalKeyboardKey.keyN) {
-      widget.audio.vizWake();
-      widget.audio.projectmNextPreset();
-    } else if (key == LogicalKeyboardKey.keyP) {
-      widget.audio.vizWake();
-      widget.audio.projectmPrevPreset();
-    } else if (key == LogicalKeyboardKey.keyH) {
-      // Writing the setting is enough: the settings listener re-pushes the
-      // params to the engine, and the padlock button rebuilds from it.
-      final s = UserSettings.instance;
-      s.pmLockPreset = !s.pmLockPreset;
-      _flashState(_VizFlash.lock);
-    } else if (key == LogicalKeyboardKey.keyS) {
-      // Same trick as the padlock: writing the setting is the whole action, the
-      // listener pushes it to the engine.
-      final s = UserSettings.instance;
-      s.pmRandomNext = !s.pmRandomNext;
-      _flashState(_VizFlash.presetOrder);
-    } else if (key == LogicalKeyboardKey.keyL) {
-      _showPmPresetPicker();
-    } else {
-      return false;
-    }
-    // A key press is not a pointer, so nothing else brings the controls up:
-    // reveal them, which is what tells the user what just happened (the padlock
-    // colour, the preset name in the banner).
+  void _stepEffect(int dir) {
+    final list = _availableEffects;
+    if (list.length < 2) return;
+    final i = list.indexOf(_effective);
+    _select(list[(i + dir + list.length) % list.length]);
     _showOverlay();
-    return true;
+  }
+
+  @override
+  void nextEffect() => _stepEffect(1);
+
+  @override
+  void prevEffect() => _stepEffect(-1);
+
+  @override
+  void pmNext() {
+    widget.audio.vizWake();
+    widget.audio.projectmNextPreset();
+    _showOverlay();
+  }
+
+  @override
+  void pmPrev() {
+    widget.audio.vizWake();
+    widget.audio.projectmPrevPreset();
+    _showOverlay();
+  }
+
+  /// Writing the setting is enough: the settings listener re-pushes the
+  /// params to the engine, and the padlock button rebuilds from it.
+  @override
+  void pmToggleLock() {
+    final s = UserSettings.instance;
+    s.pmLockPreset = !s.pmLockPreset;
+    _flashState(_VizFlash.lock);
+    // A key press is not a pointer, so nothing else brings the controls up:
+    // reveal them, which is what tells the user what just happened (the
+    // padlock colour, the preset name in the banner).
+    _showOverlay();
+  }
+
+  @override
+  void pmToggleRandom() {
+    final s = UserSettings.instance;
+    s.pmRandomNext = !s.pmRandomNext;
+    _flashState(_VizFlash.presetOrder);
+    _showOverlay();
+  }
+
+  @override
+  void pmPicker() {
+    _showPmPresetPicker();
+    _showOverlay();
   }
 
   /// Feeds the pointer to projectM, for presets that read MilkDrop3's `mouse`
@@ -404,7 +397,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
   @override
   void dispose() {
     UserSettings.instance.removeListener(_onOpacityChanged);
-    HardwareKeyboard.instance.removeHandler(_onKey);
+    if (identical(ShortcutTargets.viz, this)) ShortcutTargets.viz = null;
     _lifecycle.dispose();
     _slowPoll?.cancel();
     _slowClear?.cancel();
@@ -944,7 +937,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
                       s.pmRandomNext
                           ? l10n.pmOrderSequential
                           : l10n.pmOrderRandom,
-                      'S'),
+                      'X'),
                   () => s.pmRandomNext = !s.pmRandomNext),
             ]);
           },
@@ -990,9 +983,8 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     // which a `dispose()` after the await cannot: the sheet stays mounted through
     // its closing animation, and rebuilding a TextField on a disposed controller
     // asserts.
-    final picked = await showModalBottomSheet<String>(
+    final picked = await showHandleSheet<String>(
       context: context,
-      showDragHandle: true,
       isScrollControlled: true,   // the list wants the height; a filter needs it
       builder: (sheetCtx) => _PmPresetPickerSheet(
         paths: paths,
@@ -1013,9 +1005,8 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     if (!mounted) return;
     final active = pm.activeSource;
 
-    final picked = await showModalBottomSheet<String>(
+    final picked = await showHandleSheet<String>(
       context: context,
-      showDragHandle: true,
       builder: (sheetCtx) {
         Widget tile(String source, IconData icon, String label,
                 {String? subtitle}) =>
@@ -1080,9 +1071,8 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     final playlists = await LocalDb.instance.pmPlaylists();
     if (!mounted) return;
 
-    final picked = await showModalBottomSheet<String>(
+    final picked = await showHandleSheet<String>(
       context: context,
-      showDragHandle: true,
       builder: (sheetCtx) => SafeArea(
         child: ListView(
           shrinkWrap: true,

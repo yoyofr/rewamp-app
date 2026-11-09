@@ -4,6 +4,7 @@
 # partie, texte LCD (les sysex LucasArts y écrivent le titre du jeu) et
 # l'énergie de l'oscilloscope par partie.
 #   scripts/verify_mt32.sh -r <dossier ROM> [-s secondes] [-w out.wav] [-q] <fichier.mid>
+#   PATH_MT32_MODEL=1|2 : modèle « Lire avec… » de ce fichier (devant MT32_MODEL).
 #   MT32_MODEL=1 (MT-32) | 2 (CM-32L) force le modèle (0 = auto: CM-32L si présent).
 set -euo pipefail
 pkg="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,7 +21,7 @@ for s in "${srcs[@]}"; do
   [ "$o" -nt "$s" ] || c++ "${cxxflags[@]}" -c "$s" -o "$o"
   objs+=("$o")
 done
-for s in "$pkg/src/rewamp_tml.c" "$pkg/src/rewamp_channel_data.c" "$pkg/src/rewamp_loaded_files.c"; do
+for s in "$pkg/src/rewamp_tml.c" "$pkg/src/rewamp_channel_data.c" "$pkg/src/rewamp_loaded_files.c" "$pkg/src/rewamp_mt32_detect.c"; do
   o="$out/$(basename "$s").o"
   [ "$o" -nt "$s" ] || cc ${san[@]+"${san[@]}"} -std=gnu11 -O2 -w -I"$pkg/src" -I"$pkg/third_party/tml" -c "$s" -o "$o"
   objs+=("$o")

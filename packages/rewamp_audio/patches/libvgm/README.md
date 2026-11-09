@@ -35,6 +35,12 @@ FAUT une passe de rattrapage** qui avance la tête d'écriture des voix muettes 
 y écrivant du silence. Sans elle leur tracé reste GELÉ sur sa dernière image au
 lieu de retomber à plat, exactement le bug déjà payé sur le SPC de libgme.
 
+5. Depuis le 2026-11-01, **VGM v3** (fork `vgmrips/libvgm`, branche `vgm-v3`,
+   commit `d892a5c` = `es55xx` + PR #151 de cam900 + commandes v3; section
+   ci-dessous): les quatre cœurs **Namco WSG / C15 / C30 / Pole Position**
+   CRÉÉS (avec NOS captures), `emu-dac_control.c` neuf, et `SoundDevs.h`,
+   `SoundEmu.c`, `zsg2.c`/`.h` et les trois patchs du lecteur régénérés.
+
 ## Hauteur d'une puce à ÉCHANTILLONS: 1x = LA4
 
 Convention du projet, la même que dans les coeurs hérités de Modizer
@@ -232,3 +238,35 @@ passe (au-delà, le fondu de 8 s de `vgm2wav`), ASan propre, 48 voies, mute
 patché = `vgm2wav` du fork pur **au bit près** (26 s), 48 voies d'oscilloscope
 et notes vivantes sous AddressSanitizer, sans erreur; aller-retour
 `sync_libvgm.sh` identique à l'arbre de travail.
+
+## VGM v3: Namco WSG, ZSG-2 déplacé (2026-11-01)
+
+Spécification: `VGM-proposal-v3-allocation.md` dans `yoyofr/vgm-tools`. La PR
+#151 (Namco WSG, cam900) prend les DEVID 0x30-0x33, les horloges 0x100-0x10C et
+les commandes 0x45-0x48 / 0xCA / 0xCB; le ZSG-2 passe en **DEVID 0x34**, horloge
+**0x110**, et les commandes ES55xx/Zoom bougent. Les deux encodages annoncent
+**1.72**: le numéro de version ne les distingue pas.
+
+⚠️ **Un fichier v1 (packs publiés jusqu'au 31/10/2026) joué tel quel sonne
+FAUX** (ZSG-2 lu comme un WSG: son de Pac-Man ou silence). Il est CONVERTI EN
+MÉMOIRE au chargement par `vgm_v3.h` (`third_party/vgm_v3/`, copie de
+vgm-tools), dans `rewamp_plugin_vgm.cpp` (`vgm_convert_v1_ext`), jamais sur le
+disque. ⚠️ Le test « v1 ? » recommandé lit l'horloge ES5506 en 0xD0 — or un
+**extra header** (1.70+, offset en 0xBC) VIT dans la zone d'en-tête: un rip
+CPS1 de vgmrips l'a en 0xC0 et passait pour un ES5506 (refusé ensuite par le
+convertisseur, son intact, mais faux positif). L'en-tête utile s'arrête donc au
+début de l'extra header. Mesuré sur 1040 VGM du disque: seuls les 6 albums ES /
+ZSG-2 du catalogue et les 7 captures locales déclenchent, 96/96 convertis.
+
+Les cœurs Namco de la PR n'avaient AUCUNE capture: oscilloscope + notes écrits
+chez nous (une boucle de voix INTERNE ⇒ `scope_v[]` puis écriture en fin
+d'échantillon, toutes voies, muettes à 0), note = vraie hauteur
+`freq × rate / 2^fracbits / 32`. Sorties à 192 kHz et plus: `smplIncr` < 1 en
+virgule fixe, chaque case de l'anneau est visitée.
+
+Vérifié au bit près contre le `vgm2wav` du fork (`--loops 2 --fade 0`, 25-30 s):
+Darius Gaiden v1 converti ET le même en v3, G-Darius (ZSG-2) v1 converti,
+RayCrisis v3 natif, un CPS1 classique inchangé. Namco: pas de capture réelle
+sur le disque — un VGM synthétique C15 (PROM + 2 voix) donne les notes exactes
+440,0 / 660,0 Hz, WSG / C30 stéréo / Pole Position passent ASan.
+

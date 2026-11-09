@@ -39,6 +39,8 @@ void Filter6581::updateCenterFrequency()
     const uint16_t Vw = f0_dac[getFC()];
     hpIntegrator.setVw(Vw);
     bpIntegrator.setVw(Vw);
+    for (int i = 0; i < 4; i++) { scopeHp[i].setVw(Vw); scopeBp[i].setVw(Vw); }  // REWAMP
+    m_scopeRestConverged = false;
 }
 
 void Filter6581::setFilterCurve(double curvePosition)

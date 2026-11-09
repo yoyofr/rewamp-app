@@ -31,12 +31,13 @@ extern "C" {
 
 
 class DivPlatformPOKEY: public DivDispatch {
-  struct Channel: public SharedChannel<int> {
-    unsigned char wave;
+  struct Channel: public SharedChannel {
+    unsigned char wave, audctl;
     bool ctlChanged;
-    Channel():
-      SharedChannel<int>(15),
+    Channel(bool linear=true):
+      SharedChannel(15,linear),
       wave(5),
+      audctl(0),
       ctlChanged(true) {}
   };
   Channel chan[4];
@@ -49,8 +50,10 @@ class DivPlatformPOKEY: public DivDispatch {
     QueuedWrite(unsigned char a, unsigned char v): addr(a), val(v) {}
   };
   FixedQueue<QueuedWrite,128> writes;
+  DivPitchTable pitchTable;
   unsigned char audctl, skctl;
   bool audctlChanged, skctlChanged;
+  bool audctlCombine;
   unsigned char oscBufDelay;
   PokeyState pokey;
   AltASAP::Pokey altASAP;
@@ -63,12 +66,13 @@ class DivPlatformPOKEY: public DivDispatch {
     void acquireMZ(short* buf, size_t len);
     void acquireASAP(short* buf, size_t len);
     int dispatch(DivCommand c);
-    void* getChanState(int chan);
+    SharedChannel* getChanState(int chan);
     DivMacroInt* getChanMacroInt(int ch);
     void getPaired(int ch, std::vector<DivChannelPair>& ret);
     DivDispatchOscBuffer* getOscBuffer(int chan);
     unsigned char* getRegisterPool();
     int getRegisterPoolSize();
+    void softReset();
     void reset();
     void forceIns();
     void tick(bool sysTick=true);
@@ -77,6 +81,8 @@ class DivPlatformPOKEY: public DivDispatch {
     float getPostAmp();
     void setFlags(const DivConfig& flags);
     void notifyInsDeletion(void* ins);
+    void notifyPitchTable(int sample=-1);
+    unsigned int getMaxFreq(int ch);
     void poke(unsigned int addr, unsigned short val);
     void poke(std::vector<DivRegWrite>& wlist);
     const char** getRegisterSheet();

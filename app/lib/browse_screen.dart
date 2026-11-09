@@ -8,8 +8,10 @@ import 'library_toolbar.dart' show ListFilterField, kListFilterThreshold,
     matchesFilterQuery;
 import 'cancel_field.dart';
 import 'scrolling_text.dart';
+import 'sheet_handle.dart';
 import 'view_mode_picker.dart';
 import 'collection_chip_axis.dart';
+import 'podium_filter.dart';
 import 'rewamp_db.dart';
 import 'artwork_image.dart';
 import 'album_detail_screen.dart';
@@ -22,6 +24,7 @@ import 'entity_play_actions.dart';
 import 'radio_surprise_buttons.dart';
 import 'song_tile.dart';
 import 'play_start.dart';
+import 'list_station.dart';
 import 'track_options_sheet.dart';
 import 'user_settings.dart';
 import 'shell_insets.dart';
@@ -41,6 +44,9 @@ class BrowseResultsScreen extends StatefulWidget {
   final List<String>? tagCategories;
   final String  sortBy;
   final bool    showFilter;
+  /// Onglet d'un AUTRE écran (le groupe demozoo): ni Scaffold ni AppBar, et
+  /// pas d'onglet Albums à soi — l'hôte a le sien.
+  final bool    embedded;
   final Future<void> Function(BuildContext, SearchResult) onTap;
   final OnPlayAlbum? onPlayAlbum;
 
@@ -55,6 +61,7 @@ class BrowseResultsScreen extends StatefulWidget {
     this.tagCategories,
     this.sortBy    = 'title',
     this.showFilter = false,
+    this.embedded   = false,
     required this.onTap,
     this.onPlayAlbum,
   });
@@ -82,9 +89,53 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
   List<String> get _tags =>
       _chipTag == null ? widget.tags : [...widget.tags, _chipTag!];
 
+  /// Filtre « podium » (p_podium: null = aucun, 0 = tout podium, 1-3 = ce
+  /// rang), le même que la Recherche et la liste d'un artiste: « les podiums
+  /// de cette plateforme / de ce tag ». Il filtre les MÊMES requêtes que la
+  /// puce de collection — morceaux, sonde d'albums, radio, onglet Albums.
+  int? _podium;
+  /// Comptes par rang, au grain de chaque onglet (search_facets ne filtre pas
+  /// la facette podium par son propre paramètre: on les demande une fois par
+  /// portée).
+  Map<int, int> _podiumSongCounts  = const {1: 0, 2: 0, 3: 0};
+  Map<int, int> _podiumAlbumCounts = const {1: 0, 2: 0, 3: 0};
+  /// Le paramètre réellement envoyé: rien tant que le serveur ne le connaît
+  /// pas (repli 404 mémorisé), sinon la pagination porterait sur une liste
+  /// filtrée côté serveur… qui ne l'est pas.
+  int? get _podiumOnServer =>
+      RewampDb.serverLacks('p_podium') ? null : _podium;
+
   /// Radio (n = 50) / Surprise (n = 1) sur la portée de l'écran: le serveur
   /// tire au hasard DANS les facettes courantes — ce n'est pas un mélange de
   /// la page chargée, qui ne verrait que les 50 premières lignes.
+  /// Radio: une STATION sur la portée (list_station.dart) — critères figés
+  /// au geste, lots suivants tirés dans la même portée quand la file finit.
+  Future<void> _startScopeStation() async {
+    final collection = widget.collection, artistName = widget.artistName;
+    final platform = widget.platform, formatFilter = widget.formatFilter;
+    final tags = _tags, tagCategories = widget.tagCategories;
+    final podium = _podiumOnServer;
+    try {
+      await startRandomStation(
+        context,
+        (seed, offset, limit) => RewampDb.browse(
+          collection: collection,
+          artistName: artistName,
+          platform: platform,
+          formatFilter: formatFilter,
+          tags: tags,
+          tagCategories: tagCategories,
+          podium: podium,
+          sortBy: 'random',
+          seed: seed,
+          limit: limit,
+          offset: offset,
+        ),
+        fallback: widget.onPlayAlbum ?? globalOnPlayAlbum,
+      );
+    } catch (_) {}
+  }
+
   Future<void> _playRandomScope(int n) async {
     final seed = DateTime.now().microsecondsSinceEpoch.toString();
     try {
@@ -95,6 +146,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
         formatFilter: widget.formatFilter,
         tags: _tags,
         tagCategories: widget.tagCategories,
+        podium: _podiumOnServer,
         sortBy: 'random',
         seed: seed,
         limit: n,
@@ -121,6 +173,47 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
     _scroll.addListener(_onScroll);
     _reload();
     _probeAlbums();
+    _loadPodiumFacets();
+    RewampDb.serverLacksChanged.addListener(_onServerCapabilities);
+  }
+
+  /// Le serveur ne connaît pas `p_podium`: la liste vient d'être chargée sans
+  /// filtre. On le dit et on retire le filtre plutôt que de laisser une puce
+  /// qui ment.
+  void _onServerCapabilities() {
+    if (!mounted || _podium == null || !RewampDb.serverLacks('p_podium')) return;
+    AppSnack.show(context, context.l10n.searchPodiumUnavailable);
+    _onPodium(null);
+  }
+
+  /// Comptes par rang pour la puce, sur la portée de l'écran (puce de
+  /// collection comprise), aux deux grains. Silencieux en cas d'échec: sans
+  /// comptes la puce ne s'affiche pas, l'écran reste utilisable.
+  Future<void> _loadPodiumFacets() async {
+    Future<Map<int, int>> counts(String? grain) async {
+      final f = await RewampDb.searchFacets('',
+          grain:         grain,
+          artistName:    widget.artistName,
+          collection:    widget.collection,
+          platform:      widget.platform,
+          formatFilter:  widget.formatFilter,
+          tags:          _tags,
+          tagCategories: widget.tagCategories);
+      return podiumCounts(f);
+    }
+    try {
+      final r = await Future.wait([counts(null), counts('album')]);
+      if (!mounted) return;
+      setState(() { _podiumSongCounts = r[0]; _podiumAlbumCounts = r[1]; });
+    } catch (_) {/* pas de comptes, pas de puce */}
+  }
+
+  /// Change de rang: tout est refait, comme pour la puce de collection.
+  void _onPodium(int? rank) {
+    if (_podium == rank) return;
+    setState(() { _podium = rank; _albumCount = 0; });
+    _reload();
+    _probeAlbums();
   }
 
   /// Une requête d'UNE ligne, juste pour lire `total_count`. `search_albums`
@@ -130,6 +223,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
   /// de tags n'ont aucun album, et un onglet vide est pire que pas d'onglet.
   /// Silencieux en cas d'échec: c'est une affordance, pas le contenu.
   Future<void> _probeAlbums() async {
+    if (widget.embedded) return;   // l'hôte porte l'onglet Albums
     if (widget.platform == null && _tags.isEmpty) return;
     try {
       final res = await RewampDb.searchAlbums(
@@ -138,6 +232,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
         platform:      widget.platform,
         tags:          _tags,
         tagCategories: widget.tagCategories,
+        podium:        _podiumOnServer,
         sortBy:        'name',
         sortDir:       'asc',
         limit:         1,
@@ -155,6 +250,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
 
   @override
   void dispose() {
+    RewampDb.serverLacksChanged.removeListener(_onServerCapabilities);
     _scroll.dispose();
     _filterCtrl.dispose();
     _notifier.dispose();
@@ -176,6 +272,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
     setState(() { _chipTag = tag; _albumCount = 0; });
     _reload();
     _probeAlbums();
+    _loadPodiumFacets();   // les comptes suivent la puce
   }
 
   void _onFilterChanged(String text) {
@@ -205,6 +302,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
         formatFilter: widget.formatFilter,
         tags:         _tags,
         tagCategories: widget.tagCategories,
+        podium:       _podiumOnServer,
         sortBy:       widget.sortBy,
         limit:        50,
         offset:       offset,
@@ -216,7 +314,8 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
       platform:     widget.platform,
       formatFilter: widget.formatFilter,
       tags:         _tags,
-        tagCategories: widget.tagCategories,
+      tagCategories: widget.tagCategories,
+      podium:       _podiumOnServer,
       sortBy:       widget.sortBy,
       limit:        50,
       offset:       offset,
@@ -270,27 +369,44 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
     // rangée de puces au-dessus des deux onglets, parce qu'elle les filtre
     // TOUS LES DEUX. Rien à afficher pour une collection qui n'en déclare pas.
     final chipAxis = chipAxisFor(widget.collection);
+    // Puce « podium »: seulement si la portée en a (ou si un rang est déjà
+    // choisi, pour pouvoir le retirer), et jamais quand le serveur ne connaît
+    // pas le paramètre.
+    final canPodium = !RewampDb.serverLacks('p_podium') &&
+        (_podium != null ||
+         podiumTotal(_podiumSongCounts) > 0 ||
+         podiumTotal(_podiumAlbumCounts) > 0);
     Widget? chipRow;
-    if (chipAxis.isNotEmpty) {
+    if (chipAxis.isNotEmpty || canPodium) {
       chipRow = Padding(
         padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 12, 0),
-        child: Wrap(
-          spacing: 8,
-          children: [
-            ChoiceChip(
-              label: Text(l10n.searchCollectionAll),
-              selected: _chipTag == null,
-              onSelected: (_) => _onChipAxis(null),
-            ),
-            // Noms de tags, pas de slugs: c'est ce que le serveur apparie, et
-            // ce sont des noms propres — rien à traduire.
-            for (final tag in chipAxis)
-              ChoiceChip(
-                label: Text(tag),
-                selected: _chipTag == tag,
-                onSelected: (_) => _onChipAxis(tag),
-              ),
-          ],
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              if (chipAxis.isNotEmpty) ...[
+                ChoiceChip(
+                  label: Text(l10n.searchCollectionAll),
+                  selected: _chipTag == null,
+                  onSelected: (_) => _onChipAxis(null),
+                ),
+                // Noms de tags, pas de slugs: c'est ce que le serveur apparie,
+                // et ce sont des noms propres — rien à traduire.
+                for (final tag in chipAxis)
+                  ChoiceChip(
+                    label: Text(tag),
+                    selected: _chipTag == tag,
+                    onSelected: (_) => _onChipAxis(tag),
+                  ),
+              ],
+              // Builder: le contexte doit être SOUS le DefaultTabController
+              // que ce build crée plus bas, sinon l'onglet affiché est
+              // introuvable et la puce montrerait toujours les morceaux.
+              if (canPodium) Builder(builder: _podiumChip),
+            ],
+          ),
         ),
       );
     }
@@ -325,12 +441,11 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
     // mener à une liste vide. L'onglet Albums est l'écran d'albums EMBARQUÉ,
     // avec ses filtres (plateforme/collection) et ses dispositions.
     if (_albumCount <= 0) {
-      return Scaffold(
-        appBar: AppBar(title: Text(widget.label)),
-        body: chipRow == null
-            ? songsBody
-            : Column(children: [chipRow, Expanded(child: songsBody)]),
-      );
+      final body = chipRow == null
+          ? songsBody
+          : Column(children: [chipRow, Expanded(child: songsBody)]);
+      if (widget.embedded) return body;
+      return Scaffold(appBar: AppBar(title: Text(widget.label)), body: body);
     }
     return DefaultTabController(
       length: 2,
@@ -345,13 +460,15 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
         body: _withChipRow(chipRow, TabBarView(children: [
           songsBody,
           CollectionAlbumsScreen(
-            // La clé porte la puce: l'écran d'albums charge dans son
-            // initState, donc sans elle changer de puce ne rechargeait rien.
-            key:           ValueKey(_chipTag),
+            // La clé porte la puce et le rang: l'écran d'albums charge dans
+            // son initState, donc sans elle changer de filtre ne rechargeait
+            // rien.
+            key:           ValueKey('$_chipTag|$_podium'),
             collection:    widget.collection,
             platform:      widget.platform,
             tags:          _tags,
             tagCategories: widget.tagCategories,
+            podium:        _podiumOnServer,
             title:         widget.label,
             embedded:      true,
             onTap:         widget.onTap,
@@ -360,6 +477,38 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
         ])),
       ),
     );
+  }
+
+  /// La puce podium, comptes de l'onglet AFFICHÉ (morceaux ou albums — le
+  /// sélecteur nomme des quantités dans l'unité qu'on regarde). Le contrôleur
+  /// d'onglets n'existe que quand l'onglet Albums est là.
+  Widget _podiumChip(BuildContext context) {
+    final l10n = context.l10n;
+    final tabs = DefaultTabController.maybeOf(context);
+    Widget chip() {
+      final counts = (tabs != null && tabs.index == 1)
+          ? _podiumAlbumCounts
+          : _podiumSongCounts;
+      return InputChip(
+        avatar: const Icon(Icons.emoji_events_outlined, size: 16),
+        label: Text(podiumChipLabel(l10n, _podium, podiumTotal(counts))),
+        selected: _podium != null,
+        showCheckmark: false,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        deleteIcon: _podium != null ? const Icon(Icons.close, size: 16) : null,
+        onDeleted: _podium != null ? () => _onPodium(null) : null,
+        onPressed: () async {
+          final v = await showPodiumPicker(context,
+              current: _podium, counts: counts);
+          if (v == null || !mounted) return;
+          _onPodium(v < 0 ? null : v);
+        },
+      );
+    }
+    return tabs == null
+        ? chip()
+        : AnimatedBuilder(animation: tabs, builder: (_, __) => chip());
   }
 
   Widget _buildBody() {
@@ -412,7 +561,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
               // Radio / Surprise: la MÊME portée (collection, artiste,
               // plateforme, format, tags), tirée au hasard côté serveur — une
               // station sur ce qu'on parcourt, pas sur la page chargée.
-              onRadio: () => _playRandomScope(50),
+              onRadio: _startScopeStation,
               onSurprise: () => _playRandomScope(1),
               onPlayAll: () async {
                 final songs = _activeFilter == null
@@ -1769,6 +1918,35 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
     }
   }
 
+  /// Radio du sous-arbre: une station (list_station.dart) sur path_prefix.
+  Future<void> _startSubtreeStation() async {
+    final onPlay = widget.onPlayAlbum;
+    if (onPlay == null || _queueBusy) return;
+    final collection = widget.collection;
+    final prefix = widget.folder.isEmpty ? null : '${widget.folder}/';
+    setState(() => _queueBusy = true);
+    try {
+      await startRandomStation(
+        context,
+        (seed, offset, limit) => RewampDb.browse(
+          collection: collection,
+          pathPrefix: prefix,
+          sortBy: 'random',
+          seed: seed,
+          limit: limit,
+          offset: offset,
+        ),
+        fallback: onPlay,
+      );
+    } catch (e) {
+      if (mounted) {
+        AppSnack.show(context, context.l10n.browsePlaybackError('$e'));
+      }
+    } finally {
+      if (mounted) setState(() => _queueBusy = false);
+    }
+  }
+
   void _openDir(FolderEntry d) {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => CollectionFolderScreen(
@@ -1832,7 +2010,7 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
                 padding: const EdgeInsetsDirectional.only(end: 4),
                 child: RadioSurpriseButtons(
                   onPlayAll: () => _playSubtree(shuffle: false),
-                  onRadio: () => _playSubtree(shuffle: true),
+                  onRadio: _startSubtreeStation,
                   onSurprise: () => _playSubtree(shuffle: true, count: 1),
                   dense: true,
                 ),
@@ -2088,6 +2266,9 @@ class CollectionAlbumsScreen extends StatefulWidget {
   /// Embarqué dans un onglet (pas de Scaffold/AppBar à soi): le sélecteur de
   /// disposition rejoint alors la ligne du champ de recherche.
   final bool embedded;
+  /// p_podium (null = aucun, 0 = tout podium, 1-3 = ce rang): filtre posé par
+  /// l'écran HÔTE quand cet écran est son onglet Albums.
+  final int? podium;
 
   final Future<void> Function(BuildContext, SearchResult) onTap;
   final OnPlayAlbum? onPlayAlbum;
@@ -2099,6 +2280,7 @@ class CollectionAlbumsScreen extends StatefulWidget {
     this.platform,
     this.tags = const [],
     this.tagCategories,
+    this.podium,
     this.embedded = false,
     required this.onTap,
     this.onPlayAlbum,
@@ -2129,6 +2311,13 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
   // même règle pour la plateforme.
   String? _selPlatform;
   String? _selCollection;
+  /// Podium choisi ICI, quand l'hôte ne l'impose pas (`widget.podium` nul):
+  /// la carte Albums d'un hub, l'onglet Albums d'un groupe. Comptes au grain
+  /// album, lus avec les autres facettes.
+  int? _podium;
+  Map<int, int> _podiumCounts = const {1: 0, 2: 0, 3: 0};
+  int? get _podiumOnServer =>
+      widget.podium ?? (RewampDb.serverLacks('p_podium') ? null : _podium);
 
   /// Valeurs réelles, comptées en ALBUMS (`search_facets` au grain album).
   List<FacetCount> _platFacets = const [];
@@ -2145,10 +2334,12 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
     _scroll.addListener(_onScroll);
     _load();
     _loadFacets();
+    RewampDb.serverLacksChanged.addListener(_onServerCapabilities);
   }
 
   @override
   void dispose() {
+    RewampDb.serverLacksChanged.removeListener(_onServerCapabilities);
     _scroll.dispose();
     _filterCtrl.dispose();
     _debounce?.cancel();
@@ -2175,10 +2366,19 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
           (all.where((f) => f.kind == kind && f.value.isNotEmpty).toList()
             ..sort((a, b) => b.count.compareTo(a.count)));
       setState(() {
-        _platFacets = of('platform');
-        _collFacets = of('collection');
+        _platFacets   = of('platform');
+        _collFacets   = of('collection');
+        _podiumCounts = podiumCounts(all);
       });
     } catch (_) {/* pas de filtres, l'écran reste utilisable */}
+  }
+
+  /// Le serveur ne connaît pas `p_podium`: le filtre est retiré, et dit.
+  void _onServerCapabilities() {
+    if (!mounted || _podium == null || !RewampDb.serverLacks('p_podium')) return;
+    AppSnack.show(context, context.l10n.searchPodiumUnavailable);
+    setState(() => _podium = null);
+    _load();
   }
 
   void _onScroll() {
@@ -2210,6 +2410,7 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
         platform:      widget.platform ?? _selPlatform,
         tags:          _tags,
         tagCategories: widget.tagCategories,
+        podium:        _podiumOnServer,
         // Empty q: relevance is meaningless → stable alphabetical browse.
         sortBy:  _query.isEmpty ? 'name' : 'relevance',
         sortDir: _query.isEmpty ? 'asc' : null,
@@ -2354,7 +2555,9 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
     final l10n = context.l10n;
     final showPlat = widget.platform == null && _platFacets.isNotEmpty;
     final showColl = widget.collection == null && _collFacets.isNotEmpty;
-    if (!showPlat && !showColl) return const SizedBox.shrink();
+    final showPod  = widget.podium == null && !RewampDb.serverLacks('p_podium') &&
+        (_podium != null || podiumTotal(_podiumCounts) > 0);
+    if (!showPlat && !showColl && !showPod) return const SizedBox.shrink();
 
     Widget chip(String label, String? current, List<FacetCount> values,
         void Function(String?) onPick) {
@@ -2374,10 +2577,9 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
           // « Tous », coche sur la valeur active. Les comptes sont affichés:
           // ils sont en ALBUMS depuis que les facettes sont demandées au grain
           // album, donc dans l'unité de l'écran.
-          onPressed: () => showModalBottomSheet<void>(
+          onPressed: () => showHandleSheet<void>(
             context: context,
             isScrollControlled: true,
-            showDragHandle: true,
             builder: (ctx) => FacetPickerSheet(
               label:      label,
               values:     values,
@@ -2402,6 +2604,27 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
         if (showColl)
           chip(l10n.filterCollection, _selCollection, _collFacets,
               (v) { setState(() => _selCollection = v); _load(); }),
+        if (showPod)
+          InputChip(
+            avatar: const Icon(Icons.emoji_events_outlined, size: 16),
+            label: Text(podiumChipLabel(l10n, _podium, podiumTotal(_podiumCounts)),
+                style: const TextStyle(fontSize: 11)),
+            selected: _podium != null,
+            showCheckmark: false,
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            deleteIcon: _podium != null ? const Icon(Icons.close, size: 16) : null,
+            onDeleted: _podium != null
+                ? () { setState(() => _podium = null); _load(); }
+                : null,
+            onPressed: () async {
+              final v = await showPodiumPicker(context,
+                  current: _podium, counts: _podiumCounts);
+              if (v == null || !mounted) return;
+              setState(() => _podium = v < 0 ? null : v);
+              _load();
+            },
+          ),
       ]),
     );
   }
@@ -2427,12 +2650,17 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
           final a = entityPlayActions<ArtistAlbum>(
             ctx,
             _albums,
-            (al) => RewampDb.browse(
-                albumName: al.name,
-                collection: al.collection,
-                platform: al.platform,
-                sortBy: 'position',
-                limit: 500),
+            // Par l'ID quand l'album en a un: deux albums homonymes (jw_usf
+            // « Ocarina of Time (v1.0) » et sa révision « [fixed] ») se
+            // mêlaient sinon — voir playAlbumFromList.
+            (al) => (al.albumId?.isNotEmpty ?? false)
+                ? RewampDb.albumTracks(albumId: al.albumId!, sortBy: 'position')
+                : RewampDb.browse(
+                    albumName: al.name,
+                    collection: al.collection,
+                    platform: al.platform,
+                    sortBy: 'position',
+                    limit: 500),
             onPlayAlbum: widget.onPlayAlbum,
           );
           return _BrowseCountBar(
@@ -2569,6 +2797,7 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
         a.name,
         collection:  a.collection,
         platform:    a.platform,
+        albumId:     a.albumId,
         onPlayAlbum: widget.onPlayAlbum!,
       );
 }
@@ -3093,17 +3322,16 @@ class _CollectionHubScreenState extends State<CollectionHubScreen> {
   // 📻 endless random queue over the whole collection (same recipe as the
   // search landing's radio: one random page, played as an album).
   Future<void> _startRadio() async {
-    final seed = DateTime.now().millisecondsSinceEpoch.toString();
+    final collection = widget.collection;
     try {
-      final songs = await RewampDb.browse(
-          collection: widget.collection,
-          sortBy: 'random', seed: seed, limit: 50);
-      if (!mounted || songs.isEmpty) return;
-      if (widget.onPlayAlbum != null) {
-        await widget.onPlayAlbum!(context, songs);
-      } else {
-        await widget.onTap(context, songs.first);
-      }
+      await startRandomStation(
+        context,
+        (seed, offset, limit) => RewampDb.browse(
+            collection: collection,
+            sortBy: 'random', seed: seed, limit: limit, offset: offset),
+        fallback: widget.onPlayAlbum ??
+            (ctx, songs, {startIndex}) => widget.onTap(ctx, songs.first),
+      );
     } catch (_) {}
   }
 

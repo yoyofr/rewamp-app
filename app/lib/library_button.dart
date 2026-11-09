@@ -11,7 +11,7 @@ import 'user_settings.dart';
 /// [Icons.library_add_check] (coloured) when present.
 class LibraryButton extends StatefulWidget {
   final String  type;       // 'track', 'album', 'artist'
-  final String  refId;      // onlineId for tracks; album name; artist name
+  final String  refId;      // onlineId for tracks; album name; artist uuid (or name)
   final String  name;
   final String? artist;
   final String? album;
@@ -138,17 +138,26 @@ class _LibraryButtonState extends State<LibraryButton> {
         albumId:        widget.albumId,
       );
       widget.onDownload?.call().catchError((_) {});
+      // Artiste au compte (mig serveur 296): seulement sous son UUID, et
+      // seulement quand le serveur sait les prendre — voir
+      // SyncService.recordArtistMembership. Une ligne de NOM reste locale.
+      if (widget.type == 'artist') {
+        await SyncService.recordArtistMembership(refId: refId, value: true);
+      }
     } else if (widget.type == 'artist') {
       // Every key form at once (uuid ref_id, name ref_id, display name): one
       // un-heart clears an existing duplicate pair, and a name-only caller
-      // still removes a uuid-saved row.
-      await LocalDb.instance
+      // still removes a uuid-saved row — dont le compte doit l'oubli aussi.
+      final removed = await LocalDb.instance
           .removeArtistFromLibrary(widget.name, refId: refId);
+      for (final ref in removed) {
+        await SyncService.recordArtistMembership(refId: ref, value: false);
+      }
     } else {
       await LocalDb.instance.removeFromLibrary(widget.type, refId);
     }
-    // Sync to server for track/album/playlist (artist has no server-side
-    // library counterpart). The server keys albums by their UUID (albumId), NOT
+    // Sync to server for track/album/playlist (artists went out above, by
+    // their own funnel). The server keys albums by their UUID (albumId), NOT
     // the display name stored in refId; tracks by the BARE song uuid (strip any
     // '?subsong=N' local-key suffix); playlists by their own uuid, which is
     // what refId already holds. Purely-local items (file path refId / no

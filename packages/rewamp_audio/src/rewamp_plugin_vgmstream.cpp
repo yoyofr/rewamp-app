@@ -48,12 +48,16 @@ extern "C" int    g_loop_lift_refused;     // rewamp_audio.c
 // feedback-mp3-goes-through-vgmstream.
 static const char* const kSkipExts[] = {
     // formats owned by other rewamp plugins
-    "nsf", "nsfe", "gbs", "spc", "hes", "kss", "sap", "ay", "rsn",
+    "nsf", "nsfe", "gbs", "spc", "hes", "kss", "sap", "ay", "ym", "rsn",
     "vgm", "vgz", "s98", "gym", "dro",
     "mod", "xm", "s3m", "it", "mptm", "mtm", "669", "far", "med",
     "sid", "mus", "str", "prg",
     "psf", "minipsf", "psf2", "minipsf2", "ssflib", "minissf",
     "dsf", "minidsf", "qsf", "miniqsf",
+    // vgmstream connaît « gsf » pour un AUTRE format: un GSF Game Boy Advance
+    // est au greffon PSF (gsf). Le reste de la famille PSF (2sf, ncsf, usf,
+    // snsf…) n'est pas dans la liste de vgmstream: vgm_probe_path_fn l'écarte.
+    "gsf", "minigsf",
     NULL
 };
 
@@ -76,6 +80,62 @@ static int vgm_probe_fn(const char* ext, const uint8_t* /*header*/, size_t /*hea
     }
     // Moderate confidence — registered last, so only wins when nothing else claims it.
     return 50;
+}
+
+/* Un fichier `.txth` le DÉCRIT — la seule voie par laquelle vgmstream lit une
+ * extension qu'il ne connaît pas. Mêmes trois noms que `open_txth`
+ * (meta/txth.c), dans le même ordre: `nom.ext.txth`, `.ext.txth`, `.txth`. */
+static bool vgm_txth_beside(const char* path) {
+    char buf[4096];
+    const size_t n = strlen(path);
+    if (n + 6 >= sizeof(buf)) return false;
+    memcpy(buf, path, n + 1);
+    char* q = strrchr(buf, '?');                       // ?subsong=N
+    if (q && strncmp(q, "?subsong=", 9) == 0) *q = '\0';
+    char full[4096 + 8];
+    snprintf(full, sizeof(full), "%s.txth", buf);
+    FILE* f = fopen(full, "rb");
+    if (f) { fclose(f); return true; }
+    const char* slash = strrchr(buf, '/');
+#ifdef _WIN32
+    const char* bs = strrchr(buf, '\\');
+    if (bs && (!slash || bs > slash)) slash = bs;
+#endif
+    const size_t dirLen = slash ? (size_t)(slash - buf + 1) : 0;
+    const char* name = buf + dirLen;
+    const char* dot = strrchr(name, '.');
+    if (dot) {
+        snprintf(full, sizeof(full), "%.*s%s.txth", (int)dirLen, buf, dot);
+        f = fopen(full, "rb");
+        if (f) { fclose(f); return true; }
+    }
+    snprintf(full, sizeof(full), "%.*s.txth", (int)dirLen, buf);
+    f = fopen(full, "rb");
+    if (f) { fclose(f); return true; }
+    return false;
+}
+
+/* Le probe RÉEL. `vgm_probe_fn` seul rendait 50 pour TOUTE extension hors
+ * kSkipExts, sans rien regarder: vgmstream se proposait dans « Lire avec… »
+ * pour des `.mini2sf`, `.mid`, `.mdx`, `.sndh`… qu'il ne sait pas ouvrir
+ * (retour auteur du 2026-11-01, album jw_2sf). On demande désormais à
+ * vgmstream si l'extension est la SIENNE — sa propre liste, plus les
+ * « communes » (mp3, wav, ogg, flac…) qui passent par lui chez nous — ou si un
+ * `.txth` la décrit. Rien de perdu: une extension inconnue échouait de toute
+ * façon à l'ouverture, ses metas vérifiant l'extension. Un fichier SANS
+ * extension reste réclamé (certains metas en acceptent). */
+static int vgm_probe_path_fn(const char* ext, const uint8_t* header,
+                             size_t headerSize, const char* path,
+                             uint64_t /*fileSize*/) {
+    if (vgm_probe_fn(ext, header, headerSize) == 0) return 0;
+    if (!ext || !*ext) return 50;
+    libvgmstream_valid_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.is_extension  = true;
+    cfg.accept_common = true;
+    if (libvgmstream_is_valid(ext, &cfg)) return 50;
+    if (path && vgm_txth_beside(path)) return 50;
+    return 0;
 }
 
 static RewampDecoder* vgm_open_fn(const char* path, RewampAudioFormat* outFormat) {
@@ -323,7 +383,7 @@ static const RewampPluginVTable kVgmstreamPlugin = {
     /* pattern_num_rows */ NULL,
     /* pattern_get      */ NULL,
     /* pattern_cursor   */ NULL,
-    /* probe_path       */ NULL,
+    /* probe_path       */ vgm_probe_path_fn,
     /* noPrefixProbe — vgmstream est le FOURRE-TOUT: il rend 50 pour toute
      * extension hors kSkipExts, donc interrogé avec le RADICAL d'un nom
      * ordinaire il reprenait le fichier que son extension lui avait fait

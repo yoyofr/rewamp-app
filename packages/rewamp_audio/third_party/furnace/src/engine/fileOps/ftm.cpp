@@ -993,16 +993,22 @@ bool DivEngine::loadFTM(unsigned char* file, size_t len, bool dnft, bool dnft_si
 
               if (blockVersion >= 7) {
                 unsigned int notes = reader.readI();
+                if (notes > 120) {
+                  logE("DPCM note count %u out of range!", notes);
+                  lastError = "DPCM note count out of range";
+                  delete[] file;
+                  return false;
+                }
                 dpcmNotes = notes;
               }
 
               // should dpcmNotes be 96 always?
               for (int j = 0; j < dpcmNotes; j++) {
-                int note = j;
+                int note = j + 60;
                 if (blockVersion >= 7) {
                   note = reader.readC();
                 }
-                if (note<0 || note>=120) {
+                if (note<0 || note>=180) {
                   logE("DPCM note %d out of range!",note);
                   lastError = "DPCM note out of range";
                   delete[] file;
@@ -1022,7 +1028,7 @@ bool DivEngine::loadFTM(unsigned char* file, size_t len, bool dnft, bool dnft_si
 
               bool empty_note_map = true;
 
-              for (int j = 0; j < dpcmNotes; j++) {
+              for (int j = 60; j < dpcmNotes+60; j++) {
                 if (ins->amiga.noteMap[j].map != -1) {
                   empty_note_map = false;
                 }
@@ -1599,6 +1605,10 @@ bool DivEngine::loadFTM(unsigned char* file, size_t len, bool dnft, bool dnft_si
 
         for (int sub = 0; sub < subsongs; sub++) {
           unsigned char used = reader.readC();
+          if (sub >= (int)ds.subsong.size()) {
+            logW("subsongs count mimatch! (%d / %d)",(int)ds.subsong.size(),subsongs);
+            break;
+          }
 
           if (used) {
             ds.subsong[sub]->speeds = ds.grooves[0];

@@ -328,6 +328,17 @@ private:
     /// VCR + associated capacitor connected to bandpass output.
     Integrator6581 bpIntegrator;
 
+    // REWAMP: per-voice scope copies of the two integrators (see Filter.h).
+    Integrator6581 scopeHp[4];
+    Integrator6581 scopeBp[4];
+
+    void bindScope()
+    {
+        const Integrator* hp[4] = { &scopeHp[0], &scopeHp[1], &scopeHp[2], &scopeHp[3] };
+        const Integrator* bp[4] = { &scopeBp[0], &scopeBp[1], &scopeBp[2], &scopeBp[3] };
+        setScopeIntegrators(hp, bp);
+    }
+
     const uint16_t* f0_dac;
 
 protected:
@@ -336,7 +347,11 @@ protected:
      */
     void updateCenterFrequency() override;
 
-    void restartIntegrators() override { hpIntegrator.restart(); bpIntegrator.restart(); }
+    void restartIntegrators() override
+    {
+        hpIntegrator.restart(); bpIntegrator.restart();
+        for (int i = 0; i < 4; i++) { scopeHp[i].restart(); scopeBp[i].restart(); }  // REWAMP
+    }
 
     /*
      * The filter input resistors on the 6581 are slightly bigger than the voice ones,
@@ -352,8 +367,12 @@ public:
         Filter(*FilterModelConfig6581::getInstance(), hpIntegrator, bpIntegrator),
         hpIntegrator(*FilterModelConfig6581::getInstance()),
         bpIntegrator(*FilterModelConfig6581::getInstance()),
+        scopeHp{ Integrator6581(*FilterModelConfig6581::getInstance()), Integrator6581(*FilterModelConfig6581::getInstance()), Integrator6581(*FilterModelConfig6581::getInstance()), Integrator6581(*FilterModelConfig6581::getInstance()) },
+        scopeBp{ Integrator6581(*FilterModelConfig6581::getInstance()), Integrator6581(*FilterModelConfig6581::getInstance()), Integrator6581(*FilterModelConfig6581::getInstance()), Integrator6581(*FilterModelConfig6581::getInstance()) },
         f0_dac(FilterModelConfig6581::getInstance()->getDAC(0.5))
-    {}
+    {
+        bindScope();   // REWAMP
+    }
 
     ~Filter6581() override;
 

@@ -17,6 +17,12 @@
 
 #define HVL_RATE 44100
 
+extern "C" {
+extern int g_force_loop_mode;
+extern int g_force_loop_native_veto;
+extern int g_loop_lift_refused;
+}
+
 struct RewampDecoder {
     struct hvl_tune* ht;
     int              voices;
@@ -32,7 +38,44 @@ struct RewampDecoder {
      * comptent en ticks: déjà en temps du MORCEAU. */
     double           speed;
     double           acc;         /* reste fractionnaire d'échantillons */
+    /* Durée d'une passe, mesurée UNE fois à l'ouverture. hvl_GetPlayTime fait
+     * tourner le séquenceur jusqu'à la fin puis le remet au début: appelé par
+     * length() — que rewamp_get_duration_seconds sert depuis le fil UI, sans
+     * verrou, pendant que le producteur décode — il rembobinait la lecture en
+     * pleine course (notes en accéléré au départ ou au bouclage). */
+    uint64_t         lengthFrames;
+    /* Boucle infinie NATIVE armée (configure_loop 2). Le replayer boucle déjà
+     * de lui-même: en fin de liste il repart à ht_Restart (en-tête, AHX comme
+     * HVL), un Bxx arrière saute en arrière — dans les deux cas il lève
+     * seulement ht_SongEndReached. On ne s'arrête donc plus sur ce drapeau;
+     * seul F00 (tempo 0, le séquenceur se fige) reste une vraie fin. */
+    int              infinite;
+    int              stops;       /* la passe finit par F00: pas de boucle */
 };
+
+/* Fin à respecter? Sous boucle infinie, le drapeau de fin de passe est
+ * consommé et la lecture continue, sauf tempo 0. */
+static int hvl_end_reached(RewampDecoder* dec) {
+    struct hvl_tune* ht = dec->ht;
+    if (!ht->ht_SongEndReached) return 0;
+    if (!dec->infinite || ht->ht_Tempo == 0) return 1;
+    ht->ht_SongEndReached = 0;
+    return 0;
+}
+
+/* Ticks (appels de hvl_play_irq) jusqu'à la fin, BORNÉS: un morceau qui ne
+ * lève jamais ht_SongEndReached ne doit pas figer l'ouverture. Remet le
+ * morceau au début, comme hvl_GetPlayTime. */
+static uint64_t hvl_count_ticks(struct hvl_tune* ht, int* stops) {
+    const int mult = ht->ht_SpeedMultiplier > 0 ? ht->ht_SpeedMultiplier : 1;
+    const uint64_t cap = (uint64_t)60 * 60 * 50 * mult;   /* une heure */
+    uint64_t n = 0;
+    while (!ht->ht_SongEndReached && n < cap) { hvl_play_irq(ht); n++; }
+    const int ended = ht->ht_SongEndReached;
+    *stops = ended && ht->ht_Tempo == 0;
+    hvl_InitSubsong(ht, ht->ht_SongNum);
+    return ended ? n : 0;
+}
 
 static const char* const kHvlExts[] = { "hvl", "ahx", "thx", NULL };
 
@@ -96,6 +139,17 @@ static RewampDecoder* hvl_open(const char* path, RewampAudioFormat* outFormat) {
         return NULL;
     }
 
+    {
+        const int mult = ht->ht_SpeedMultiplier > 0 ? ht->ht_SpeedMultiplier : 1;
+        const uint64_t ticks = hvl_count_ticks(ht, &dec->stops);
+        dec->lengthFrames = ticks * HVL_RATE / (50ull * (uint64_t)mult);
+    }
+    /* N passes: la reprise n'est pas le début (ht_Restart, Bxx), donc la
+     * fenêtre de fondu générique (passe × (N+1)) tomberait faux — le
+     * générique compte. */
+    if (g_force_loop_mode == 1 || (g_force_loop_mode == 2 && dec->stops))
+        g_force_loop_native_veto = 1;
+
     if (outFormat) {
         outFormat->channels   = 2;
         outFormat->sampleRate = HVL_RATE;
@@ -119,7 +173,7 @@ static uint64_t hvl_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     uint64_t written = 0;
     while (written < frameCount) {
         if (dec->fifoPos >= dec->fifoLen) {
-            if (dec->ht->ht_SongEndReached) break;
+            if (hvl_end_reached(dec)) break;
             /* Un tick: hvl_play_irq (séquenceur) puis le mix de sa durée —
              * ce que fait hvl_DecodeFrame, tick par tick, avec une durée qui
              * suit la vitesse. int16 L/R par deux pointeurs, pas de 4. */
@@ -151,16 +205,20 @@ static uint64_t hvl_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
 
 static void hvl_seek(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec || !dec->ht) return;
-    hvl_Seek(dec->ht, (int)(frameIndex * 1000ull / HVL_RATE));
+    /* hvl_Seek arrondit à la SECONDE (seek_time/1000 en entier): tick exact
+     * ici. Seek au-delà de la fin: le morceau s'arrête là, comme hvl_Seek. */
+    struct hvl_tune* ht = dec->ht;
+    const int mult = ht->ht_SpeedMultiplier > 0 ? ht->ht_SpeedMultiplier : 1;
+    uint64_t ticks = frameIndex * 50ull * (uint64_t)mult / HVL_RATE;
+    hvl_InitSubsong(ht, ht->ht_SongNum);
+    while (ticks-- && !hvl_end_reached(dec)) hvl_play_irq(ht);
     dec->fifoPos = dec->fifoLen = 0;   /* drop stale mixed audio */
     dec->acc = 0.0;
 }
 
 static uint64_t hvl_length(RewampDecoder* dec) {
-    if (!dec || !dec->ht) return 0;
-    const int ms = hvl_GetPlayTime(dec->ht);
-    if (ms <= 0) return 0;
-    return (uint64_t)ms * HVL_RATE / 1000ull;
+    if (!dec || dec->infinite) return 0;   /* plus de fin pour le producteur */
+    return dec->lengthFrames;
 }
 
 static void hvl_close(RewampDecoder* dec) {
@@ -168,6 +226,16 @@ static void hvl_close(RewampDecoder* dec) {
     if (dec->ht) hvl_FreeTune(dec->ht);
     free(dec->fifo);
     free(dec);
+}
+
+/* Mode 2 seulement, à l'ouverture comme EN COURS de lecture
+ * (rewamp_lift_end_for_infinite): rien à relancer, read() cesse seulement de
+ * s'arrêter au drapeau de fin. Le mode 1 a posé son veto dans open(). */
+static void hvl_configure_loop(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (!dec || !dec->ht || mode != 2) return;
+    if (dec->stops) { g_loop_lift_refused = 1; return; }
+    dec->infinite = 1;
 }
 
 /* Vitesse NATIVE (voir RewampDecoder.speed). */
@@ -185,7 +253,7 @@ static const RewampPluginVTable kHvlVTable = {
     hvl_seek,
     hvl_length,
     hvl_close,
-    nullptr, 0, nullptr, nullptr,                /* configure_loop … param_changed */
+    hvl_configure_loop, 0, nullptr, nullptr,     /* boucle infinie native … param_changed */
     nullptr, nullptr, nullptr, nullptr, nullptr, /* pattern view */
     nullptr, 0,                                  /* probe_path, noPrefixProbe */
     hvl_set_speed,                               /* vitesse native */

@@ -16,6 +16,7 @@ import 'rewamp_db.dart';
 import 'sync_service.dart';
 import 'user_settings.dart';
 import 'scrolling_text.dart';
+import 'artist_links.dart' show artistIdAt;
 import 'artwork_image.dart';
 import 'artwork_viewer.dart';
 import 'browse_screen.dart' show BrowseResultsScreen;
@@ -91,6 +92,28 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   // Artist override from M3U header (joshw containers) — supersedes server data.
   List<String>? _m3uArtistNames;
 
+  /// Ce que fait un tap sur un compositeur: le rappel de l'appelant, sinon
+  /// l'écran d'artiste de la coquille — la plupart des écrans qui ouvrent un
+  /// album (collection, palmarès, stats…) ne passent pas `onArtistTap`.
+  void Function(String)? get _artistTap {
+    final own = widget.onArtistTap;
+    if (own != null) return own;
+    final global = globalOnNavigateArtist;
+    if (global == null) return null;
+    return (name) => global(name, artistId: _composerIdFor(name));
+  }
+
+  /// L'uuid du compositeur [name] (mig serveur 293), pour départager deux
+  /// homonymes. Seulement quand les noms affichés SONT ceux du serveur: un
+  /// M3U ou l'union des pistes peut les avoir remplacés.
+  String? _composerIdFor(String name) {
+    final d = _details;
+    if (d == null || !identical(_effectiveComposerNames, d.composerNames)) {
+      return null;
+    }
+    return artistIdAt(d.composerIds, d.composerNames.indexOf(name));
+  }
+
   List<String> get _effectiveComposerNames {
     if (_m3uArtistNames != null && _m3uArtistNames!.isNotEmpty) {
       return _m3uArtistNames!;
@@ -117,8 +140,20 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
   // Track list
   final _tracks    = <SearchResult>[];
+  /// En mode serveur générique: nombre de LIGNES SERVEUR. Une archive à
+  /// tracklist connue y compte pour une, et s'affiche dépliée (voir
+  /// [_flattenArchives]) — `_tracks.length` ne mesure donc plus la page.
   int   _total       = 0;
+  /// Lignes SERVEUR déjà chargées (le décalage de la page suivante).
   int   _offset      = 0;
+  /// Vrai quand au moins une ligne chargée a été dépliée en ses pistes.
+  bool  _flattened   = false;
+  /// Pour une piste issue d'une archive dépliée: l'archive (intertitre quand
+  /// l'album en a plusieurs) et le sous-dossier du membre (« Mark II
+  /// Version »), qui départage deux « title » d'un même jeu. Expando: clé
+  /// d'IDENTITÉ, la ligne elle-même.
+  final _sectionOf = Expando<SearchResult>('archive');
+  final _folderOf  = Expando<String>('folder');
   bool  _hasMore     = false;
   bool  _tracksLoading = true;
   bool  _loadingMore   = false;
@@ -387,6 +422,44 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     );
   }
 
+  /// Les lignes serveur, chaque archive à tracklist connue remplacée par ses
+  /// pistes — EXACTEMENT ce que la file jouera: même règle
+  /// (RewampDb.expandsFromServerTracklist) et même fonction
+  /// (subsongRowsFromServer) que `_subsongEntries` d'AppShell. Un album
+  /// UnExoticA à deux archives (Denaris: un rip par compositeur) montrait deux
+  /// boîtes fermées alors que la file en jouait les cinq pistes.
+  List<SearchResult> _flattenArchives(List<SearchResult> rows) {
+    final out = <SearchResult>[];
+    for (final r in rows) {
+      if (!RewampDb.expandsFromServerTracklist(r)) {
+        out.add(r);
+        continue;
+      }
+      final kids = RewampDb.subsongRowsFromServer(r);
+      // Le dossier COMMUN aux membres est celui du jeu (« Denaris/»): ce qui
+      // dépasse est une version (« Mark_II_Version »), dite en sous-titre.
+      final dirs = [
+        for (final k in kids) p.posix.split(p.posix.dirname(k.filename))
+            .where((s) => s.isNotEmpty && s != '.').toList(),
+      ];
+      var common = dirs.isEmpty ? 0 : dirs.first.length;
+      for (final d in dirs) {
+        var i = 0;
+        while (i < common && i < d.length && d[i] == dirs.first[i]) {
+          i++;
+        }
+        common = i;
+      }
+      for (var i = 0; i < kids.length; i++) {
+        _sectionOf[kids[i]] = r;
+        final rest = dirs[i].skip(common).join(' / ').replaceAll('_', ' ');
+        if (rest.isNotEmpty) _folderOf[kids[i]] = rest;
+      }
+      out.addAll(kids);
+    }
+    return out;
+  }
+
   Future<void> _loadTracks(int offset) async {
     // ⚠️ **Un album SANS identité de catalogue se résout sur le DISQUE.**
     // Sans `albumId`, `_fetchAlbumTracks` interroge le serveur par NOM — et
@@ -532,13 +605,16 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         return;
       }
 
+      final shown = isPsf ? res : _flattenArchives(res);
       setState(() {
         if (offset == 0) {
           _tracks.clear();
           _total = res.isEmpty ? 0 : res.first.totalCount;
+          _flattened = false;
         }
-        _tracks.addAll(res);
-        _offset       = _tracks.length;
+        _tracks.addAll(shown);
+        if (shown.length != res.length) _flattened = true;
+        _offset       = offset + res.length;   // lignes SERVEUR
         _hasMore      = _total > 0 && _offset < _total;
         _tracksLoading = false;
         if (offset == 0) {
@@ -648,9 +724,11 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         offset:     _offset,
       );
       if (!mounted) return;
+      final shown = _isPsfArchiveAlbum ? more : _flattenArchives(more);
       setState(() {
-        _tracks.addAll(more);
-        _offset  = _tracks.length;
+        _tracks.addAll(shown);
+        if (shown.length != more.length) _flattened = true;
+        _offset += more.length;   // lignes SERVEUR
         _hasMore = _offset < _total;
         _loadingMore = false;
       });
@@ -671,14 +749,15 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             offset:     0,
           )
         : List<SearchResult>.from(_tracks);
+    if (_hasMore && !_isPsfArchiveAlbum) songs = _flattenArchives(songs);
 
     // Force = start clean: wipe the album folder AND its local-DB rows so the
     // fresh download rewrites correct files + metadata (stale rows from old
     // bugs otherwise keep polluting « écoutés récemment »).
     if (force && songs.isNotEmpty) {
       try {
-        final dir = p.dirname(
-            await RewampDb.localPath(_containerRow ?? songs.first));
+        final dir =
+            await RewampDb.albumDirForTrack(_containerRow ?? songs.first);
         // Pas `deleteLocalAlbumDir`: celui-là est le geste « supprimer le
         // téléchargement », qui emporte AUSSI le ♥, l'appartenance à la
         // bibliothèque et l'historique d'écoute (play_events est en cascade sur
@@ -762,6 +841,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           try {
             final reordered = await RewampDb.downloadAndExtractZip(zipUrl, songs,
                 mirrorZipUrl: _details?.mirrorZipUrl,
+                zipSize: _details?.zipSize ?? 0,
                 albumId: widget.albumId,
                 force: force);
             if (reordered != null) songs = reordered;
@@ -888,6 +968,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           } else {
             await RewampDb.downloadAndExtractZip(zipUrl!, songs,
                 mirrorZipUrl: _details?.mirrorZipUrl,
+                zipSize: _details?.zipSize ?? 0,
                 albumId: widget.albumId,
                 force: force);
           }
@@ -983,11 +1064,11 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     // PSF archive albums use local extracted filenames — never re-fetch from
     // server, which would give the wrong filenames/paths.
     var songs = (!_isPsfArchiveAlbum && _hasMore)
-        ? await _fetchAlbumTracks(
+        ? _flattenArchives(await _fetchAlbumTracks(
             sortBy:     'position',
             limit:      500,
             offset:     0,
-          )
+          ))
         : List<SearchResult>.from(_tracks);
     if (songs.isEmpty) songs = List<SearchResult>.from(_tracks);
 
@@ -1017,7 +1098,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           if (!ctx.mounted) return;
           try {
             final reordered = await RewampDb.downloadAndExtractZip(zipUrl, songs,
-                mirrorZipUrl: _details?.mirrorZipUrl, albumId: widget.albumId);
+                mirrorZipUrl: _details?.mirrorZipUrl,
+                zipSize: _details?.zipSize ?? 0, albumId: widget.albumId);
             if (reordered != null) songs = reordered;
             if (mounted) setState(() => _downloadRevision++);
           } catch (_) {
@@ -1083,7 +1165,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   static Future<bool> _trackFileCached(SearchResult r) async {
     // Row synthesized from an already-extracted file: it IS the cache.
     if (r.localPath != null && await File(r.localPath!).exists()) return true;
-    final rec = await LocalDb.instance.getTrackByOnlineId(r.songId);
+    final rec = await LocalDb.instance
+        .getTrackByOnlineId(r.songId, filename: r.filename);
     if (rec != null && await File(rec.filePath).exists()) return true;
     // Fallback: check the standard computed path (non-RSN tracks).
     if (r.downloadUrl != null) {
@@ -1137,6 +1220,32 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     // UNE fois par construction: le delegate d'un SliverList rappelle son
     // builder PAR LIGNE, et ce calcul balaie toute la liste.
     final skippedShort = _skippedShortFor(_tracks);
+    // Archives dépliées: un intertitre par archive, mais seulement s'il y en a
+    // PLUSIEURS (une seule = l'album lui-même, rien à départager). Calculé ici,
+    // une fois: la liste affichée intercale ces en-têtes entre les pistes.
+    final sections = <SearchResult>{
+      for (final t in _tracks)
+        if (_sectionOf[t] != null) _sectionOf[t]!,
+    };
+    final withHeaders = sections.length > 1;
+    final sectionCount = <SearchResult, int>{};
+    if (withHeaders) {
+      for (final t in _tracks) {
+        final s = _sectionOf[t];
+        if (s != null) sectionCount[s] = (sectionCount[s] ?? 0) + 1;
+      }
+    }
+    // (piste, ou en-tête d'archive quand `track` est null)
+    final display = <({SearchResult? track, SearchResult? archive, int index})>[];
+    SearchResult? prevSection;
+    for (var i = 0; i < _tracks.length; i++) {
+      final sec = _sectionOf[_tracks[i]];
+      if (withHeaders && sec != null && !identical(sec, prevSection)) {
+        display.add((track: null, archive: sec, index: -1));
+      }
+      prevSection = sec;
+      display.add((track: _tracks[i], archive: null, index: i));
+    }
 
     // Fade the app-bar title in only once the artwork has scrolled away.
     const expandedHeight = 280.0;
@@ -1338,8 +1447,13 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     // « + » quand elle est partielle — pistes sans durée, ou
                     // pagination pas finie (voir albumDurationLabel).
                     final dur = RewampDb.albumDurationLabel(_tracks);
+                    // Une archive dépliée compte ses PISTES: _total compte des
+                    // lignes serveur, dont celles pas encore chargées.
+                    final count = _flattened
+                        ? _tracks.length + (_total - _offset).clamp(0, 1 << 30)
+                        : _total;
                     final label = [
-                      l10n.albumTrackCount(_total),
+                      l10n.albumTrackCount(count),
                       if (dur != null)
                         (_tracks.length < _total && !dur.endsWith('+'))
                             ? '$dur+'
@@ -1362,8 +1476,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             ),
             SliverList(
               delegate: SliverChildBuilderDelegate(
-                (ctx, i) {
-                  if (i == _tracks.length) {
+                (ctx, di) {
+                  if (di == display.length) {
                     WidgetsBinding.instance
                         .addPostFrameCallback((_) => _loadMoreTracks());
                     return const Padding(
@@ -1371,8 +1485,25 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                       child: Center(child: CircularProgressIndicator()),
                     );
                   }
+                  final entry = display[di];
+                  final archive = entry.archive;
+                  if (archive != null) {
+                    final n = sectionCount[archive] ?? 0;
+                    return Padding(
+                      padding:
+                          const EdgeInsetsDirectional.fromSTEB(16, 16, 16, 4),
+                      child: Text(
+                        '${archive.displayTitle}  ·  ${l10n.albumTrackCount(n)}'
+                        '${archive.fileSize > 0 ? '  ·  ${archive.fileSizeLabel}' : ''}',
+                        style: Theme.of(ctx).textTheme.titleSmall
+                            ?.copyWith(color: cs.primary),
+                      ),
+                    );
+                  }
+                  final i = entry.index;
                   return _AlbumTrackTile(
                     index:            i + 1,
+                    folderLabel:      _folderOf[_tracks[i]],
                     result:           _tracks[i],
                     subsongScore:
                         _subsongScores[_tracks[i].subsongIdx],
@@ -1388,15 +1519,19 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     onNavigateArtist: widget.onArtistTap != null
                         ? (name, {collection, artistId}) =>
                             widget.onArtistTap!(name)
-                        : null,
+                        : globalOnNavigateArtist,
                     onQueueAdd:       widget.onQueueAdd,
-                    sharedFileAlbum:  _sharedFileAlbum,
+                    // Piste d'archive dépliée: la taille est celle de
+                    // l'ARCHIVE (portée par sa 1re piste) — elle va dans
+                    // l'intertitre / l'en-tête, pas sur une ligne.
+                    sharedFileAlbum:  _sharedFileAlbum ||
+                        _sectionOf[_tracks[i]] != null,
                     skippedShortSeconds: skippedShort.contains(_tracks[i])
                         ? (_minSubsongMs / 1000).round()
                         : null,
                   );
                 },
-                childCount: _tracks.length + (_hasMore ? 1 : 0),
+                childCount: display.length + (_hasMore ? 1 : 0),
               ),
             ),
             // Description — after track list
@@ -1609,17 +1744,18 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
               ),
             ],
 
-            // Composers (tappable when onArtistTap is provided)
+            // Composers — tappable through onArtistTap, else the shell's
+            // global artist screen.
             if (_effectiveComposerNames.isNotEmpty) ...[
               const SizedBox(height: 6),
-              widget.onArtistTap != null
+              _artistTap != null
                   ? Wrap(
                       spacing: 0,
                       children: [
                         for (int i = 0; i < _effectiveComposerNames.length; i++) ...[
                           GestureDetector(
                             onTap: () =>
-                                widget.onArtistTap!(_effectiveComposerNames[i]),
+                                _artistTap!(_effectiveComposerNames[i]),
                             child: Text(
                               _effectiveComposerNames[i],
                               style: tt.bodySmall?.copyWith(
@@ -1780,6 +1916,10 @@ class _AlbumTrackTile extends StatefulWidget {
   /// afficherait un nombre qui ne correspond pas à son propre grisé.
   final int? skippedShortSeconds;
 
+  /// Sous-dossier du membre dans son archive (« Mark II Version »), quand il
+  /// départage deux pistes du même nom; null sinon.
+  final String? folderLabel;
+
   /// Appui long / clic droit: la feuille « maintenant / ensuite / à la fin »
   /// pour CETTE piste — le tap, lui, lance l'album entier sans demander.
   final Future<void> Function(BuildContext, SearchResult)? onHold;
@@ -1796,6 +1936,7 @@ class _AlbumTrackTile extends StatefulWidget {
     this.sharedFileAlbum = false,
     this.subsongScore,
     this.skippedShortSeconds,
+    this.folderLabel,
   });
 
   @override
@@ -1905,6 +2046,7 @@ class _AlbumTrackTileState extends State<_AlbumTrackTile> {
         final pop =
             fileGrain ? r.popularity : widget.subsongScore?.popularity;
         final parts = <String>[
+          if (widget.folderLabel != null) widget.folderLabel!,
           if (r.artistLabel.isNotEmpty) r.artistLabel,
           if (r.formatExt.isNotEmpty) r.formatExt.toUpperCase(),
           // Shared-file albums: size belongs to the file, shown in the header —

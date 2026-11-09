@@ -48,18 +48,21 @@ static RewampDecoder* wonderswan_open(const char* path, RewampAudioFormat* outFo
 
     /* ?subsong=N — the OSwan plugin could only ever play the footer's track.
      *
-     * Tracks are addressed through AW and they are ONE-based: AW=0 is a dead
-     * slot (dead silent on Arc the Lad, a stray fragment on Densha de Go).
-     * rewamp's subsong index is zero-based (entry 1 carries no suffix at all),
-     * so the mapping is AW = subsong + 1 — the same numbering Modizer uses.
-     * Getting this wrong shifts the whole list: entry 2 played the dead AW=0,
-     * entry 3 replayed entry 1, and every real track sat one row too low.
+     * N is the AW value the driver reads at entry, AS IS: the number a WSR
+     * M3U (`file.wsr::WSR,N,…`) and the server tracklist publish is the
+     * driver's own track number, not a position. Rips disagree on its base:
+     * Arc the Lad and Densha de Go count from 1 (AW=0 is a dead slot there),
+     * « With You - Mitsumete Itai » counts from 0 and AW=0 is its first track.
+     * The old mapping AW = subsong + 1 (Modizer's) assumed every rip was
+     * 1-based, so on a 0-based one every row played the NEXT track and the
+     * last one played nothing. WSR is therefore an ABSOLUTE song-number format
+     * on the Dart side (kAbsoluteSongNumberExts): no offset is ever applied.
      *
-     * The footer's own "first song" byte is NOT used to pick the track: it is
-     * the game's default (17 on Densha de Go), not the head of the catalogue
-     * listing. It stays in the info panel. The footer carries no track count
-     * either, so enumeration remains a catalogue matter. */
-    int subsong = 0;
+     * No suffix (a file opened on its own, or index 0, which the app writes
+     * without a suffix) plays the footer's default track. On a 1-based rip
+     * every listed track carries a suffix (no row is 0), so the dead AW=0 is
+     * never played; on a 0-based rip the footer's default is 0 (With You). */
+    int subsong = -1;
     const char* q = strrchr(path, '?');
     if (q) {
         const char* s = strstr(q, "subsong=");
@@ -103,7 +106,7 @@ static RewampDecoder* wonderswan_open(const char* path, RewampAudioFormat* outFo
     free(buf);   /* the core copies into its own padded ROM buffer */
 
     const int firstSong = rewamp_wswan_first_song();
-    const int song      = (subsong > 0 ? subsong : 0) + 1;
+    const int song      = subsong >= 0 ? subsong : firstSong;
     if (song != firstSong) rewamp_wswan_reset(song);
 
     /* .wsr has no text metadata whatsoever — the footer is 32 binary bytes

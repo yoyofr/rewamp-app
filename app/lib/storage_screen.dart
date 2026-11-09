@@ -9,6 +9,7 @@ import 'l10n.dart';
 import 'artwork_image.dart';
 import 'cancel_field.dart';
 import 'local_db.dart';
+import 'local_delete.dart' show pruneEmptyDirs;
 import 'local_import.dart' show localImportsDir;
 import 'local_open.dart' show globalOpenLocalPaths;
 import 'opened_files.dart';
@@ -448,7 +449,8 @@ class StorageCategoryScreen extends StatefulWidget {
   State<StorageCategoryScreen> createState() => _StorageCategoryScreenState();
 }
 
-class _Entry {
+@visibleForTesting
+class StorageEntry {
   final String path;
   /// Ce qu'on AFFICHE et ce sur quoi le filtre porte: le chemin relatif à la
   /// racine de la catégorie. Un basename seul ne distingue pas deux
@@ -456,7 +458,49 @@ class _Entry {
   final String label;
   final int bytes;
   final bool referenced;
-  const _Entry(this.path, this.label, this.bytes, this.referenced);
+  const StorageEntry(this.path, this.label, this.bytes, this.referenced);
+
+  /// Le dossier AFFICHÉ (« . » à la racine de la catégorie).
+  String get dirLabel => p.dirname(label);
+}
+
+/// En-tête d'un dossier dans la liste: une case qui coche ou décoche TOUS ses
+/// fichiers affichés — la suppression par dossier sans quitter la liste plate.
+/// Clé = le dossier RÉEL (deux albums homonymes ont le même libellé lisible).
+class StorageDirGroup {
+  final String dir;
+  final String label;
+  final List<StorageEntry> entries;
+  StorageDirGroup(this.dir, this.label) : entries = [];
+}
+
+/// Range [entries] par dossier, dossiers puis fichiers dans l'ordre du
+/// libellé, et intercale un [StorageDirGroup] devant chaque dossier hors racine.
+/// Pure et testée.
+@visibleForTesting
+List<Object> groupStorageRows(List<StorageEntry> entries) {
+  final list = entries.toList()
+    ..sort((a, b) {
+      final d = a.dirLabel.toLowerCase().compareTo(b.dirLabel.toLowerCase());
+      if (d != 0) return d;
+      final r = p.dirname(a.path).compareTo(p.dirname(b.path));
+      if (r != 0) return r;
+      return a.label.toLowerCase().compareTo(b.label.toLowerCase());
+    });
+  final out = <Object>[];
+  StorageDirGroup? cur;
+  for (final e in list) {
+    final dir = p.dirname(e.path);
+    if (e.dirLabel != '.' && (cur == null || cur.dir != dir)) {
+      cur = StorageDirGroup(dir, e.dirLabel);
+      out.add(cur);
+    } else if (e.dirLabel == '.') {
+      cur = null;
+    }
+    cur?.entries.add(e);
+    out.add(e);
+  }
+  return out;
 }
 
 class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
@@ -466,7 +510,7 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
   // vide la sélection sans quitter le mode; la croix et la fin d'une
   // suppression en sortent.
   bool _selecting = false;
-  List<_Entry>? _all;
+  List<StorageEntry>? _all;
   bool _busy = false;
 
   @override
@@ -517,7 +561,7 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
     final albumNames = widget.kind == StorageKind.downloads
         ? await LocalDb.instance.albumNamesById()
         : const <String, String>{};
-    final out = <_Entry>[];
+    final out = <StorageEntry>[];
     if (await root.exists()) {
       // Les presets n'exposent que les dossiers de l'UTILISATEUR (voir
       // _kPresetUserDirs): l'embarqué ne se purge pas utilement.
@@ -529,7 +573,7 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
         await for (final e in r.list(recursive: true, followLinks: false)) {
           if (e is! File) continue;
           try {
-            out.add(_Entry(
+            out.add(StorageEntry(
                 e.path,
                 readableRelPath(p.relative(e.path, from: root.path), albumNames),
                 await e.length(),
@@ -538,7 +582,6 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
         }
       }
     }
-    out.sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
     if (!mounted) return;
     setState(() {
       _all = out;
@@ -546,8 +589,8 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
     });
   }
 
-  List<_Entry> get _shown {
-    final all = _all ?? const <_Entry>[];
+  List<StorageEntry> get _shown {
+    final all = _all ?? const <StorageEntry>[];
     final q = _filterCtrl.text.trim().toLowerCase();
     if (q.isEmpty) return all;
     return [for (final e in all) if (e.label.toLowerCase().contains(q)) e];
@@ -556,7 +599,7 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
   Future<void> _deleteSelection() async {
     final l10n = context.l10n;
     final victims = [
-      for (final e in (_all ?? const <_Entry>[]))
+      for (final e in (_all ?? const <StorageEntry>[]))
         if (_selected.contains(e.path)) e,
     ];
     if (victims.isEmpty) return;
@@ -616,8 +659,51 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
         }
       });
     }
+    // Un dossier d'album téléchargé VIDÉ est un résidu (`online/` appartient à
+    // l'app): on l'élague. Jamais dans les imports — un dossier y est un objet
+    // de l'utilisateur, voir pruneEmptyDirs.
+    if (widget.kind == StorageKind.downloads) {
+      final root = (await _root()).path;
+      for (final dir in {for (final e in victims) p.dirname(e.path)}) {
+        await pruneEmptyDirs(dir, root: root);
+      }
+    }
     if (mounted) setState(() { _busy = false; _selected.clear(); _selecting = false; });
     await _load();
+  }
+
+  Widget _dirHeader(StorageDirGroup g) {
+    final cs = Theme.of(context).colorScheme;
+    final paths = [for (final e in g.entries) e.path];
+    final n = paths.where(_selected.contains).length;
+    final value = n == 0 ? false : (n == paths.length ? true : null);
+    void toggle() => setState(() {
+          _selecting = true;
+          if (n == paths.length) {
+            _selected.removeAll(paths);
+          } else {
+            _selected.addAll(paths);
+          }
+        });
+    return Material(
+      color: cs.surfaceContainerHighest,
+      child: ListTile(
+        dense: true,
+        leading: Checkbox(
+            tristate: true, value: value, onChanged: (_) => toggle()),
+        // Style par `DefaultTextStyle.merge`: `ScrollingText(style:)`
+        // REMPLACE le style hérité (repli de police CJK compris).
+        title: DefaultTextStyle.merge(
+            style: const TextStyle(fontWeight: FontWeight.w600),
+            child: ScrollingText(text: g.label)),
+        subtitle: Text(context.l10n.storageCategoryStat(
+            g.entries.length,
+            _StorageScreenState._fmtSize(
+                g.entries.fold<int>(0, (s, e) => s + e.bytes)))),
+        trailing: const Icon(Icons.folder_outlined, size: 20),
+        onTap: toggle,
+      ),
+    );
   }
 
   @override
@@ -626,6 +712,7 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
     final cs = Theme.of(context).colorScheme;
     final shown = _shown;
     final all = _all;
+    final rows = groupStorageRows(shown);
 
     return Scaffold(
       appBar: AppBar(
@@ -714,9 +801,11 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
                               style: TextStyle(color: cs.outline)))
                       : ListView.builder(
                           padding: shellInset(context, EdgeInsets.zero),
-                          itemCount: shown.length,
+                          itemCount: rows.length,
                           itemBuilder: (_, i) {
-                            final e = shown[i];
+                            final row = rows[i];
+                            if (row is StorageDirGroup) return _dirHeader(row);
+                            final e = row as StorageEntry;
                             final sel = _selected.contains(e.path);
                             void toggle() => setState(() {
                                   _selecting = true;

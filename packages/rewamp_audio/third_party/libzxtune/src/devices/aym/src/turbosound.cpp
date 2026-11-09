@@ -32,11 +32,17 @@ namespace TurboSound
       : Chip0(table)
       , Chip1(table)
     {
-      //YOYOFR (rewamp): the second chip owns voices 3..5, and it has to be told
-      //once here — the renderer's m_voicesForceOfs is only set while GetLevels()
-      //runs, which is not when registers arrive.
-      Chip0.SetVoiceOfs(0);
-      Chip1.SetVoiceOfs(3);
+    }
+
+    //YOYOFR (rewamp): the second chip owns the three voices after the first.
+    //Set once by SoundChip from its voice base (0 for a lone pair, the sum of
+    //the previous delegates' voices in a MultiTrackContainer) — the renderer's
+    //m_voicesForceOfs is only valid while GetLevels() runs, which is not when
+    //registers arrive.
+    void SetVoiceOfs(int ofs)
+    {
+      Chip0.SetVoiceOfs(ofs);
+      Chip1.SetVoiceOfs(ofs + 3);
     }
 
     void SetDutyCycle(uint_t value, uint_t mask)
@@ -81,14 +87,16 @@ namespace TurboSound
     {
       using namespace Sound;
         
-        m_voicesForceOfs=0;
+        //YOYOFR (rewamp): each half captures under ITS voice base.
+        const int base = Chip0.GetVoiceOfs();
+        m_voicesForceOfs=base;
         m_voice_current_total=3;
       const Sample s0 = Chip0.GetLevels();
         
-        m_voicesForceOfs=3;
+        m_voicesForceOfs=base+3;
         m_voice_current_total=3;
       const Sample s1 = Chip1.GetLevels();
-        m_voicesForceOfs=0;
+        m_voicesForceOfs=base;
         m_voice_current_total=6;
       return Sound::Sample::FastAdd(s0, s1);
     }
@@ -109,6 +117,7 @@ namespace TurboSound
     typedef PSG PSGType;
     typedef Chip ChipBaseType;
     static const uint_t VOICES = TurboSound::VOICES;
+    static const uint_t CAPTURE_VOICES = 6;   //rewamp: two chips, three tones each
   };
 
   class HalfLevelMixer : public MixerType

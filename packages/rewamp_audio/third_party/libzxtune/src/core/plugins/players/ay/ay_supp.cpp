@@ -207,6 +207,7 @@ namespace AY
     DataChannel(Devices::AYM::Device::Ptr ay, Devices::Beeper::Device::Ptr beep)
       : Ay(ay)
       , Beeper(beep)
+      , VoiceBase(rewamp_zx_voice_base)   //YOYOFR (rewamp)
     {
     }
 
@@ -249,10 +250,10 @@ namespace AY
 
     void RenderFrame(const Devices::Z80::Stamp& till)
     {
-        m_voicesForceOfs=0;
-        m_voice_current_total=3;
+      //YOYOFR (rewamp): the AY chip binds its own voices (SoundChip); the
+      //beeper is the voice right after them.
       Ay.RenderFrame(till);
-        m_voicesForceOfs=3;
+        m_voicesForceOfs=VoiceBase+3;
         m_voice_current_total=1;
       Beeper.RenderFrame(till);
     }
@@ -264,6 +265,7 @@ namespace AY
   private:
     AyDataChannel Ay;
     BeeperDataChannel Beeper;
+    const int VoiceBase;   //YOYOFR (rewamp)
   };
 
   class ZXAYPort
@@ -617,10 +619,9 @@ namespace AY
     {
       if (Iterator->IsValid())
       {
-          //YOYOFR
-          memset(vgm_last_note,0,sizeof(vgm_last_note));
-          memset(vgm_last_vol,0,sizeof(vgm_last_vol));
-          //YOYOFR
+          //YOYOFR (rewamp): the chip clears ITS voices' notes when it renders (see
+          //rewamp_voice_notes_clear) — a whole-array wipe here erased the other
+          //delegates' notes in a MultiTrackContainer.
           
         SynchronizeParameters();
         LastTime += FrameDuration;

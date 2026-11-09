@@ -299,16 +299,10 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.play_arrow, size: 21),
-                  tooltip: l10n.browsePlayAll,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: searching
+                RadioSurpriseButtons(
+                  onPlayAll: searching
                       ? (shownFiles.isEmpty ? null : () => _play(shownFiles))
                       : _playAllHere,
-                ),
-                const SizedBox(width: 8),
-                RadioSurpriseButtons(
                   onRadio: searching
                       ? (shownFiles.isEmpty
                           ? null
@@ -377,7 +371,11 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
                               : null;
                           return PlayChoiceHold.tile(ListTile(
                             dense: true,
-                            leading: const Icon(Icons.music_note_outlined),
+                            leading: root != null && root.available
+                                ? _FileArt(
+                                    key: ValueKey(e.relPath),
+                                    path: LocalRoots.instance.absolutePathOf(e))
+                                : const Icon(Icons.music_note_outlined),
                             title: ScrollingText(text: e.name),
                             subtitle: dir != null && dir != '.'
                                 ? ScrollingText(
@@ -402,6 +400,66 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
 
   Widget _folderLeading(String? art, ColorScheme cs) {
     const icon = Icon(Icons.folder_outlined);
+    if (art == null) return icon;
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.file(
+          File(art),
+          width: 40,
+          height: 40,
+          fit: BoxFit.cover,
+          cacheWidth: 120,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => icon,
+        ),
+      ),
+    );
+  }
+}
+
+/// Vignette d'un FICHIER lié: l'image posée à côté de lui (même nom, ou
+/// pochette du dossier — les règles de ArtworkCache.findLocalArtwork, celles
+/// de la bibliothèque), résolue après l'affichage; sinon la note. Rien n'est
+/// lu dans le fichier lui-même (un parcours, pas un import).
+class _FileArt extends StatefulWidget {
+  const _FileArt({super.key, required this.path});
+  final String path;
+
+  @override
+  State<_FileArt> createState() => _FileArtState();
+}
+
+class _FileArtState extends State<_FileArt> {
+  String? _art;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(_FileArt old) {
+    super.didUpdateWidget(old);
+    if (old.path != widget.path) {
+      _art = null;
+      _resolve();
+    }
+  }
+
+  Future<void> _resolve() async {
+    final path = widget.path;
+    final a = await ArtworkCache.instance.findLocalArtwork(path);
+    if (mounted && path == widget.path && a != _art) setState(() => _art = a);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const icon = Icon(Icons.music_note_outlined);
+    final art = _art;
     if (art == null) return icon;
     return SizedBox(
       width: 40,

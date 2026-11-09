@@ -126,9 +126,12 @@ const Map<String, SoundPlatform> _extMap = {
   'kss': SoundPlatform.msx, 'mgs': SoundPlatform.msx, 'bgm': SoundPlatform.msx,
   'mpk': SoundPlatform.msx, 'mbm': SoundPlatform.msx, 'opx': SoundPlatform.msx,
   // ZX Spectrum
-  'ay': SoundPlatform.zxSpectrum, 'ym': SoundPlatform.zxSpectrum, 'vtx': SoundPlatform.zxSpectrum,
+  'ay': SoundPlatform.zxSpectrum, 'ym': SoundPlatform.atariST, 'vtx': SoundPlatform.zxSpectrum,
   'pt3': SoundPlatform.zxSpectrum, 'mt3': SoundPlatform.zxSpectrum, 'pt2': SoundPlatform.zxSpectrum, 'stc': SoundPlatform.zxSpectrum,
   'psg': SoundPlatform.zxSpectrum, 'asc': SoundPlatform.zxSpectrum, 'stp': SoundPlatform.zxSpectrum,
+  // cassette / disquettes TR-DOS (.tap est aussi Commodore et Oric, mais seul
+  // le moteur Spectrum le joue ici)
+  'tap': SoundPlatform.zxSpectrum, 'trd': SoundPlatform.zxSpectrum, 'scl': SoundPlatform.zxSpectrum,
   // Amstrad CPC
   'chp': SoundPlatform.amstradCpc, 'cpc': SoundPlatform.amstradCpc,
   // PC-98

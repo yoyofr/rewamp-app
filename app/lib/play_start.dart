@@ -52,6 +52,44 @@ Future<void> withPlayChoiceSheet(FutureOr<void> Function() gesture) async {
 /// Vrai dans un geste lancé par [withPlayChoiceSheet].
 bool get playChoiceSheetForced => Zone.current[_forceSheetKey] == true;
 
+final Object _queuePlacementKey = Object();
+
+class _QueuePlacement {
+  final bool atEnd;
+  bool taken = false;
+  _QueuePlacement(this.atEnd);
+}
+
+/// « Lire ensuite » / « À la fin » d'une rangée tout lire · radio · surprise
+/// (le menu « … » de `RadioSurpriseButtons`): refait le geste « tout lire »
+/// de l'écran, mais ce qu'il enverrait à la file y est AJOUTÉ au lieu de la
+/// remplacer. Une valeur de ZONE et non un paramètre: chaque écran a son
+/// « tout lire » (dépliage d'entités, requêtes, fichiers locaux…) et tous
+/// finissent dans les mêmes entonnoirs d'AppShell, qui la lisent
+/// (`_startAlbumQueue`, `_startLocalTrackQueue`, `_openLocalPaths`,
+/// `showPlayChoiceSheet`) — une ligne par entonnoir au lieu d'une par écran.
+/// Elle traverse les `await` du geste comme [withPlayChoiceSheet].
+///
+/// ⚠️ À USAGE UNIQUE ([takeQueuePlacement]): une minuterie ou un écouteur
+/// créé pendant le geste hérite de la zone, et un `_startAlbumQueue` lancé
+/// bien plus tard par lui (fin de file, relance) AJOUTERAIT au lieu de
+/// remplacer. Le premier entonnoir qui la lit la consomme.
+Future<void> withQueuePlacement(
+    {required bool atEnd, required FutureOr<void> Function() gesture}) async {
+  await runZoned(() async => gesture(),
+      zoneValues: {_queuePlacementKey: _QueuePlacement(atEnd)});
+}
+
+/// Dans un geste [withQueuePlacement] pas encore consommé: `true` = à la fin,
+/// `false` = ensuite — et la marque est CONSOMMÉE. `null` ailleurs (le geste
+/// REMPLACE la file).
+bool? takeQueuePlacement() {
+  final p = Zone.current[_queuePlacementKey] as _QueuePlacement?;
+  if (p == null || p.taken) return null;
+  p.taken = true;
+  return p.atEnd;
+}
+
 /// L'appui long (et le clic droit) d'une carte dont le tap peut lancer la
 /// lecture d'office: refait le MÊME geste, feuille imposée. À poser autour
 /// d'un élément qui n'a pas déjà son propre appui long (les lignes de morceau

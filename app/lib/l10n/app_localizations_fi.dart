@@ -762,6 +762,14 @@ class AppLocalizationsFi extends AppLocalizations {
   String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
+  String get engineDescCpc =>
+      'Amstrad CPC — .dsk-levykkeet ajettuna emuloidulla CPC 6128:lla';
+
+  @override
+  String get engineDescZxSpectrum =>
+      'ZX Spectrum — .tap-kasetit ajettuna emuloidulla Spectrum 48K/128K:lla';
+
+  @override
   String get engineDescSidplayfp => 'Commodore 64 SID (reSIDfp-moottori)';
 
   @override
@@ -813,7 +821,7 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get engineDescSndh =>
-      'Atari ST .sndh — aito 68000-emulointi + YM2149 + STE DAC';
+      'Atari ST .sndh — aito 68000-emulointi + YM2149 + STE DAC · .ym (YM2–YM6, digidrums, SID)';
 
   @override
   String get engineDescLazyusf =>
@@ -835,6 +843,10 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get engineDescOrganya => 'Cave Story .org — Pixelin oma moottori';
+
+  @override
+  String get engineDescMinibae =>
+      'Beatnik .rmf — Beatnik Audio Engine, 90-luvun lopun verkko- ja pelimusiikki';
 
   @override
   String get engineDescNtgs =>
@@ -1454,6 +1466,9 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get queueAutoplayRow => 'Automaattisen toiston lisäämä';
+
+  @override
+  String get queueRadioRow => 'Radion lisäämä';
 
   @override
   String get queueClearConfirmTitle => 'Tyhjennetäänkö jono?';
@@ -2833,7 +2848,7 @@ class AppLocalizationsFi extends AppLocalizations {
       'Osaa formaateista pystyy toistamaan useampi moottori. Valitse, mitä niistä käytetään oletuksena — muut formaatit ohjautuvat automaattisesti.';
 
   @override
-  String get settingsDecoderAmigaTrackers => 'Amiga-trackerit (mod, med, okt…)';
+  String get settingsDecoderAmigaTrackers => 'Amiga-moduulit (mod, med, okt…)';
 
   @override
   String get settingsEngineOpenmptSubtitle => 'Trackerit — MOD, XM, S3M, IT…';
@@ -3032,6 +3047,13 @@ class AppLocalizationsFi extends AppLocalizations {
   String get settingsNsfQuality => 'Laatu (nsfplay)';
 
   @override
+  String get settingsNsfFade => 'Häivytys lopussa';
+
+  @override
+  String get settingsNsfFadeHelp =>
+      'Häivytys kappaleen lopussa, kun tiedosto ei määritä omaansa (.m3u tai NSFe voi määrittää). Se sisältyy kappaleen pituuteen. Pois = suora katkaisu.';
+
+  @override
   String get settingsLowpassFilter => 'Alipäästösuodatin';
 
   @override
@@ -3151,6 +3173,52 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get settingsGbsHpFilter => 'Ylipäästösuodatin (gbsplay)';
+
+  @override
+  String get settingsEnginePsgplaySubtitle =>
+      'Atari ST / SNDH — YM2149:n kanavien miksaus';
+
+  @override
+  String get settingsPsgMix => 'PSG-kanavien miksaus';
+
+  @override
+  String get settingsPsgMixEmpiric => 'Empiirinen (Atari ST)';
+
+  @override
+  String get settingsPsgMixLinear => 'Lineaarinen';
+
+  @override
+  String get settingsPsgMixStereo => 'Stereo';
+
+  @override
+  String get settingsPsgMixEmpiricHint =>
+      'Kolme kanavaa miksattuna kuten oikeassa Atari ST:ssä (mitatut tasot): rouhea ääni, monona.';
+
+  @override
+  String get settingsPsgMixLinearHint =>
+      'Kolmen kanavan pelkkä summa: puhtaampi ääni, monona.';
+
+  @override
+  String get settingsPsgMixStereoHint =>
+      'Lineaarinen miksaus, jokainen kanava sijoitettuna vasemman ja oikean välille.';
+
+  @override
+  String settingsPsgPanVoice(String voice) {
+    return 'Kanava $voice';
+  }
+
+  @override
+  String get settingsPsgPanCentre => 'Keskellä';
+
+  @override
+  String settingsPsgPanLeft(int percent) {
+    return 'Vasen $percent %';
+  }
+
+  @override
+  String settingsPsgPanRight(int percent) {
+    return 'Oikea $percent %';
+  }
 
   @override
   String get settingsGbsFilterDmg => 'DMG (klassinen GB)';
@@ -4396,54 +4464,6 @@ class AppLocalizationsFi extends AppLocalizations {
   String get releaseNotesTitle => 'Uutta';
 
   @override
-  String get releaseNotesV10Loading =>
-      'Hitaasti latautuva kappale ei enää jäädytä sovellusta: ohut rengas toisto/tauko-painikkeen ympärillä näyttää, että lataus on kesken.';
-
-  @override
-  String get releaseNotesV10Piano =>
-      'Piano-visualisointi: kappaleet, joissa soi monta ääntä tai soitinta yhtä aikaa, jaetaan useammalle koskettimistolle.';
-
-  @override
-  String get releaseNotesV10Amiga =>
-      'Amiga: StoneTracker, SUNtronic (TSM-ripit) ja useampi Soundtracker 2.6 -moduuli soivat nyt, ja SoundPlayer-kappaleet soivat iOS:ssä.';
-
-  @override
-  String get releaseNotesV10ZxSpectrum =>
-      'ZX Spectrum: zxartin .mt3-tiedostot soivat, ja Linuxissa mukana ovat ZXTune-formaatit ja SAM Coupén .cop-ohjelmat.';
-
-  @override
-  String get releaseNotesV10OpenWith =>
-      'macOS ja iOS: kaikki tuetut formaatit näkyvät nyt Avaa sovelluksella -valikossa.';
-
-  @override
-  String get releaseNotesV10MtcCrash =>
-      'Korjattu: jotkin .mtc-tiedostot, joissa PT3 on yhdistetty TFM:ään tai PSG:hen, kaatoivat sovelluksen.';
-
-  @override
-  String get releaseNotesV10Podiums =>
-      'Uusi ”Palkintosijat”-selain: demoskenen kilpailujen voittajat partyittain, vuosittain tai kilpailulajeittain, sekä kunniagalleria.';
-
-  @override
-  String get releaseNotesV10Arcade =>
-      'Arcade: Ensoniq ES5505/ES5506 -musiikki (Taito F3…) soi, Apple IIGS -VGM-tiedostot eivät enää kaada sovellusta, ja moottorit on päivitetty (FM-Kingtracker .fmk lisätty).';
-
-  @override
-  String get releaseNotesV10InfoPanel =>
-      'Tietopaneeli: formaatti, moottori, kanavat ja silmukkakohdat ensin, ja kenttien nimet erottuvat.';
-
-  @override
-  String get releaseNotesV10LocalAlbums =>
-      'Albumi- ja alikappalenäkymät näyttävät kokoelman; pudotettu arkisto listaa kaikki raitansa, on merkitty ”paikallinen” eikä enää näy kahdesti korvaamisen jälkeen.';
-
-  @override
-  String get releaseNotesV10Crossfade =>
-      'Korjattu: ristihäivytyksen kanssa häivytystä lyhyempi raita ei kuulunut.';
-
-  @override
-  String get releaseNotesV10Artwork =>
-      'Korjattu: palvelimella vaihdettu kansikuva näkyy kaikkialla, kun on valittu ”Lataa tiedosto uudelleen”.';
-
-  @override
   String get releaseNotesDataReset =>
       'Paikalliset tiedot nollattiin tätä versiota varten. Kirjasto ja soittolistat rakentuvat tililtä; lataukset on tehtävä uudelleen.';
 
@@ -4898,8 +4918,15 @@ class AppLocalizationsFi extends AppLocalizations {
   String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
 
   @override
+  String get settingsMidiSynthOpn2 => 'OPN2 FM (Mega Drive / Genesis)';
+
+  @override
   String get settingsEngineAdlmidiSubtitle =>
       'MIDI ja DOS-pelien musiikki emuloidulla OPL3-piirillä';
+
+  @override
+  String get settingsEngineOpnmidiSubtitle =>
+      'MIDI emuloidulla OPN2- / OPNA-piirillä (Mega Drive, PC-98)';
 
   @override
   String get settingsAdlBank => 'Soitinpankki';
@@ -4922,4 +4949,448 @@ class AppLocalizationsFi extends AppLocalizations {
   @override
   String get engineDescAdlmidi =>
       'MIDI, XMI, DMX MUS, HMI/HMP emuloidulla OPL3-piirillä (AdLib / Sound Blaster)';
+
+  @override
+  String get engineDescOpnmidi =>
+      'MIDI emuloidulla OPN2- (Mega Drive) tai OPNA-piirillä (PC-98)';
+
+  @override
+  String get fmBanksBuiltIn => 'Sisäänrakennetut';
+
+  @override
+  String get fmBanksImported => 'Tuodut';
+
+  @override
+  String get fmBanksFilterHint => 'Suodata nimen mukaan';
+
+  @override
+  String get fmBanksNoMatch => 'Yksikään pankki ei täsmää';
+
+  @override
+  String get fmBanksImportedEmpty =>
+      'Ei vielä tuotuja pankkeja. Pudota .wopl- tai .wopn-tiedosto ikkunaan, avaa se Rewampilla tai tuo se tästä.';
+
+  @override
+  String fmBankImported(String name, String engine) {
+    return 'Pankki ”$name” tuotu ja valittu: $engine';
+  }
+
+  @override
+  String fmBankImportInvalid(String name) {
+    return '”$name” ei ole WOPL- tai WOPN-pankki';
+  }
+
+  @override
+  String fmBankDeleteConfirm(String name) {
+    return 'Poistetaanko pankki ”$name”?';
+  }
+
+  @override
+  String get fmBanksImportTile => 'Tuo pankkeja…';
+
+  @override
+  String fmBanksImportSubtitle(String ext) {
+    return '$ext-tiedostoja (Wohlstandin pankkieditoreista tai kokoelmista). Tiedoston otsake ratkaisee; tuodut pankit poistetaan pankkiluettelosta.';
+  }
+
+  @override
+  String get fmEmuAccuracyVeryHigh => 'Erittäin tarkka';
+
+  @override
+  String get fmEmuAccuracyGood => 'Tarkka';
+
+  @override
+  String get fmEmuAccuracyApproximate => 'Likimääräinen';
+
+  @override
+  String get fmEmuCpuLight => 'Nopea';
+
+  @override
+  String get fmEmuCpuMedium => 'Kohtalainen suoritinkuorma';
+
+  @override
+  String get fmEmuCpuHeavy => 'Raskas suorittimelle';
+
+  @override
+  String settingsDefaultFor(String format) {
+    return 'Oletussoitin: $format';
+  }
+
+  @override
+  String get settingsDefaultForActive => 'Tämä moottori soittaa tämän muodon';
+
+  @override
+  String settingsDefaultForSet(String section) {
+    return 'Napauta soittaaksesi tämän muodon tällä moottorilla – kaikki valinnat löytyvät myös kohdasta ”$section”';
+  }
+
+  @override
+  String get settingsDecoderDosMidi => 'DOS-pelien MIDI (XMI, MUS, HMI…)';
+
+  @override
+  String get playWithTitle => 'Toista käyttäen…';
+
+  @override
+  String playWithAuto(String engine) {
+    return 'Automaattinen ($engine)';
+  }
+
+  @override
+  String get playWithPlayingNow => 'Soi nyt';
+
+  @override
+  String get playWithRemember => 'Muista tämä valinta';
+
+  @override
+  String get playWithRememberOn => 'Aina kun tämä tiedosto (tai albumi) soi';
+
+  @override
+  String get playWithRememberOff => 'Vain tällä toistokerralla';
+
+  @override
+  String get playWithScopeFile => 'Tämä tiedosto';
+
+  @override
+  String get playWithScopeAlbum => 'Koko albumi';
+
+  @override
+  String get playWithApply => 'Toista';
+
+  @override
+  String playWithCurrent(String engine) {
+    return 'Moottori: $engine';
+  }
+
+  @override
+  String get settingsForgetPlayWith => 'Unohda ”Toista käyttäen…” -valinnat';
+
+  @override
+  String settingsForgetPlayWithSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count muistettua valintaa',
+      one: '$count muistettu valinta',
+      zero: 'Ei muistettuja valintoja',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsForgetPlayWithBody =>
+      'Kaikki tiedostolle tai albumille muistettu (moottori, pankki, SoundFont, malli) unohdetaan: ne soivat taas oletusasetuksilla.';
+
+  @override
+  String get playWithBank => 'Soitinpankki';
+
+  @override
+  String playWithBankDefault(String name) {
+    return 'Asetusten pankki ($name)';
+  }
+
+  @override
+  String get fmBankInUseTitle => 'Pankki käytössä';
+
+  @override
+  String fmBankInUseIntro(String name) {
+    return '”$name” on valittu kohteille:';
+  }
+
+  @override
+  String fmBankInUseFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tiedostoa',
+      one: '$count tiedosto',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fmBankInUseAlbums(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count albumia',
+      one: '$count albumi',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fmBankInUseOutro =>
+      'Ne soivat taas moottorin asetusten pankilla. Poistetaanko silti?';
+
+  @override
+  String playWithSoundfontDefault(String name) {
+    return 'Asetusten SoundFont ($name)';
+  }
+
+  @override
+  String playWithMt32Default(String model) {
+    return 'Asetus: $model';
+  }
+
+  @override
+  String get playWithOptionSetting => 'Asetus';
+
+  @override
+  String get soundfontInUseTitle => 'SoundFont käytössä';
+
+  @override
+  String get soundfontInUseOutro =>
+      'Ne soivat taas asetusten SoundFontilla. Poistetaanko silti?';
+
+  @override
+  String get playWithTitleAlbum => 'Toista albumi käyttäen…';
+
+  @override
+  String get playWithSave => 'Tallenna';
+
+  @override
+  String get shortcutsTitle => 'Pikanäppäimet';
+
+  @override
+  String get shortcutsSubtitle =>
+      'Toiston, visualisoinnin ja ikkunan näppäimet';
+
+  @override
+  String get shortcutsHint =>
+      'Yksittäiset näppäimet ohitetaan, kun tekstikentällä on kohdistus. Visualisoinnin näppäimet toimivat vain, kun visualisointi on näkyvissä.';
+
+  @override
+  String get shortcutsGroupTransport => 'Toisto';
+
+  @override
+  String get shortcutsGroupVisualizer => 'Visualisointi';
+
+  @override
+  String get shortcutsGroupWindow => 'Ikkuna ja navigointi';
+
+  @override
+  String get shortcutsKeySpace => 'Välilyönti';
+
+  @override
+  String get shortcutsKeyEscape => 'Esc';
+
+  @override
+  String get shortcutPlayPause => 'Toista / tauko';
+
+  @override
+  String get shortcutPrevTrack => 'Edellinen kappale';
+
+  @override
+  String get shortcutNextTrack => 'Seuraava kappale';
+
+  @override
+  String get shortcutSeekBack10 => '10 sekuntia taaksepäin';
+
+  @override
+  String get shortcutSeekForward10 => '10 sekuntia eteenpäin';
+
+  @override
+  String get shortcutSeekBack60 => '1 minuutti taaksepäin';
+
+  @override
+  String get shortcutSeekForward60 => '1 minuutti eteenpäin';
+
+  @override
+  String get shortcutSeekPercent => 'Siirry kohtaan 0 %…90 % kappaleesta';
+
+  @override
+  String get shortcutRepeat => 'Toistotila';
+
+  @override
+  String get shortcutShuffle => 'Satunnaistoisto';
+
+  @override
+  String get shortcutFavorite => 'Suosikki';
+
+  @override
+  String get shortcutSpeedDown => 'Hitaammin';
+
+  @override
+  String get shortcutSpeedUp => 'Nopeammin';
+
+  @override
+  String get shortcutSpeedReset => 'Normaali nopeus';
+
+  @override
+  String get shortcutVizNext => 'Seuraava visualisointi';
+
+  @override
+  String get shortcutVizPrev => 'Edellinen visualisointi';
+
+  @override
+  String get shortcutVizControls => 'Näytä visualisoinnin säätimet';
+
+  @override
+  String get shortcutPmNext => 'projectM: seuraava esiasetus';
+
+  @override
+  String get shortcutPmPrev => 'projectM: edellinen esiasetus';
+
+  @override
+  String get shortcutPmLock => 'projectM: lukitse esiasetus';
+
+  @override
+  String get shortcutPmRandom => 'projectM: satunnainen järjestys';
+
+  @override
+  String get shortcutPmPicker => 'projectM: esiasetusluettelo';
+
+  @override
+  String get shortcutMiniWindow => 'Minisoitin';
+
+  @override
+  String get shortcutMiniViz => 'Minisoitin visualisoinnilla';
+
+  @override
+  String get shortcutAlwaysOnTop => 'Aina päällimmäisenä';
+
+  @override
+  String get shortcutPlayer => 'Avaa / sulje soitin';
+
+  @override
+  String get shortcutEscape => 'Sulje päällimmäinen paneeli';
+
+  @override
+  String get shortcutQueue => 'Soittojonopaneeli';
+
+  @override
+  String get shortcutSearch => 'Haku';
+
+  @override
+  String get shortcutTabs => 'Välilehdet sivupalkin järjestyksessä';
+
+  @override
+  String get shortcutOpenFiles => 'Avaa tiedostoja…';
+
+  @override
+  String get shortcutLinkFolder => 'Linkitä kansio…';
+
+  @override
+  String get shortcutInfo => 'Kappaleen tiedot';
+
+  @override
+  String get shortcutSettings => 'Asetukset';
+
+  @override
+  String get shortcutFullscreen => 'Koko näyttö';
+
+  @override
+  String get shortcutHelp => 'Tämä luettelo';
+
+  @override
+  String get navHelp => 'Ohje';
+
+  @override
+  String get helpTitle => 'Ohje';
+
+  @override
+  String get helpDocsTitle => 'Verkko-ohjeet';
+
+  @override
+  String get helpDocsSubtitle =>
+      'Vaiheittaiset ohjeet kuvakaappauksineen sivustolla rewamp.app (englanniksi)';
+
+  @override
+  String get sleepTimerTitle => 'Uniajastin';
+
+  @override
+  String get sleepTimerExplain =>
+      'Toisto keskeytyy valitun ajan jälkeen, ja ääni hiljenee viimeisten 30 sekunnin aikana.';
+
+  @override
+  String sleepTimerMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count minuuttia',
+      one: '$count minuutti',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sleepTimerRemainingMinutes(int count) {
+    return '$count min';
+  }
+
+  @override
+  String sleepTimerRemainingSeconds(int count) {
+    return '$count s';
+  }
+
+  @override
+  String sleepTimerActiveRemaining(String time) {
+    return 'Jäljellä: $time';
+  }
+
+  @override
+  String get sleepTimerOff => 'Poista käytöstä';
+
+  @override
+  String get sleepTimerEnded => 'Uniajastin päättyi — toisto keskeytetty';
+
+  @override
+  String get sleepTimerNothingToPlay =>
+      'Ei viimeaikaisia kuunteluja, joista aloittaa';
+
+  @override
+  String get releaseNotesV11Autoplay =>
+      'Automaattinen toisto (∞): kun jono loppuu, toisto jatkuu samankaltaisilla kappaleilla (sama artisti, ryhmä, kokoelma).';
+
+  @override
+  String get releaseNotesV11LinkedFolders =>
+      'Linkitetyt kansiot: tiedostosi soivat siellä missä ne ovat, ilman kopiointia — tietokoneen kansiot, Tiedostot-appi ja iCloud iOS:ssä, mikä tahansa kansio Androidissa.';
+
+  @override
+  String get releaseNotesV11PlayWith =>
+      '”Toista käyttäen…”: valitse tiedoston tai albumin moottori sekä sen SoundFont, MT-32-malli tai FM-pankki (voit tuoda omia WOPL/WOPN-pankkeja).';
+
+  @override
+  String get releaseNotesV11NewEngines =>
+      'Uudet moottorit: MIDI OPL3:lla (libADLMIDI) ja OPN2/OPNA:lla (libOPNMIDI), Beatnik .rmf, ZX Spectrumin .tap-kasetit ja Amstrad CPC:n .dsk-levykkeet emuloiduilla koneilla, UnExoticA Mark II.';
+
+  @override
+  String get releaseNotesV11EngineUpdates =>
+      'Päivitetyt moottorit: VGM 1.72 Namco WSG -piireillä, Furnace, AtariAudio 1.27 (nyt oletus .ym-tiedostoille), libxmp valittavissa Amiga-moduuleille, säädettävä loppuhäivytys VGM:ssä.';
+
+  @override
+  String get releaseNotesV11Sleep =>
+      'Uniajastin: valitse kesto, musiikki hiljenee ja pysähtyy — ja tyhjä jono täyttyy itsestään.';
+
+  @override
+  String get releaseNotesV11Desktop =>
+      'Työpöytä: pikanäppäimet (luettelo ?:llä), Ohje-välilehti verkkodokumentaatioon, komentorivi (rewamp --mini --play …) ja vain yksi sovelluksen instanssi.';
+
+  @override
+  String get releaseNotesV11ArtistSync =>
+      'Kirjastosi artistit synkronoidaan tiliisi kansikuvineen.';
+
+  @override
+  String get releaseNotesV11PlayNext =>
+      'Pitkä painallus kappaleeseen: toista nyt, seuraavaksi tai viimeiseksi; ”…”-valikko Toista kaikki-, Radio- ja Yllätys-painikkeiden vieressä.';
+
+  @override
+  String get releaseNotesV11Composers =>
+      'Säveltäjiä voi napauttaa kaikissa albumi- ja alikappalenäkymissä; nimi ja tekijä luetaan tuoduista tiedostoista.';
+
+  @override
+  String get releaseNotesV11Hindi =>
+      'Sovellus puhuu hindiä (19 kieltä), ja käyttöliittymä on valmis oikealta vasemmalle kirjoitettaville kielille.';
+
+  @override
+  String get releaseNotesV11Loops =>
+      'Toiston aikana päälle kytketty ikuinen silmukka: kappale jatkuu omasta silmukkakohdastaan, ja silmukaton kappale alkaa alusta.';
+
+  @override
+  String get releaseNotesV11Visualizers =>
+      'Visualisoinnit: jopa 64 ääntä oskilloskoopeissa, oma väri jokaiselle MIDI-rumpusoittimelle, nuotit 2SF-tiedostoille, soitinnimet FM-pankeista.';
+
+  @override
+  String get releaseNotesV11Fixes =>
+      'Korjattu: jotkin hylätyt SSF-tiedostot, äänettömät WonderSwan-ripit, useaan arkistoon jaetut vajaat albumit ja projectM-esiasetukset soittimen sulkemisen jälkeen.';
 }

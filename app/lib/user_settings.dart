@@ -816,6 +816,24 @@ class UserSettings extends ChangeNotifier {
   int get gbsHpFilter => (_p.getInt(_kGbsHpFilter) ?? 1).clamp(0, 2);
   set gbsHpFilter(int v) { _p.setInt(_kGbsHpFilter, v); notifyListeners(); }
 
+  /// psgplay (.sndh): how the YM2149's three channels are mixed — 0 =
+  /// empiric (the levels measured on an Atari ST, mono; default), 1 = linear
+  /// (a plain sum), 2 = stereo (linear, each channel placed by its balance).
+  static const _kPsgMix  = 'psgplay_mix';
+  static const _kPsgPanA = 'psgplay_pan_a';
+  static const _kPsgPanB = 'psgplay_pan_b';
+  static const _kPsgPanC = 'psgplay_pan_c';
+  int get psgMix => (_p.getInt(_kPsgMix) ?? 0).clamp(0, 2);
+  set psgMix(int v) { _p.setInt(_kPsgMix, v); notifyListeners(); }
+  /// Balance of a channel in stereo mode, -1 (left) … +1 (right). Defaults
+  /// = upstream's own example (-0.4 : 0 : +0.4).
+  double get psgPanA => (_p.getDouble(_kPsgPanA) ?? -0.4).clamp(-1.0, 1.0);
+  set psgPanA(double v) { _p.setDouble(_kPsgPanA, v); notifyListeners(); }
+  double get psgPanB => (_p.getDouble(_kPsgPanB) ?? 0.0).clamp(-1.0, 1.0);
+  set psgPanB(double v) { _p.setDouble(_kPsgPanB, v); notifyListeners(); }
+  double get psgPanC => (_p.getDouble(_kPsgPanC) ?? 0.4).clamp(-1.0, 1.0);
+  set psgPanC(double v) { _p.setDouble(_kPsgPanC, v); notifyListeners(); }
+
   // GSF (GBA): VBA sound flags.
   static const _kGsfInterpolation = 'gsf_interpolation';
   static const _kGsfLowpass      = 'gsf_lowpass';
@@ -876,24 +894,29 @@ class UserSettings extends ChangeNotifier {
                 _kXmpMasterVol, _kXmpDspLowpass, _kXmpAmigaMixer],
     'gme':     [_kGmeSilence, _kGmeStereoDepth, _kGmeEqEnabled, _kGmeEqBass, _kGmeEqTreble],
     'gbs':     [_kGbsHpFilter],
+    'psgplay': [_kPsgMix, _kPsgPanA, _kPsgPanB, _kPsgPanC],
     'gsf':     [_kGsfInterpolation, _kGsfLowpass, _kGsfEcho],
     'midi':    [_kMidiGain, _kMidiPolyphony, _kMidiReverb, _kMidiChorus,
                 _kMidiInterp, _kMidiMt32ToGm],
     'mt32':    [_kMt32Model, _kMt32Reverb, _kMt32Gain],
-    'adlmidi': [_kAdlBank, _kAdlEmulator, _kAdlChips, _kAdlVolumeModel,
-                _kAdlSoftPan, _kAdlGain],
+    'adlmidi': [_kAdlBank, _kAdlBankFile, _kAdlEmulator, _kAdlChips,
+                _kAdlVolumeModel, _kAdlSoftPan, _kAdlGain],
+    'opnmidi': [_kOpnBank, _kOpnBankFile, _kOpnEmulator, _kOpnChips,
+                _kOpnVolumeModel, _kOpnSoftPan, _kOpnGain],
     'uade':    [_kUadePostfx, _kUadePanOn, _kUadePanValue, _kUadeHeadphones,
                 _kUadeGainOn, _kUadeGainValue, _kUadeLed, _kUadeFilterType],
     // Which engine wins a shared format (Settings → Moteurs → Décodeurs par
     // défaut). Its own group: these are routing choices, not knobs of the
     // engine whose page used to host them — resetting UADE must not silently
     // hand the Amiga trackers back to libopenmpt.
-    'decoders': [_kAmigaTrackerPlugin, _kNsfPlugin, _kGbsPlugin, _kSndhPlugin, _kMidiSynth],
+    'decoders': [_kAmigaTrackerPlugin, _kNsfPlugin, _kGbsPlugin, _kSndhPlugin, _kYmPlugin, _kMidiSynth,
+                 _kDosMidiPlugin],
     'sid':     [_kSidEngine, _kSidAutoFilter, _kSidFilter,
                 _kSid2ndOn, _kSid2ndAddr, _kSid3rdOn, _kSid3rdAddr,
                 _kSidSampling, _kSidClock, _kSidModel,
                 _kSid6581Curve, _kSid6581Range, _kSid8580Curve],
     'nsfplay': [_kNsfQuality, _kNsfLpf, _kNsfHpf, _kNsfRegion, _kNsfIrq,
+                _kNsfFade,
                 _kNsfApu1Unmute, _kNsfApu1Phase, _kNsfApu1NonLin,
                 _kNsfApu1DutySwap, _kNsfApu1NegSweep,
                 _kNsfApu2Reg4011, _kNsfApu2PNoise, _kNsfApu2Unmute,
@@ -975,6 +998,8 @@ class UserSettings extends ChangeNotifier {
     'gmeEqEnabled': _kGmeEqEnabled, 'gmeEqBass': _kGmeEqBass,
     'gmeEqTreble': _kGmeEqTreble,
     'gbsHpFilter': _kGbsHpFilter,
+    'psgMix': _kPsgMix, 'psgPanA': _kPsgPanA, 'psgPanB': _kPsgPanB,
+    'psgPanC': _kPsgPanC,
     'gsfInterpolation': _kGsfInterpolation, 'gsfLowpass': _kGsfLowpass,
     'gsfEcho': _kGsfEcho,
     'midiGain': _kMidiGain, 'midiPolyphony': _kMidiPolyphony,
@@ -982,15 +1007,20 @@ class UserSettings extends ChangeNotifier {
     'midiInterp': _kMidiInterp, 'midiMt32ToGm': _kMidiMt32ToGm,
     'midiSynth': _kMidiSynth, 'mt32Model': _kMt32Model, 'mt32Reverb': _kMt32Reverb,
     'mt32Gain': _kMt32Gain,
-    'adlBank': _kAdlBank, 'adlEmulator': _kAdlEmulator, 'adlChips': _kAdlChips,
+    'adlBank': _kAdlBank, 'adlBankFile': _kAdlBankFile, 'adlEmulator': _kAdlEmulator, 'adlChips': _kAdlChips,
     'adlVolumeModel': _kAdlVolumeModel, 'adlSoftPan': _kAdlSoftPan,
     'adlGain': _kAdlGain,
+    'opnBank': _kOpnBank, 'opnBankFile': _kOpnBankFile, 'opnEmulator': _kOpnEmulator, 'opnChips': _kOpnChips,
+    'opnVolumeModel': _kOpnVolumeModel, 'opnSoftPan': _kOpnSoftPan,
+    'opnGain': _kOpnGain,
     'uadePostfx': _kUadePostfx, 'uadePanEnabled': _kUadePanOn,
     'uadePanValue': _kUadePanValue, 'uadeHeadphones': _kUadeHeadphones,
     'uadeGainEnabled': _kUadeGainOn, 'uadeGainValue': _kUadeGainValue,
     'uadeLed': _kUadeLed, 'uadeFilterType': _kUadeFilterType,
     'amigaTrackerPlugin': _kAmigaTrackerPlugin,
     'nsfPlugin': _kNsfPlugin, 'gbsPlugin': _kGbsPlugin, 'sndhPlugin': _kSndhPlugin,
+    'ymPlugin': _kYmPlugin,
+    'dosMidiPlugin': _kDosMidiPlugin,
     'sidEngine': _kSidEngine, 'sidAutoFilter': _kSidAutoFilter,
     'sidFilter': _kSidFilter, 'sidSecondOn': _kSid2ndOn,
     'sidSecondAddr': _kSid2ndAddr, 'sidThirdOn': _kSid3rdOn,
@@ -1000,6 +1030,7 @@ class UserSettings extends ChangeNotifier {
     'sid8580Curve': _kSid8580Curve,
     'nsfQuality': _kNsfQuality, 'nsfLpf': _kNsfLpf, 'nsfHpf': _kNsfHpf,
     'nsfRegion': _kNsfRegion, 'nsfIrq': _kNsfIrq,
+    'nsfFadeSeconds': _kNsfFade,
     'nsfApu1Unmute': _kNsfApu1Unmute,
     'nsfApu1PhaseRefresh': _kNsfApu1Phase,
     'nsfApu1NonlinearMixer': _kNsfApu1NonLin,
@@ -1197,6 +1228,9 @@ class UserSettings extends ChangeNotifier {
   static const _kNsfHpf     = 'nsfplay_hpf';
   static const _kNsfRegion  = 'nsfplay_region';
   static const _kNsfIrq     = 'nsfplay_irq';
+  // Fondu de fin (s), quand le fichier n'en donne pas — miroir de
+  // `fade_secs` dans rewamp_plugin_nsfplay.cpp (défaut 5, 0 = coupure nette).
+  static const _kNsfFade    = 'nsfplay_fade_secs';
   // Per-chip emulation options (nes_apu.h / nes_dmc.h / nes_n106.h / nes_fds.h /
   // nes_mmc5.cpp / nes_vrc7.h enums).
   static const _kNsfApu1Unmute   = 'nsfplay_apu1_0'; // OPT_UNMUTE_ON_RESET
@@ -1225,6 +1259,8 @@ class UserSettings extends ChangeNotifier {
   static const _kNsfVrc7Opll     = 'nsfplay_vrc7_opll';  // OPT_OPLL
   int get nsfQuality => (_p.getInt(_kNsfQuality) ?? 10).clamp(0, 40);
   set nsfQuality(int v) { _p.setInt(_kNsfQuality, v); notifyListeners(); }
+  int get nsfFadeSeconds => (_p.getInt(_kNsfFade) ?? 5).clamp(0, 16);
+  set nsfFadeSeconds(int v) { _p.setInt(_kNsfFade, v); notifyListeners(); }
   int get nsfLpf => (_p.getInt(_kNsfLpf) ?? 112).clamp(0, 400);
   set nsfLpf(int v) { _p.setInt(_kNsfLpf, v); notifyListeners(); }
   int get nsfHpf => (_p.getInt(_kNsfHpf) ?? 164).clamp(0, 256);
@@ -1559,6 +1595,30 @@ class UserSettings extends ChangeNotifier {
   bool get libraryMintAudited =>
       _p.getBool(_kLibraryMintAudited) ?? false;
   set libraryMintAudited(bool v) => _p.setBool(_kLibraryMintAudited, v);
+
+  static const _kArtistLibrarySupported = 'sync.artist_library_supported';
+
+  /// Dernière réponse connue à « le serveur synchronise-t-il les ARTISTES ? »
+  /// (`user_artists` présent, mig serveur 296). Re-sondé à chaque lancement
+  /// par la première passe de synchro; gardé entre deux lancements pour
+  /// qu'un geste fait AVANT cette sonde parte quand même. Faux par défaut: un
+  /// geste enfilé vers un serveur qui ne connaît pas `artist` serait refusé
+  /// en 23514 et jeté — perdu.
+  bool get artistLibrarySupported =>
+      _p.getBool(_kArtistLibrarySupported) ?? false;
+  set artistLibrarySupported(bool v) =>
+      _p.setBool(_kArtistLibrarySupported, v);
+
+  static const _kArtistLibrarySeeded = 'sync.artist_library_seeded';
+
+  /// Les artistes LOCAUX ont été envoyés au compte, et ceux du compte tirés
+  /// SANS curseur, une fois depuis que le serveur les connaît. Remis à faux à
+  /// chaque changement de compte (`rebindLocalDataToCurrentAccount`). Sans
+  /// la passe sans curseur, un artiste ajouté sur le web avant que cet
+  /// appareil ne sache les lire serait sous le curseur — jamais revu.
+  bool get artistLibrarySeeded =>
+      _p.getBool(_kArtistLibrarySeeded) ?? false;
+  set artistLibrarySeeded(bool v) => _p.setBool(_kArtistLibrarySeeded, v);
 
   static const _kPlayHistoryCursor = 'sync.play_history_cursor';
 
@@ -2040,6 +2100,10 @@ class UserSettings extends ChangeNotifier {
   /// psgplay emulates the whole machine, including the STE LMC1992 tone and
   /// volume mixer, and renders stereo natively where AtariAudio gives mono.
   static const _kSndhPlugin = 'playback.sndh_plugin';
+  /// .ym: 'atariaudio' (default — AtariAudio's YmRenderer, written by the
+  /// format's author, with the Atari effects: digidrums, SID voice…) or
+  /// 'zxtune'.
+  static const _kYmPlugin = 'playback.ym_plugin';
 
   static const _kGbsPlugin = 'playback.gbs_plugin';
 
@@ -2049,6 +2113,9 @@ class UserSettings extends ChangeNotifier {
 
   String get sndhPlugin => _p.getString(_kSndhPlugin) ?? 'psgplay';
   set sndhPlugin(String v) { _p.setString(_kSndhPlugin, v); notifyListeners(); }
+
+  String get ymPlugin => _p.getString(_kYmPlugin) == 'zxtune' ? 'zxtune' : 'atariaudio';
+  set ymPlugin(String v) { _p.setString(_kYmPlugin, v); notifyListeners(); }
 
   static const _kPmSource = 'vis.pm_source';
 
@@ -2138,6 +2205,7 @@ class UserSettings extends ChangeNotifier {
   static const _kMidiInterp    = 'playback.midi_interp';
   static const _kMidiMt32ToGm  = 'playback.midi_mt32_to_gm';
   static const _kMidiGainForced = 'playback.midi_gain_forced_v061';
+  static const _kMidiInterpFluid = 'playback.midi_interp_fluid_v1';
 
   /// Gain de sortie (0,1–1,0, défaut 0,5). Le 0,8 posé par-dessus le défaut
   /// de FluidLite (0,2, calibré pour 100 voix simultanées) saturait les MIDI
@@ -2181,18 +2249,64 @@ class UserSettings extends ChangeNotifier {
   set midiChorus(bool v) { _p.setBool(_kMidiChorus, v); notifyListeners(); }
 
   /// Interpolation method (FLUID_INTERP_*): 0=none, 1=linear, 4=4th order
-  /// (default), 7=7th order.
-  int get midiInterp => _p.getInt(_kMidiInterp) ?? 4;
-  set midiInterp(int v) { _p.setInt(_kMidiInterp, v); notifyListeners(); }
+  /// (default), 7=7th order. Le greffon passe la valeur TELLE QUELLE à
+  /// `fluid_synth_set_interp_method`, et toute autre valeur y retombe sur le
+  /// 4e ordre (fluid_voice.c).
+  ///
+  /// ⚠️ Jusqu'au 2026-11-08 l'écran proposait 1/2/4/7, les valeurs de
+  /// LIBOPENMPT (1 = aucune, 2 = linéaire): « Aucune » donnait du linéaire et
+  /// « Linéaire » le 4e ordre. Migration UNE fois: on garde ce que
+  /// l'utilisateur avait CHOISI à l'écran (1 → 0, 2 → 1); le drapeau est aussi
+  /// posé par le setter, pour qu'une valeur écrite sous la bonne échelle ne
+  /// soit jamais re-décalée.
+  int get midiInterp {
+    if (!(_p.getBool(_kMidiInterpFluid) ?? false)) {
+      final old = _p.getInt(_kMidiInterp);
+      if (old == 1) _p.setInt(_kMidiInterp, 0);
+      if (old == 2) _p.setInt(_kMidiInterp, 1);
+      _p.setBool(_kMidiInterpFluid, true);
+    }
+    final v = _p.getInt(_kMidiInterp) ?? 4;
+    return const {0, 1, 4, 7}.contains(v) ? v : 4;
+  }
+  set midiInterp(int v) {
+    _p.setBool(_kMidiInterpFluid, true);
+    _p.setInt(_kMidiInterp, v);
+    notifyListeners();
+  }
 
   /// Which engine plays a .mid: 'auto' (FluidLite, or the MT-32 when the
   /// file carries Roland MT-32 sysex — the plugin scores 104 vs 100 then),
   /// 'soundfont' (pin FluidLite), 'mt32' (pin mt32emu; silently absent when no
   /// ROM set is imported, since its probe then returns 0), 'opl3' (pin
-  /// libADLMIDI — an emulated OPL3, the AdLib / Sound Blaster sound).
+  /// libADLMIDI — an emulated OPL3, the AdLib / Sound Blaster sound), 'opn2'
+  /// (pin libOPNMIDI — an emulated OPN2, the Mega Drive sound).
   static const _kMidiSynth = 'playback.midi_synth';
   String get midiSynth => _p.getString(_kMidiSynth) ?? 'auto';
   set midiSynth(String v) { _p.setString(_kMidiSynth, v); notifyListeners(); }
+
+  /// Which engine plays the DOS game MIDI formats (XMI, DMX MUS, HMI/HMP, GMF),
+  /// which only the two FM-MIDI engines read: 'adlmidi' (default — an OPL
+  /// wrote them; scores 100 vs 90) or 'opnmidi' (pinned). A `.mus` that is not
+  /// DMX stays with its engine: a pin only applies when the pinned plugin
+  /// claims the file (rewamp_registry_select), and neither claims it.
+  /// « Lire avec… » choices REMEMBERED by the user: JSON {key: plugin name},
+  /// key `f:<stored path>` (a file) or `d:<stored dir>` (its album folder).
+  /// See EngineChoices. Not in any reset section: it is the user's data.
+  static const _kEngineChoices = 'playback.engine_choices';
+  String? get engineChoicesJson => _p.getString(_kEngineChoices);
+  set engineChoicesJson(String? v) {
+    if (v == null) {
+      _p.remove(_kEngineChoices);
+    } else {
+      _p.setString(_kEngineChoices, v);
+    }
+    notifyListeners();
+  }
+
+  static const _kDosMidiPlugin = 'playback.dos_midi_plugin';
+  String get dosMidiPlugin => _p.getString(_kDosMidiPlugin) ?? 'adlmidi';
+  set dosMidiPlugin(String v) { _p.setString(_kDosMidiPlugin, v); notifyListeners(); }
 
   // MT-32 engine params (Settings → Moteurs → MT-32). Defaults mirror
   // rewamp_plugin_mt32.cpp: model 0 = auto (CM-32L if present), 1 = MT-32,
@@ -2218,6 +2332,19 @@ class UserSettings extends ChangeNotifier {
   /// Banque EMBARQUÉE (index de adl_getBankNames; 0 = AIL, The Fat Man).
   int get adlBank => _p.getInt(_kAdlBank) ?? 0;
   set adlBank(int v) { _p.setInt(_kAdlBank, v); notifyListeners(); }
+  /// Banque IMPORTÉE (nom de fichier dans `<datadir>/fm_banks/wopl/`, voir
+  /// FmBankManager) — null = la banque embarquée [adlBank]. Un NOM et non un
+  /// chemin: le conteneur iOS change de chemin à chaque réinstallation.
+  static const _kAdlBankFile = 'playback.adl_bank_file';
+  String? get adlBankFile => _p.getString(_kAdlBankFile);
+  set adlBankFile(String? v) {
+    if (v == null) {
+      _p.remove(_kAdlBankFile);
+    } else {
+      _p.setString(_kAdlBankFile, v);
+    }
+    notifyListeners();
+  }
   /// Émulateur (valeur de ADL_Emulator). Nuked OPL3 sur le bureau, le plus
   /// fidèle; DOSBox sur téléphone, que l'amont conseille aux machines lentes
   /// (Nuked × 4 puces y coûte cher).
@@ -2237,6 +2364,45 @@ class UserSettings extends ChangeNotifier {
   /// fichiers mesurés), d'où 2× par défaut.
   double get adlGain => _p.getDouble(_kAdlGain) ?? 2.0;
   set adlGain(double v) { _p.setDouble(_kAdlGain, v); notifyListeners(); }
+
+  // libOPNMIDI (OPN2 / OPNA) — Réglages → Moteurs → libOPNMIDI. Les défauts
+  // reprennent les replis de param() dans rewamp_plugin_opnmidi.cpp.
+  static const _kOpnBank        = 'playback.opn_bank';
+  static const _kOpnEmulator    = 'playback.opn_emulator';
+  static const _kOpnChips       = 'playback.opn_chips';
+  static const _kOpnVolumeModel = 'playback.opn_volume_model';
+  static const _kOpnSoftPan     = 'playback.opn_soft_pan';
+  static const _kOpnGain        = 'playback.opn_gain';
+  /// Banque EMBARQUÉE (index de rewamp/opnmidi_banks.c; 0 = XG, Wohlstand).
+  int get opnBank => _p.getInt(_kOpnBank) ?? 0;
+  set opnBank(int v) { _p.setInt(_kOpnBank, v); notifyListeners(); }
+  /// Banque IMPORTÉE (`<datadir>/fm_banks/wopn/`) — null = l'embarquée.
+  static const _kOpnBankFile = 'playback.opn_bank_file';
+  String? get opnBankFile => _p.getString(_kOpnBankFile);
+  set opnBankFile(String? v) {
+    if (v == null) {
+      _p.remove(_kOpnBankFile);
+    } else {
+      _p.setString(_kOpnBankFile, v);
+    }
+    notifyListeners();
+  }
+  /// Émulateur (valeur d'Opn2_Emulator). MAME YM2612 partout: fidèle et
+  /// léger — Nuked OPN2, le plus exact, est un émulateur au CYCLE.
+  int get opnEmulator => _p.getInt(_kOpnEmulator) ?? 0;
+  set opnEmulator(int v) { _p.setInt(_kOpnEmulator, v); notifyListeners(); }
+  /// Puces émulées (1–16), six voies FM chacune.
+  int get opnChips => _p.getInt(_kOpnChips) ?? 4;
+  set opnChips(int v) { _p.setInt(_kOpnChips, v); notifyListeners(); }
+  /// Modèle de volume (OPNMIDI_VolumeModel_*; 0 = auto d'après la banque).
+  int get opnVolumeModel => _p.getInt(_kOpnVolumeModel) ?? 0;
+  set opnVolumeModel(int v) { _p.setInt(_kOpnVolumeModel, v); notifyListeners(); }
+  bool get opnSoftPan => _p.getBool(_kOpnSoftPan) ?? true;
+  set opnSoftPan(bool v) { _p.setBool(_kOpnSoftPan, v); notifyListeners(); }
+  /// Gain de sortie: crête médiane ≈ 0,17 à 1× sur 12 fichiers mesurés (max
+  /// 0,42), d'où 2× par défaut, comme l'OPL3.
+  double get opnGain => _p.getDouble(_kOpnGain) ?? 2.0;
+  set opnGain(double v) { _p.setDouble(_kOpnGain, v); notifyListeners(); }
 
   // ── Browse preferences ─────────────────────────────────────────────────────
 

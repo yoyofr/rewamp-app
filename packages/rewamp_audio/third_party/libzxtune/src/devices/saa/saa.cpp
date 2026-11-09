@@ -310,6 +310,7 @@ namespace SAA
         //YOYOFR
         m_voice_current_total=6;
         m_voicesForceOfs=0;
+        rewamp_voice_notes_clear(0, 6);
         //YOYOFR
         
       Renderers.Render(stamp, samples, builder);

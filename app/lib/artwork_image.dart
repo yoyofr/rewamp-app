@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:http/http.dart' as http;
@@ -924,7 +925,19 @@ class _ArtworkImageState extends State<ArtworkImage> {
     // se reconstruirait. Or c'est justement la reconstruction qui redécode
     // depuis le disque — le bitmap ayant été évincé du cache mémoire juste
     // avant. Sans elle, effacer le fichier ne change rien à l'écran.
-    setState(() { if (_syncLocalFromUrl()) return; });
+    setState(() {
+      // Le fichier affiché vient peut-être d'être EFFACÉ (re-télécharger):
+      // le garder ferait construire un `FileImage` sur un chemin absent, donc
+      // le générique de l'errorBuilder — et quand la nouvelle pochette
+      // atterrit au MÊME chemin, `_load` ne voit aucun changement
+      // (`path != _localPath` faux), rien ne se reconstruit, le générique
+      // reste jusqu'au redémarrage. Lâché ici, le retour du chemin EST un
+      // changement.
+      if (_localPath != null && !File(_localPath!).existsSync()) {
+        _localPath = null;
+      }
+      if (_syncLocalFromUrl()) return;
+    });
     if (widget.url == null || widget.url!.startsWith('http')) _load();
   }
 
@@ -1040,18 +1053,24 @@ class _ArtworkImageState extends State<ArtworkImage> {
     // A missing/empty path (stale cache entry, '') counts as NO artwork so the
     // themed placeholder shows instead of a permanently-blank FileImage.
     final u = widget.url;
+    final localFile = widget.localFilePath;
+    var staleLocal = false;
     if (u != null && !u.startsWith('http')) {
       final ok = u.isNotEmpty && await File(u).exists();
-      final resolved = ok ? u : null;
-      if (mounted && resolved != _localPath) {
-        setState(() => _localPath = resolved);
+      // Gone (moved, renamed, deleted since the row was written): a LOCAL
+      // track still gets its sibling image below, else the placeholder.
+      if (ok || localFile == null) {
+        final resolved = ok ? u : null;
+        if (mounted && resolved != _localPath) {
+          setState(() => _localPath = resolved);
+        }
+        return;
       }
-      return;
+      staleLocal = true;
     }
     // Local file with no artwork URL: user-placed sibling file first, then a
     // cover the player already extracted from the file's own tags.
-    final localFile = widget.localFilePath;
-    if (widget.url == null && localFile != null) {
+    if ((widget.url == null || staleLocal) && localFile != null) {
       final cache = ArtworkCache.instance;
       // Read `widget` ONCE, before the awaits: didUpdateWidget can swap in a
       // row with no local path while findLocalArtwork is in flight, and the
@@ -1094,6 +1113,19 @@ class _ArtworkImageState extends State<ArtworkImage> {
     if (mounted && path != null && path != _localPath) {
       setState(() => _localPath = path);
     }
+  }
+
+  /// DEBUG: pourquoi cette vignette montre le générique. Une ligne par
+  /// combinaison (raison, url, fichier), pas une par build — enquête sur des
+  /// vignettes de file génériques à côté d'un lecteur illustré (2026-10-31).
+  static final Set<String> _traced = <String>{};
+  void _tracePlaceholder(String why, Object? error) {
+    if (!kDebugMode) return;
+    final key = '$why|${widget.url}|${widget.localFilePath}|$_localPath';
+    if (!_traced.add(key)) return;
+    debugPrint('[artwork] placeholder $why url=${widget.url} '
+        'local=$_localPath file=${widget.localFilePath} '
+        'targetDir=${widget.targetDir}${error == null ? '' : ' err=$error'}');
   }
 
   Widget _placeholder(ColorScheme cs) {
@@ -1142,6 +1174,7 @@ class _ArtworkImageState extends State<ArtworkImage> {
         // la moitié « décodage » du clignotement au changement de piste.
         gaplessPlayback: true,
         errorBuilder: (_, e, __) {
+          _tracePlaceholder('file-error', e);
           return _placeholder(cs);
         },
       );
@@ -1154,11 +1187,15 @@ class _ArtworkImageState extends State<ArtworkImage> {
         fit: widget.fit,
         loadingBuilder: (_, child, progress) =>
             progress == null ? child : _placeholder(cs),
-        errorBuilder: (_, __, ___) => _placeholder(cs),
+        errorBuilder: (_, e, ___) {
+          _tracePlaceholder('network-error', e);
+          return _placeholder(cs);
+        },
       );
     } else {
       content = _placeholder(cs);
       haveImage = false;
+      _tracePlaceholder('no-source', null);
       // Feed the themed placeholder to onImageResolved too: the player's
       // tinted background and the visualizer's GL artwork background are
       // driven by it, and stayed EMPTY for artwork-less tracks otherwise.

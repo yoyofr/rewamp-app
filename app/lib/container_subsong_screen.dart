@@ -23,7 +23,8 @@ import 'sap_info.dart' show SapInfoService;
 import 'app_snack.dart';
 import 'play_start.dart';
 import 'track_options_sheet.dart'
-    show globalOnAlbumQueueAdd, globalOnPlayAlbum, holdTrackChoice,
+    show globalOnAlbumQueueAdd, globalOnNavigateArtist, globalOnPlayAlbum,
+        holdTrackChoice,
         showTrackOptions;
 
 const _kSidExts = {'sid', 'psid', 'rsid', 'mus'};
@@ -64,10 +65,34 @@ class ContainerSubsongScreen extends StatefulWidget {
 }
 
 class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
+  /// Un compositeur est cliquable par le rappel de l'appelant, sinon par
+  /// l'écran d'artiste de la coquille — beaucoup d'écrans poussent celui-ci
+  /// sans `onArtistTap`, et leurs noms restaient du texte inerte.
+  bool get _canTapArtist =>
+      widget.onArtistTap != null || globalOnNavigateArtist != null;
+
+  void _tapArtist(String name, {String? collection, String? artistId}) {
+    final own = widget.onArtistTap;
+    if (own != null) {
+      own(name);
+    } else {
+      globalOnNavigateArtist?.call(name,
+          collection: collection, artistId: artistId);
+    }
+  }
+
   /// La pochette RÉELLE résolue par la vignette, ou null tant qu'il n'y a
   /// qu'un placeholder. C'est elle qu'on agrandit — la re-résoudre depuis
   /// l'url finirait par diverger de ce que l'utilisateur a touché.
   final ValueNotifier<ImageProvider?> _fullArt = ValueNotifier(null);
+
+  /// Pochette que le serveur donne APRÈS un « re-télécharger ». Une pochette
+  /// changée y est republiée sous une url VERSIONNÉE: l'écran, qui ne connaît
+  /// que la ligne avec laquelle il a été ouvert, montrait encore l'ancienne
+  /// (et l'ancienne n'était pas invalidée) — il fallait effacer le fichier et
+  /// le rechercher pour voir la nouvelle.
+  String? _freshArtworkUrl;
+  String? get _artworkUrl => _freshArtworkUrl ?? widget.result.artworkUrl;
 
   /// Seuil « sous-chansons trop courtes » tel que cet écran l'affiche.
   ///
@@ -261,7 +286,19 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
     // Table rase: fichier(s) — le nom dérivé peut avoir changé côté serveur —,
     // compagnons, pochette, lignes DB et url de provenance. Le ♥, la
     // bibliothèque et l'historique d'écoute survivent au geste.
-    await RewampDb.purgeBeforeRedownload(s, currentPath: fp);
+    // L'url que l'écran AFFICHE est invalidée aussi: c'est elle qui est en
+    // cache, pas forcément celle que le serveur rend maintenant.
+    final shownArt = _artworkUrl;
+    // Passer à la NOUVELLE url AVANT la purge: l'invalidation fait relire
+    // leur url aux vignettes montées, et celle de l'en-tête relançait sinon
+    // la descente de l'ANCIENNE image vers le même fichier voisin que la
+    // nouvelle — deux descentes au même chemin, la dernière arrivée gagne.
+    final fresh = s.artworkUrl;
+    if (fresh != null && fresh.isNotEmpty && fresh != shownArt && mounted) {
+      setState(() => _freshArtworkUrl = fresh);
+    }
+    await RewampDb.purgeBeforeRedownload(s,
+        currentPath: fp, artworkUrl: shownArt);
 
     try {
       await RewampDb.downloadToLibrary(s, force: true);
@@ -298,7 +335,7 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
       name:       r.displayTitle,
       artist:     r.artistLabel.isEmpty ? null : r.artistLabel,
       album:      r.album,
-      artworkUrl: r.artworkUrl,
+      artworkUrl: _artworkUrl,
       formatExt:  r.formatExt,
       filename:   r.filename,
       value:      next,
@@ -546,7 +583,7 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
       totalCount:  r.totalCount,
       artistNames: r.artistNames,
       platform:    r.platform,
-      artworkUrl:  r.artworkUrl,
+      artworkUrl:  _artworkUrl,
       subsongIdx:  sub.subsongIdx,
       // Le compte décrit le FICHIER, donc identique sur toutes ses lignes —
       // c'est ce qui permet à la base de répondre « ce fichier est-il
@@ -814,11 +851,9 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                                           minWidth: 36, minHeight: 36),
                                       onPressed: () => showTrackOptions(
                                         context, _resultFor(sub),
-                                        onNavigateArtist: widget.onArtistTap ==
-                                                null
-                                            ? null
-                                            : (name, {collection, artistId}) =>
-                                                widget.onArtistTap!(name),
+                                        onNavigateArtist: _canTapArtist
+                                            ? _tapArtist
+                                            : null,
                                       ),
                                     ),
                                   ],
@@ -893,7 +928,7 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                   // placeholder. Un notifieur ne reconstruit que le détecteur.
                   onImageResolved: (provider, key) => _fullArt.value =
                       artworkKeyIsRealCover(key) ? provider : null,
-                  url:           r.artworkUrl,
+                  url:           _artworkUrl,
                   // Le fichier RÉSOLU quand la sonde l'a trouvé: c'est lui qui
                   // porte une éventuelle pochette voisine, et la ligne de
                   // recherche n'a pas encore de chemin local.
@@ -928,16 +963,19 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                         children: [
                           for (int i = 0; i < r.artistNames.length; i++) ...[
                             GestureDetector(
-                              onTap: widget.onArtistTap != null
-                                  ? () => widget.onArtistTap!(r.artistNames[i])
+                              onTap: _canTapArtist
+                                  ? () => _tapArtist(r.artistNames[i],
+                                      artistId: i < r.artistIds.length
+                                          ? r.artistIds[i] : null,
+                                      collection: r.collection)
                                   : null,
                               child: Text(
                                 r.artistNames[i],
                                 style: tt.bodySmall?.copyWith(
                                   fontStyle: FontStyle.italic,
-                                  color: widget.onArtistTap != null
+                                  color: _canTapArtist
                                       ? cs.primary : cs.onSurfaceVariant,
-                                  decoration: widget.onArtistTap != null
+                                  decoration: _canTapArtist
                                       ? TextDecoration.underline : null,
                                 ),
                               ),
@@ -985,7 +1023,7 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                   name:       _containerName,
                   artist:     r.artistLabel.isEmpty ? null : r.artistLabel,
                   album:      r.album,
-                  artworkUrl: r.artworkUrl,
+                  artworkUrl: _artworkUrl,
                   formatExt:  r.formatExt,
                   filename:   r.filename,
                   // Un fichier LOCAL (sans identité catalogue) est déjà sur

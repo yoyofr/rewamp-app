@@ -154,6 +154,11 @@ set(REWAMP_CORE_SOURCES
   "${REWAMP_SRC_DIR}/rewamp_extract.c"
   "${REWAMP_SRC_DIR}/miniaudio_impl.c"
 )
+# Web (Emscripten): la sortie audio n'est pas un ma_device mais une pompe vers
+# l'AudioWorklet de la page (src/web/rewamp_device_web.h).
+if(EMSCRIPTEN)
+  list(APPEND REWAMP_CORE_SOURCES "${REWAMP_SRC_DIR}/web/rewamp_device_web.c")
+endif()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # rewamp_option — une option dont l'ENVIRONNEMENT peut fixer le défaut
@@ -203,6 +208,8 @@ rewamp_option(REWAMP_WITH_GME      "Build the libgme decoder plugin (NSF/GBS/SPC
 rewamp_option(REWAMP_WITH_SID      "Build the libsidplayfp SID decoder plugin (.sid/.psid/.rsid)" ON)
 rewamp_option(REWAMP_WITH_NSFPLAY  "Build the libnsfplay NSF/NSFe decoder plugin" ON)
 rewamp_option(REWAMP_WITH_GBSPLAY  "Build the libgbsplay Game Boy GBS decoder plugin" ON)
+rewamp_option(REWAMP_WITH_CPC      "Build the Amstrad CPC .dsk plugin (floooh/chips CPC 6128 emulator)" ON)
+rewamp_option(REWAMP_WITH_ZXSPECTRUM "Build the ZX Spectrum .tap plugin (floooh/chips 48K/128K emulator)" ON)
 rewamp_option(REWAMP_WITH_HIGHLYEXP "Build the Highly Experimental PSF/PSF2 decoder plugin" ON)
 rewamp_option(REWAMP_WITH_VGMSTREAM "Build the vgmstream decoder plugin (200+ game formats)" ON)
 rewamp_option(REWAMP_WITH_ARCHIVE  "Build vendored liblzma+libarchive (zip/7z/tar/gz/xz extraction)" ON)
@@ -215,7 +222,8 @@ rewamp_option(REWAMP_WITH_FURNACE  "Build the Furnace (DivEngine) tracker plugin
 # OFF en cache (option() n'écrase pas une entrée existante): le vider, ou
 # `grep '^REWAMP_WITH_ZXTUNE' app/build/linux/<arch>/<mode>/CMakeCache.txt`.
 # Android le force dans android/CMakeLists.txt, Apple par les podspecs.
-if(WIN32 OR (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID))
+# Web (Emscripten): validé le 2026-11-07 (web/, .pt3/.ay/.mtc jouent en wasm).
+if(WIN32 OR EMSCRIPTEN OR (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID))
   rewamp_option(REWAMP_WITH_ZXTUNE "Build the libzxtune ZX Spectrum/AY chiptune plugin" ON)
 else()
   rewamp_option(REWAMP_WITH_ZXTUNE "Build the libzxtune ZX Spectrum/AY chiptune plugin" OFF)
@@ -233,6 +241,7 @@ rewamp_option(REWAMP_WITH_V2M      "Build the Farbrausch V2M plugin (.v2m/.v2mz)
 rewamp_option(REWAMP_WITH_MIDI     "Build the FluidLite MIDI plugin (.mid, SF2 SoundFont)" ON)
 rewamp_option(REWAMP_WITH_MT32     "Build the mt32emu MIDI plugin (.mid on a Roland MT-32 / CM-32L, user-imported ROMs)" ON)
 rewamp_option(REWAMP_WITH_ADLMIDI  "Build the libADLMIDI plugin (.mid / XMI / DMX MUS / HMI / HMP / GMF on an emulated OPL3)" ON)
+rewamp_option(REWAMP_WITH_OPNMIDI  "Build the libOPNMIDI plugin (.mid and the DOS game formats on an emulated OPN2 / OPNA)" ON)
 rewamp_option(REWAMP_WITH_GSF      "Build the libgsf plugin (GBA .gsf/.minigsf via VBA)" ON)
 rewamp_option(REWAMP_WITH_VIO2SF   "Build the vio2sf plugin (Nintendo DS .2sf/.mini2sf via melonDS)" ON)
 rewamp_option(REWAMP_WITH_NCSF     "Build the NCSF plugin (Nintendo DS .ncsf/.minincsf via SSEQPlayer)" ON)
@@ -252,6 +261,7 @@ rewamp_option(REWAMP_WITH_HIGHLYQUIXOTIC "Build the HighlyQuixotic plugin (Capco
 rewamp_option(REWAMP_WITH_HIGHLYTHEORITICAL "Build the highlytheoritical plugin (Saturn .ssf / Dreamcast .dsf)" ON)
 rewamp_option(REWAMP_WITH_LIBPT3 "Build the libpt3 plugin (ZX Spectrum .pt3, AY-3-8910/YM2149)" ON)
 rewamp_option(REWAMP_WITH_ORGANYA "Build the Organya plugin (Cave Story .org)" ON)
+rewamp_option(REWAMP_WITH_MINIBAE "Build the miniBAE plugin (Beatnik .rmf)" ON)
 rewamp_option(REWAMP_WITH_TIATRACKER "Build the TIATracker plugin (Atari VCS 2600 .ttt)" ON)
 rewamp_option(REWAMP_WITH_NTGS      "Build the NoiseTracker GS plugin (Apple IIGS, FTA MODULEFILE)" ON)
 rewamp_option(REWAMP_WITH_RONKLAREN "Build the Ron Klaren plugin (Amiga .rk, NostalgicPlayer port)" ON)
@@ -430,6 +440,8 @@ function(rewamp_add_libvgm target)
     ${_cores} ${_cores_cpp} ${_emu_c} ${_utils_c} ${_player_c} ${_player_cpp}
     "${REWAMP_SRC_DIR}/rewamp_plugin_vgm.cpp"
   )
+  # vgm_v3.h (v1 → v3 conversion of ES55xx / ZSG-2 files at load) is C++17.
+  target_compile_features(${target} PRIVATE cxx_std_17)
 
   # Explicitly compile all .c sources as C (CMake infers from extension, but
   # some build systems may override — be defensive).
@@ -452,6 +464,7 @@ function(rewamp_add_libvgm target)
     SNDDEV_GA20 SNDDEV_MIKEY
     SNDDEV_K007232 SNDDEV_K005289 SNDDEV_MSM5205 SNDDEV_MSM5232 SNDDEV_BSMT2000
     SNDDEV_ICS2115 SNDDEV_ZSG2
+    SNDDEV_NAMCOWSG SNDDEV_NAMCOC15 SNDDEV_NAMCOC30 SNDDEV_NAMCOPPW
     SNDDEV_SELECT
     EC_AY8910_EMU2149 EC_AY8910_MAME EC_GB_SAMEBOY EC_GB_MAME EC_C6280_MAME EC_C6280_OOTAKE
     EC_NES_MAME EC_NES_NSFP_FDS EC_NES_NSFPLAY EC_QSOUND_CTR EC_QSOUND_MAME
@@ -705,7 +718,10 @@ function(rewamp_add_libarchive target)
   # rest. Vaut pour Android ET Linux de bureau: archive_disk_acl_darwin.c veut
   # <membership.h> et archive_read_disk_posix.c veut le `struct statfs` de
   # Darwin, deux choses qu'aucun Linux n'a.
-  if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # Emscripten (web) prend le chemin Linux: même config.h (bloc __EMSCRIPTEN__
+  # à côté du bloc __linux__), mêmes sources de lecture DISQUE retirées — un
+  # lecteur n'extrait que depuis un fichier, jamais en parcourant un disque.
+  if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Linux" OR EMSCRIPTEN)
     list(FILTER _arc_srcs EXCLUDE REGEX
       "archive_(disk_acl_(darwin|freebsd|sunos)|read_disk_(windows|posix|entry_from_file|set_standard_lookup))\\.c$")
   elseif(WIN32)
@@ -817,7 +833,10 @@ function(rewamp_add_furnace target)
     "${FURNACE_ROOT}/extern/vgsound_emu-modified"
     "${FURNACE_ROOT}/extern/IconFontCppHeaders"
     "${FURNACE_ROOT}/extern/blip_buf"
-    "${FURNACE_ROOT}/src/icon")
+    "${FURNACE_ROOT}/src/icon"
+    # dev258: la puce de synthèse vocale klattsch (`platform/klattsch.cpp`)
+    # inclut <klattsch/...>, et ses sources sont dans la liste.
+    "${FURNACE_ROOT}/extern/klattsch-cpp/include")
   rewamp_force_include_option(_furnace_fi
     "${FURNACE_ROOT}/src/modizer/furnace_chip_rename.h")
   set_source_files_properties(${FURNACE_SOURCES} PROPERTIES
@@ -1212,25 +1231,27 @@ function(rewamp_add_v2m target)
   target_link_libraries(${target} PRIVATE rewamp_v2m z)
 endfunction()
 
-# SNDH (Atari ST) — vendored AtariAudio (Arnaud Carré) + Musashi 68000 core.
-# 8 TUs: the library's 5 top-level .cpp + Musashi's m68kcpu.c/m68kops.c (which
-# #include m68kfpu.c/m68kops.h — NOT compiled standalone) + the ICE depacker.
-# Per-voice scope + notes + mute live in the vendored cores (ym2149c.cpp fills
-# m_voice_buff[0..2] for the PSG + honors generic_mute_mask in the actual mix;
-# AtariMachine.cpp does the same for the STE DAC as voice 3 — grep YOYOFR).
-# Musashi's CPU core is process-global (single static context): only one SNDH
-# file can be actively decoding at a time (fine — rewamp only ever runs one).
+# SNDH (Atari ST) — vendored AtariAudio 1.27 (Arnaud Carré, MIT) with its own
+# thread-safe C++ Musashi (class M68k). 14 TUs, the upstream example's list.
+# Per-voice scope + notes live in the patched cores (ym2149c.cpp, voices 0..2;
+# AtariMachine.cpp, STE DAC as voice 3 — grep REWAMP, REWAMP_VENDOR.txt); mute
+# is the library's MuteVoices. Builds as C++17 (upstream's example asks 20,
+# nothing in the sources needs it — measured).
 function(rewamp_add_sndh target)
   set(SNDH_ROOT "${REWAMP_THIRD_PARTY_DIR}/atariaudio")
-  if(NOT EXISTS "${SNDH_ROOT}/SndhFile.cpp")
+  if(NOT EXISTS "${SNDH_ROOT}/SndhRenderer.cpp")
     message(FATAL_ERROR "REWAMP_WITH_SNDH=ON but sources are missing at ${SNDH_ROOT}")
   endif()
   add_library(rewamp_sndh STATIC
-    "${SNDH_ROOT}/AtariMachine.cpp" "${SNDH_ROOT}/Mk68901.cpp"
-    "${SNDH_ROOT}/SndhFile.cpp" "${SNDH_ROOT}/SteDac.cpp" "${SNDH_ROOT}/ym2149c.cpp"
-    "${SNDH_ROOT}/external/ice_24.c"
-    "${SNDH_ROOT}/external/Musashi/m68kcpu.c" "${SNDH_ROOT}/external/Musashi/m68kops.c")
-  set_target_properties(rewamp_sndh PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    "${SNDH_ROOT}/AtariAudioRenderer.cpp" "${SNDH_ROOT}/AtariMachine.cpp"
+    "${SNDH_ROOT}/Blitter.cpp" "${SNDH_ROOT}/Mk68901.cpp"
+    "${SNDH_ROOT}/SndhRenderer.cpp" "${SNDH_ROOT}/SteDac.cpp"
+    "${SNDH_ROOT}/timedb.cpp" "${SNDH_ROOT}/ym2149c.cpp" "${SNDH_ROOT}/YmRenderer.cpp"
+    "${SNDH_ROOT}/external/ice_24.cpp" "${SNDH_ROOT}/external/lzh.cpp"
+    "${SNDH_ROOT}/external/Musashi/m68k.cpp" "${SNDH_ROOT}/external/Musashi/m68kcpu.cpp"
+    "${SNDH_ROOT}/external/Musashi/m68kops.cpp")
+  set_target_properties(rewamp_sndh PROPERTIES POSITION_INDEPENDENT_CODE ON
+    CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
   target_include_directories(rewamp_sndh
     PRIVATE "${REWAMP_SRC_DIR}"          # ModizerVoicesData.h (voice patches)
     PUBLIC  "${SNDH_ROOT}")
@@ -1363,6 +1384,13 @@ function(rewamp_add_wonderswan target)
   endif()
   file(GLOB_RECURSE WS_SOURCES "${WS_ROOT}/*.c")
   add_library(rewamp_wonderswan STATIC ${WS_SOURCES})
+  # Web: le clang d'Emscripten fait une ERREUR de `gfx.c` passant un uint32_t*
+  # à wsScanline(uint16 *) (vidéo, jamais appelée par le lecteur). Les sources
+  # wswan/ restent identiques à l'amont (patches/wonderswan/README.md): on
+  # rétrograde l'erreur en avertissement plutôt que d'éditer le fichier.
+  if(EMSCRIPTEN)
+    target_compile_options(rewamp_wonderswan PRIVATE -Wno-error=incompatible-pointer-types)
+  endif()
   set_target_properties(rewamp_wonderswan PROPERTIES POSITION_INDEPENDENT_CODE ON)
   # Every internal include is RELATIVE except <boolean.h>/<retro_inline.h>;
   # both live in include/ and neither name exists anywhere else in the tree.
@@ -1618,6 +1646,44 @@ function(rewamp_add_organya target)
   target_link_libraries(${target} PRIVATE rewamp_organya)
 endfunction()
 
+# miniBAE (Beatnik RMF) — NeoBAE fork of the Beatnik Audio Engine (Beatnik
+# BSD-3 core, zefie's changes LGPL-3.0+). 48 TUs = the library's own Makefile
+# set for BAE_API=Dummy + MP3_DEC + FIX_SPAN_DC (same set the podspecs wrap).
+# The PLUGIN is compiled INSIDE this static lib, so every include dir stays
+# PRIVATE to it: X_API.h / g72x.h are generic, and adpcm-lib.h / minimp3.h
+# also exist in Furnace / libopenmpt / vgmstream. The rename header is forced
+# into every TU (adpcm-xq, minimp3, g72x symbols defined elsewhere too).
+function(rewamp_add_minibae target)
+  set(BAE_ROOT "${REWAMP_THIRD_PARTY_DIR}/minibae")
+  if(NOT EXISTS "${BAE_ROOT}/src/BAE_Source/Common/NeoBAE.c")
+    message(FATAL_ERROR "REWAMP_WITH_MINIBAE=ON but sources are missing at ${BAE_ROOT}")
+  endif()
+  file(GLOB_RECURSE BAE_SOURCES CONFIGURE_DEPENDS "${BAE_ROOT}/src/*.c")
+  add_library(rewamp_minibae STATIC ${BAE_SOURCES} "${REWAMP_SRC_DIR}/rewamp_plugin_minibae.c")
+  set_target_properties(rewamp_minibae PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(rewamp_minibae PRIVATE
+    "${BAE_ROOT}/src/thirdparty/adpcm-xq"
+    "${BAE_ROOT}/src/thirdparty/minimp3"
+    "${BAE_ROOT}"
+    "${BAE_ROOT}/src/BAE_Source/Common"
+    "${BAE_ROOT}/src/BAE_Source/Platform"
+    "${BAE_ROOT}/src/BAE_MPEG_Source_II"
+    "${REWAMP_SRC_DIR}")
+  target_compile_definitions(rewamp_minibae PRIVATE
+    REWAMP_WITH_MINIBAE=1 X_PLATFORM=X_DUMMY USE_MINIMP3_WRAPPER=1
+    USE_MPEG_DECODER=1 BAE_FIX_SPAN_DC=1 _THREAD_SAFE=1
+    REWAMP_BAE_CAPTURE=1)   # GenSynth.c patch: per-channel scope → plugin
+  if(MSVC)
+    target_compile_options(rewamp_minibae PRIVATE
+      "/FI${BAE_ROOT}/rewamp_minibae_rename.h" /w)
+  else()
+    target_compile_options(rewamp_minibae PRIVATE
+      -include "${BAE_ROOT}/rewamp_minibae_rename.h" -w)
+  endif()
+  target_compile_definitions(${target} PRIVATE REWAMP_WITH_MINIBAE=1)
+  target_link_libraries(${target} PRIVATE rewamp_minibae)
+endfunction()
+
 # ProWizard (packed Amiga modules → Protracker MOD). NOT a decoder plugin: it
 # is a converter rewamp_load_file() calls as a LAST RESORT when no plugin could
 # open a file (see the comment there). Sources are libxmp's MIT prowizard set,
@@ -1788,6 +1854,9 @@ function(rewamp_add_sunvox target)
     target_link_libraries(rewamp_sunvox PRIVATE OpenSLES aaudio log android)
   elseif(WIN32)
     target_link_libraries(rewamp_sunvox PRIVATE dsound dxguid winmm ole32)
+  elseif(EMSCRIPTEN)
+    # Web: sundog a sa branche OS_EMSCRIPTEN, sans bibliothèque système (UNIX y
+    # est vrai aussi, d'où ce cas AVANT, sinon -lasound introuvable au lien).
   elseif(UNIX)
     target_link_libraries(rewamp_sunvox PRIVATE asound pthread dl)
   endif()
@@ -2197,6 +2266,62 @@ function(rewamp_add_adlmidi target)
   target_compile_definitions(${target} PRIVATE REWAMP_WITH_ADLMIDI=1)
   target_include_directories(${target} PRIVATE "${ADL_ROOT}/include" "${REWAMP_THIRD_PARTY_DIR}/tml")
   target_link_libraries(${target} PRIVATE rewamp_adlmidi)
+endfunction()
+
+# ── libOPNMIDI: MIDI on an emulated OPN2 (YM2612) / OPNA (YM2608) ───────────
+# (Wohlstand, GPL-3.0-or-later core; chip cores LGPL-2.1+/GPL-2.0+/BSD/MIT-like).
+# Vendored at v1.6.2, patched for the per-voice oscilloscope (REWAMP SCOPE,
+# REWAMP_VENDOR.txt). ⚠️ Every TU of the LIBRARY gets rewamp/opnmidi_rename.h
+# injected first: libvgm (Nuked OPN2 OPN2_*, MAME ym2612_*), pmdmini (ymfm)
+# and libADLMIDI (same sequencer classes) define the same names. Emulators:
+# MAME YM2612, Nuked OPN2, GENS, YMFM OPN2/OPNA, Neko Project II OPNA, MAME
+# YM2608 — not GX/PMDWin (disabled upstream), the LLE cores, the VGM dumper.
+# Banks: the library has none; rewamp/opnmidi_banks.c embeds the seven of
+# fm_banks/ (scripts/gen_opn_banks.py).
+function(rewamp_add_opnmidi target)
+  set(OPN_ROOT "${REWAMP_THIRD_PARTY_DIR}/libopnmidi")
+  if(NOT EXISTS "${OPN_ROOT}/src/opnmidi.cpp")
+    message(FATAL_ERROR "REWAMP_WITH_OPNMIDI=ON but libOPNMIDI sources are missing at ${OPN_ROOT}")
+  endif()
+  set(_opn_srcs
+    src/opnmidi.cpp src/opnmidi_load.cpp src/opnmidi_midiplay.cpp
+    src/opnmidi_opn2.cpp src/opnmidi_private.cpp src/opnmidi_sequencer.cpp
+    src/wopn/wopn_file.c
+    src/models/model_generic.c src/models/model_freq_opn2.c
+    src/models/model_freq_opna.c src/models/model_dmx.c
+    src/models/model_apogee.c src/models/model_w9x.c
+    src/chips/gens_opn2.cpp src/chips/gens/Ym2612.cpp
+    src/chips/mame_opn2.cpp src/chips/mame/mame_ym2612fm.c
+    src/chips/nuked_opn2.cpp src/chips/nuked/ym3438.c
+    src/chips/np2_opna.cpp src/chips/np2/fmgen_opna.cpp
+    src/chips/np2/fmgen_file.cpp src/chips/np2/fmgen_fmgen.cpp
+    src/chips/np2/fmgen_fmtimer.cpp src/chips/np2/fmgen_psg.cpp
+    src/chips/mame_opna.cpp src/chips/mamefm/fm.cpp
+    src/chips/mamefm/ymdeltat.cpp src/chips/mamefm/emu2149.c
+    src/chips/mamefm/resampler.cpp
+    src/chips/ymfm_opn2.cpp src/chips/ymfm_opna.cpp
+    src/chips/ymfm/ymfm_opn.cpp src/chips/ymfm/ymfm_misc.cpp
+    src/chips/ymfm/ymfm_pcm.cpp src/chips/ymfm/ymfm_adpcm.cpp
+    src/chips/ymfm/ymfm_ssg.cpp
+    rewamp/opnmidi_banks.c)
+  list(TRANSFORM _opn_srcs PREPEND "${OPN_ROOT}/")
+  add_library(rewamp_opnmidi STATIC ${_opn_srcs})
+  set_target_properties(rewamp_opnmidi PROPERTIES POSITION_INDEPENDENT_CODE ON
+    CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON)
+  target_compile_definitions(rewamp_opnmidi PRIVATE
+    OPNMIDI_DISABLE_GX_EMULATOR OPNMIDI_DISABLE_PMDWIN_EMULATOR
+    ENABLE_END_SILENCE_SKIPPING)
+  target_include_directories(rewamp_opnmidi PRIVATE "${OPN_ROOT}/include" "${OPN_ROOT}/src")
+  rewamp_force_include_option(_opn_fi "${OPN_ROOT}/rewamp/opnmidi_rename.h")
+  set_source_files_properties(${_opn_srcs} PROPERTIES COMPILE_OPTIONS "${_opn_fi}")
+
+  target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_opnmidi.cpp")
+  if(NOT REWAMP_WITH_MIDI AND NOT REWAMP_WITH_MT32 AND NOT REWAMP_WITH_ADLMIDI)
+    target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_tml.c")
+  endif()
+  target_compile_definitions(${target} PRIVATE REWAMP_WITH_OPNMIDI=1)
+  target_include_directories(${target} PRIVATE "${OPN_ROOT}/include" "${REWAMP_THIRD_PARTY_DIR}/tml")
+  target_link_libraries(${target} PRIVATE rewamp_opnmidi)
 endfunction()
 
 # Official UnRAR as a static lib — only the .cpp files its makefile compiles
@@ -2785,6 +2910,9 @@ function(rewamp_configure_decoders target)
   if(REWAMP_WITH_ADLMIDI)
     rewamp_add_adlmidi(${target})
   endif()
+  if(REWAMP_WITH_OPNMIDI)
+    rewamp_add_opnmidi(${target})
+  endif()
 
   if(REWAMP_WITH_GSF)
     rewamp_add_gsf(${target})
@@ -2810,8 +2938,9 @@ function(rewamp_configure_decoders target)
   # Ailleurs, compiler rewamp_projectm_render.cpp échouerait sur des
   # GLuint/glGenTextures non déclarés, et le TU ne trouverait aucun contexte à
   # l'édition de liens.
+  # Web (Emscripten): couche src/web/rewamp_gl_web.c, ajoutée par l'hôte web.
   if(REWAMP_WITH_PROJECTM AND NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux"
-     AND NOT (WIN32 AND REWAMP_WINDOWS_VIZ))
+     AND NOT EMSCRIPTEN AND NOT (WIN32 AND REWAMP_WINDOWS_VIZ))
     message(STATUS "rewamp: projectM désactivé — pas de couche GL pour cette plateforme")
   else()
     if(REWAMP_WITH_PROJECTM)
@@ -2865,6 +2994,10 @@ function(rewamp_configure_decoders target)
 
   if(REWAMP_WITH_ORGANYA)
     rewamp_add_organya(${target})
+  endif()
+
+  if(REWAMP_WITH_MINIBAE)
+    rewamp_add_minibae(${target})
   endif()
 
   if(REWAMP_WITH_PROWIZARD)
@@ -2982,6 +3115,37 @@ function(rewamp_configure_decoders target)
     target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_gbsplay.c")
     target_compile_definitions(${target} PRIVATE REWAMP_WITH_GBSPLAY=1)
     target_link_libraries(${target} PRIVATE z)
+  endif()
+
+  if(REWAMP_WITH_CPC)
+    # floooh/chips is header-only: ONE translation unit, the plugin, defines
+    # CHIPS_IMPL; every chips symbol is renamed rwcpc_* by a force-included
+    # header there (rewamp_chips_rename.h), so nothing to scope here.
+    set(_cpc_root "${REWAMP_THIRD_PARTY_DIR}/chips")
+    if(NOT EXISTS "${_cpc_root}/systems/cpc.h")
+      message(FATAL_ERROR
+        "REWAMP_WITH_CPC=ON but ${_cpc_root}/systems/cpc.h is missing.")
+    endif()
+    target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_cpc.c")
+    set_source_files_properties("${REWAMP_SRC_DIR}/rewamp_plugin_cpc.c"
+      PROPERTIES INCLUDE_DIRECTORIES "${_cpc_root}")
+    target_compile_definitions(${target} PRIVATE REWAMP_WITH_CPC=1)
+  endif()
+
+  if(REWAMP_WITH_ZXSPECTRUM)
+    # Same floooh/chips tree. The chips CORE (Z80, AY, kbd, clk, mem) is
+    # implemented by the CPC plugin's TU when REWAMP_WITH_CPC is on, by this
+    # one otherwise (#ifndef REWAMP_WITH_CPC in the plugin) — so this TU must
+    # see the same REWAMP_WITH_CPC as the target, which it does.
+    set(_zxs_root "${REWAMP_THIRD_PARTY_DIR}/chips")
+    if(NOT EXISTS "${_zxs_root}/systems/zx.h")
+      message(FATAL_ERROR
+        "REWAMP_WITH_ZXSPECTRUM=ON but ${_zxs_root}/systems/zx.h is missing.")
+    endif()
+    target_sources(${target} PRIVATE "${REWAMP_SRC_DIR}/rewamp_plugin_zx.c")
+    set_source_files_properties("${REWAMP_SRC_DIR}/rewamp_plugin_zx.c"
+      PROPERTIES INCLUDE_DIRECTORIES "${_zxs_root}")
+    target_compile_definitions(${target} PRIVATE REWAMP_WITH_ZXSPECTRUM=1)
   endif()
 
   if(REWAMP_WITH_HIGHLYEXP)
@@ -3171,6 +3335,9 @@ function(rewamp_configure_decoders target)
             # Bibliothèques d'IMPORT; les DLL voyagent par
             # rewamp_audio_bundled_libraries (windows/CMakeLists.txt).
             set(_ff_so "${REWAMP_FFMPEG_DIR}/lib/${_ff}.lib")
+          elseif(EMSCRIPTEN)
+            # Web: FFmpeg STATIQUE (web/build_ffmpeg.sh), pas de .so en wasm.
+            set(_ff_so "${REWAMP_FFMPEG_DIR}/lib/lib${_ff}.a")
           else()
             set(_ff_so "${REWAMP_FFMPEG_DIR}/lib/lib${_ff}.so")
           endif()

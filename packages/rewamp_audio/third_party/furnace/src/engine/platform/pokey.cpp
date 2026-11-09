@@ -142,13 +142,14 @@ void DivPlatformPOKEY::tick(bool sysTick) {
     }
     if (NEW_ARP_STRAT) {
       chan[i].handleArp();
-    } else if (chan[i].std.arp.had) {
+    } else if (chan[i].std.arp.had && !chan[i].rawFreq) {
       if (!chan[i].inPorta) {
-        chan[i].baseFreq=NOTE_PERIODIC(parent->calcArp(chan[i].note,chan[i].std.arp.val));
+        chan[i].baseFreq=chan[i].calcBaseFreq(parent->calcArp(chan[i].note,chan[i].std.arp.val));
       }
       chan[i].freqChanged=true;
     }
     if (chan[i].std.duty.had) {
+      chan[i].audctl=chan[i].std.duty.val;
       audctl=chan[i].std.duty.val;
       audctlChanged=true;
     }
@@ -170,6 +171,14 @@ void DivPlatformPOKEY::tick(bool sysTick) {
 
   if (audctlChanged) {
     audctlChanged=false;
+
+    if (audctlCombine) {
+      audctl=0;
+      for (int i=0; i<4; i++) {
+        audctl|=chan[i].audctl;
+      }
+    }
+
     rWrite(8,audctl);
     for (int i=0; i<4; i++) {
       chan[i].freqChanged=true;
@@ -184,81 +193,85 @@ void DivPlatformPOKEY::tick(bool sysTick) {
 
   for (int i=0; i<4; i++) {
     if (chan[i].freqChanged || chan[i].keyOn || chan[i].keyOff) {
-      chan[i].freq=parent->calcFreq(chan[i].baseFreq,parent->song.compatFlags.linearPitch?chan[i].pitch:0,chan[i].fixedArp?chan[i].baseNoteOverride:chan[i].arpOff,chan[i].fixedArp,true,0,parent->song.compatFlags.linearPitch?chan[i].pitch2:0,chipClock,CHIP_DIVIDER);
+      chan[i].freq=chan[i].calcFreq();
 
-      if ((i==0 && !(audctl&64)) || (i==2 && !(audctl&32)) || i==1 || i==3) {
-        chan[i].freq/=7;
-        switch (chan[i].wave) {
-          case 6:
-            chan[i].freq/=5;
-            chan[i].freq>>=1;
-            break;
-          case 7:
-            if (audctl&1) {
-              chan[i].freq/=5;
-            } else {
-              chan[i].freq/=15;
-            }
-            chan[i].freq>>=1;
-            break;
-          default:
-            chan[i].freq>>=2;
-            break;
-        }
-      } else if ((i==0 && audctl&64) || (i==2 && audctl&32)) {
-        switch (chan[i].wave) {
-          case 6:
-            chan[i].freq<<=1;
-            chan[i].freq/=5;
-            break;
-          case 7:
-            chan[i].freq<<=1;
-            chan[i].freq/=15;
-            break;
-        }
-      }
-
-      if (audctl&1 && !((i==0 && audctl&64) || (i==2 && audctl&32))) {
-        chan[i].freq>>=2;
-      }
-
-      // non-linear pitch
-      if (!parent->song.compatFlags.linearPitch) {
-        chan[i].freq-=chan[i].pitch;
-      }
-
-      if (--chan[i].freq<0) chan[i].freq=0;
-
-      // snap buzz periods
-      int minFreq8=255;
-      if (chan[i].wave==7) {
-        if ((i==0 && audctl&64) || (i==2 && audctl&32)) {
-          chan[i].freq=15*(chan[i].freq/15)+snapPeriodLong16[(chan[i].freq%15)]+1;
-        } else {
-          if (!(audctl&1)) chan[i].freq=15*(chan[i].freq/15)+snapPeriodLong[(chan[i].freq%15)];
-        }
-      } else if (chan[i].wave==6) {
-        if ((i==0 && audctl&64) || (i==2 && audctl&32)) {
-          chan[i].freq=15*(chan[i].freq/15)+snapPeriodShort16[(chan[i].freq%15)]+1;
-        } else {
-          if (!(audctl&1)) chan[i].freq=15*(chan[i].freq/15)+snapPeriodShort[(chan[i].freq%15)];
-        }
-        minFreq8=251;
-      }
-
-      if ((i==0 && audctl&16) || (i==2 && audctl&8)) {
-        if (chan[i].freq>65535) chan[i].freq=65535;
-      } else {
-        if (chan[i].freq>minFreq8) chan[i].freq=minFreq8;
-      }
-
-      // write frequency
-      if ((i==1 && audctl&16) || (i==3 && audctl&8)) {
-        // ignore - channel is paired
-      } else {
+      if (chan[i].rawFreq) {
         rWrite(i<<1,chan[i].freq&0xff);
+      } else {
+        if ((i==0 && !(audctl&64)) || (i==2 && !(audctl&32)) || i==1 || i==3) {
+          chan[i].freq/=7;
+          switch (chan[i].wave) {
+            case 6:
+              chan[i].freq/=5;
+              chan[i].freq>>=1;
+              break;
+            case 7:
+              if (audctl&1) {
+                chan[i].freq/=5;
+              } else {
+                chan[i].freq/=15;
+              }
+              chan[i].freq>>=1;
+              break;
+            default:
+              chan[i].freq>>=2;
+              break;
+          }
+        } else if ((i==0 && audctl&64) || (i==2 && audctl&32)) {
+          switch (chan[i].wave) {
+            case 6:
+              chan[i].freq<<=1;
+              chan[i].freq/=5;
+              break;
+            case 7:
+              chan[i].freq<<=1;
+              chan[i].freq/=15;
+              break;
+          }
+        }
+
+        if (audctl&1 && !((i==0 && audctl&64) || (i==2 && audctl&32))) {
+          chan[i].freq>>=2;
+        }
+
+        // non-linear pitch
+        if (!parent->song.compatFlags.linearPitch) {
+          chan[i].freq-=chan[i].pitch;
+        }
+
+        if (--chan[i].freq<0) chan[i].freq=0;
+
+        // snap buzz periods
+        int minFreq8=255;
+        if (chan[i].wave==7) {
+          if ((i==0 && audctl&64) || (i==2 && audctl&32)) {
+            chan[i].freq=15*(chan[i].freq/15)+snapPeriodLong16[(chan[i].freq%15)]+1;
+          } else {
+            if (!(audctl&1)) chan[i].freq=15*(chan[i].freq/15)+snapPeriodLong[(chan[i].freq%15)];
+          }
+        } else if (chan[i].wave==6) {
+          if ((i==0 && audctl&64) || (i==2 && audctl&32)) {
+            chan[i].freq=15*(chan[i].freq/15)+snapPeriodShort16[(chan[i].freq%15)]+1;
+          } else {
+            if (!(audctl&1)) chan[i].freq=15*(chan[i].freq/15)+snapPeriodShort[(chan[i].freq%15)];
+          }
+          minFreq8=251;
+        }
+
         if ((i==0 && audctl&16) || (i==2 && audctl&8)) {
-          rWrite((1+i)<<1,chan[i].freq>>8);
+          if (chan[i].freq>65535) chan[i].freq=65535;
+        } else {
+          if (chan[i].freq>minFreq8) chan[i].freq=minFreq8;
+        }
+
+        // write frequency
+        if ((i==1 && audctl&16) || (i==3 && audctl&8)) {
+          // ignore - channel is paired
+        } else {
+          rWrite(i<<1,chan[i].freq&0xff);
+          if ((i==0 && audctl&16) || (i==2 && audctl&8)) {
+            rWrite((1+i)<<1,chan[i].freq>>8);
+          }
         }
       }
 
@@ -290,7 +303,7 @@ int DivPlatformPOKEY::dispatch(DivCommand c) {
     case DIV_CMD_NOTE_ON: {
       DivInstrument* ins=parent->getIns(chan[c.chan].ins,DIV_INS_POKEY);
       if (c.value!=DIV_NOTE_NULL) {
-        chan[c.chan].baseFreq=NOTE_PERIODIC(c.value);
+        chan[c.chan].baseFreq=chan[c.chan].calcBaseFreq(c.value);
         chan[c.chan].freqChanged=true;
         chan[c.chan].note=c.value;
       }
@@ -346,6 +359,7 @@ int DivPlatformPOKEY::dispatch(DivCommand c) {
       chan[c.chan].freqChanged=true; //round freq for specific waves
       break;
     case DIV_CMD_STD_NOISE_MODE:
+      chan[c.chan].audctl=c.value&0xff;
       audctl=c.value&0xff;
       audctlChanged=true;
       break;
@@ -354,7 +368,7 @@ int DivPlatformPOKEY::dispatch(DivCommand c) {
       skctlChanged=true;
       break;
     case DIV_CMD_NOTE_PORTA: {
-      int destFreq=NOTE_PERIODIC(c.value2);
+      int destFreq=chan[c.chan].calcBaseFreq(c.value2);
       bool return2=false;
       if (destFreq>chan[c.chan].baseFreq) {
         chan[c.chan].baseFreq+=c.value;
@@ -377,7 +391,7 @@ int DivPlatformPOKEY::dispatch(DivCommand c) {
       break;
     }
     case DIV_CMD_LEGATO:
-      chan[c.chan].baseFreq=NOTE_PERIODIC(c.value);
+      chan[c.chan].baseFreq=chan[c.chan].calcBaseFreq(c.value);
       chan[c.chan].freqChanged=true;
       chan[c.chan].note=c.value;
       break;
@@ -385,7 +399,7 @@ int DivPlatformPOKEY::dispatch(DivCommand c) {
       if (chan[c.chan].active && c.value2) {
         if (parent->song.compatFlags.resetMacroOnPorta) chan[c.chan].macroInit(parent->getIns(chan[c.chan].ins,DIV_INS_POKEY));
       }
-      if (!chan[c.chan].inPorta && c.value && !parent->song.compatFlags.brokenPortaArp && chan[c.chan].std.arp.will && !NEW_ARP_STRAT) chan[c.chan].baseFreq=NOTE_PERIODIC(chan[c.chan].note);
+      if (!chan[c.chan].inPorta && c.value && !parent->song.compatFlags.brokenPortaArp && chan[c.chan].std.arp.will && !NEW_ARP_STRAT) chan[c.chan].baseFreq=chan[c.chan].calcBaseFreq(chan[c.chan].note);
       chan[c.chan].inPorta=c.value;
       break;
     case DIV_CMD_GET_VOLMAX:
@@ -421,7 +435,7 @@ void DivPlatformPOKEY::forceIns() {
   skctlChanged=true;
 }
 
-void* DivPlatformPOKEY::getChanState(int ch) {
+SharedChannel* DivPlatformPOKEY::getChanState(int ch) {
   return &chan[ch];
 }
 
@@ -462,15 +476,22 @@ int DivPlatformPOKEY::getRegisterPoolSize() {
   return 16;
 }
 
+void DivPlatformPOKEY::softReset() {
+  for (int i=0; i<9; i++) {
+    rWrite(i,0);
+  }
+}
+
 void DivPlatformPOKEY::reset() {
   while (!writes.empty()) writes.pop();
   memset(regPool,0,16);
   for (int i=0; i<4; i++) {
-    chan[i]=DivPlatformPOKEY::Channel();
+    chan[i]=DivPlatformPOKEY::Channel(parent->song.compatFlags.linearPitch);
+    chan[i].pitchTable=&pitchTable;
     chan[i].std.setEngine(parent);
   }
   if (dumpWrites) {
-    addWrite(0xffffffff,0);
+    softReset();
   }
 
   if (useAltASAP) {
@@ -499,6 +520,15 @@ void DivPlatformPOKEY::notifyInsDeletion(void* ins) {
   }
 }
 
+void DivPlatformPOKEY::notifyPitchTable(int sample) {
+  pitchTable.init(parent->song.tuning,chipClock,CHIP_DIVIDER,0xfffffff,true,parent->song.compatFlags.linearPitch);
+}
+
+unsigned int DivPlatformPOKEY::getMaxFreq(int ch) {
+  // in raw frequency mode, all calculations (e.g. 16-bit mode) are overridden.
+  return 0xff;
+}
+
 void DivPlatformPOKEY::setFlags(const DivConfig& flags) {
   if (flags.getInt("clockSel",0)) {
     chipClock=COLOR_PAL*2.0/5.0;
@@ -506,6 +536,8 @@ void DivPlatformPOKEY::setFlags(const DivConfig& flags) {
     chipClock=COLOR_NTSC/2.0;
   }
   CHECK_CUSTOM_CLOCK;
+
+  audctlCombine=flags.getBool("audctlCombine",true);
 
   if (useAltASAP) {
     rate=chipClock/7;
@@ -520,6 +552,8 @@ void DivPlatformPOKEY::setFlags(const DivConfig& flags) {
       oscBuf[i]->setRate(rate);
     }
   }
+
+  notifyPitchTable();
 }
 
 void DivPlatformPOKEY::poke(unsigned int addr, unsigned short val) {

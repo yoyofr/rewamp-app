@@ -247,6 +247,10 @@ typedef struct {
      * par rééchantillonnage générique (hauteur comprise). Appelé par le
      * producteur sous decodeLock, avant la première lecture puis à chaque
      * changement; length() et seek() restent en temps du MORCEAU à 1×.
+     * Un engine qui découvre APRÈS coup ne pas pouvoir tenir la vitesse qu'il
+     * a acceptée (UADE: le player TFMX n'arme son interruption audio qu'une
+     * fois lancé) appelle rewamp_speed_renegotiate(): le producteur lui
+     * redemande la vitesse au pas suivant, et un refus bascule en générique.
      * ⚠️ Dernier champ: les vtables s'initialisent par POSITION. */
     int (*set_speed)(RewampDecoder* dec, double speed);
 } RewampPluginVTable;
@@ -254,6 +258,10 @@ typedef struct {
 // Helper for plugins: returns 1 if `ext` (lowercase, no dot) is in a
 // NULL-terminated list of lowercase extensions, else 0.
 int rewamp_ext_in_list(const char* ext, const char* const* list);
+
+// Helper for plugins: ask the producer to call set_speed() again at its next
+// step (see the set_speed field). Callable from read(), under decodeLock.
+void rewamp_speed_renegotiate(void);
 
 #ifdef __cplusplus
 }

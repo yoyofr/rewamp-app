@@ -34,12 +34,15 @@ import 'local_roots.dart' show LocalRoots, LinkedEntry;
 import 'local_open.dart' show globalOpenLocalPaths;
 import 'library_button.dart';
 import 'local_library_screen.dart';
+import 'list_station.dart';
+import 'sheet_handle.dart';
 import 'song_tile.dart';
 import 'track_options_sheet.dart';
 import 'horizontal_scroll_arrows.dart';
 import 'facet_picker_sheet.dart';
 import 'browse_screen.dart'
-    show CollectionAlbumsScreen, FacetValuesScreen, PlaylistTracksScreen;
+    show BrowseResultsScreen, CollectionAlbumsScreen, FacetValuesScreen,
+         PlaylistTracksScreen;
 import 'user_settings.dart';
 
 // The group screen reuses this library's private result lists (_AlbumList,
@@ -454,7 +457,8 @@ Future<void> downloadAndPlay(
         }
         // Standard album archive (zip, or RSN handled by magic inside).
         final reordered = await RewampDb.downloadAndExtractZip(zipUrl, songs,
-            mirrorZipUrl: mirrorZip, albumId: r.albumId);
+            mirrorZipUrl: mirrorZip, albumId: r.albumId,
+            zipSize: details.isNotEmpty ? details.first.zipSize : 0);
         finalSongs = reordered ?? songs;
       }
 
@@ -581,6 +585,7 @@ Future<void> playAlbumFromList(
   String       albumName, {
   String?      collection,
   String?      platform,
+  String?      albumId,
   required OnPlayAlbum onPlayAlbum,
 }) async {
   // 0. ▶ sur une ligne d'ALBUM ouvre le MÊME choix que partout ailleurs
@@ -623,14 +628,23 @@ Future<void> playAlbumFromList(
     }
   }
 
-  // 1. Full track list ordered by position.
-  var songs = await RewampDb.browse(
-    albumName:  albumName,
-    collection: collection,
-    platform:   platform,
-    sortBy:     'position',
-    limit:      500,
-  );
+  // 1. Full track list ordered by position — by the album's ID when the row
+  // has one. ⚠️ Un nom n'est pas une identité: jw_usf range « Ocarina of Time
+  // (v1.0) » et sa révision « [fixed] » sous le MÊME nom, deux archives; par
+  // nom les deux revenaient, le dépliage PSF voyait deux lignes « connues »
+  // et les numérotait chacune en 109 « sous-chansons » de leur archive — une
+  // file doublée qui ne jouait qu'une piste (comme l'écran d'album, qui passe
+  // déjà par get_album_tracks).
+  final hasId = albumId != null && albumId.isNotEmpty;
+  var songs = hasId
+      ? await RewampDb.albumTracks(albumId: albumId, sortBy: 'position')
+      : await RewampDb.browse(
+          albumName:  albumName,
+          collection: collection,
+          platform:   platform,
+          sortBy:     'position',
+          limit:      500,
+        );
   if (songs.isEmpty || !ctx.mounted) return;
 
   // 1b. Container album (joshw NSF/GBS/…): the server lists one multi-subsong
@@ -653,6 +667,7 @@ Future<void> playAlbumFromList(
     albumName,
     collectionSlug: collection,
     platformName:   platform,
+    albumId:        hasId ? albumId : null,
   );
   final zipUrl = details.isNotEmpty ? details.first.zipUrl : null;
   final mirrorZip = details.isNotEmpty ? details.first.mirrorZipUrl : null;
@@ -676,7 +691,8 @@ Future<void> playAlbumFromList(
       );
       try {
         final reordered = await RewampDb.downloadAndExtractZip(zipUrl, songs,
-            mirrorZipUrl: mirrorZip);
+            mirrorZipUrl: mirrorZip,
+            zipSize: details.isNotEmpty ? details.first.zipSize : 0);
         if (reordered != null) songs = reordered;
       } catch (_) {
         // Fall through — individual downloads will be attempted per track.
@@ -717,6 +733,8 @@ class SearchScreen extends StatefulWidget {
   /// Bumped by the shell when the search tab is re-selected while already
   /// active → resets every search criterion (text, tags, année, note…).
   final ValueListenable<int>? resetTick;
+  /// Bumped par le raccourci ⌘F: le champ prend le focus, critères intacts.
+  final ValueListenable<int>? focusTick;
   /// Texte imposé de dehors (ligne de commande du bureau, `--search`): le
   /// numéro fait qu'une MÊME recherche redemandée repart. Appliqué aussi à
   /// la construction, l'onglet pouvant n'être monté qu'après la demande.
@@ -736,6 +754,7 @@ class SearchScreen extends StatefulWidget {
     this.onQueueAdd,
     this.onAlbumQueueAdd,
     this.resetTick,
+    this.focusTick,
     this.queryRequest,
     this.initialTags = const [],
     this.initialTagCategory,
@@ -1031,6 +1050,7 @@ class _SearchScreenState extends State<SearchScreen>
     _tabs = TabController(length: _Tab.values.length, vsync: this);
     _tabs.addListener(_onTabChanged);
     widget.resetTick?.addListener(_resetAllCriteria);
+    widget.focusTick?.addListener(_focusField);
     widget.queryRequest?.addListener(_onQueryRequest);
     if (widget.queryRequest?.value != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _onQueryRequest());
@@ -1067,6 +1087,14 @@ class _SearchScreenState extends State<SearchScreen>
     _resetAllCriteria();
     _controller.text = r.$2;
     _search(r.$2);
+  }
+
+  void _focusField() {
+    if (!mounted) return;
+    _focus.requestFocus();
+    // Tout le texte sélectionné: taper remplace, comme dans un navigateur.
+    _controller.selection = TextSelection(
+        baseOffset: 0, extentOffset: _controller.text.length);
   }
 
   void _resetAllCriteria() {
@@ -1389,6 +1417,7 @@ class _SearchScreenState extends State<SearchScreen>
   @override
   void dispose() {
     widget.resetTick?.removeListener(_resetAllCriteria);
+    widget.focusTick?.removeListener(_focusField);
     widget.queryRequest?.removeListener(_onQueryRequest);
     _tabs.removeListener(_onTabChanged);
     _tabs.dispose();
@@ -2178,15 +2207,40 @@ class _SearchScreenState extends State<SearchScreen>
   /// with no facet at all this is a whole-catalogue radio.
   Future<void> _startRadio() async {
     _radioSeed = DateTime.now().millisecondsSinceEpoch.toString();
+    // Une STATION (list_station.dart): les facettes sont FIGÉES au geste —
+    // `_fetchPage` relit l'écran, et changer de facette après coup ne doit
+    // pas changer ce que joue la radio.
+    final q = _currentQuery, fuzzy = !_exact;
+    final col = _collectionParams.$1, cols = _collectionParams.$2;
+    final tags = _tagNames, tagCats = _tagCategoriesFilter;
+    final format = _formatFilter, platform = _platformFilter;
+    final yearMin = _yearMin, yearMax = _yearMax;
+    final ratingMin = _ratingMin > 0 ? _ratingMin : null;
+    final podium = _podium;
     try {
-      final songs =
-          await _fetchPage(_currentQuery, 0, sortBy: 'random', seed: _radioSeed);
-      if (!mounted || songs.isEmpty) return;
-      if (widget.onPlayAlbum != null) {
-        await widget.onPlayAlbum!(context, songs);
-      } else {
-        await downloadAndPlay(context, songs.first, widget.onFileReady);
-      }
+      await startRandomStation(
+        context,
+        (seed, offset, limit) => q.isNotEmpty
+            ? RewampDb.search(q,
+                fuzzy: fuzzy, sortBy: 'random',
+                collection: col, collections: cols,
+                tags: tags, tagCategories: tagCats,
+                formatFilter: format, platform: platform,
+                yearMin: yearMin, yearMax: yearMax, ratingMin: ratingMin,
+                podium: podium,
+                seed: seed, limit: limit, offset: offset)
+            : RewampDb.browse(
+                collection: col, collections: cols,
+                tags: tags, tagCategories: tagCats,
+                formatFilter: format, platform: platform,
+                yearMin: yearMin, yearMax: yearMax, ratingMin: ratingMin,
+                podium: podium,
+                sortBy: 'random',
+                seed: seed, limit: limit, offset: offset),
+        fallback: widget.onPlayAlbum ??
+            (ctx, songs, {startIndex}) =>
+                downloadAndPlay(ctx, songs.first, widget.onFileReady),
+      );
     } catch (_) {}
   }
 
@@ -2866,10 +2920,9 @@ class _SearchScreenState extends State<SearchScreen>
       backgroundColor: selected
           ? Theme.of(context).colorScheme.secondaryContainer
           : null,
-      onPressed: () => showModalBottomSheet<void>(
+      onPressed: () => showHandleSheet<void>(
         context: context,
         isScrollControlled: true,
-        showDragHandle: true,
         builder: (ctx) => FacetPickerSheet(
           label:    label,
           values:   values,
@@ -3075,10 +3128,9 @@ class _SearchScreenState extends State<SearchScreen>
   }
 
   void _openCollectionSheet() {
-    showModalBottomSheet<void>(
+    showHandleSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
       builder: (ctx) => _CollectionPickerSheet(
         collections: _collections,
         selected: _collectionFilter,
@@ -4104,9 +4156,9 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
           ],
         ),
         actions: [
-          // Save the artist to the library. The row is LOCAL-ONLY (artists
-          // have no server-side library counterpart — sync skips the type).
-          // refId = the uuid when known: the name is homonym-prone, and the
+          // Save the artist to the library. Synced to the account under its
+          // uuid once the server knows artists (mig 296); a name-only row
+          // stays local. refId = the uuid when known: the name is homonym-prone, and the
           // library screen recovers the id from the refId to navigate.
           LibraryButton(
             type:  'artist',
@@ -4115,6 +4167,9 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
                 : widget.artistName,
             name:  widget.artistName,
             collectionSlug: widget.collection,
+            // La pochette de l'ARTISTE (fiche, migs 297/298): une entrée
+            // locale montre la même image que la bibliothèque synchronisée.
+            artworkUrl: _details?.artworkUrl,
           ),
           const SizedBox(width: 4),
         ],
@@ -4427,9 +4482,8 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
     bool upper = false,
   }) async {
     final l10n = context.l10n;
-    final picked = await showModalBottomSheet<Object>(
+    final picked = await showHandleSheet<Object>(
       context: context,
-      showDragHandle: true,
       builder: (ctx) => SafeArea(
         child: ListView(
           shrinkWrap: true,
@@ -4504,17 +4558,31 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
         offset:       0,
       );
 
+  /// Radio: une STATION (list_station.dart) sur l'artiste et ses facettes,
+  /// figées au geste.
   Future<void> _startArtistRadio() async {
+    final artistName = widget.artistName, artistId = widget.artistId;
+    final collection = _fCollection ?? widget.collection;
+    final format = _fFormat, platform = _fPlatform;
+    final podium = _podiumOnServer;
     try {
-      final songs = await _randomSongs(
-          50, DateTime.now().millisecondsSinceEpoch.toString());
-      if (!mounted || songs.isEmpty) return;
-      final play = widget.onPlayAlbum;
-      if (play != null) {
-        await play(context, songs);
-      } else {
-        await widget.onTap(context, songs.first);
-      }
+      await startRandomStation(
+        context,
+        (seed, offset, limit) => RewampDb.browse(
+          artistName: artistName,
+          artistId: artistId,
+          collection: collection,
+          formatFilter: format,
+          platform: platform,
+          podium: podium,
+          sortBy: 'random',
+          seed: seed,
+          limit: limit,
+          offset: offset,
+        ),
+        fallback: widget.onPlayAlbum ??
+            (ctx, songs, {startIndex}) => widget.onTap(ctx, songs.first),
+      );
     } catch (_) {}
   }
 
@@ -4662,6 +4730,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
                     a.name,
                     collection:  a.collection,
                     platform:    a.platform,
+                    albumId:     a.albumId,
                     onPlayAlbum: widget.onPlayAlbum!,
                   ),
                 ),
@@ -5096,6 +5165,7 @@ class _AlbumTileState extends State<_AlbumTile> {
                 a.name,
                 collection:  a.collection,
                 platform:    a.platform,
+                albumId:     a.albumId,
                 onPlayAlbum: widget.onPlay!,
               ),
             ),

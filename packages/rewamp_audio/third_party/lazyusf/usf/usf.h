@@ -52,6 +52,11 @@ void * usf_get_ram_coverage_barray(void * state);
    of accuracy, and potentially emulation bugs. */
 void usf_set_hle_audio(void * state, int enable);
 
+/* rewamp: one line naming the RSP audio microcode, for the info panel.
+   Returns 0 while no audio task has been seen yet (nothing written), 1 once
+   known. LLE (HLE audio off) is reported at once. */
+int usf_rewamp_audio_ucode(void * state, char * out, size_t cap);
+
 /* This processes and uploads the ROM and/or Project 64 save state data
    present in the reserved section of each USF file. They should be
    uploaded in the order in which psf_load processes them, or in priority

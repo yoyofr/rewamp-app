@@ -777,6 +777,14 @@ class AppLocalizationsCs extends AppLocalizations {
   String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
+  String get engineDescCpc =>
+      'Amstrad CPC — diskety .dsk spuštěné na emulovaném CPC 6128';
+
+  @override
+  String get engineDescZxSpectrum =>
+      'ZX Spectrum — kazety .tap spuštěné na emulovaném Spectru 48K/128K';
+
+  @override
   String get engineDescSidplayfp => 'Commodore 64 SID (engine reSIDfp)';
 
   @override
@@ -827,7 +835,7 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get engineDescSndh =>
-      'Atari ST .sndh — skutečná emulace 68000 + YM2149 + STE DAC';
+      'Atari ST .sndh — skutečná emulace 68000 + YM2149 + STE DAC · .ym (YM2–YM6, digidrums, SID)';
 
   @override
   String get engineDescLazyusf =>
@@ -850,6 +858,10 @@ class AppLocalizationsCs extends AppLocalizations {
   @override
   String get engineDescOrganya =>
       'Cave Story .org — vlastní engine autora Pixel';
+
+  @override
+  String get engineDescMinibae =>
+      'Beatnik .rmf — Beatnik Audio Engine, hudba webu a her konce 90. let';
 
   @override
   String get engineDescNtgs =>
@@ -1500,6 +1512,9 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get queueAutoplayRow => 'Přidáno automatickým přehráváním';
+
+  @override
+  String get queueRadioRow => 'Přidáno rádiem';
 
   @override
   String get queueClearConfirmTitle => 'Vyprázdnit frontu?';
@@ -2905,7 +2920,8 @@ class AppLocalizationsCs extends AppLocalizations {
       'Některé formáty umí přehrát více enginů. Vyberte, který se má použít jako výchozí — všechny ostatní formáty se směrují automaticky.';
 
   @override
-  String get settingsDecoderAmigaTrackers => 'Amiga trackery (mod, med, okt…)';
+  String get settingsDecoderAmigaTrackers =>
+      'Moduly pro Amigu (mod, med, okt…)';
 
   @override
   String get settingsEngineOpenmptSubtitle => 'Trackery — MOD, XM, S3M, IT…';
@@ -3103,6 +3119,13 @@ class AppLocalizationsCs extends AppLocalizations {
   String get settingsNsfQuality => 'Kvalita (nsfplay)';
 
   @override
+  String get settingsNsfFade => 'Zeslabení na konci';
+
+  @override
+  String get settingsNsfFadeHelp =>
+      'Zeslabení na konci skladby, pokud jej soubor neurčuje (.m3u nebo NSFe může určit vlastní). Započítává se do délky skladby. Vypnuto = ostrý konec.';
+
+  @override
   String get settingsLowpassFilter => 'Dolní propust';
 
   @override
@@ -3220,6 +3243,52 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get settingsGbsHpFilter => 'Horní propust (gbsplay)';
+
+  @override
+  String get settingsEnginePsgplaySubtitle =>
+      'Atari ST / SNDH — mix kanálů YM2149';
+
+  @override
+  String get settingsPsgMix => 'Mix kanálů PSG';
+
+  @override
+  String get settingsPsgMixEmpiric => 'Empirický (Atari ST)';
+
+  @override
+  String get settingsPsgMixLinear => 'Lineární';
+
+  @override
+  String get settingsPsgMixStereo => 'Stereo';
+
+  @override
+  String get settingsPsgMixEmpiricHint =>
+      'Tři kanály smíchané jako na skutečném Atari ST (naměřené úrovně): zrnitý zvuk, v mono.';
+
+  @override
+  String get settingsPsgMixLinearHint =>
+      'Prostý součet tří kanálů: čistší zvuk, v mono.';
+
+  @override
+  String get settingsPsgMixStereoHint =>
+      'Lineární mix, každý kanál umístěný mezi levou a pravou stranu.';
+
+  @override
+  String settingsPsgPanVoice(String voice) {
+    return 'Kanál $voice';
+  }
+
+  @override
+  String get settingsPsgPanCentre => 'Střed';
+
+  @override
+  String settingsPsgPanLeft(int percent) {
+    return 'Vlevo $percent %';
+  }
+
+  @override
+  String settingsPsgPanRight(int percent) {
+    return 'Vpravo $percent %';
+  }
 
   @override
   String get settingsGbsFilterDmg => 'DMG (klasický GB)';
@@ -4476,54 +4545,6 @@ class AppLocalizationsCs extends AppLocalizations {
   String get releaseNotesTitle => 'Novinky';
 
   @override
-  String get releaseNotesV10Loading =>
-      'Otevření pomalu se načítající skladby už aplikaci nezamrazí: tenký kroužek kolem tlačítka přehrát/pozastavit ukazuje, že se stále načítá.';
-
-  @override
-  String get releaseNotesV10Piano =>
-      'Vizualizace piana: skladby s mnoha současnými hlasy nebo nástroji se rozloží na více klaviatur.';
-
-  @override
-  String get releaseNotesV10Amiga =>
-      'Amiga: StoneTracker, SUNtronic (ripy TSM) a další moduly Soundtracker 2.6 se nyní přehrávají a skladby SoundPlayer hrají na iOS.';
-
-  @override
-  String get releaseNotesV10ZxSpectrum =>
-      'ZX Spectrum: soubory .mt3 ze zxart se přehrávají a v Linuxu jsou zahrnuty formáty ZXTune a programy .cop pro SAM Coupé.';
-
-  @override
-  String get releaseNotesV10OpenWith =>
-      'macOS a iOS: všechny podporované formáty se nyní zobrazují v nabídce „Otevřít v aplikaci“.';
-
-  @override
-  String get releaseNotesV10MtcCrash =>
-      'Opraveno: některé soubory .mtc kombinující PT3 s TFM nebo PSG shazovaly aplikaci.';
-
-  @override
-  String get releaseNotesV10Podiums =>
-      'Nový prohlížeč „Stupně vítězů“: vítězové soutěží demoscény podle party, roku nebo druhu soutěže, se síní slávy.';
-
-  @override
-  String get releaseNotesV10Arcade =>
-      'Arkády: hudba Ensoniq ES5505/ES5506 (Taito F3…) se přehrává, soubory VGM z Apple IIGS už aplikaci neshazují a enginy jsou aktuální (přibyl FM-Kingtracker .fmk).';
-
-  @override
-  String get releaseNotesV10InfoPanel =>
-      'Panel informací: formát, engine, kanály a body smyčky jsou nahoře a názvy polí vynikají.';
-
-  @override
-  String get releaseNotesV10LocalAlbums =>
-      'Obrazovky alba a podskladeb ukazují kolekci; přetažený archiv vypíše všechny skladby, je označen „místní“ a po nahrazení se už nezobrazuje dvakrát.';
-
-  @override
-  String get releaseNotesV10Crossfade =>
-      'Opraveno: při prolínání nebyla slyšet skladba kratší než prolínání.';
-
-  @override
-  String get releaseNotesV10Artwork =>
-      'Opraveno: obal nahrazený na serveru se po „Stáhnout soubor znovu“ zobrazí všude.';
-
-  @override
   String get releaseNotesDataReset =>
       'Místní data byla pro tuto verzi vymazána. Knihovna a playlisty se obnoví z účtu; stahování je třeba zopakovat.';
 
@@ -4994,8 +5015,15 @@ class AppLocalizationsCs extends AppLocalizations {
   String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
 
   @override
+  String get settingsMidiSynthOpn2 => 'OPN2 FM (Mega Drive / Genesis)';
+
+  @override
   String get settingsEngineAdlmidiSubtitle =>
       'MIDI a hudba z her pro DOS na emulovaném čipu OPL3';
+
+  @override
+  String get settingsEngineOpnmidiSubtitle =>
+      'MIDI na emulovaném čipu OPN2 / OPNA (Mega Drive, PC-98)';
 
   @override
   String get settingsAdlBank => 'Banka nástrojů';
@@ -5018,4 +5046,457 @@ class AppLocalizationsCs extends AppLocalizations {
   @override
   String get engineDescAdlmidi =>
       'MIDI, XMI, DMX MUS, HMI/HMP na emulovaném čipu OPL3 (AdLib / Sound Blaster)';
+
+  @override
+  String get engineDescOpnmidi =>
+      'MIDI na emulovaném čipu OPN2 (Mega Drive) nebo OPNA (PC-98)';
+
+  @override
+  String get fmBanksBuiltIn => 'Vestavěné';
+
+  @override
+  String get fmBanksImported => 'Importované';
+
+  @override
+  String get fmBanksFilterHint => 'Filtrovat podle názvu';
+
+  @override
+  String get fmBanksNoMatch => 'Žádná banka neodpovídá';
+
+  @override
+  String get fmBanksImportedEmpty =>
+      'Zatím žádná importovaná banka. Přetáhněte soubor .wopl nebo .wopn do okna, otevřete ho v Rewamp nebo ho importujte zde.';
+
+  @override
+  String fmBankImported(String name, String engine) {
+    return 'Banka „$name“ importována a vybrána pro $engine';
+  }
+
+  @override
+  String fmBankImportInvalid(String name) {
+    return '„$name“ není banka WOPL ani WOPN';
+  }
+
+  @override
+  String fmBankDeleteConfirm(String name) {
+    return 'Smazat banku „$name“?';
+  }
+
+  @override
+  String get fmBanksImportTile => 'Importovat banky…';
+
+  @override
+  String fmBanksImportSubtitle(String ext) {
+    return 'Soubory $ext (z editorů bank nebo sbírek od Wohlstanda). Rozhoduje hlavička souboru; importované banky odeberete v seznamu bank.';
+  }
+
+  @override
+  String get fmEmuAccuracyVeryHigh => 'Velmi věrný';
+
+  @override
+  String get fmEmuAccuracyGood => 'Věrný';
+
+  @override
+  String get fmEmuAccuracyApproximate => 'Přibližný';
+
+  @override
+  String get fmEmuCpuLight => 'Rychlý';
+
+  @override
+  String get fmEmuCpuMedium => 'Střední zátěž CPU';
+
+  @override
+  String get fmEmuCpuHeavy => 'Náročný na CPU';
+
+  @override
+  String settingsDefaultFor(String format) {
+    return 'Výchozí přehrávač pro $format';
+  }
+
+  @override
+  String get settingsDefaultForActive => 'Tento engine přehrává tento formát';
+
+  @override
+  String settingsDefaultForSet(String section) {
+    return 'Klepnutím budete tento formát přehrávat tímto enginem – všechny volby jsou i v sekci „$section“';
+  }
+
+  @override
+  String get settingsDecoderDosMidi => 'MIDI z her pro DOS (XMI, MUS, HMI…)';
+
+  @override
+  String get playWithTitle => 'Přehrát pomocí…';
+
+  @override
+  String playWithAuto(String engine) {
+    return 'Automaticky ($engine)';
+  }
+
+  @override
+  String get playWithPlayingNow => 'Právě hraje';
+
+  @override
+  String get playWithRemember => 'Zapamatovat si volbu';
+
+  @override
+  String get playWithRememberOn =>
+      'Při každém přehrání tohoto souboru (nebo alba)';
+
+  @override
+  String get playWithRememberOff => 'Jen pro toto přehrání';
+
+  @override
+  String get playWithScopeFile => 'Tento soubor';
+
+  @override
+  String get playWithScopeAlbum => 'Celé album';
+
+  @override
+  String get playWithApply => 'Přehrát';
+
+  @override
+  String playWithCurrent(String engine) {
+    return 'Engine: $engine';
+  }
+
+  @override
+  String get settingsForgetPlayWith => 'Zapomenout volby „Přehrát pomocí…“';
+
+  @override
+  String settingsForgetPlayWithSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count zapamatovaných voleb',
+      many: '$count zapamatované volby',
+      few: '$count zapamatované volby',
+      one: '$count zapamatovaná volba',
+      zero: 'Žádná zapamatovaná volba',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsForgetPlayWithBody =>
+      'Vše zapamatované pro soubor nebo album (engine, banka, SoundFont, model) se zapomene: budou znovu hrát s výchozím nastavením.';
+
+  @override
+  String get playWithBank => 'Banka nástrojů';
+
+  @override
+  String playWithBankDefault(String name) {
+    return 'Banka z nastavení ($name)';
+  }
+
+  @override
+  String get fmBankInUseTitle => 'Banka se používá';
+
+  @override
+  String fmBankInUseIntro(String name) {
+    return '„$name“ je zvolena pro:';
+  }
+
+  @override
+  String fmBankInUseFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count souborů',
+      many: '$count souboru',
+      few: '$count soubory',
+      one: '$count soubor',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fmBankInUseAlbums(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count alb',
+      many: '$count alba',
+      few: '$count alba',
+      one: '$count album',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fmBankInUseOutro =>
+      'Budou znovu hrát s bankou z nastavení enginu. Přesto smazat?';
+
+  @override
+  String playWithSoundfontDefault(String name) {
+    return 'SoundFont z nastavení ($name)';
+  }
+
+  @override
+  String playWithMt32Default(String model) {
+    return 'Nastavení: $model';
+  }
+
+  @override
+  String get playWithOptionSetting => 'Nastavení';
+
+  @override
+  String get soundfontInUseTitle => 'SoundFont se používá';
+
+  @override
+  String get soundfontInUseOutro =>
+      'Budou znovu hrát se SoundFontem z nastavení. Přesto smazat?';
+
+  @override
+  String get playWithTitleAlbum => 'Přehrát album pomocí…';
+
+  @override
+  String get playWithSave => 'Uložit';
+
+  @override
+  String get shortcutsTitle => 'Klávesové zkratky';
+
+  @override
+  String get shortcutsSubtitle => 'Klávesy přehrávání, vizualizace a okna';
+
+  @override
+  String get shortcutsHint =>
+      'Samostatné klávesy se ignorují, když má fokus textové pole. Klávesy vizualizace fungují jen tehdy, když je vizualizace zobrazena.';
+
+  @override
+  String get shortcutsGroupTransport => 'Přehrávání';
+
+  @override
+  String get shortcutsGroupVisualizer => 'Vizualizace';
+
+  @override
+  String get shortcutsGroupWindow => 'Okno a navigace';
+
+  @override
+  String get shortcutsKeySpace => 'Mezerník';
+
+  @override
+  String get shortcutsKeyEscape => 'Esc';
+
+  @override
+  String get shortcutPlayPause => 'Přehrát / pozastavit';
+
+  @override
+  String get shortcutPrevTrack => 'Předchozí skladba';
+
+  @override
+  String get shortcutNextTrack => 'Další skladba';
+
+  @override
+  String get shortcutSeekBack10 => 'Zpět o 10 sekund';
+
+  @override
+  String get shortcutSeekForward10 => 'Vpřed o 10 sekund';
+
+  @override
+  String get shortcutSeekBack60 => 'Zpět o 1 minutu';
+
+  @override
+  String get shortcutSeekForward60 => 'Vpřed o 1 minutu';
+
+  @override
+  String get shortcutSeekPercent => 'Skočit na 0 %…90 % skladby';
+
+  @override
+  String get shortcutRepeat => 'Režim opakování';
+
+  @override
+  String get shortcutShuffle => 'Náhodně';
+
+  @override
+  String get shortcutFavorite => 'Oblíbené';
+
+  @override
+  String get shortcutSpeedDown => 'Pomaleji';
+
+  @override
+  String get shortcutSpeedUp => 'Rychleji';
+
+  @override
+  String get shortcutSpeedReset => 'Normální rychlost';
+
+  @override
+  String get shortcutVizNext => 'Další vizualizace';
+
+  @override
+  String get shortcutVizPrev => 'Předchozí vizualizace';
+
+  @override
+  String get shortcutVizControls => 'Zobrazit ovládání vizualizace';
+
+  @override
+  String get shortcutPmNext => 'projectM: další preset';
+
+  @override
+  String get shortcutPmPrev => 'projectM: předchozí preset';
+
+  @override
+  String get shortcutPmLock => 'projectM: zamknout preset';
+
+  @override
+  String get shortcutPmRandom => 'projectM: náhodné pořadí';
+
+  @override
+  String get shortcutPmPicker => 'projectM: seznam presetů';
+
+  @override
+  String get shortcutMiniWindow => 'Minipřehrávač';
+
+  @override
+  String get shortcutMiniViz => 'Minipřehrávač s vizualizací';
+
+  @override
+  String get shortcutAlwaysOnTop => 'Vždy nahoře';
+
+  @override
+  String get shortcutPlayer => 'Otevřít / zavřít přehrávač';
+
+  @override
+  String get shortcutEscape => 'Zavřít horní panel';
+
+  @override
+  String get shortcutQueue => 'Panel fronty';
+
+  @override
+  String get shortcutSearch => 'Hledat';
+
+  @override
+  String get shortcutTabs => 'Karty v pořadí bočního panelu';
+
+  @override
+  String get shortcutOpenFiles => 'Otevřít soubory…';
+
+  @override
+  String get shortcutLinkFolder => 'Propojit složku…';
+
+  @override
+  String get shortcutInfo => 'Informace o skladbě';
+
+  @override
+  String get shortcutSettings => 'Nastavení';
+
+  @override
+  String get shortcutFullscreen => 'Celá obrazovka';
+
+  @override
+  String get shortcutHelp => 'Tento seznam';
+
+  @override
+  String get navHelp => 'Nápověda';
+
+  @override
+  String get helpTitle => 'Nápověda';
+
+  @override
+  String get helpDocsTitle => 'Online dokumentace';
+
+  @override
+  String get helpDocsSubtitle =>
+      'Podrobné návody se snímky obrazovky na rewamp.app (v angličtině)';
+
+  @override
+  String get sleepTimerTitle => 'Časovač vypnutí';
+
+  @override
+  String get sleepTimerExplain =>
+      'Přehrávání se po zvolené době pozastaví, během posledních 30 sekund se ztlumí.';
+
+  @override
+  String sleepTimerMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count minut',
+      many: '$count minuty',
+      few: '$count minuty',
+      one: '$count minuta',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sleepTimerRemainingMinutes(int count) {
+    return '$count min';
+  }
+
+  @override
+  String sleepTimerRemainingSeconds(int count) {
+    return '$count s';
+  }
+
+  @override
+  String sleepTimerActiveRemaining(String time) {
+    return 'Zbývá: $time';
+  }
+
+  @override
+  String get sleepTimerOff => 'Vypnout';
+
+  @override
+  String get sleepTimerEnded =>
+      'Časovač vypnutí skončil — přehrávání pozastaveno';
+
+  @override
+  String get sleepTimerNothingToPlay =>
+      'Žádné nedávno přehrávané skladby k zahájení';
+
+  @override
+  String get releaseNotesV11Autoplay =>
+      'Automatické přehrávání (∞): když fronta skončí, přehrávání pokračuje podobnými skladbami (stejný interpret, skupina, sbírka).';
+
+  @override
+  String get releaseNotesV11LinkedFolders =>
+      'Propojené složky: vaše soubory hrají tam, kde jsou, bez kopírování — složky v počítači, aplikace Soubory a iCloud v iOS, libovolná složka v Androidu.';
+
+  @override
+  String get releaseNotesV11PlayWith =>
+      '„Přehrát pomocí…“: zvolte jádro souboru nebo alba a také jeho SoundFont, model MT-32 nebo FM banku (můžete importovat vlastní banky WOPL/WOPN).';
+
+  @override
+  String get releaseNotesV11NewEngines =>
+      'Nová jádra: MIDI na OPL3 (libADLMIDI) a OPN2/OPNA (libOPNMIDI), Beatnik .rmf, kazety ZX Spectrum .tap a diskety Amstrad CPC .dsk na emulovaných počítačích, UnExoticA Mark II.';
+
+  @override
+  String get releaseNotesV11EngineUpdates =>
+      'Aktualizovaná jádra: VGM 1.72 s čipy Namco WSG, Furnace, AtariAudio 1.27 (nyní výchozí pro .ym), libxmp na výběr pro moduly Amigy, nastavitelné ztlumení na konci VGM.';
+
+  @override
+  String get releaseNotesV11Sleep =>
+      'Časovač spánku: zvolte dobu, hudba se ztlumí a zastaví — a prázdná fronta se naplní sama.';
+
+  @override
+  String get releaseNotesV11Desktop =>
+      'Počítač: klávesové zkratky (seznam pod ?), karta Nápověda s odkazem na online dokumentaci, příkazový řádek (rewamp --mini --play …) a jediná instance aplikace.';
+
+  @override
+  String get releaseNotesV11ArtistSync =>
+      'Interpreti ve vaší knihovně se synchronizují s účtem, včetně obalu.';
+
+  @override
+  String get releaseNotesV11PlayNext =>
+      'Dlouhé podržení skladby: přehrát hned, jako další nebo na konci; nabídka „…“ vedle Přehrát vše, Rádio a Překvapení.';
+
+  @override
+  String get releaseNotesV11Composers =>
+      'Skladatelé jsou klikatelní na všech obrazovkách alb a podskladeb; název a autor se čtou z importovaných souborů.';
+
+  @override
+  String get releaseNotesV11Hindi =>
+      'Aplikace mluví hindsky (19 jazyků) a rozhraní je připravené na jazyky psané zprava doleva.';
+
+  @override
+  String get releaseNotesV11Loops =>
+      'Nekonečná smyčka zapnutá během přehrávání: skladba pokračuje přes vlastní bod smyčky a skladba bez smyčky začne znovu.';
+
+  @override
+  String get releaseNotesV11Visualizers =>
+      'Vizualizace: až 64 hlasů v osciloskopech, barva pro každý bicí nástroj MIDI, noty souborů 2SF, názvy nástrojů z FM bank.';
+
+  @override
+  String get releaseNotesV11Fixes =>
+      'Opraveno: některé odmítané soubory SSF, němé ripy WonderSwan, neúplná alba rozdělená do více archivů a presety projectM po zavření přehrávače.';
 }

@@ -185,6 +185,27 @@ Future<void> _armAppleCommandCenter(PlayerController c) async {
 /// que si `playing`/`speed`/`position` CHANGENT, or ils ne bougeaient plus).
 const _nowPlayingChannel = MethodChannel('rewamp/now_playing');
 
+/// Repeat et shuffle EN COURS, que le plugin n'écrit jamais côté Apple
+/// (`currentRepeatType`/`currentShuffleType`): sans eux, le bouton de CarPlay
+/// ne montre pas le mode actif et fait tourner SA propre idée du mode.
+String? _lastPushedModes;
+
+Future<void> _pushIosModes(int loopMode, bool shuffle) async {
+  if (!Platform.isIOS) return;
+  final key = '$loopMode|$shuffle';
+  if (key == _lastPushedModes) return;
+  try {
+    await _nowPlayingChannel.invokeMethod<void>('setModes', {
+      // MPRepeatType: 0 off, 1 one, 2 all.
+      'repeat': switch (loopMode) { 1 => 2, 2 => 1, _ => 0 },
+      'shuffle': shuffle,
+    });
+    _lastPushedModes = key;   // après coup, même raison que plus bas
+  } catch (e) {
+    debugPrint('[media] setModes refusé: $e');
+  }
+}
+
 /// Dernier état POUSSÉ. Le tick du lecteur notifie quatre fois par seconde:
 /// sans ce garde-fou, on traverserait le canal pour rien.
 bool? _lastPushedPlaying;
@@ -278,7 +299,15 @@ class RewampAudioHandler extends BaseAudioHandler {
         MediaAction.stop,
         if (c.canGoPrev) MediaAction.skipToPrevious,
         if (c.canGoNext) MediaAction.skipToNext,
+        // Repeat et shuffle de l'extérieur (CarPlay, Siri, Android Auto):
+        // le natif branche changeRepeatModeCommand / changeShuffleModeCommand.
+        MediaAction.setRepeatMode,
+        MediaAction.setShuffleMode,
       },
+      repeatMode: _repeatModeOf(c.loopMode),
+      shuffleMode: c.shuffleEnabled
+          ? AudioServiceShuffleMode.all
+          : AudioServiceShuffleMode.none,
       // Compact view shows exactly the controls that exist: prev is always
       // present (canGoPrev is true whenever a file is loaded), play/pause always,
       // and next only when there IS a next — so index it only then.
@@ -292,7 +321,15 @@ class RewampAudioHandler extends BaseAudioHandler {
     // iOS: l'état que le plugin oublie. Après la publication, pour qu'il
     // décrive bien le dictionnaire que le natif vient d'écrire.
     unawaited(_pushIosPlaybackState(c.isPlaying));
+    unawaited(_pushIosModes(c.loopMode, c.shuffleEnabled));
   }
+
+  /// Notre loopMode (0 off, 1 la FILE, 2 le MORCEAU) vu par le système.
+  static AudioServiceRepeatMode _repeatModeOf(int loopMode) => switch (loopMode) {
+        1 => AudioServiceRepeatMode.all,
+        2 => AudioServiceRepeatMode.one,
+        _ => AudioServiceRepeatMode.none,
+      };
 
   Uri? _artUri() {
     final u = c.artworkUrl;
@@ -462,6 +499,37 @@ class RewampAudioHandler extends BaseAudioHandler {
   Future<void> skipToNext() {
     logTransport('suivant', source: 'session média', detail: 'jouait=${c.isPlaying}');
     return c.goNext();
+  }
+
+  /// Repeat demandé de l'extérieur (bouton CarPlay, Siri). Le contrôleur ne
+  /// sait que FAIRE TOURNER le mode — le même geste que le bouton du lecteur,
+  /// avec ses effets (instantané de boucle, fin de boucle en vol): on tourne
+  /// jusqu'à la cible plutôt que d'écrire le mode à la main.
+  @override
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
+    final target = switch (repeatMode) {
+      AudioServiceRepeatMode.all || AudioServiceRepeatMode.group => 1,
+      AudioServiceRepeatMode.one => 2,
+      AudioServiceRepeatMode.none => 0,
+    };
+    logTransport('repeat', source: 'session média', detail: '→ $target');
+    for (var i = 0; i < 3 && c.loopMode != target; i++) {
+      c.cycleLoopMode();
+    }
+  }
+
+  @override
+  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
+    // ⚠️ Seul `all` (MPShuffleTypeItems) veut dire « actif ». Le bouton de
+    // CarPlay FAIT DÉFILER les types Apple: off → items → collections → off.
+    // L'appui qui doit éteindre le shuffle arrive donc en `group`
+    // (collections), qu'on prenait pour « actif »: impossible de le couper
+    // depuis la voiture. On n'offre pas de shuffle par collection ⇒ `group`
+    // = éteint, et le type poussé ensuite (`.off`) recale le cycle.
+    final on = shuffleMode == AudioServiceShuffleMode.all;
+    logTransport('shuffle', source: 'session média',
+        detail: '${shuffleMode.name} → $on');
+    if (on != c.shuffleEnabled) c.toggleShuffle();
   }
 
   @override

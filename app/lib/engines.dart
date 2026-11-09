@@ -40,6 +40,8 @@ class DecoderEngine {
         'Game Music Emu (libgme)'    => l10n.engineDescGme,
         'NSFPlay (libnsfplay)'       => l10n.engineDescNsfplay,
         'gbsplay (libgbsplay)'       => l10n.engineDescGbsplay,
+        'chips (CPC 6128)'           => l10n.engineDescCpc,
+        'chips (ZX Spectrum)'        => l10n.engineDescZxSpectrum,
         'libsidplayfp'               => l10n.engineDescSidplayfp,
         'NEZplug++'                  => l10n.engineDescNez,
         'libkss'                     => l10n.engineDescKss,
@@ -52,6 +54,7 @@ class DecoderEngine {
         'FluidLite + TinyMidiLoader' => l10n.engineDescMidi,
         'munt mt32emu'               => l10n.engineDescMt32,
         'libADLMIDI'                 => l10n.engineDescAdlmidi,
+        'libOPNMIDI'                 => l10n.engineDescOpnmidi,
         'Highly Experimental'        => l10n.engineDescHighlyExp,
         'libgsf (VBA)'               => l10n.engineDescGsf,
         'vio2sf (Cog / melonDS)'     => l10n.engineDescVio2sf,
@@ -64,6 +67,7 @@ class DecoderEngine {
         'highlytheoritical'          => l10n.engineDescHighlyTheoritical,
         'libpt3 (ayumi)'             => l10n.engineDescPt3,
         'Organya'                    => l10n.engineDescOrganya,
+        'NeoBAE (Beatnik)'           => l10n.engineDescMinibae,
         'NoiseTracker GS'            => l10n.engineDescNtgs,
         'Ron Klaren'                 => l10n.engineDescRonKlaren,
         'SAM Coupé COP'              => l10n.engineDescSamCop,
@@ -133,6 +137,30 @@ const List<DecoderEngine> kEngines = [
     license: 'GPL-1.0+',
     description: 'Game Boy GBS/GBR',
     formats: {'gbs', 'gbr'},
+  ),
+  // Un CPC 6128 ENTIER (Z80, gate array, CRTC, 8255, AY-3-8912, uPD765):
+  // une disquette de musique CPC est un PROGRAMME qui pilote l'AY, souvent
+  // via le firmware. Licence lue dans third_party/chips/LICENSE (zlib). Les
+  // ROM du 6128 sont créditées à part, dans kComponents.
+  DecoderEngine(
+    name: 'chips (CPC 6128)',
+    url: 'https://github.com/floooh/chips',
+    author: 'Andre Weissflog',
+    license: 'zlib',
+    description: 'Amstrad CPC — disquettes .dsk lancées sur un CPC 6128 émulé',
+    formats: {'dsk'},
+  ),
+  // Un Spectrum ENTIER (Z80, ULA, beeper, AY-3-8912), 48K ou 128K: une
+  // cassette de compo est un PROGRAMME — musique beeper (le CPU fait vibrer
+  // le haut-parleur 1 bit) ou AY. Même arbre floooh/chips que le CPC
+  // (zlib); les ROM du Spectrum sont créditées à part, dans kComponents.
+  DecoderEngine(
+    name: 'chips (ZX Spectrum)',
+    url: 'https://github.com/floooh/chips',
+    author: 'Andre Weissflog',
+    license: 'zlib',
+    description: 'ZX Spectrum — cassettes .tap lancées sur un Spectrum 48K/128K émulé',
+    formats: kZxSpectrumExts,
   ),
   DecoderEngine(
     name: 'libsidplayfp',
@@ -233,6 +261,15 @@ const List<DecoderEngine> kEngines = [
     formats: kAdlmidiExts,
   ),
   DecoderEngine(
+    name: 'libOPNMIDI',
+    url: 'https://github.com/Wohlstand/libOPNMIDI',
+    author: 'Vitaliy Novichkov (Wohlstand) et al.',
+    license: 'GPL-3.0-or-later (cœur) · émulateurs LGPL-2.1+ / GPL-2.0+ / BSD · '
+        'séquenceur et WOPN MIT · banques MIT / BSD-3',
+    description: 'MIDI sur une puce OPN2 (Mega Drive) ou OPNA (PC-98) émulée',
+    formats: kOpnmidiExts,
+  ),
+  DecoderEngine(
     name: 'Highly Experimental',
     url: 'https://github.com/kode54/Highly_Experimental',
     author: 'Neill Corlett ; Chris Moeller (kode54)',
@@ -287,11 +324,13 @@ const List<DecoderEngine> kEngines = [
   ),
   DecoderEngine(
     name: 'AtariAudio (Arnaud Carré)',
-    url: 'https://github.com/arnaud-carre/sndh-player',
+    url: 'https://github.com/arnaud-carre/AtariAudio',
     author: 'Arnaud Carré (Leonard/Oxygene)',
-    license: 'aucune licence explicite ; Musashi MIT',
-    description: 'Atari ST .sndh — vraie émulation 68000 + YM2149 + DAC STE',
-    formats: {'sndh'},
+    license: 'MIT (AtariAudio 1.27, Musashi compris)',
+    description: 'Atari ST .sndh — vraie émulation 68000 + YM2149 + DAC et '
+        'blitter STE; .ym (YM2 à YM6, digimix, YM Tracker) avec les effets '
+        'Atari',
+    formats: {'sndh', 'ym'},
   ),
   DecoderEngine(
     name: 'PSG play',
@@ -354,6 +393,15 @@ const List<DecoderEngine> kEngines = [
     license: 'WTFPL',
     description: 'Cave Story .org — moteur natif de Pixel',
     formats: kOrganyaExts,
+  ),
+  DecoderEngine(
+    name: 'NeoBAE (Beatnik)',
+    url: 'https://github.com/zefie/NeoBAE',
+    author: 'Beatnik, Inc. ; fork NeoBAE : zefie',
+    license: 'BSD-3 (Beatnik) ; modifications LGPL-3.0+ (zefie) ; '
+        'minimp3 CC0 ; adpcm-xq BSD-3',
+    description: 'Beatnik .rmf — Beatnik Audio Engine',
+    formats: kMinibaeExts,
   ),
   DecoderEngine(
     name: 'PxTone Collage',
@@ -519,6 +567,32 @@ const List<BundledComponent> kComponents = [
   BundledComponent('z80ex (émulateur Z80)', 'GPL-2.0',
       url: 'https://sourceforge.net/projects/z80ex/',
       author: 'Boo-boo (code du projet FUSE)'),
+  // ROM du CPC 6128 (OS, BASIC, AMSDOS), embarquées pour le moteur CPC: le
+  // firmware est indispensable, les lecteurs de musique CPC l'appellent.
+  // Les octets portent « Copyright 1985 Amstrad Consumer Electronics plc and
+  // Locomotive Software Ltd. »; Amstrad a autorisé leur diffusion avec les
+  // émulateurs à condition de laisser ce copyright intact, et demande cette
+  // mention — message de Cliff Lawson (Amstrad), 1999-08-31, vendoré dans
+  // third_party/chips/AMSTRAD-ROM-PERMISSION.txt.
+  BundledComponent('ROM Amstrad CPC 6128 (OS, BASIC, AMSDOS)',
+      '© 1985 Amstrad / Locomotive Software. Amstrad a gracieusement '
+      'autorisé la redistribution de son code sous copyright, dont il '
+      'conserve la propriété',
+      url: 'https://github.com/maziac/DeZog/blob/main/documentation/'
+          'amstrad-rom-permissions.txt',
+      author: 'Amstrad Consumer Electronics, Locomotive Software'),
+  // ROM du ZX Spectrum (48K; 128K: éditeur + BASIC 48K), embarquées pour le
+  // moteur Spectrum: le chargeur et le BASIC sont dans la ROM. Amstrad a
+  // racheté les droits Sinclair en 1986; le message de Cliff Lawson cité
+  // plus haut porte d'abord sur ces ROM-là (comp.sys.sinclair), mêmes
+  // conditions, même mention.
+  BundledComponent('ROM ZX Spectrum (48K, 128K)',
+      '© Amstrad (droits Sinclair Research). Amstrad a gracieusement '
+      'autorisé la redistribution de son code sous copyright, dont il '
+      'conserve la propriété',
+      url: 'https://github.com/maziac/DeZog/blob/main/documentation/'
+          'amstrad-rom-permissions.txt',
+      author: 'Sinclair Research, Amstrad'),
   BundledComponent('ProWizard (libxmp)', 'MIT',
       url: 'https://xmp.sourceforge.net/',
       author: "Claudio Matsuoka ; ProWizard : Sylvain 'Asle' Chipaux"),

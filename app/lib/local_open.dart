@@ -46,6 +46,7 @@ const kMultiTrackExts = {
   'kss', 'mgs', 'bgm', 'mpk', 'mbm', 'opx', 'mus',
   'hes', 'sgc',
   'ay', 'vtx', 'pt3', 'mt3', 'stc', 'chp',
+  'trd', 'scl',       // disquettes TR-DOS: un module zxtune par sous-chanson
   // SAM Coupé `.cop`: un programme Z80 brut porte jusqu'à 17 morceaux (greffon
   // samcop); un module E-Tracker n'en a qu'un et la sonde n'y revendique rien.
   'cop',
@@ -411,9 +412,11 @@ const kCompanionOnlyExts = <String>{
 
 /// Ce qui n'est JAMAIS de la musique: images, textes, documents, fichiers de
 /// contrôle. Règle NÉGATIVE absolue, posée AVANT la seconde chance du moteur:
-/// vgmstream réclame toute extension inconnue (score 50), donc `canPlay`
+/// vgmstream réclamait toute extension inconnue (score 50), donc `canPlay`
 /// répondait OUI pour un `.jpg` — « lire un dossier » mettait la pochette en
-/// file, et l'import pouvait l'enregistrer comme piste.
+/// file, et l'import pouvait l'enregistrer comme piste. Depuis le 2026-11-01
+/// il ne réclame plus que SES extensions (`libvgmstream_is_valid`) ou un
+/// fichier décrit par un `.txth`; la règle reste, elle ne coûte rien.
 const kNeverPlayableExts = <String>{
   'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'avif', 'tif', 'tiff', 'ico',
   'heic', 'svg', 'txt', 'nfo', 'diz', 'pdf', 'htm', 'html', 'md', 'ini',

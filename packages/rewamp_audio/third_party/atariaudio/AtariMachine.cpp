@@ -1,15 +1,15 @@
-/*--------------------------------------------------------------------
-	Atari Audio Library
-	Small & accurate ATARI-ST audio emulation
-	Arnaud Carré aka Leonard/Oxygene
-	@leonard_coder
---------------------------------------------------------------------*/
+//----------------------------------------------------------
+//
+//	AtariAudio 1.27
+//	Small & accurate ATARI-ST audio emulation
+//	by Arnaud Carré aka Leonard/Oxygene (@leonard_coder)
+//
+//----------------------------------------------------------
 #include <stdlib.h>		// malloc & free
 #include <string.h>		// memset & memcpy
 #include <assert.h>
-#include "external/Musashi/m68k.h"
 #include "AtariMachine.h"
-#include "ModizerVoicesData.h"   //YOYOFR: oscilloscope + mute framework (STE DAC = voice 3)
+#include "ModizerVoicesData.h"   // REWAMP: STE DAC oscilloscope
 
 #define D_DUMP_READ		0
 #define D_DUMP_WRITE	0
@@ -21,63 +21,100 @@ static const uint32_t D_DUMP_WRITE_AD2 = 0xfffaff;
 #include <stdio.h>
 #endif
 
-static AtariMachine*	gCurrentMachine = NULL;
+#define	D_ADDR_BUS_MASK(a)	((a)&0x00ffffff)
+
 static const uint32_t ivector[5] = { 0x134,0x120,0x114,0x110,0x13c };
 
-unsigned int  m68k_read_memory_8(unsigned int address)
+unsigned int M68k_Read8(void* user, unsigned int address)
 {
-	return gCurrentMachine->memRead8(address);
+	AtariMachine* mch = (AtariMachine*)user;
+	return mch->memRead8(address);
 }
 
-unsigned int  m68k_read_memory_16(unsigned int address)
+unsigned int M68k_Read16(void* user, unsigned int address)
 {
-	return gCurrentMachine->memRead16(address);
+	AtariMachine* mch = (AtariMachine*)user;
+	return mch->memRead16(address);
 }
 
-void m68k_write_memory_8(unsigned int address, unsigned int value)
+unsigned int M68k_Read32(void* user, unsigned int address)
 {
-	gCurrentMachine->memWrite8(address, value);
+	AtariMachine* mch = (AtariMachine*)user;
+	uint32_t v = mch->memRead16(address);
+	v = (v << 16) | mch->memRead16(address + 2);
+	return v;
 }
 
-void m68k_write_memory_16(unsigned int address, unsigned int value)
+void M68k_Write8(void* user, unsigned int address, unsigned int value)
 {
-	gCurrentMachine->memWrite16(address, value);
+	AtariMachine* mch = (AtariMachine*)user;
+	mch->memWrite8(address, value);
 }
 
-unsigned int  m68k_read_memory_32(unsigned int address)
+void M68k_Write16(void* user, unsigned int address, unsigned int value)
 {
-	uint32_t r = m68k_read_memory_16(address) << 16;
-	r |= m68k_read_memory_16(address + 2);
-	return r;
+	AtariMachine* mch = (AtariMachine*)user;
+	mch->memWrite16(address, value);
 }
 
-void m68k_write_memory_32(unsigned int address, unsigned int value)
+void M68k_Write32(void* user, unsigned int address, unsigned int value)
 {
-	m68k_write_memory_16(address, uint16_t(value >> 16));
-	m68k_write_memory_16(address + 2, uint16_t(value));
+	AtariMachine* mch = (AtariMachine*)user;
+	mch->memWrite16(address, value>>16);
+	mch->memWrite16(address+2, value&0xffff);
 }
 
+void M68k_Reset_Callback(void* user)
+{
+	AtariMachine* mch = (AtariMachine*)user;
+	mch->ResetCb();
+}
+
+int M68k_Illegal_Callback(void* user, int opcode)
+{
+	(void)opcode;
+	AtariMachine* mch = (AtariMachine*)user;
+	mch->IllegalCb();
+	return 1;
+}
+
+int M68k_TrapN_Callback(void* user, int n)
+{
+	AtariMachine* mch = (AtariMachine*)user;
+	return mch->TrapInstructionCallback(n);
+}
 
 unsigned int  AtariMachine::memRead8(unsigned int address)
 {
 	assert(0 == (address & 0xff000000));
 	uint8_t r = ~0;
 	if (address < RAM_SIZE)
+	{
+		assert(m_RAM);
 		return m_RAM[address];
+	}
 	if ((address >= 0xff8800) && (address < 0xff8900))
-		r = m_Ym2149.ReadPort(address & 255);
+		r = m_ym2149.ReadPort(address & 255);
 	else if (0xff8260 == address)
 		r = 0;		// simulate Atari ST low res
 	else if (0xff820a == address)
 		r = 2;		// simulate Atari ST PAL (50Hz)
 	else if ((address >= 0xfffa00) && (address < 0xfffa26))
-		r = m_Mfp.Read8(address - 0xfffa00);
+		r = m_mfp.Read8(address - 0xfffa00);
 	else if ((address >= 0xff8900) && (address < 0xff8926))
-		r = m_SteDac.Read8(address - 0xff8900);
+		r = m_steDac.Read8(address - 0xff8900);
+	else if ((address >= 0xff8a00) && (address <= 0xff8a3d))
+		r = m_blitter.Read8(address - 0xff8a00);
+	else if ((address >= 0xfffc00) && (address <= 0xfffc06))
+		r = 0;
+	else
+	{
+		assert(false);
+	}
 #if D_DUMP_READ
 	if ((address >= D_DUMP_READ_AD1) && (address <= D_DUMP_READ_AD2))
 	{
-		uint32_t pc = m68k_get_reg(NULL, M68K_REG_PC);
+		uint32_t pc = m68k_get_reg(nullptr, M68K_REG_PC);
 		printf("$%06x: move.b $%06x,d0 ( =#$%02x )\n", pc, address, r);
 	}
 #endif
@@ -86,24 +123,48 @@ unsigned int  AtariMachine::memRead8(unsigned int address)
 
 unsigned int  AtariMachine::memRead16(unsigned int address)
 {
+	assert(0 == (address & 1));
 	assert(0 == (address & 0xff000000));
 	uint16_t r = ~0;
 	if (address < RAM_SIZE - 1)
+	{
+		assert(m_RAM);
 		return uint16_t((m_RAM[address] << 8) | (m_RAM[address + 1]));
+	}
 	if ((address >= 0xff8800) && (address < 0xff8900))
-		r = m_Ym2149.ReadPort(address & 0xfe) << 8;
+		r = m_ym2149.ReadPort(address & 0xfe) << 8;
 	else if ((address >= 0xfffa00) && (address < 0xfffa26))
-		r = m_Mfp.Read16(address - 0xfffa00);
+		r = m_mfp.Read16(address - 0xfffa00);
 	else if ((address >= 0xff8900) && (address < 0xff8926))
-		r = m_SteDac.Read16(address - 0xff8900);
+		r = m_steDac.Read16(address - 0xff8900);
+	else if ((address >= 0xff8a00) && (address <= 0xff8a3c))
+		r = m_blitter.Read16(address - 0xff8a00);
+	else if ((address >= 0xfffc00) && (address <= 0xfffc06))
+		r = 0;
+	else
+	{
+		assert(false);
+	}
 #if D_DUMP_READ
 	if ((address >= D_DUMP_READ_AD1) && (address <= D_DUMP_READ_AD2))
 	{
-		uint32_t pc = m68k_get_reg(NULL, M68K_REG_PC);
+		uint32_t pc = m68k_get_reg(nullptr, M68K_REG_PC);
 		printf("$%06x: move.w $%06x,d0 ( =#$%04x )\n", pc, address, r);
 	}
 #endif
 	return r;
+}
+
+void	AtariMachine::ResetCb(void)
+{
+	m_exitCode |= AtariMachine::ExitCode::kReset;
+	m_cpu.m68k_end_timeslice();
+}
+
+void AtariMachine::IllegalCb()
+{
+	m_exitCode |= AtariMachine::ExitCode::kCrash;
+	m_cpu.m68k_end_timeslice();
 }
 
 void AtariMachine::memWrite8(unsigned int address, unsigned int value)
@@ -111,29 +172,41 @@ void AtariMachine::memWrite8(unsigned int address, unsigned int value)
 	assert(0 == (address & 0xff000000));
 	if (address < RAM_SIZE)
 	{
+		assert(m_RAM);
 		m_RAM[address] = value;
 		return;
 	}
 #if D_DUMP_WRITE
 	if ((address >= D_DUMP_WRITE_AD1) && (address <= D_DUMP_WRITE_AD2))
 	{
-		uint32_t pc = m68k_get_reg(NULL, M68K_REG_PC);
+		uint32_t pc = m68k_get_reg(nullptr, M68K_REG_PC);
 		printf("$%06x: move.b #$%02x,$%06x\n", pc, value, address);
 	}
 #endif
 	if ((address >= 0xff8800) && (address < 0xff8900))
-		m_Ym2149.WritePort(address & 0xfe, (uint8_t)value);	// atari ym 8800 is also shadowed in 8801 and 8802 in 8803
+		m_ym2149.WritePort(address & 0xfe, (uint8_t)value);	// atari ym 8800 is also shadowed in 8801 and 8802 in 8803
 	else if ((address >= 0xfffa00) && (address < 0xfffa26))
-		m_Mfp.Write8(address - 0xfffa00, uint8_t(value));
+		m_mfp.Write8(address - 0xfffa00, uint8_t(value));
 	else if ((address >= 0xff8900) && (address < 0xff8926))
-		m_SteDac.Write8(address - 0xff8900, uint8_t(value));
+		m_steDac.Write8(address - 0xff8900, uint8_t(value));
+	else if ((address >= 0xff8a00) && (address <= 0xff8a3d))
+		m_blitter.Write8(address - 0xff8a00, uint8_t(value), *this);
+	else if ((address >= 0xfffc00) && (address <= 0xfffc06))
+	{
+	}
+	else
+	{
+		assert(false);
+	}
 }
 
 void AtariMachine::memWrite16(unsigned int address, unsigned int value)
 {
+	assert(0 == (address & 1));
 	assert(0 == (address & 0xff000000));
 	if (address < RAM_SIZE - 1)
 	{
+		assert(m_RAM);
 		m_RAM[address] = uint8_t(value >> 8);
 		m_RAM[address + 1] = uint8_t(value);
 		return;
@@ -141,65 +214,35 @@ void AtariMachine::memWrite16(unsigned int address, unsigned int value)
 #if D_DUMP_WRITE
 	if ((address >= D_DUMP_WRITE_AD1) && (address <= D_DUMP_WRITE_AD2))
 	{
-		uint32_t pc = m68k_get_reg(NULL, M68K_REG_PC);
+		uint32_t pc = m68k_get_reg(nullptr, M68K_REG_PC);
 		printf("$%06x: move.w #$%04x,$%06x\n", pc, value, address);
 	}
 #endif
 	if ((address >= 0xff8800) && (address < 0xff8900))
-		m_Ym2149.WritePort(address & 0xfe, uint8_t(value >> 8));
+		m_ym2149.WritePort(address & 0xfe, uint8_t(value >> 8));
 	else if ((address >= 0xfffa00) && (address < 0xfffa26))
-		m_Mfp.Write16(address - 0xfffa00, uint16_t(value));
+		m_mfp.Write16(address - 0xfffa00, uint16_t(value));
 	else if ((address >= 0xff8900) && (address < 0xff8926))
-		m_SteDac.Write16(address - 0xff8900, uint16_t(value));
+		m_steDac.Write16(address - 0xff8900, uint16_t(value));
+	else if ((address >= 0xff8a00) && (address <= 0xff8a3c))
+		m_blitter.Write16(address - 0xff8a00, uint16_t(value), *this);
+	else if ((address >= 0xfffc00) && (address <= 0xfffc06))
+	{
+	}
+	else
+	{
+		assert(false);
+	}
 }
 
 AtariMachine::AtariMachine()
 {
-	m_RAM = (uint8_t*)malloc(RAM_SIZE);
+	m_RAM = nullptr;
 }
 
 AtariMachine::~AtariMachine()
 {
-	if (m_RAM)
-	{
-		free(m_RAM);
-		m_RAM = NULL;
-	}
-}
-
-static int	fIllegalCb(int opcode)
-{
-	assert(false);
-	m68k_end_timeslice();
-	return 1;
-}
-
-/*
-static void	fDebugCb(unsigned int pc)
-{
-	printf("$%06x .. \n", pc);
-}
-*/
-
-static void	fResetCb(void)
-{
-	assert(gCurrentMachine);
-	gCurrentMachine->ResetCb();
-	m68k_end_timeslice();
-}
-
-void	AtariMachine::ResetCb(void)
-{
-	m_ExitCode |= AtariMachine::ExitCode::kReset;
-}
-
-extern "C"
-{
-	void	TrapInstructionCallback(int v)
-	{
-		assert(gCurrentMachine);
-		gCurrentMachine->TrapInstructionCallback(v);
-	}
+	free(m_RAM);
 }
 
 void	AtariMachine::Gemdos(int func, uint32_t a7)
@@ -209,15 +252,23 @@ void	AtariMachine::Gemdos(int func, uint32_t a7)
 	case 0x48:			// MALLOC
 	{
 		// very basic incremental allocator (required by Maxymizer player)
-		int size = m68k_read_memory_32(a7 + 2);
-		m68k_set_reg(M68K_REG_D0, m_NextGemdosMallocAd);
-		m_NextGemdosMallocAd = (m_NextGemdosMallocAd + size + 1)&(-2);
-		assert(m_NextGemdosMallocAd <= RAM_SIZE);
+		uint32_t size = m_cpu.MemRead32(a7 + 2);
+		if (0xffffffff == size)
+		{
+			// return largest free block
+			m_cpu.m68k_set_reg(M68K_REG_D0, RAM_SIZE-m_nextGemdosMallocAd);
+		}
+		else
+		{
+			m_cpu.m68k_set_reg(M68K_REG_D0, m_nextGemdosMallocAd);
+			m_nextGemdosMallocAd = (m_nextGemdosMallocAd + size + 1)&(-2);
+			assert(m_nextGemdosMallocAd <= RAM_SIZE);
+		}
 	}
 	break;
 	case 0x30:			// system version
 	{
-		m68k_set_reg(M68K_REG_D0, 0x0000);	// 0.15 : TOS 1.04 & 1.06
+		m_cpu.m68k_set_reg(M68K_REG_D0, 0x0000);	// 0.15 : TOS 1.04 & 1.06
 	}
 	break;
 
@@ -229,13 +280,13 @@ void	AtariMachine::Gemdos(int func, uint32_t a7)
 
 void	AtariMachine::XbiosTimerSet(int ctrlPort, int dataPort, int enablePort, int bit, int mask, int ctrlValue, int dataValue)
 {
-	const uint8_t back = m_Mfp.Read8(ctrlPort)&mask;
-	m_Mfp.Write8(ctrlPort, back | 0x0);
-	m_Mfp.Write8(dataPort, dataValue);
-	m_Mfp.Write8(ctrlPort, back | ctrlValue);
+	const uint8_t back = m_mfp.Read8(ctrlPort)&mask;
+	m_mfp.Write8(ctrlPort, back | 0x0);
+	m_mfp.Write8(dataPort, dataValue);
+	m_mfp.Write8(ctrlPort, back | ctrlValue);
 	// seems Atari BIOS always enable the timer (even when switching it off)
-	m_Mfp.Write8(enablePort, m_Mfp.Read8(enablePort) | (1 << bit));
-	m_Mfp.Write8(enablePort+12, m_Mfp.Read8(enablePort+12) | (1 << bit));
+	m_mfp.Write8(enablePort, m_mfp.Read8(enablePort) | (1 << bit));
+	m_mfp.Write8(enablePort+12, m_mfp.Read8(enablePort+12) | (1 << bit));
 }
 
 void	AtariMachine::XBios(int func, uint32_t a7)
@@ -244,13 +295,13 @@ void	AtariMachine::XBios(int func, uint32_t a7)
 	{
 	case 31:
 	{
-		uint16_t timer = m68k_read_memory_16(a7 + 2);
-		uint16_t ctrlWord = m68k_read_memory_16(a7 + 4);
-		uint16_t dataWord = m68k_read_memory_16(a7 + 6);
-		uint32_t vector = m68k_read_memory_32(a7 + 8);
+		uint16_t timer = m_cpu.MemRead16(a7 + 2);
+		uint16_t ctrlWord = m_cpu.MemRead16(a7 + 4);
+		uint16_t dataWord = m_cpu.MemRead16(a7 + 6);
+		uint32_t vector = m_cpu.MemRead32(a7 + 8);
 		if (timer < 4)
 		{
-			m68k_write_memory_32(ivector[timer], vector);
+			m_cpu.MemWrite32(ivector[timer], vector);
 			switch (timer)
 			{
 			case 0:		// A
@@ -270,20 +321,43 @@ void	AtariMachine::XBios(int func, uint32_t a7)
 				break;
 			}
 		}
+		break;
 	}
-	break;
+	case 32:
+	{
+		m_doSndPtr = m_cpu.MemRead32(a7 + 2);
+		break;
+	}
+	case 38:
+	{
+		// XBios(38) -> execute callback code in supervisor
+		// we just simulate a "jsr callback"
+		uint32_t callbackAddr = m_cpu.MemRead32(a7 + 2);
+
+		// push PC on stack (so future RTS will get back right after the TRAP)
+		uint32_t pc = m_cpu.m68k_get_reg(M68K_REG_PC);
+		a7 -= 4;
+		m_cpu.MemWrite32(a7, pc);
+		m_cpu.m68k_set_reg(M68K_REG_SP, a7);
+		m_cpu.m68k_set_reg(M68K_REG_PC, callbackAddr);
+		break;
+	}
+	case 64:		// blitmode
+	{
+		m_cpu.m68k_set_reg(M68K_REG_D0, 0x3);	// always says blitter is present and enabled
+		break;
+	}
 	default:
 		assert(false);	// unsupported XBIOS function
 		break;
 	}
 }
 
-void	AtariMachine::TrapInstructionCallback(int v)
+int	AtariMachine::TrapInstructionCallback(int v)
 {
-
-	int a7 = m68k_get_reg(NULL, M68K_REG_SP);
-	int func = m68k_read_memory_16(a7);
-
+	int a7 = m_cpu.m68k_get_reg(M68K_REG_SP);
+	int func = m_cpu.MemRead16(a7);
+	int ret = 1;		// properly intercepted by default
 	switch (v)
 	{
 	case 1:
@@ -293,40 +367,47 @@ void	AtariMachine::TrapInstructionCallback(int v)
 		XBios(func, a7);
 		break;
 	default:
-		assert(false);		// unsupported TRAP #n
+		ret = 0;		// unknown, jump to the 68k vector
 		break;
 	}
+	return ret;
 }
 
-void	AtariMachine::Startup(uint32_t hostReplayRate)
+void	AtariMachine::Startup(uint32_t hostReplayRate, bool predictibleYm2149State)
 {
-	gCurrentMachine = this;
-	assert(m_RAM);
+	if ( nullptr == m_RAM )
+		m_RAM = (uint8_t*)malloc(RAM_SIZE);
+
 	memset(m_RAM, 0, RAM_SIZE);
 
-	m_Ym2149.Reset(hostReplayRate);
-	m_Mfp.Reset(hostReplayRate);
-	m_SteDac.Reset(hostReplayRate);
-	m_NextGemdosMallocAd = GEMDOS_MALLOC_EMUL_BUFFER;
+	m_ym2149.Reset(hostReplayRate, 2000000, predictibleYm2149State);
+	m_mfp.Reset(hostReplayRate);
+	m_steDac.Reset(hostReplayRate);
+	m_blitter.Reset();
+	m_nextGemdosMallocAd = GEMDOS_MALLOC_EMUL_BUFFER;
+	MuteVoices(0);		// nothing is muted by default
 
-	m68k_set_cpu_type(M68K_CPU_TYPE_68000);
-	m68k_init();
-	m68k_set_illg_instr_callback(fIllegalCb);
-	m68k_set_reset_instr_callback(fResetCb);
-//	m68k_set_instr_hook_callback(fDebugCb);
+	m_cpu.SetUserData(this);
+	m_cpu.m68k_set_cpu_type(M68K_CPU_TYPE_68000);
 
 	// setup some cookie jar for MaxyMizer player!
-	m68k_write_memory_32(0x900, '_SND');
-	m68k_write_memory_32(0x904, 0x3);		// soundchip+STE DMA
-	m68k_write_memory_32(0x908, '_MCH');
-	m68k_write_memory_32(0x90c, 0x00010000);	// STE
-	m68k_write_memory_32(0x910, 0);			// end
-	m68k_write_memory_32(0x5a0, 0x900);		// cookie jar start
+	m_cpu.MemWrite32(0x900, 0x5f534e44);	// '_SND'
+	m_cpu.MemWrite32(0x904, 0x3);		// soundchip+STE DMA
+	m_cpu.MemWrite32(0x908, 0x5f4d4348);	// '_MCH'
+	m_cpu.MemWrite32(0x90c, 0x00010000);	// STE
+	m_cpu.MemWrite32(0x910, 0);			// end
+	m_cpu.MemWrite32(0x5a0, 0x900);		// cookie jar start
 
-	memWrite16(RESET_INSTRUCTION_ADDR, 0x4e70);			// 4e70=reset instruction
-	memWrite16(RTE_INSTRUCTION_ADDR, 0x4e73);			// 4e73=rte
+	m_cpu.MemWrite16(RESET_INSTRUCTION_ADDR, 0x4e70);			// 4e70=reset instruction
+	m_cpu.MemWrite16(RTE_INSTRUCTION_ADDR, 0x4e73);			// 4e73=rte
 
-	gCurrentMachine = NULL;
+	// some SNDH setup MFP registers with values from OS, with timer C running!
+	// so by default, set the timer C handler to RTE, just in case
+	m_cpu.MemWrite32(0x114, RTE_INSTRUCTION_ADDR);
+
+	m_doSndPtr = 0;
+	m_doSndVal = 0;
+	m_doSndDelay = 0;
 }
 
 bool	AtariMachine::Upload(const void* src, uint32_t addr, uint32_t size)
@@ -334,79 +415,151 @@ bool	AtariMachine::Upload(const void* src, uint32_t addr, uint32_t size)
 	if (addr + size > RAM_SIZE)
 		return false;
 
-	if ((NULL == src) || (0 == size))
+	if ((nullptr == src) || (0 == size))
 		return false;
 
+	assert(m_RAM);
 	memcpy(m_RAM + addr, src, size);
 	return true;
 }
 
 void	AtariMachine::ConfigureReturnByRts()
 {
-	m68k_write_memory_32(RAM_SIZE - 4, RESET_INSTRUCTION_ADDR);		// next RTS will go to RESET_INSTRUCTION_ADDR (reset)
-	m68k_write_memory_32(0, RAM_SIZE-4);				// stack ptr at next reset on TOP of RAM
+	m_cpu.MemWrite32(RAM_SIZE - 4, RESET_INSTRUCTION_ADDR);		// next RTS will go to RESET_INSTRUCTION_ADDR (reset)
+	m_cpu.MemWrite32(0, RAM_SIZE-4);				// stack ptr at next reset on TOP of RAM
 }
 
 void	AtariMachine::ConfigureReturnByRte()
 {
-	m68k_write_memory_32(RAM_SIZE - 4, RESET_INSTRUCTION_ADDR);		// next RTE will go to RESET_INSTRUCTION_ADDR (reset)
-	memWrite16(RAM_SIZE - 6, 0x2300);					// SR=2300
-	m68k_write_memory_32(0, RAM_SIZE - 6);				// stack ptr at next reset on TOP of RAM
+	m_cpu.MemWrite32(RAM_SIZE - 4, RESET_INSTRUCTION_ADDR);		// next RTE will go to RESET_INSTRUCTION_ADDR (reset)
+	m_cpu.MemWrite16(RAM_SIZE - 6, 0x2300);					// SR=2300
+	m_cpu.MemWrite32(0, RAM_SIZE - 6);				// stack ptr at next reset on TOP of RAM
 }
 
-bool	AtariMachine::JmpBinary(int pc, int timeOut50Hz)
+bool	AtariMachine::JmpBinary(uint32_t pc, int timeOut50Hz)
 {
-	m68k_write_memory_32(0x14, RTE_INSTRUCTION_ADDR);		// DIV by ZERO excep jump at $500
+	m_cpu.MemWrite32(0x14, RTE_INSTRUCTION_ADDR);		// DIV by ZERO excep jump at $500
 
-	m68k_write_memory_32(4, pc);			// pc at next RESET
-	m68k_pulse_reset();						// reset CPU & start execution at PC
+	m_cpu.MemWrite32(4, pc);			// pc at next RESET
+	m_cpu.m68k_pulse_reset();						// reset CPU & start execution at PC
 
-	m_ExitCode = 0;
+	m_exitCode = 0;
 	int cycles = 0;
 	for (int t = 0; t < timeOut50Hz; t++)
 	{
-		cycles += m68k_execute(512 * 313);				// 50hz frame
-		if (m_ExitCode)
+		cycles += m_cpu.Execute(512 * 313);				// 50hz frame
+		if (m_exitCode)
 			break;
 	}
-	return (kReset == m_ExitCode);
+	return (kReset == m_exitCode);
 }
 
 bool	AtariMachine::Jsr(uint32_t addr, uint32_t d0)
 {
-	gCurrentMachine = this;
-
 	bool ret = false;
 	// upload data in RAM
 	ConfigureReturnByRts();
-	m68k_set_reg(M68K_REG_D0, d0);
+	m_cpu.m68k_set_reg(M68K_REG_D0, d0);
 	ret = JmpBinary(addr, 50*10);		// timeout of 1sec for init
-	gCurrentMachine = NULL;
 	return ret;
 }
 
-int16_t	AtariMachine::ComputeNextSample(uint32_t* pSampleDebugInfo)
+#define	k15toS8(a)	((((a*127)>>15)+63)^0x80)	// signed 8bits value for oscillators viewing display per voice
+static const uint32_t	s_ViewVolTab[16*2] =
 {
-	gCurrentMachine = this;
-	int32_t level = m_Ym2149.ComputeNextSample(pSampleDebugInfo);
-	int32_t steLevel = m_SteDac.ComputeNextSample((const int8_t*)m_RAM, RAM_SIZE, m_Mfp);
-	if (steLevel && (pSampleDebugInfo))
-		*pSampleDebugInfo |= (steLevel >> 8) << 24;
+	k15toS8(152),k15toS8(181),k15toS8(215),k15toS8(255),
+	k15toS8(304),k15toS8(362),k15toS8(430),k15toS8(511),
+	k15toS8(608),k15toS8(724),k15toS8(861),k15toS8(1023),
+	k15toS8(1217),k15toS8(1448),k15toS8(1722),k15toS8(2047),
+	k15toS8(2435),k15toS8(2896),k15toS8(3444),k15toS8(4095),
+	k15toS8(4870),k15toS8(5792),k15toS8(6888),k15toS8(8191),
+	k15toS8(9741),k15toS8(11584),k15toS8(13776),k15toS8(16383),
+	k15toS8(19483),k15toS8(23169),k15toS8(27553),k15toS8(32767)
+};
 
-	//YOYOFR: STE DAC oscilloscope (voice 3) + mute — steLevel is already a
-	// proper bipolar signed PCM sample (unlike the YM's gated-envelope levels),
-	// so no shift/rescale beyond the usual 8-bit ring resolution.
-	if (generic_mute_mask & 8) steLevel = 0;
-	// Ring mask MUST match rewamp_plugin_sndh.cpp's SNDH_RING_SIZE — see the
-	// comment in ym2149c.cpp's ComputeNextSample for why (trigger search
-	// headroom).
-	if (m_voice_buff[3]) m_voice_buff[3][(m_voice_current_ptr[3]>>MODIZER_OSCILLO_OFFSET_FIXEDPOINT)&(SOUND_BUFFER_SIZE_SAMPLE*4*2-1)] = LIMIT8(steLevel >> 8);
-	m_voice_current_ptr[3] += 1<<MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
-	vgm_last_note[3] = 0;   // PCM sample playback, no discrete pitch to report
-	vgm_last_vol[3]  = steLevel != 0 ? 1 : 0;
-	//YOYOFR end
+uint32_t AtariMachine::ComputeCurrentVisualLevels() const
+{
+	uint32_t visualLevels = m_ym2149.ComputeCurrentVisualLevels();
+	if ( 0 == (m_muteMask&(1<<3)))
+		visualLevels |= (m_steDac.GetCurrentVisualLevel()<<24);
+	return visualLevels;
+}
 
-	level += steLevel;
+void AtariMachine::MuteVoices(uint32_t muteMask)
+{
+	m_ym2149.MuteVoices(muteMask);
+	m_muteMask = muteMask;
+}
+
+void AtariMachine::DoSoundTick()
+{
+	if (m_doSndPtr)
+	{
+		if (m_doSndDelay > 0)
+		{
+			m_doSndDelay--;
+			return;
+		}
+
+		for (;;)
+		{
+			uint8_t cmd = memRead8(m_doSndPtr);
+			if (cmd < 0x80)
+			{
+				m_ym2149.WritePort(0, cmd&15);
+				m_ym2149.WritePort(2, memRead8(m_doSndPtr+1));
+				m_doSndPtr += 2;
+			}
+			else if (0x80 == cmd)
+			{
+				m_doSndVal = memRead8(m_doSndPtr + 1);
+				m_doSndPtr += 2;
+			}
+			else if (0x81 == cmd)
+			{
+				m_ym2149.WritePort(0, memRead8(m_doSndPtr+1)&15);
+				m_doSndVal += memRead8(m_doSndPtr + 2);
+				m_ym2149.WritePort(2, m_doSndVal);
+				if ( m_doSndVal == memRead8(m_doSndPtr + 3))
+					m_doSndPtr += 4;
+				break;
+			}
+			else
+			{
+				m_doSndDelay = memRead8(m_doSndPtr + 1);
+				if (0 == m_doSndDelay)
+					m_doSndPtr = 0;
+				break;
+			}
+		}
+	}
+}
+
+bool AtariMachine::PlayerTick(uint32_t musicDriverCallAddr)
+{
+	DoSoundTick();
+	return Jsr(musicDriverCallAddr, 0);
+}
+
+int16_t	AtariMachine::ComputeNextSample()
+{
+	int32_t level = m_ym2149.ComputeNextSample();
+	assert(m_RAM);
+	int32_t steLevel = m_steDac.ComputeNextSample((const int8_t*)m_RAM, RAM_SIZE, m_mfp);
+	if ( 0 == (m_muteMask&(1<<3)))
+		level += steLevel;
+
+	// REWAMP: STE DAC oscilloscope (voice 3): a bipolar PCM sample already, so
+	// only the 8-bit ring resolution; flat when muted. No discrete pitch.
+	{
+		const int s = (m_muteMask & (1 << 3)) ? 0 : (steLevel >> 8);
+		if (m_voice_buff[3])
+			m_voice_buff[3][(m_voice_current_ptr[3] >> MODIZER_OSCILLO_OFFSET_FIXEDPOINT) & (SOUND_BUFFER_SIZE_SAMPLE * 4 * 2 - 1)] =
+				(signed char)(s > 127 ? 127 : s < -128 ? -128 : s);
+		m_voice_current_ptr[3] += 1 << MODIZER_OSCILLO_OFFSET_FIXEDPOINT;
+		vgm_last_note[3] = 0;
+		vgm_last_vol[3]  = s != 0 ? 1 : 0;
+	}
 
 	if (level > 32767)
 		level = 32767;
@@ -418,19 +571,15 @@ int16_t	AtariMachine::ComputeNextSample(uint32_t* pSampleDebugInfo)
 	// tick 4 Atari timers, maybe one of them is running
 	for (int t = 0; t < 4+1; t++)
 	{
-		if (m_Mfp.Tick(t))
+		if (m_mfp.Tick(t))
 		{
-			uint32_t pc = m68k_read_memory_32(ivector[t]);
+			uint32_t pc = m_cpu.MemRead32(ivector[t]);
 			ConfigureReturnByRte();
-			m_Ym2149.InsideTimerIrq(true);
-			JmpBinary(pc, 1);	// execute the timer code until RTE (probably SID or any other special fx code)
-			m_Ym2149.InsideTimerIrq(false);
+			m_ym2149.InsideTimerIrq(true);
+			if (!JmpBinary(pc, 1))	// execute the timer code until RTE (probably SID or any other special fx code)
+				out = 0;		// output 0 in case something bad happen during emulation of the timer code
+			m_ym2149.InsideTimerIrq(false);
 		}
 	}
-	gCurrentMachine = NULL;
 	return out;
-}
-
-int AtariMachine::getYM2149_Freq(int channel) {//YOYOFR
-    return m_Ym2149.getYM2149_Freq(channel);
 }

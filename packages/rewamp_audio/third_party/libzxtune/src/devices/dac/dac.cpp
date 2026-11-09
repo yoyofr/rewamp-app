@@ -439,7 +439,7 @@ public:
                 //YOYOFR
                 int64_t smplIncr;
                 smplIncr=1<<16;
-                int m_voice_ofs=0;
+                int m_voice_ofs=m_voicesForceOfs;   //YOYOFR (rewamp): this chip's voice base
                 int j=chan;
                 
                 int64_t ofs_start=m_voice_current_ptr[m_voice_ofs+j];
@@ -555,8 +555,7 @@ public:
     {
         
         //YOYOFR
-        memset(vgm_last_note,0,sizeof(vgm_last_note));
-        memset(vgm_last_vol,0,sizeof(vgm_last_vol));
+        rewamp_voice_notes_clear(m_voicesForceOfs, m_voice_current_total);   //this chip only
         //YOYOFR
         
         Current->RenderData(samples, target);
@@ -586,6 +585,7 @@ public:
     , Target(target)
     , Clock()
     , Renderers(*Mixer, &State[0])
+    , VoiceBase(rewamp_zx_voice_base)   //YOYOFR (rewamp)
     {
         FixedChannelsChip::Reset();
     }
@@ -598,6 +598,9 @@ public:
     
     virtual void RenderData(const DataChunk& src)
     {
+        //YOYOFR (rewamp): bind this chip's voices (see AYM::SoundChip).
+        m_voicesForceOfs = VoiceBase;
+        m_voice_current_total = (char)Channels;
         SynchronizeParameters();
         if (Clock.GetCurrentTime() < src.TimeStamp)
         {
@@ -702,6 +705,7 @@ private:
     ClockSource Clock;
     boost::array<ChannelState, Channels> State;
     RenderersSet<Channels> Renderers;
+    const int VoiceBase;   //YOYOFR (rewamp)
 };
 
 Chip::Ptr CreateChip(ChipParameters::Ptr params, Sound::ThreeChannelsMixer::Ptr mixer, Sound::Receiver::Ptr target)

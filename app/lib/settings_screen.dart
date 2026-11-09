@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import 'home_sections.dart';
 import 'shell_tabs.dart';
 import 'l10n.dart';
+import 'media_direction.dart';
 import 'launch_window.dart';
 import 'mini_window.dart';
 import 'play_start.dart';
@@ -37,6 +38,10 @@ import 'soundfont_manager.dart';
 import 'mt32_rom_manager.dart';
 import 'mt32_settings.dart';
 import 'adlmidi_settings.dart';
+import 'default_decoder_shortcuts.dart';
+import 'engine_choices.dart' show EngineChoices;
+import 'play_with_sheet.dart' show confirmDeleteChosen;
+import 'opnmidi_settings.dart';
 import 'local_db.dart';
 import 'artwork_image.dart';
 import 'rewamp_db.dart';
@@ -65,9 +70,11 @@ const Map<String, EngineSettingsPage> kEngineSettingsPages = {
   'libgme':       EngineSettingsPage('libgme', SettingsScreen.gmeChildren),
   'nsfplay':      EngineSettingsPage('nsfplay', SettingsScreen.nsfChildren),
   'gbsplay':      EngineSettingsPage('gbsplay', SettingsScreen.gbsChildren),
+  'psgplay':      EngineSettingsPage('PSG play', SettingsScreen.psgplayChildren),
   'fluidlite':    EngineSettingsPage('FluidLite', SettingsScreen.midiChildren),
   'mt32':         EngineSettingsPage('Munt (mt32emu)', SettingsScreen.mt32Children),
   'adlmidi':      EngineSettingsPage('libADLMIDI', SettingsScreen.adlmidiChildren),
+  'opnmidi':      EngineSettingsPage('libOPNMIDI', SettingsScreen.opnmidiChildren),
   'gsf':          EngineSettingsPage('libgsf (VBA)', SettingsScreen.gsfChildren),
   'uade':         EngineSettingsPage('UADE', SettingsScreen.uadeChildren),
   'libsidplayfp': EngineSettingsPage('libsidplayfp', SettingsScreen.sidChildren),
@@ -153,12 +160,16 @@ class SettingsScreen extends StatefulWidget {
       _SettingsScreenState._nsfChildren(c);
   static List<Widget> gbsChildren(BuildContext c) =>
       _SettingsScreenState._gbsChildren(c);
+  static List<Widget> psgplayChildren(BuildContext c) =>
+      _SettingsScreenState._psgplayChildren(c);
   static List<Widget> midiChildren(BuildContext c) =>
       _SettingsScreenState._midiChildren(c);
   static List<Widget> mt32Children(BuildContext c) =>
       _SettingsScreenState._mt32Children(c);
   static List<Widget> adlmidiChildren(BuildContext c) =>
       _SettingsScreenState._adlmidiChildren(c);
+  static List<Widget> opnmidiChildren(BuildContext c) =>
+      _SettingsScreenState._opnmidiChildren(c);
   static List<Widget> gsfChildren(BuildContext c) =>
       _SettingsScreenState._gsfChildren(c);
   static List<Widget> uadeChildren(BuildContext c) =>
@@ -335,6 +346,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
     AppSnack.showOn(messenger, removed > 0
           ? l10n.settingsOrphansRemoved(removed)
           : l10n.settingsDbClean);
+  }
+
+  Future<void> _confirmForgetPlayWith(BuildContext context) async {
+    final l10n = context.l10n;
+    final cs = Theme.of(context).colorScheme;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.settingsForgetPlayWith),
+        content: Text(l10n.settingsForgetPlayWithBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.settingsCancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: cs.error, foregroundColor: cs.onError),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.settingsDelete),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    EngineChoices.instance.forgetAll();
+    if (mounted) setState(() {});
   }
 
   Future<void> _confirmClearHistory(BuildContext context) async {
@@ -1519,6 +1557,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: l10n.settingsEngineNsfSubtitle, children: _nsfChildren),
         (icon: Icons.videogame_asset_outlined, name: 'gbsplay',
             subtitle: l10n.settingsEngineGbsSubtitle, children: _gbsChildren),
+        (icon: Icons.speaker, name: 'PSG play',
+            subtitle: l10n.settingsEnginePsgplaySubtitle,
+            children: _psgplayChildren),
         (icon: Icons.library_music, name: 'FluidLite',
             subtitle: l10n.settingsEngineMidiSubtitle, children: _midiChildren),
         // Sous-titre = l'état des ROMs: un jeu manquant se voit sans ouvrir.
@@ -1530,6 +1571,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         (icon: Icons.graphic_eq, name: 'libADLMIDI',
             subtitle: l10n.settingsEngineAdlmidiSubtitle,
             children: _adlmidiChildren),
+        (icon: Icons.graphic_eq, name: 'libOPNMIDI',
+            subtitle: l10n.settingsEngineOpnmidiSubtitle,
+            children: _opnmidiChildren),
         (icon: Icons.sports_esports, name: 'libgsf (VBA)',
             subtitle: l10n.settingsEngineGsfSubtitle, children: _gsfChildren),
         (icon: Icons.computer, name: 'UADE',
@@ -1613,6 +1657,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
       SettingRow(
+        label: 'YM',
+        resetKey: 'ymPlugin',
+        child: DropdownButton<String>(
+          value: _settings.ymPlugin,
+          isDense: true,
+          items: const [
+            DropdownMenuItem(value: 'atariaudio', child: Text('AtariAudio')),
+            DropdownMenuItem(value: 'zxtune',     child: Text('ZXTune')),
+          ],
+          onChanged: (v) { if (v != null) _settings.ymPlugin = v; },
+        ),
+      ),
+      SettingRow(
         label: l10n.settingsDecoderAmigaTrackers,
         resetKey: 'amigaTrackerPlugin',
         child: DropdownButton<String>(
@@ -1620,6 +1677,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           isDense: true,
           items: const [
             DropdownMenuItem(value: 'openmpt', child: Text('libopenmpt')),
+            DropdownMenuItem(value: 'xmp',     child: Text('libxmp')),
             DropdownMenuItem(value: 'uade',    child: Text('UADE')),
           ],
           onChanged: (v) { if (v != null) _settings.amigaTrackerPlugin = v; },
@@ -1642,8 +1700,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             DropdownMenuItem(value: 'soundfont', child: Text(l10n.settingsMidiSynthSoundfont, overflow: TextOverflow.ellipsis)),
             DropdownMenuItem(value: 'mt32', child: Text(l10n.settingsMidiSynthMt32, overflow: TextOverflow.ellipsis)),
             DropdownMenuItem(value: 'opl3', child: Text(l10n.settingsMidiSynthOpl3, overflow: TextOverflow.ellipsis)),
+            DropdownMenuItem(value: 'opn2', child: Text(l10n.settingsMidiSynthOpn2, overflow: TextOverflow.ellipsis)),
           ],
           onChanged: (v) { if (v != null) _settings.midiSynth = v; },
+        ),
+      ),
+      SettingRow(
+        label: l10n.settingsDecoderDosMidi,
+        resetKey: 'dosMidiPlugin',
+        child: DropdownButton<String>(
+          value: _settings.dosMidiPlugin == 'opnmidi' ? 'opnmidi' : 'adlmidi',
+          isDense: true,
+          isExpanded: true,
+          items: const [
+            DropdownMenuItem(value: 'adlmidi', child: Text('libADLMIDI (OPL3)', overflow: TextOverflow.ellipsis)),
+            DropdownMenuItem(value: 'opnmidi', child: Text('libOPNMIDI (OPN2)', overflow: TextOverflow.ellipsis)),
+          ],
+          onChanged: (v) { if (v != null) _settings.dosMidiPlugin = v; },
         ),
       ),
       const SizedBox(height: 8),
@@ -1655,6 +1728,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static List<Widget> _omptChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
+      const DefaultDecoderShortcuts(engine: 'libopenmpt'),
       Align(
         alignment: AlignmentDirectional.centerEnd,
         child: Padding(
@@ -1801,6 +1875,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static List<Widget> _gmeChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
+      const DefaultDecoderShortcuts(engine: 'libgme'),
       Align(
         alignment: AlignmentDirectional.centerEnd,
         child: Padding(
@@ -2355,6 +2430,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static List<Widget> _nsfChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
+      const DefaultDecoderShortcuts(engine: 'nsfplay'),
       Align(
         alignment: AlignmentDirectional.centerEnd,
         child: Padding(
@@ -2389,6 +2465,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
         min: 0, max: 256, divisions: 32,
         format: (v) => '${v.round()}',
         onChanged: (v) => _settings.nsfHpf = v.round(),
+      ),
+      _SliderRow(
+        label: l10n.settingsNsfFade,
+        resetKey: 'nsfFadeSeconds',
+        value: _settings.nsfFadeSeconds.toDouble(),
+        min: 0,
+        max: 16,
+        divisions: 16,
+        format: (v) => v <= 0
+            ? l10n.settingsOff
+            : l10n.settingsValueSeconds(v.round()),
+        onChanged: (v) => _settings.nsfFadeSeconds = v.round(),
+      ),
+      Padding(
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
+        child: Text(l10n.settingsNsfFadeHelp,
+            style: const TextStyle(fontSize: 12)),
       ),
       SettingRow(
         label: l10n.settingsRegion,
@@ -2429,6 +2522,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static List<Widget> _gbsChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
+      const DefaultDecoderShortcuts(engine: 'gbsplay'),
       Align(
         alignment: AlignmentDirectional.centerEnd,
         child: Padding(
@@ -2458,21 +2552,99 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
   }
 
+  /// Page moteur « PSG play » (.sndh): mixage des trois voies du YM2149.
+  static List<Widget> _psgplayChildren(BuildContext context) {
+    final l10n = context.l10n;
+    String pan(double v) => v.abs() < 0.025
+        ? l10n.settingsPsgPanCentre
+        : (v < 0
+            ? l10n.settingsPsgPanLeft((-v * 100).round())
+            : l10n.settingsPsgPanRight((v * 100).round()));
+    // Gauche et droite sont PHYSIQUES (les haut-parleurs): le curseur ne
+    // s'inverse pas dans une langue de droite à gauche.
+    Widget panRow(String voice, String key, double value,
+            void Function(double) set) =>
+        ltrMedia(_SliderRow(
+          label: l10n.settingsPsgPanVoice(voice),
+          resetKey: key,
+          value: value,
+          min: -1,
+          max: 1,
+          divisions: 40,
+          format: pan,
+          onChanged: set,
+        ));
+    return [
+      const DefaultDecoderShortcuts(engine: 'psgplay'),
+      Align(
+        alignment: AlignmentDirectional.centerEnd,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.only(end: 8),
+          child: TextButton.icon(
+            icon: const Icon(Icons.restart_alt, size: 16),
+            label: Text(l10n.settingsResetEngine),
+            onPressed: () => _settings.resetEngineSettings('psgplay'),
+          ),
+        ),
+      ),
+      SettingRow(
+        label: l10n.settingsPsgMix,
+        resetKey: 'psgMix',
+        child: DropdownButton<int>(
+          value: _settings.psgMix,
+          isDense: true,
+          items: [
+            DropdownMenuItem(value: 0, child: Text(l10n.settingsPsgMixEmpiric)),
+            DropdownMenuItem(value: 1, child: Text(l10n.settingsPsgMixLinear)),
+            DropdownMenuItem(value: 2, child: Text(l10n.settingsPsgMixStereo)),
+          ],
+          onChanged: (v) { if (v != null) _settings.psgMix = v; },
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
+        child: Text(
+          switch (_settings.psgMix) {
+            1 => l10n.settingsPsgMixLinearHint,
+            2 => l10n.settingsPsgMixStereoHint,
+            _ => l10n.settingsPsgMixEmpiricHint,
+          },
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ),
+      if (_settings.psgMix == 2) ...[
+        panRow('A', 'psgPanA', _settings.psgPanA, (v) => _settings.psgPanA = v),
+        panRow('B', 'psgPanB', _settings.psgPanB, (v) => _settings.psgPanB = v),
+        panRow('C', 'psgPanC', _settings.psgPanC, (v) => _settings.psgPanC = v),
+      ],
+      const SizedBox(height: 8),
+    ];
+  }
+
   /// Page moteur « Munt (mt32emu) »: ROMs et réglages de l'émulation. Le
   /// choix FluidLite / MT-32 est dans « Décodeurs par défaut », avec les
   /// autres choix de moteur.
   static List<Widget> _mt32Children(BuildContext context) => const [
+        DefaultDecoderShortcuts(engine: 'mt32'),
         Mt32EnginePanel(),
       ];
 
   /// Page moteur « libADLMIDI » (OPL3): banque, émulateur, puces, volume.
   static List<Widget> _adlmidiChildren(BuildContext context) => const [
+        DefaultDecoderShortcuts(engine: 'adlmidi'),
         AdlmidiEnginePanel(),
+      ];
+
+  /// Page moteur « libOPNMIDI » (OPN2 / OPNA): banque, émulateur, puces, volume.
+  static List<Widget> _opnmidiChildren(BuildContext context) => const [
+        DefaultDecoderShortcuts(engine: 'opnmidi'),
+        OpnmidiEnginePanel(),
       ];
 
   static List<Widget> _midiChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
+      const DefaultDecoderShortcuts(engine: 'fluidlite'),
       Align(
         alignment: AlignmentDirectional.centerEnd,
         child: Padding(
@@ -2513,10 +2685,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           value: _settings.midiInterp,
           isDense: true,
           items: [
-            // libopenmpt: 1 = none (nearest), 2 = linear — NOT 0/1 (0 is
-            // "engine default", and 1-as-linear shipped a nearest whine).
-            DropdownMenuItem(value: 1, child: Text(l10n.settingsInterpNone)),
-            DropdownMenuItem(value: 2, child: Text(l10n.settingsInterpLinear)),
+            // FluidLite (FLUID_INTERP_*): 0 = none, 1 = linear, 4 = 4th
+            // order, 7 = 7th order. ⚠️ PAS l'échelle de libopenmpt (1 = none,
+            // 2 = linear), copiée ici par erreur jusqu'au 2026-11-08: « Aucune »
+            // jouait en linéaire, « Linéaire » en 4e ordre (migration dans
+            // UserSettings.midiInterp).
+            DropdownMenuItem(value: 0, child: Text(l10n.settingsInterpNone)),
+            DropdownMenuItem(value: 1, child: Text(l10n.settingsInterpLinear)),
             DropdownMenuItem(value: 4, child: Text(l10n.settingsInterpCubic)),
             DropdownMenuItem(value: 7, child: Text(l10n.settingsInterpSinc)),
           ],
@@ -2586,6 +2761,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static List<Widget> _uadeChildren(BuildContext context) {
     final l10n = context.l10n;
     return [
+      const DefaultDecoderShortcuts(engine: 'uade'),
       Align(
         alignment: AlignmentDirectional.centerEnd,
         child: Padding(
@@ -2832,6 +3008,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       const Divider(height: 1),
       _dataGroupHeader(context, l10n.settingsDataGroupReset),
+      // « Lire avec… »: the remembered per-file / per-album engine choices
+      // (a preference, not the database) — the least destructive reset.
+      ListTile(
+        leading: Icon(Icons.alt_route, color: cs.error),
+        title: Text(l10n.settingsForgetPlayWith,
+            style: TextStyle(color: cs.error)),
+        subtitle: Text(l10n.settingsForgetPlayWithSubtitle(
+            EngineChoices.instance.rememberedCount)),
+        onTap: EngineChoices.instance.rememberedCount == 0
+            ? null
+            : () => _confirmForgetPlayWith(context),
+      ),
       ListTile(
         leading: Icon(Icons.delete_sweep_outlined, color: cs.error),
         title: Text(l10n.settingsResetStats,
@@ -3403,6 +3591,20 @@ class _SoundfontPickerState extends State<_SoundfontPicker> {
     }
   }
 
+  /// Chosen EXPLICITLY for files or albums (« Lire avec… »)? Ask first.
+  Future<void> _deleteFont(String slug, String name) async {
+    final l10n = context.l10n;
+    final ok = await confirmDeleteChosen(context,
+        name: name,
+        usage: EngineChoices.instance.optionUsage('fluidlite', slug),
+        title: l10n.soundfontInUseTitle,
+        outro: l10n.soundfontInUseOutro);
+    if (!ok) return;
+    EngineChoices.instance.forgetOption('fluidlite', slug);
+    await SoundfontManager.instance.delete(slug);
+    if (mounted) setState(() {});
+  }
+
   Future<void> _tap(RemoteAsset a) async {
     final l10n = context.l10n;
     final mgr = SoundfontManager.instance;
@@ -3475,10 +3677,7 @@ class _SoundfontPickerState extends State<_SoundfontPicker> {
                           : IconButton(
                               icon: const Icon(Icons.delete_outline, size: 20),
                               tooltip: l10n.settingsSoundfontDelete,
-                              onPressed: () async {
-                                await mgr.delete(a.slug);
-                                if (mounted) setState(() {});
-                              }))
+                              onPressed: () => _deleteFont(a.slug, a.name)))
                       : const Icon(Icons.download_outlined),
               onTap: prog[a.slug] == null ? () => _tap(a) : null,
             ),
@@ -3504,10 +3703,7 @@ class _SoundfontPickerState extends State<_SoundfontPicker> {
                   : IconButton(
                       icon: const Icon(Icons.delete_outline, size: 20),
                       tooltip: l10n.settingsSoundfontDelete,
-                      onPressed: () async {
-                        await mgr.delete(f.slug);
-                        if (mounted) setState(() {});
-                      }),
+                      onPressed: () => _deleteFont(f.slug, f.name)),
               onTap: () => _selectLocal(f.slug),
             ),
           ListTile(

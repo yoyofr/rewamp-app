@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'app_snack.dart';
 import 'library_toolbar.dart';
 import 'local_db.dart';
+import 'sync_service.dart';
 import 'l10n.dart';
 import 'shell_insets.dart';
 import 'scrolling_text.dart';
@@ -50,14 +51,18 @@ class _LibraryArtistsScreenState extends State<LibraryArtistsScreen> {
   List<LibraryItem> get _visible =>
       sortLibraryItems(filterLibraryItems(_items, _query), _sort, _asc);
 
-  /// Un artiste favori n'a PAS de contrepartie serveur (voir LibraryButton):
-  /// le retrait est purement local, et toutes les formes de clé partent
-  /// ensemble (uuid, nom) pour ne pas laisser un doublon derrière.
+  /// Toutes les formes de clé partent ensemble (uuid, nom) pour ne pas
+  /// laisser un doublon derrière; chaque entrée clée par UUID est retirée du
+  /// compte aussi (mig serveur 296 — rien ne part tant qu'il ne la connaît
+  /// pas, voir SyncService.recordArtistMembership).
   Future<void> _remove(LibraryItem item) async {
     final l10n = context.l10n;
     final messenger = ScaffoldMessenger.of(context);
-    await LocalDb.instance
+    final removed = await LocalDb.instance
         .removeArtistFromLibrary(item.name, refId: item.refId);
+    for (final ref in removed) {
+      await SyncService.recordArtistMembership(refId: ref, value: false);
+    }
     // Message NEUTRE: `playerRemovedFromLibrary` dit « Morceau retiré… », ce
     // qui était faux sur un artiste et sur un album.
     AppSnack.showOn(messenger, l10n.libraryRemoved,
@@ -114,8 +119,17 @@ class _LibraryArtistsScreenState extends State<LibraryArtistsScreen> {
                       ),
                       onDismissed: (_) => _remove(item),
                       child: ListTile(
+                      // La pochette de l'artiste (celle de la recherche:
+                      // une de ses pochettes de morceau, user_artists mig 297),
+                      // l'initiale en dessous tant qu'elle n'est pas là — et à
+                      // la place si elle ne se charge pas.
                       leading: CircleAvatar(
                         backgroundColor: cs.primaryContainer,
+                        foregroundImage: (item.artworkUrl?.isNotEmpty ?? false)
+                            ? NetworkImage(item.artworkUrl!)
+                            : null,
+                        onForegroundImageError:
+                            (item.artworkUrl?.isNotEmpty ?? false) ? (_, __) {} : null,
                         child: Text(
                           item.name.isNotEmpty
                               ? item.name[0].toUpperCase()

@@ -653,6 +653,23 @@ static ma_device_id g_out_ids[REWAMP_MAX_OUT_DEVICES];
 static int          g_out_count    = 0;
 static int          g_out_selected = -1;   /* -1 = system default */
 
+/* Le périphérique, vu par le reste du moteur: démarré ? démarrer, arrêter.
+ * Sur le web il n'y a pas de ma_device: la sortie est une pompe pthread qui
+ * appelle rewamp_device_callback au rythme de l'AudioWorklet de la page
+ * (src/web/rewamp_device_web.h — le pourquoi y est). */
+#ifdef __EMSCRIPTEN__
+#include "web/rewamp_device_web.h"
+static int       rewamp_dev_started(void) { return rewamp_web_device_is_started(); }
+static ma_result rewamp_dev_start(void)   { return rewamp_web_device_resume(); }
+static void      rewamp_dev_stop(void)    { rewamp_web_device_stop(); }
+#else
+static int       rewamp_dev_started(void) {
+    return ma_device_get_state(&g_device) == ma_device_state_started;
+}
+static ma_result rewamp_dev_start(void)   { return ma_device_start(&g_device); }
+static void      rewamp_dev_stop(void)    { ma_device_stop(&g_device); }
+#endif
+
 /* Real device-callback telemetry (rewamp_datasource.c owns the ds_read ones). */
 int64_t g_dev_late_callbacks = 0;
 int64_t g_dev_max_gap_us     = 0;
@@ -715,6 +732,15 @@ static void rewamp_device_callback(ma_device* pDevice, void* pOutput,
 /* (Re-)creates + starts g_device on [pDeviceID] (NULL = system default). The
  * config is THE one — rewamp_init and the output picker must not drift. */
 static ma_result rewamp_create_device(const ma_device_id* pDeviceID) {
+#ifdef __EMSCRIPTEN__
+    (void)pDeviceID;   /* une seule sortie: celle de la page */
+    ma_result wr = rewamp_web_device_start(rewamp_device_callback);
+    if (wr != MA_SUCCESS) return wr;
+    g_device_valid = 1;
+    g_dev_period_us = (int64_t)rewamp_web_device_period_frames() * 1000000 / 44100;
+    g_dev_last_us = 0;
+    return MA_SUCCESS;
+#endif
     if (g_device_valid) { ma_device_uninit(&g_device); g_device_valid = 0; }
 
     ma_device_config dev = ma_device_config_init(ma_device_type_playback);
@@ -764,11 +790,13 @@ RewampResult rewamp_init(void) {
     ma_result result = ma_engine_init(&cfg, &g_engine);
     if (result != MA_SUCCESS) return REWAMP_ERROR_INIT_FAILED;
 
+#ifndef __EMSCRIPTEN__   /* web: pas de contexte miniaudio, pas de sélecteur */
     if (ma_context_init(NULL, 0, NULL, &g_context) != MA_SUCCESS) {
         ma_engine_uninit(&g_engine);
         return REWAMP_ERROR_INIT_FAILED;
     }
     g_context_valid = 1;
+#endif
 
     if (rewamp_create_device(NULL) != MA_SUCCESS) {
         ma_context_uninit(&g_context);
@@ -794,22 +822,35 @@ RewampResult rewamp_init(void) {
  * we asked for, and every conclusion drawn from "we have 40 ms of slack" would
  * be built on sand. Read it back instead of believing it. */
 int rewamp_device_period_frames(void) {
+#ifdef __EMSCRIPTEN__
+    return g_device_valid ? rewamp_web_device_period_frames() : 0;
+#endif
     return g_device_valid ? (int)g_device.playback.internalPeriodSizeInFrames : 0;
 }
 
 int rewamp_device_requested_period_ms(void) { return REWAMP_PERIOD_MS; }
 
 int rewamp_device_periods(void) {
+#ifdef __EMSCRIPTEN__
+    return g_device_valid ? rewamp_web_device_capacity_frames()
+                            / rewamp_web_device_period_frames() : 0;
+#endif
     return g_device_valid ? (int)g_device.playback.internalPeriods : 0;
 }
 
 int rewamp_device_sample_rate(void) {
+#ifdef __EMSCRIPTEN__
+    return g_device_valid ? 44100 : 0;   /* l'AudioContext est ouvert à 44100 */
+#endif
     return g_device_valid ? (int)g_device.playback.internalSampleRate : 0;
 }
 
 void rewamp_uninit(void) {
     if (!g_initialized) return;
     rewamp_unload();
+#ifdef __EMSCRIPTEN__
+    if (g_device_valid) { rewamp_web_device_uninit(); g_device_valid = 0; }
+#endif
     if (g_device_valid) { ma_device_uninit(&g_device); g_device_valid = 0; }
     if (g_context_valid) { ma_context_uninit(&g_context); g_context_valid = 0; }
     ma_engine_uninit(&g_engine);
@@ -1395,8 +1436,8 @@ RewampResult rewamp_play(void) {
     // A pause may have SUSPENDED the whole device (see rewamp_device_suspend —
     // iOS Now Playing ignores playbackRate=0 while the audio unit runs).
     // Restart it before the sound; a no-op when it never stopped.
-    if (ma_device_get_state(&g_device) != ma_device_state_started) {
-        if (ma_device_start(&g_device) != MA_SUCCESS)
+    if (!rewamp_dev_started()) {
+        if (rewamp_dev_start() != MA_SUCCESS)
             return REWAMP_ERROR_INIT_FAILED;
     }
     // Resuming a waveform mid-cycle from zero is a step discontinuity — i.e. a
@@ -1418,7 +1459,7 @@ RewampResult rewamp_pause(void) {
     if (!g_initialized) return REWAMP_ERROR_NOT_INITIALIZED;
     if (rewamp_load_busy_for_caller()) return REWAMP_ERROR_BUSY;
     if (!g_sound_loaded) return REWAMP_ERROR_NO_SOUND;
-    if (ma_device_get_state(&g_device) != ma_device_state_started) {
+    if (!rewamp_dev_started()) {
         // Device not running (iOS session interruption — Spotify took the
         // output — or an earlier suspend): the fade below would NEVER land.
         // Its stop is keyed on the ENGINE clock, which only advances when the
@@ -1455,7 +1496,7 @@ RewampResult rewamp_device_suspend(void) {
     if (rewamp_load_busy_for_caller()) return REWAMP_ERROR_BUSY;
     /* Only while genuinely paused — a play racing the delayed suspend wins. */
     if (g_sound_loaded && ma_sound_is_playing(&g_sound)) return REWAMP_OK;
-    ma_device_stop(&g_device);
+    rewamp_dev_stop();
     g_dev_last_us = 0;   /* else the resume gap logs as a giant device-late */
     return REWAMP_OK;
 }
@@ -1626,6 +1667,11 @@ static int rewamp_loop_lifts_live(const RewampPluginVTable* vt) {
         "libvgm",   /* loopCount relu à chaque PLREVT_LOOP — vgm_configure_loop */
         "vgmstream", /* config.play_forever relu à chaque bloc — vgm_configure_loop_fn */
         "adlmidi",  /* adl_setLoopEnabled relu en fin de morceau — mesuré */
+        "opnmidi",  /* même séquenceur que libADLMIDI */
+        "asap",     /* currentDuration levée en vol — asap_configure_loop */
+        "pxtone",   /* _moo_b_loop relu à la fin — pxtone_configure_loop_impl */
+        "hivelytracker", /* fin de passe ignorée par read() — hvl_configure_loop */
+        "nsfplay",  /* PLAY_ADVANCE relu par CheckTerminal — nsfplay_configure_loop */
         NULL,
     };
     if (vt == NULL || vt->name == NULL || vt->configure_loop == NULL) return 0;
@@ -1727,6 +1773,9 @@ extern int         rewamp_kss_probe_base(void);
 #endif
 #ifdef REWAMP_WITH_ADLMIDI
 extern int         rewamp_adlmidi_probe_subsong_count(const char* path);
+#endif
+#ifdef REWAMP_WITH_OPNMIDI
+extern int         rewamp_opnmidi_probe_subsong_count(const char* path);
 #endif
 #ifdef REWAMP_WITH_OPENMPT
 extern int         rewamp_openmpt_probe_subsong_count(const char* path);
@@ -1928,6 +1977,17 @@ static int rewamp_probe_subsong_count_locked(const char* path) {
         }
     }
 #endif
+#if defined(REWAMP_WITH_OPNMIDI) && !defined(REWAMP_WITH_ADLMIDI)
+    // Same sequencer, same XMI songs: only when libADLMIDI is not built.
+    {
+        const int n = rewamp_opnmidi_probe_subsong_count(path);
+        if (n > 1) {
+            s_probe_title_fn    = NULL;
+            s_probe_duration_fn = NULL;
+            return n;
+        }
+    }
+#endif
 #ifdef REWAMP_WITH_OPENMPT
     // Tracker modules (s3m/xm/it/mod/…) can hold several subsongs (order-list
     // sequences). Only claim when there really are >1 — a single-song module
@@ -1957,7 +2017,7 @@ static int rewamp_probe_subsong_count_locked(const char* path) {
     }
 #endif
 #ifdef REWAMP_WITH_SNDH
-    // .sndh files commonly bundle several subsongs (up to 128); SndhFile's own
+    // .sndh files commonly bundle several subsongs (up to 128); AtariAudio's own
     // header parsing gives the exact count + per-subsong titles/durations.
     {
         const int n = rewamp_sndh_probe_subsong_count(path);

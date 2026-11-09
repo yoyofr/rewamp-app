@@ -1,0 +1,22 @@
+tildearrow/furnace tag dev258 (95db18eae, 2026-11-05)
+https://github.com/tildearrow/furnace
+
+Previous base: 78e04377f (2026-01-24, dev244), vendored via Modizer's libfurnace.
+
+third_party/furnace/ = upstream dev258, restricted to the engine dirs we compile
+(src/ minus gui/, extern/ chip cores + fmt/adpcm submodules at the same pins),
++ src/modizer/ (FurnacePlayer, chip rename header, export stubs — ours),
++ extern/SAASound/src/saasound_cmake_config.h (static configure_file output),
++ rewamp-local.patch applied (8 files).
+
+Resync recipe (2026-11-06):
+ 1. clone upstream, `git checkout <tag>`, `git apply -3 rewamp-local.patch`.
+ 2. diff the ENGINE_SOURCES list of CMakeLists.txt between old and new base:
+    add/remove the same entries in furnace_sources.cmake (+ new dependency
+    libs: klattsch-cpp/src/*.cpp, without klattsch_text.cpp).
+ 3. new include dirs go to cmake/rewamp.cmake AND both podspecs.
+ 4. standalone check: compile every TU of furnace_sources.cmake with the
+    podspec flags, link a FurnacePlayer harness, render known .dmf/.fur/.ftm
+    and compare levels with the previous version (identical expected).
+ 5. check new C symbols against the whole framework (collisions with libvgm,
+    adplug, pmdmini…): `nm` of the new objects vs the built rewamp_audio.

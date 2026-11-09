@@ -22,22 +22,33 @@
 #include "instrument.h"
 #include "song.h"
 #include "../ta-log.h"
+#include <map>
 
-DivSysDef* DivEngine::sysDefs[DIV_MAX_CHIP_DEFS];
-DivSystem DivEngine::sysFileMapFur[DIV_MAX_CHIP_DEFS];
-DivSystem DivEngine::sysFileMapDMF[DIV_MAX_CHIP_DEFS];
+// +1 for safety
+DivSysDef* DivEngine::sysDefs[DIV_SYSTEM_MAX+1];
 
-DivSystem DivEngine::systemFromFileFur(unsigned char val) {
-  return sysFileMapFur[val];
+static std::map<unsigned short,DivSystem> sysFileMapFur;
+static std::map<unsigned short,DivSystem> sysFileMapDMF;
+
+DivSystem DivEngine::systemFromFileFur(unsigned short val) {
+  auto ret=sysFileMapFur.find(val);
+  if (ret!=sysFileMapFur.cend()) {
+    return ret->second;
+  }
+  return DIV_SYSTEM_NULL;
 }
 
-unsigned char DivEngine::systemToFileFur(DivSystem val) {
+unsigned short DivEngine::systemToFileFur(DivSystem val) {
   if (sysDefs[val]==NULL) return 0;
   return sysDefs[val]->id;
 }
 
 DivSystem DivEngine::systemFromFileDMF(unsigned char val) {
-  return sysFileMapDMF[val];
+  auto ret=sysFileMapDMF.find(val);
+  if (ret!=sysFileMapDMF.cend()) {
+    return ret->second;
+  }
+  return DIV_SYSTEM_NULL;
 }
 
 unsigned char DivEngine::systemToFileDMF(DivSystem val) {
@@ -541,6 +552,11 @@ void DivEngine::registerSystems() {
     {0x63, {DIV_CMD_FM_AMS, _("63xx: Set LFO AM depth (0 to 3)")}},
   };
 
+  EffectHandlerMap fmOPNTestPostEffectHandlerMap(fmOPNPostEffectHandlerMap);
+  fmOPNTestPostEffectHandlerMap.insert({
+    {0x6c, {DIV_CMD_TEST_REG, _("6Cxx: Set test register $21 (dangerous)"), constVal<0x21>, effectVal}},
+  });
+
   EffectHandlerMap fmOPMPostEffectHandlerMap(fmOPNPostEffectHandlerMap);
   fmOPMPostEffectHandlerMap.insert({
     {0x10, {DIV_CMD_STD_NOISE_FREQ, _("10xx: Set noise frequency (xx: value; 0 disables noise)")}},
@@ -550,6 +566,13 @@ void DivEngine::registerSystems() {
     {0x1f, {DIV_CMD_FM_PM_DEPTH, _("1Fxx: Set PM depth (0 to 7F)"), effectValAnd<127>}},
     {0x55, {DIV_CMD_FM_DT2, _("55xy: Set detune 2 (x: operator from 1 to 4 (0 for all ops); y: detune from 0 to 3)"), effectOpVal<4>, effectValAnd<3>}},
     {0x60, {DIV_CMD_FM_OPMASK, _("60xx: Set operator mask (bits 0-3)")}},
+    // I know this is the wrong command name. I don't feel like adding a new command just for this.
+    {0x66, {DIV_CMD_ES5506_ENVELOPE_LVRAMP, _("66xx: Set TL ramp time (OPP/OPZ only!)")}},
+  });
+
+  EffectHandlerMap fmOPMTestPostEffectHandlerMap(fmOPNPostEffectHandlerMap);
+  fmOPMTestPostEffectHandlerMap.insert({
+    {0x6c, {DIV_CMD_TEST_REG, _("6Cxx: Set test register $01/OPM $09/OPP (dangerous)"), constVal<0>, effectVal}},
   });
 
   EffectHandlerMap fmOPZPostEffectHandlerMap(fmOPMPostEffectHandlerMap);
@@ -562,8 +585,12 @@ void DivEngine::registerSystems() {
     {0x2a, {DIV_CMD_FM_WS, _("2Axy: Set waveform (x: operator from 1 to 4 (0 for all ops); y: waveform from 0 to 7)"), effectOpVal<4>, effectValAnd<7>}},
     {0x2b, {DIV_CMD_FM_EG_SHIFT, _("2Bxy: Set envelope generator shift (x: operator from 1 to 4 (0 for all ops); y: shift from 0 to 3)"), effectOpVal<4>, effectValAnd<3>}},
     {0x2c, {DIV_CMD_FM_FINE, _("2Cxy: Set fine multiplier (x: operator from 1 to 4 (0 for all ops); y: fine)"), effectOpVal<4>, effectValAnd<15>}},
-    {0x64, {DIV_CMD_FM_FMS2, _("64xx: Set LFO2 FM depth (0 to 7)")}},
-    {0x65, {DIV_CMD_FM_AMS2, _("65xx: Set LFO2 AM depth (0 to 3)")}},
+    {0x2d, {DIV_CMD_FM_LFO3, _("2Dxx: Set LFO 3 (bit 7: shape; bit 0-6: speed)")}},
+    {0x2e, {DIV_CMD_FM_LFO4, _("2Exx: Set LFO 4 (bit 7: shape; bit 0-6: speed)")}},
+    {0x60, {DIV_CMD_FM_OPMASK, _("60xx: Set operator mask (bits 0-3)")}},
+    // I know this is the wrong command name. I don't feel like adding a new command just for this.
+    {0x66, {DIV_CMD_ES5506_ENVELOPE_LVRAMP, _("66xx: Set TL ramp time")}},
+    {0x6c, {DIV_CMD_TEST_REG, _("6Cxx: Set test register $09 (dangerous)"), constVal<0x09>, effectVal}},
   });
   const EffectHandler fmOPZFixFreqHandler[4]={
     {DIV_CMD_FM_FIXFREQ, _("3xyy: Set fixed frequency of operator 1 (x: octave from 0 to 7; y: frequency)"), constVal<0>, effectValLong<11>},
@@ -580,12 +607,17 @@ void DivEngine::registerSystems() {
     {0x55, {DIV_CMD_FM_SSG, _("55xy: Set SSG envelope (x: operator from 1 to 4 (0 for all ops); y: 0-7 on, 8 off)"), effectOpVal<4>, effectValAnd<15>}},
   });
   EffectHandlerMap fmOPN2PostEffectHandlerMap(fmOPNPostEffectHandlerMap);
-
   fmOPNPostEffectHandlerMap.insert(ayPostEffectHandlerMap.begin(), ayPostEffectHandlerMap.end());
+
+  fmOPN2PostEffectHandlerMap.insert({
+    {0x6c, {DIV_CMD_TEST_REG, _("6Cxx: Set test register $21 (dangerous)"), constVal<0x21>, effectVal}},
+    {0x6d, {DIV_CMD_TEST_REG, _("6Dxx: Set test register $2C (dangerous)"), constVal<0x2c>, effectVal}},
+  });
 
   EffectHandlerMap fmOPNAPostEffectHandlerMap(fmOPNPostEffectHandlerMap);
   fmOPNAPostEffectHandlerMap.insert({
     {0x1f, {DIV_CMD_ADPCMA_GLOBAL_VOLUME, _("1Fxx: Set ADPCM-A global volume (0 to 3F)")}},
+    {0x6d, {DIV_CMD_TEST_REG, _("6Dxx: Set test register $12 (dangerous)"), constVal<0x12>, effectVal}},
   });
 
   EffectHandlerMap fmOPLLPostEffectHandlerMap={
@@ -607,6 +639,7 @@ void DivEngine::registerSystems() {
     {0x57, {DIV_CMD_FM_DR, _("57xx: Set decay of operator 1 (0 to F)"), constVal<0>, effectValAnd<15>}},
     {0x58, {DIV_CMD_FM_DR, _("58xx: Set decay of operator 2 (0 to F)"), constVal<1>, effectValAnd<15>}},
     {0x5b, {DIV_CMD_FM_KSR, _("5Bxy: Set whether key will scale envelope (x: operator from 1 to 2 (0 for all ops); y: enabled)"), effectOpVal<2>, effectValAnd<1>}},
+    {0x6c, {DIV_CMD_TEST_REG, _("6Cxx: Set test register $01 (dangerous)"), constVal<0x01>, effectVal}},
   };
 
   EffectHandlerMap fmOPLPostEffectHandlerMap={
@@ -636,6 +669,7 @@ void DivEngine::registerSystems() {
     {0x59, {DIV_CMD_FM_DR, _("59xx: Set decay of operator 3 (0 to F)"), constVal<2>, effectValAnd<15>}},
     {0x5a, {DIV_CMD_FM_DR, _("5Axx: Set decay of operator 4 (0 to F)"), constVal<3>, effectValAnd<15>}},
     {0x5b, {DIV_CMD_FM_KSR, _("5Bxy: Set whether key will scale envelope (x: operator from 1 to 4 (0 for all ops); y: enabled)"), effectOpVal<4>, effectValAnd<1>}},
+    {0x6c, {DIV_CMD_TEST_REG, _("6Cxx: Set test register $01 (dangerous)"), constVal<0x01>, effectVal}},
   };
 
   EffectHandlerMap fmOPL4PostEffectHandlerMap(fmOPLPostEffectHandlerMap);
@@ -655,6 +689,7 @@ void DivEngine::registerSystems() {
     {0x2d, {DIV_CMD_MULTIPCM_PSEUDO_REVERB, _("2Dxx: PCM Pseudo Reverb"), effectValAnd<1>}},
     {0x2e, {DIV_CMD_MULTIPCM_LFO_RESET, _("2Exx: PCM LFO Reset"), effectValAnd<1>}},
     {0x2f, {DIV_CMD_MULTIPCM_LEVEL_DIRECT, _("2Fxx: PCM Level Direct"), effectValAnd<1>}},
+    {0x6D, {DIV_CMD_TEST_REG, _("6Dxx: Set test register $00 (dangerous)"), constVal<0x00>, effectVal}},
   });
 
   EffectHandlerMap multiPCMPostEffectHandlerMap={
@@ -691,6 +726,11 @@ void DivEngine::registerSystems() {
   EffectHandlerMap waveOnlyEffectHandlerMap={
     {0x10, {DIV_CMD_WAVE, _("10xx: Set waveform")}},
   };
+
+  EffectHandlerMap SCCPostEffectHandlerMap=(waveOnlyEffectHandlerMap);
+  SCCPostEffectHandlerMap.insert({
+    {0x6c, {DIV_CMD_TEST_REG, _("6Cxx: SCC(+) deformation/test register"), constVal<0>, effectVal}},
+  });       
 
   EffectHandlerMap segaPCMPostEffectHandlerMap={
     {0x20, {DIV_CMD_SAMPLE_FREQ, _("20xx: Set PCM frequency")}}
@@ -734,7 +774,8 @@ void DivEngine::registerSystems() {
     {0x58, {DIV_CMD_FM_DR, _("58xx: Set decay of operator 2 (0 to F)"), constVal<1>, effectValAnd<15>}},
     {0x59, {DIV_CMD_FM_DR, _("59xx: Set decay of operator 3 (0 to F)"), constVal<2>, effectValAnd<15>}},
     {0x5a, {DIV_CMD_FM_DR, _("5Axx: Set decay of operator 4 (0 to F)"), constVal<3>, effectValAnd<15>}},
-    {0x5b, {DIV_CMD_FM_KSR, _("5Bxy: Set whether key will scale envelope (x: operator from 1 to 4 (0 for all ops); y: enabled)"), effectOpVal<4>, effectValAnd<1>}}
+    {0x5b, {DIV_CMD_FM_KSR, _("5Bxy: Set whether key will scale envelope (x: operator from 1 to 4 (0 for all ops); y: enabled)"), effectOpVal<4>, effectValAnd<1>}},
+    {0x6c, {DIV_CMD_TEST_REG, _("6Cxx: Set test register $501 (dangerous)"), constVal<0x501>, effectVal}},
   };
   const EffectHandler fmESFMFixFreqFNumHandler[4]={
     {DIV_CMD_FM_FIXFREQ, _("3xyy: Set fixed frequency F-num of operator 1 (x: high 2 bits from 0 to 3; y: low 8 bits of F-num)"), constVal<4>, effectValLong<10>},
@@ -1046,7 +1087,8 @@ void DivEngine::registerSystems() {
     _("this was Yamaha's first integrated FM chip.\nit was used in several synthesizers, computers and arcade boards."),
     DivChanDefFunc(fmChanDef<DIV_CH_FM,DIV_INS_OPM>),
     fmEffectHandlerMap,
-    fmOPMPostEffectHandlerMap
+    fmOPMPostEffectHandlerMap,
+    fmOPMTestPostEffectHandlerMap
   );
 
   sysDefs[DIV_SYSTEM_YM2612]=new DivSysDef(
@@ -1062,7 +1104,8 @@ void DivEngine::registerSystems() {
       DivChanDef(_("FM 6"), "F6", DIV_CH_FM, DIV_INS_FM, DIV_INS_AMIGA),
     }),
     fmOPN2EffectHandlerMap,
-    fmOPN2PostEffectHandlerMap
+    fmOPN2PostEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap
   );
 
   sysDefs[DIV_SYSTEM_TIA]=new DivSysDef(
@@ -1075,7 +1118,7 @@ void DivEngine::registerSystems() {
   );
 
   sysDefs[DIV_SYSTEM_SAA1099]=new DivSysDef(
-    _("Philips SAA1099"), NULL, 0x97, 0, 6, 6, 6,
+    _("Philips SAA1099 (no software timers)"), NULL, 0x97, 0, 6, 6, 6,
     false, true, 0x171, false, 0, 0, 0,
     _("supposedly an upgrade from the AY-3-8910, this was present on the Creative Music System (Game Blaster) and SAM Coupé."),
     DivChanDefFunc({
@@ -1085,6 +1128,28 @@ void DivEngine::registerSystems() {
       DivChanDef(_("PSG 4"), "S4", DIV_CH_PULSE, DIV_INS_SAA1099),
       DivChanDef(_("PSG 5"), "S5", DIV_CH_PULSE, DIV_INS_SAA1099),
       DivChanDef(_("PSG 6"), "S6", DIV_CH_PULSE, DIV_INS_SAA1099),
+    }),
+    {},
+    {
+      {0x10, {DIV_CMD_STD_NOISE_MODE, _("10xy: Set channel mode (x: noise; y: tone)")}},
+      {0x11, {DIV_CMD_STD_NOISE_FREQ, _("11xx: Set noise frequency")}},
+      {0x12, {DIV_CMD_SAA_ENVELOPE, _("12xx: Setup envelope (refer to docs for more information)")}},
+    }
+  );
+
+  sysDefs[DIV_SYSTEM_SAA1099_NEW]=new DivSysDef(
+    _("Philips SAA1099"), NULL, 0xe9, 0, 8, 8, 8,
+    false, true, 0x171, false, 0, 0, 0,
+    _("supposedly an upgrade from the AY-3-8910, this was present on the Creative Music System (Game Blaster) and SAM Coupé."),
+    DivChanDefFunc({
+      DivChanDef(_("PSG 1"),   "S1", DIV_CH_PULSE, DIV_INS_SAA1099),
+      DivChanDef(_("PSG 2"),   "S2", DIV_CH_PULSE, DIV_INS_SAA1099),
+      DivChanDef(_("PSG 3"),   "S3", DIV_CH_PULSE, DIV_INS_SAA1099),
+      DivChanDef(_("Timer 1"), "T1", DIV_CH_NOISE, DIV_INS_SAA1099),
+      DivChanDef(_("PSG 4"),   "S4", DIV_CH_PULSE, DIV_INS_SAA1099),
+      DivChanDef(_("PSG 5"),   "S5", DIV_CH_PULSE, DIV_INS_SAA1099),
+      DivChanDef(_("PSG 6"),   "S6", DIV_CH_PULSE, DIV_INS_SAA1099),
+      DivChanDef(_("Timer 2"), "T2", DIV_CH_NOISE, DIV_INS_SAA1099),
     }),
     {},
     {
@@ -1259,7 +1324,8 @@ void DivEngine::registerSystems() {
       DivChanDef(_("PSG 3"), "S3", DIV_CH_PULSE, DIV_INS_AY)
     }),
     fmEffectHandlerMap,
-    fmOPNPostEffectHandlerMap
+    fmOPNPostEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap
   );
 
   sysDefs[DIV_SYSTEM_YM2203_EXT]=new DivSysDef(
@@ -1277,9 +1343,9 @@ void DivEngine::registerSystems() {
       DivChanDef(_("PSG 2")   , "S2", DIV_CH_PULSE, DIV_INS_AY),
       DivChanDef(_("PSG 3")   , "S3", DIV_CH_PULSE, DIV_INS_AY)
     }),
-    {},
     fmOPNPostEffectHandlerMap,
-    fmExtChEffectHandlerMap
+    fmExtChEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap
   );
 
   sysDefs[DIV_SYSTEM_YM2203_CSM]=new DivSysDef(
@@ -1299,9 +1365,9 @@ void DivEngine::registerSystems() {
       DivChanDef(_("PSG 2")    , "S2" , DIV_CH_PULSE, DIV_INS_AY),
       DivChanDef(_("PSG 3")    , "S3" , DIV_CH_PULSE, DIV_INS_AY)
     }),
-    {},
     fmOPNPostEffectHandlerMap,
-    fmExtChEffectHandlerMap
+    fmExtChEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap
   );
 
   sysDefs[DIV_SYSTEM_YM2608]=new DivSysDef(
@@ -1327,7 +1393,8 @@ void DivEngine::registerSystems() {
       DivChanDef(_("ADPCM")   , "P" , DIV_CH_PCM  , DIV_INS_ADPCMB, DIV_INS_AMIGA)
     }),
     fmEffectHandlerMap,
-    fmOPNAPostEffectHandlerMap
+    fmOPNAPostEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap
   );
 
   sysDefs[DIV_SYSTEM_YM2608_EXT]=new DivSysDef(
@@ -1355,9 +1422,9 @@ void DivEngine::registerSystems() {
       DivChanDef(_("Rim")     , "RM", DIV_CH_NOISE, DIV_INS_ADPCMA),
       DivChanDef(_("ADPCM")   , "P" , DIV_CH_PCM  , DIV_INS_ADPCMB, DIV_INS_AMIGA)
     }),
-    {},
     fmOPNAPostEffectHandlerMap,
-    fmExtChEffectHandlerMap
+    fmExtChEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap
   );
 
   sysDefs[DIV_SYSTEM_YM2608_CSM]=new DivSysDef(
@@ -1387,9 +1454,9 @@ void DivEngine::registerSystems() {
       DivChanDef(_("Rim")      , "RM" , DIV_CH_NOISE, DIV_INS_ADPCMA),
       DivChanDef(_("ADPCM")    , "P"  , DIV_CH_PCM  , DIV_INS_ADPCMB, DIV_INS_AMIGA)
     }),
-    {},
     fmOPNAPostEffectHandlerMap,
-    fmExtChEffectHandlerMap
+    fmExtChEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap
   );
 
   sysDefs[DIV_SYSTEM_OPL]=new DivSysDef(
@@ -1503,7 +1570,7 @@ void DivEngine::registerSystems() {
 
   sysDefs[DIV_SYSTEM_OPZ]=new DivSysDef(
     _("Yamaha YM2414 (OPZ)"), NULL, 0x98, 0, 8, 8, 8,
-    true, false, 0, false, 0, 0, 0,
+    true, false, 0x150, false, 0, 0, 0,
     _("like OPM, but with more waveforms, fixed frequency mode and totally... undocumented.\nused in the Yamaha TX81Z and some other synthesizers."),
     DivChanDefFunc(fmChanDef<DIV_CH_FM,DIV_INS_OPZ>),
     {
@@ -1522,7 +1589,7 @@ void DivEngine::registerSystems() {
   );
 
   sysDefs[DIV_SYSTEM_SEGAPCM]=new DivSysDef(
-    _("SegaPCM"), NULL, 0x9b, 0, 16, 16, 16,
+    _("SegaPCM"), NULL, 0x9b, 0, 16, 8, 16,
     false, true, 0x151, false, 1U<<DIV_SAMPLE_DEPTH_8BIT, 0, 0,
     _("used in some Sega arcade boards (like OutRun), and usually paired with a YM2151."),
     DivChanDefFunc(stockChanDef<DIV_CH_PCM,DIV_INS_SEGAPCM,DIV_INS_AMIGA>),
@@ -1592,7 +1659,8 @@ void DivEngine::registerSystems() {
       DivChanDef(_("ADPCM-B")  , "B" , DIV_CH_PCM  , DIV_INS_ADPCMB, DIV_INS_AMIGA)
     }),
     fmEffectHandlerMap,
-    fmOPNAPostEffectHandlerMap
+    fmOPNAPostEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap
   );
 
   sysDefs[DIV_SYSTEM_SFX_BEEPER]=new DivSysDef(
@@ -1623,6 +1691,7 @@ void DivEngine::registerSystems() {
     }),
     fmOPN2EffectHandlerMap,
     fmOPN2PostEffectHandlerMap,
+//    fmOPN2TestPostEffectHandlerMap,
     fmExtChEffectHandlerMap
   );
 
@@ -1652,7 +1721,8 @@ void DivEngine::registerSystems() {
     false, true, 0x161, false, 0, 32, 256,
     _("a wavetable chip made by Konami for use with the MSX.\nthe last channel shares its wavetable with the previous one though."),
     DivChanDefFunc(simpleChanDef<DIV_CH_WAVE,DIV_INS_SCC>),
-    waveOnlyEffectHandlerMap
+    waveOnlyEffectHandlerMap,
+    SCCPostEffectHandlerMap
   );
 
   sysDefs[DIV_SYSTEM_OPL_DRUMS]=new DivSysDef(
@@ -1768,7 +1838,8 @@ void DivEngine::registerSystems() {
       DivChanDef(_("ADPCM-B")  , "B" , DIV_CH_PCM  , DIV_INS_ADPCMB, DIV_INS_AMIGA)
     }),
     fmEffectHandlerMap,
-    fmOPNAPostEffectHandlerMap
+    fmOPNAPostEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap
   );
 
   sysDefs[DIV_SYSTEM_YM2610_FULL_EXT]=new DivSysDef(
@@ -1794,8 +1865,8 @@ void DivEngine::registerSystems() {
       DivChanDef(_("ADPCM-A 6"), "P6", DIV_CH_PCM  , DIV_INS_ADPCMA, DIV_INS_AMIGA),
       DivChanDef(_("ADPCM-B")  , "B" , DIV_CH_PCM  , DIV_INS_ADPCMB, DIV_INS_AMIGA)
     }),
-    {},
     fmOPNAPostEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap,
     fmExtChEffectHandlerMap
   );
 
@@ -1823,8 +1894,8 @@ void DivEngine::registerSystems() {
       DivChanDef(_("ADPCM-A 6"), "P6" , DIV_CH_PCM  , DIV_INS_ADPCMA, DIV_INS_AMIGA),
       DivChanDef(_("ADPCM-B")  , "B"  , DIV_CH_PCM  , DIV_INS_ADPCMB, DIV_INS_AMIGA)
     }),
-    {},
     fmOPNAPostEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap,
     fmExtChEffectHandlerMap
   );
 
@@ -1957,8 +2028,8 @@ void DivEngine::registerSystems() {
       DivChanDef(_("ADPCM-A 6"), "P6", DIV_CH_PCM  , DIV_INS_ADPCMA, DIV_INS_AMIGA),
       DivChanDef(_("ADPCM-B")  , "B" , DIV_CH_PCM  , DIV_INS_ADPCMB, DIV_INS_AMIGA)
     }),
-    {},
     fmOPNAPostEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap,
     fmExtChEffectHandlerMap
   );
 
@@ -1989,8 +2060,8 @@ void DivEngine::registerSystems() {
       DivChanDef(_("ADPCM-A 6"), "P6" , DIV_CH_PCM  , DIV_INS_ADPCMA, DIV_INS_AMIGA),
       DivChanDef(_("ADPCM-B")  , "B"  , DIV_CH_PCM  , DIV_INS_ADPCMB, DIV_INS_AMIGA)
     }),
-    {},
     fmOPNAPostEffectHandlerMap,
+    fmOPNTestPostEffectHandlerMap,
     fmExtChEffectHandlerMap
   );
 
@@ -2210,7 +2281,8 @@ void DivEngine::registerSystems() {
     false, true, 0x161, false, 0, 32, 256,
     _("this is a variant of Konami's SCC chip with the last channel's wavetable being independent."),
     DivChanDefFunc(simpleChanDef<DIV_CH_WAVE,DIV_INS_SCC>),
-    waveOnlyEffectHandlerMap
+    waveOnlyEffectHandlerMap,
+    SCCPostEffectHandlerMap
   );
 
   EffectHandlerMap suEffectHandlerMap={
@@ -2736,6 +2808,40 @@ void DivEngine::registerSystems() {
     c64PostEffectHandlerMap
   );
 
+  sysDefs[DIV_SYSTEM_NAMCO_POLEPOS]=new DivSysDef(
+    _("Namco Pole Position WSG"), NULL, 0xe4, 0, 8, 8, 8,
+    false, true, 0, false, 0, 32, 16,
+    _("a wavetable sound generator used in Pole Position, with 8 voices and quadraphonic sound."),
+    DivChanDefFunc(simpleChanDef<DIV_CH_WAVE,DIV_INS_NAMCO>),
+    namcoEffectHandlerMap
+  );
+
+  sysDefs[DIV_SYSTEM_KLATTSCH]=new DivSysDef(
+    _("klattsch"), NULL, 0xe7, 0, 1, 1, 16,
+    false, true, 0, false, 0, 0, 0,
+    _("Klatt-style parallel-formant speech synthesizer."),
+    DivChanDefFunc(simpleChanDef<DIV_CH_NOISE,DIV_INS_KLATTSCH>),
+    {
+      {0x10, {DIV_CMD_KLATTSCH_PHONEME, _("10xx: Set phoneme (ARPABET index; type names directly in the pattern)")}},
+      {0x11, {DIV_CMD_KLATTSCH_TRANSITION, _("11xx: Set spectral transition time (ticks)")}},
+      {0x12, {DIV_CMD_KLATTSCH_FORMANT, _("12xx: Set F1 frequency (xx*10 Hz)"), constVal<0>, effectVal}},
+      {0x13, {DIV_CMD_KLATTSCH_FORMANT, _("13xx: Set F2 frequency (xx*16 Hz)"), constVal<1>, effectVal}},
+      {0x14, {DIV_CMD_KLATTSCH_FORMANT, _("14xx: Set F3 frequency (xx*16 Hz)"), constVal<2>, effectVal}},
+      {0x15, {DIV_CMD_KLATTSCH_AMP, _("15xx: Set F1 amplitude (00-FF)"), constVal<0>, effectVal}},
+      {0x16, {DIV_CMD_KLATTSCH_AMP, _("16xx: Set F2 amplitude (00-FF)"), constVal<1>, effectVal}},
+      {0x17, {DIV_CMD_KLATTSCH_AMP, _("17xx: Set F3 amplitude (00-FF)"), constVal<2>, effectVal}},
+      {0x18, {DIV_CMD_KLATTSCH_VOICING, _("18xx: Set voicing (00-FE; FF: instrument default)")}},
+      {0x19, {DIV_CMD_KLATTSCH_ASPIRATION, _("19xx: Set aspiration (00-FE; FF: instrument default)")}},
+      {0x1A, {DIV_CMD_KLATTSCH_TILT, _("1Axx: Set spectral tilt (signed; 00-7F: positive, 80-FE: negative; FF: instrument default)")}},
+      {0x1B, {DIV_CMD_KLATTSCH_EFFORT, _("1Bxx: Set glottal effort (00-FE; FF: instrument default)")}},
+      {0x1C, {DIV_CMD_KLATTSCH_VIBRATO, _("1Cxy: Vibrato (x: rate in Hz; y: depth, 4 Hz steps)")}},
+      {0x1D, {DIV_CMD_KLATTSCH_TREMOLO, _("1Dxy: Tremolo (x: rate in Hz; y: depth)")}},
+      {0x1E, {DIV_CMD_KLATTSCH_GAIN, _("1Exx: Set gain (01-FF: xx/16; 00: instrument default)")}},
+      {0x1F, {DIV_CMD_KLATTSCH_BW_SCALE, _("1Fxx: Formant bandwidth scale (01-FF: xx/64; 00: instrument default)")}},
+      {0x20, {DIV_CMD_KLATTSCH_FORMANT_SHIFT, _("20xx: Formant shift (01-FF: xx/64; 00: instrument default)")}},
+    }
+  );
+
   sysDefs[DIV_SYSTEM_DUMMY]=new DivSysDef(
     _("Dummy System"), NULL, 0xfd, 0, 8, 1, 128,
     false, true, 0, false, 0, 0, 0,
@@ -2743,7 +2849,7 @@ void DivEngine::registerSystems() {
     DivChanDefFunc(stockChanDef<DIV_CH_NOISE,DIV_INS_STD>)
   );
 
-  for (int i=0; i<DIV_MAX_CHIP_DEFS; i++) {
+  for (int i=0; i<DIV_SYSTEM_MAX; i++) {
     if (sysDefs[i]==NULL) continue;
     if (sysDefs[i]->id!=0) {
       sysFileMapFur[sysDefs[i]->id]=(DivSystem)i;

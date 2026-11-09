@@ -18,6 +18,7 @@
 #include "rewamp_assets.h"
 #include "ModizerVoicesData.h"   /* m_voice_buff / vgm_last_note / mute mask */
 #include "ModizerConstants.h"
+#include "rewamp_gm_drums.h"   /* un index d'instrument par TOUCHE du canal 10 */
 #include <math.h>
 
 #include "fluidlite.h"
@@ -45,6 +46,8 @@
  * hooks, flushed into the shared voice rings once per 64-frame block). ──── */
 static float g_cap[MIDI_CHANNELS][64];
 static int   g_note_count[MIDI_CHANNELS];   /* active notes per voice */
+/* Velocity to restore after an attack column (see TML_NOTE_ON), 0 = none. */
+static unsigned g_attack_vel[MIDI_CHANNELS];
 static uint8_t g_chan_prog[MIDI_CHANNELS];  /* current program per MIDI channel */
 
 /* Compact channel→voice map: only the channels the FILE actually uses get a
@@ -94,6 +97,7 @@ void rewamp_fluid_block_done(int len) {
 static void midi_silence_note_state(void) {
     for (int c = 0; c < MIDI_CHANNELS; c++) {
         g_note_count[c] = 0;
+        g_attack_vel[c] = 0;
         vgm_last_note[c] = 0;
         vgm_last_vol[c]  = 0;
     }
@@ -210,10 +214,9 @@ static int midi_probe(const char* ext, const uint8_t* header, size_t headerSize)
  * le programme 0, la voie de percussion tombait sur l'index 1 — le PREMIER
  * preset de la SoundFont, « Piano Merlin » sur celle par défaut (constaté sur
  * un MIDI de Doom, 2026-09-12) — et son nom de kit écrasait en prime la case
- * du piano. Les kits vivent donc au-dessus de 128; l'octet plafonne à 255, ce
- * qui laisse 127 kits, bien plus que ce qu'une SoundFont expose. */
+ * du piano. La batterie vit donc au-dessus de 128, une case par TOUCHE (voir
+ * rewamp_gm_drums.h); le kit, lui, nomme la VOIE. */
 #define MIDI_DRUM_CHANNEL 9
-#define MIDI_DRUM_INSTR_BASE 129
 
 /* Le programme à envoyer à FluidLite pour ce canal.
  *
@@ -230,14 +233,10 @@ static int midi_program_for(const MidiDec* d, int chan, int prog) {
     return (int)kMt32ToGm[prog & 0x7F];
 }
 
-static unsigned midi_instr_index(int chan) {
+static unsigned midi_instr_index(int chan, int key) {
     if (chan < 0 || chan >= MIDI_CHANNELS) return 0;
-    const unsigned prog = (unsigned)g_chan_prog[chan];
-    if (chan == MIDI_DRUM_CHANNEL) {
-        const unsigned idx = MIDI_DRUM_INSTR_BASE + prog;
-        return idx > 255u ? 255u : idx;
-    }
-    return prog + 1u;
+    if (chan == MIDI_DRUM_CHANNEL) return rewamp_drum_instr_index(key);
+    return (unsigned)g_chan_prog[chan] + 1u;
 }
 
 /* Le NOM d'une voix suit le programme du canal, et un canal CHANGE
@@ -261,9 +260,11 @@ static void midi_name_voice(MidiDec* d, int chan) {
     if (pname && pname[0]) snprintf(nm, sizeof(nm), "%.*s", (int)sizeof(nm) - 1, pname);
     else                   snprintf(nm, sizeof(nm), "Ch %d", chan + 1);
     rewamp_voice_set_name(v, nm);
-    /* Le nom de l'instrument va dans SA case — celle du kit pour le canal 10,
-     * sinon celle du programme mélodique. */
-    if (pname && pname[0]) rewamp_instrument_set_name((int)midi_instr_index(chan), pname);
+    /* Le nom de l'instrument va dans la case du programme mélodique. Le canal
+     * 10 n'en a pas: ses cases sont celles des TOUCHES, nommées à l'ouverture
+     * (le kit reste le nom de la voie, posé ci-dessus). */
+    if (chan != MIDI_DRUM_CHANNEL && pname && pname[0])
+        rewamp_instrument_set_name((int)midi_instr_index(chan, 0), pname);
 }
 
 static void midi_dispatch(MidiDec* d, const tml_message* m) {
@@ -291,10 +292,16 @@ static void midi_dispatch(MidiDec* d, const tml_message* m) {
                     g_note_count[v]++;
                     vgm_last_note[v] = (unsigned int)
                         (440.0 * pow(2.0, (m->key - 69) / 12.0) + 0.5);
-                    vgm_last_vol[v] = (unsigned int)m->velocity;
+                    /* ATTACK: 255 for the column captured after this read,
+                     * the velocity from the next one on — the notation and
+                     * piano cut a note when its volume RISES, so the same key
+                     * struck again at the same velocity read as one held
+                     * note. Restored at the top of midi_read. */
+                    vgm_last_vol[v] = 255;
+                    g_attack_vel[v] = (unsigned int)m->velocity;
                     /* Piano « par instrument »: le programme GM, 1-based
                      * (0 = aucun). */
-                    vgm_last_instr[v] = midi_instr_index(m->channel);
+                    vgm_last_instr[v] = midi_instr_index(m->channel, m->key);
                 }
             } else {
                 fluid_synth_noteoff(s, m->channel, m->key);
@@ -346,15 +353,23 @@ static void midi_dispatch(MidiDec* d, const tml_message* m) {
 static void midi_close(RewampDecoder* rd);
 
 static RewampDecoder* midi_open(const char* path, RewampAudioFormat* outFormat) {
-    const char* sf2 = midi_soundfont();
-    if (!sf2) return NULL;
-
     /* Strip a ?subsong= suffix (MIDI has no subsongs, but keep fopen clean). */
     char clean[4096];
     strncpy(clean, path, sizeof(clean) - 1);
     clean[sizeof(clean) - 1] = '\0';
     char* q = strchr(clean, '?');
     if (q) *q = '\0';
+
+    /* « Lire avec… »: a SoundFont chosen for THIS file, above the setting —
+     * unreadable (deleted since) ⇒ the setting's. */
+    char chosen[1024];
+    const char* sf2 = NULL;
+    if (rewamp_registry_path_option(clean, "fluidlite", chosen, sizeof(chosen))) {
+        FILE* f = fopen(chosen, "rb");
+        if (f) { fclose(f); sf2 = chosen; }
+    }
+    if (!sf2) sf2 = midi_soundfont();
+    if (!sf2) return NULL;
 
     MidiDec* d = (MidiDec*)calloc(1, sizeof(MidiDec));
     if (!d) return NULL;
@@ -453,26 +468,19 @@ static RewampDecoder* midi_open(const char* path, RewampAudioFormat* outFormat) 
         fluid_sfont_t* sf = fluid_synth_get_sfont(d->synth, 0);
         if (sf && sf->get_preset) {
             for (unsigned p = 0; p < 128; p++) {
-                /* Banque 0: les timbres mélodiques, index p+1. Banque 128: les
-                 * KITS de batterie, index 129+p — deux espaces disjoints (voir
-                 * midi_instr_index). Une banque peut être creuse: get_preset
-                 * rend NULL et on passe. */
+                /* Banque 0: les timbres mélodiques, index p+1 (une banque
+                 * peut être creuse: get_preset rend NULL et on passe). La
+                 * batterie a ses cases à elle, une par touche (voir
+                 * midi_instr_index). */
                 fluid_preset_t* pr = sf->get_preset(sf, 0, p);
                 if (pr) {
                     const char* nm = pr->get_name ? pr->get_name(pr) : NULL;
                     if (nm && nm[0]) rewamp_instrument_set_name((int)p + 1, nm);
                     if (pr->free) pr->free(pr);
                 }
-                const unsigned dIdx = MIDI_DRUM_INSTR_BASE + p;
-                if (dIdx > 255u) continue;
-                fluid_preset_t* dr = sf->get_preset(sf, 128, p);
-                if (dr) {
-                    const char* nm = dr->get_name ? dr->get_name(dr) : NULL;
-                    if (nm && nm[0]) rewamp_instrument_set_name((int)dIdx, nm);
-                    if (dr->free) dr->free(dr);
-                }
             }
         }
+        rewamp_drum_register_names();
     }
     {
         /* Voice names: apply each channel's FIRST program change, read the
@@ -514,6 +522,10 @@ static RewampDecoder* midi_open(const char* path, RewampAudioFormat* outFormat) 
 static uint64_t midi_read(RewampDecoder* rd, float* out, uint64_t frameCount) {
     MidiDec* d = (MidiDec*)rd;
     if (d->time_ms >= d->total_ms && d->next == NULL) return 0;
+    for (int v = 0; v < g_voice_count && v < MIDI_CHANNELS; v++) {
+        if (g_attack_vel[v] && vgm_last_vol[v] == 255) vgm_last_vol[v] = g_attack_vel[v];
+        g_attack_vel[v] = 0;
+    }
 
     uint64_t done = 0;
     while (done < frameCount) {

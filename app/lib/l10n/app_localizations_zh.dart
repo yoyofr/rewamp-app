@@ -743,6 +743,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
+  String get engineDescCpc => 'Amstrad CPC — 在模拟的 CPC 6128 上运行 .dsk 磁盘';
+
+  @override
+  String get engineDescZxSpectrum =>
+      'ZX Spectrum — 在模拟的 Spectrum 48K/128K 上运行 .tap 磁带';
+
+  @override
   String get engineDescSidplayfp => 'Commodore 64 SID（reSIDfp 引擎）';
 
   @override
@@ -791,7 +798,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get engineDescSndh =>
-      'Atari ST .sndh — 真实 68000 模拟 + YM2149 + STE DAC';
+      'Atari ST .sndh — 真实 68000 模拟 + YM2149 + STE DAC · .ym (YM2–YM6, digidrums, SID)';
 
   @override
   String get engineDescLazyusf => 'Nintendo 64 .usf — R4300 模拟 + RSP 音频';
@@ -811,6 +818,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get engineDescOrganya => 'Cave Story .org — Pixel 的原生引擎';
+
+  @override
+  String get engineDescMinibae =>
+      'Beatnik .rmf — Beatnik Audio Engine，90 年代末的网页与游戏音乐';
 
   @override
   String get engineDescNtgs => 'Apple IIGS（Ensoniq 5503）— NoiseTracker GS 模块';
@@ -1400,6 +1411,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get queueAutoplayRow => '由自动播放添加';
+
+  @override
+  String get queueRadioRow => '由电台添加';
 
   @override
   String get queueClearConfirmTitle => '清空队列？';
@@ -2720,7 +2734,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsDecodersHelp => '有些格式可由多个引擎播放。选择默认使用哪一个 — 其他格式会自动路由。';
 
   @override
-  String get settingsDecoderAmigaTrackers => 'Amiga trackers（mod、med、okt…）';
+  String get settingsDecoderAmigaTrackers => 'Amiga 模块（mod、med、okt…）';
 
   @override
   String get settingsEngineOpenmptSubtitle => 'Trackers — MOD, XM, S3M, IT…';
@@ -2909,6 +2923,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsNsfQuality => '质量 (nsfplay)';
 
   @override
+  String get settingsNsfFade => '结尾淡出';
+
+  @override
+  String get settingsNsfFadeHelp =>
+      '文件未指定时在曲目结尾淡出（.m3u 或 NSFe 可自行指定）。计入曲目时长。关闭 = 直接停止。';
+
+  @override
   String get settingsLowpassFilter => '低通滤波器';
 
   @override
@@ -3021,6 +3042,49 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsGbsHpFilter => '高通滤波器 (gbsplay)';
+
+  @override
+  String get settingsEnginePsgplaySubtitle => 'Atari ST / SNDH — YM2149 声道混音';
+
+  @override
+  String get settingsPsgMix => 'PSG 声道混音';
+
+  @override
+  String get settingsPsgMixEmpiric => '经验(Atari ST)';
+
+  @override
+  String get settingsPsgMixLinear => '线性';
+
+  @override
+  String get settingsPsgMixStereo => '立体声';
+
+  @override
+  String get settingsPsgMixEmpiricHint =>
+      '按真实 Atari ST 的方式混合三个声道(实测电平):颗粒感的声音,单声道。';
+
+  @override
+  String get settingsPsgMixLinearHint => '三个声道的简单相加:更干净的声音,单声道。';
+
+  @override
+  String get settingsPsgMixStereoHint => '线性混音,每个声道放置在左右之间。';
+
+  @override
+  String settingsPsgPanVoice(String voice) {
+    return '声道 $voice';
+  }
+
+  @override
+  String get settingsPsgPanCentre => '居中';
+
+  @override
+  String settingsPsgPanLeft(int percent) {
+    return '左 $percent %';
+  }
+
+  @override
+  String settingsPsgPanRight(int percent) {
+    return '右 $percent %';
+  }
 
   @override
   String get settingsGbsFilterDmg => 'DMG（经典 GB）';
@@ -4188,48 +4252,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get releaseNotesTitle => '新功能';
 
   @override
-  String get releaseNotesV10Loading => '打开加载缓慢的曲目不再让应用卡住：播放/暂停按钮周围的细圆环表示仍在加载。';
-
-  @override
-  String get releaseNotesV10Piano => '钢琴可视化：同时发声的声部或乐器较多的曲目会分布到更多键盘上。';
-
-  @override
-  String get releaseNotesV10Amiga =>
-      'Amiga：StoneTracker、SUNtronic（TSM 提取）以及更多 Soundtracker 2.6 模块现在可以播放，SoundPlayer 曲目也能在 iOS 上播放。';
-
-  @override
-  String get releaseNotesV10ZxSpectrum =>
-      'ZX Spectrum：可播放 zxart 的 .mt3 文件；Linux 版现已包含 ZXTune 格式和 SAM Coupé 的 .cop 程序。';
-
-  @override
-  String get releaseNotesV10OpenWith => 'macOS 和 iOS：所有支持的格式现在都会出现在“打开方式”中。';
-
-  @override
-  String get releaseNotesV10MtcCrash =>
-      '已修复：部分将 PT3 与 TFM 或 PSG 混合的 .mtc 文件会导致应用崩溃。';
-
-  @override
-  String get releaseNotesV10Podiums =>
-      '全新“领奖台”浏览器：按聚会、年份或比赛类型查看演示场景比赛的获奖作品，并附名人堂。';
-
-  @override
-  String get releaseNotesV10Arcade =>
-      '街机：现可播放 Ensoniq ES5505/ES5506 音乐（Taito F3 等），Apple IIGS 的 VGM 文件不再导致应用崩溃，各引擎已更新（新增 FM-Kingtracker .fmk）。';
-
-  @override
-  String get releaseNotesV10InfoPanel => '信息面板：格式、引擎、声道和循环点置于最前，字段名称突出显示。';
-
-  @override
-  String get releaseNotesV10LocalAlbums =>
-      '专辑和子曲目页面显示所属合集；拖入的压缩包会列出全部曲目，标为“本地”，被替换后不再重复出现。';
-
-  @override
-  String get releaseNotesV10Crossfade => '修复：开启淡入淡出时，比淡化时长更短的曲目听不到。';
-
-  @override
-  String get releaseNotesV10Artwork => '修复：服务器上更换的封面在“重新下载文件”后会在所有地方显示。';
-
-  @override
   String get releaseNotesDataReset => '本版本已重置本地数据。媒体库和播放列表将从账号重建；下载需要重新进行。';
 
   @override
@@ -4667,7 +4689,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
 
   @override
+  String get settingsMidiSynthOpn2 => 'OPN2 FM (Mega Drive / Genesis)';
+
+  @override
   String get settingsEngineAdlmidiSubtitle => '在模拟的 OPL3 芯片上播放 MIDI 和 DOS 游戏音乐';
+
+  @override
+  String get settingsEngineOpnmidiSubtitle =>
+      '在模拟的 OPN2 / OPNA 芯片上播放 MIDI（Mega Drive、PC-98）';
 
   @override
   String get settingsAdlBank => '音色库';
@@ -4690,4 +4719,431 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get engineDescAdlmidi =>
       '在模拟的 OPL3 芯片上播放 MIDI、XMI、DMX MUS、HMI/HMP（AdLib / Sound Blaster）';
+
+  @override
+  String get engineDescOpnmidi =>
+      '在模拟的 OPN2（Mega Drive）或 OPNA（PC-98）芯片上播放 MIDI';
+
+  @override
+  String get fmBanksBuiltIn => '内置';
+
+  @override
+  String get fmBanksImported => '已导入';
+
+  @override
+  String get fmBanksFilterHint => '按名称筛选';
+
+  @override
+  String get fmBanksNoMatch => '没有匹配的音色库';
+
+  @override
+  String get fmBanksImportedEmpty =>
+      '尚未导入音色库。将 .wopl 或 .wopn 文件拖到窗口上、用 Rewamp 打开，或在此导入。';
+
+  @override
+  String fmBankImported(String name, String engine) {
+    return '已导入音色库“$name”并为 $engine 选用';
+  }
+
+  @override
+  String fmBankImportInvalid(String name) {
+    return '“$name”不是 WOPL 或 WOPN 音色库';
+  }
+
+  @override
+  String fmBankDeleteConfirm(String name) {
+    return '删除音色库“$name”？';
+  }
+
+  @override
+  String get fmBanksImportTile => '导入音色库…';
+
+  @override
+  String fmBanksImportSubtitle(String ext) {
+    return '$ext 文件（来自 Wohlstand 的音色库编辑器或合集）。以文件头为准；导入的音色库可在音色库列表中移除。';
+  }
+
+  @override
+  String get fmEmuAccuracyVeryHigh => '非常精确';
+
+  @override
+  String get fmEmuAccuracyGood => '精确';
+
+  @override
+  String get fmEmuAccuracyApproximate => '近似';
+
+  @override
+  String get fmEmuCpuLight => '快速';
+
+  @override
+  String get fmEmuCpuMedium => 'CPU 占用中等';
+
+  @override
+  String get fmEmuCpuHeavy => 'CPU 占用高';
+
+  @override
+  String settingsDefaultFor(String format) {
+    return '$format 的默认播放器';
+  }
+
+  @override
+  String get settingsDefaultForActive => '此引擎播放该格式';
+
+  @override
+  String settingsDefaultForSet(String section) {
+    return '轻触以使用此引擎播放该格式——所有选项也在“$section”中';
+  }
+
+  @override
+  String get settingsDecoderDosMidi => 'DOS 游戏 MIDI（XMI、MUS、HMI…）';
+
+  @override
+  String get playWithTitle => '使用…播放';
+
+  @override
+  String playWithAuto(String engine) {
+    return '自动（$engine）';
+  }
+
+  @override
+  String get playWithPlayingNow => '正在播放';
+
+  @override
+  String get playWithRemember => '记住此选择';
+
+  @override
+  String get playWithRememberOn => '每次播放此文件（或专辑）时';
+
+  @override
+  String get playWithRememberOff => '仅限本次播放';
+
+  @override
+  String get playWithScopeFile => '此文件';
+
+  @override
+  String get playWithScopeAlbum => '整张专辑';
+
+  @override
+  String get playWithApply => '播放';
+
+  @override
+  String playWithCurrent(String engine) {
+    return '引擎：$engine';
+  }
+
+  @override
+  String get settingsForgetPlayWith => '清除“使用…播放”的选择';
+
+  @override
+  String settingsForgetPlayWithSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '已记住 $count 个选择',
+      zero: '没有记住的选择',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsForgetPlayWithBody =>
+      '为文件或专辑记住的所有内容（引擎、音色库、SoundFont、型号）都将被清除：它们将重新使用默认设置播放。';
+
+  @override
+  String get playWithBank => '音色库';
+
+  @override
+  String playWithBankDefault(String name) {
+    return '设置中的音色库（$name）';
+  }
+
+  @override
+  String get fmBankInUseTitle => '音色库正在使用';
+
+  @override
+  String fmBankInUseIntro(String name) {
+    return '“$name”已被选用于：';
+  }
+
+  @override
+  String fmBankInUseFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个文件',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fmBankInUseAlbums(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 张专辑',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fmBankInUseOutro => '它们将重新使用引擎设置中的音色库播放。仍要删除吗？';
+
+  @override
+  String playWithSoundfontDefault(String name) {
+    return '设置中的 SoundFont（$name）';
+  }
+
+  @override
+  String playWithMt32Default(String model) {
+    return '设置：$model';
+  }
+
+  @override
+  String get playWithOptionSetting => '设置';
+
+  @override
+  String get soundfontInUseTitle => 'SoundFont 正在使用';
+
+  @override
+  String get soundfontInUseOutro => '它们将重新使用设置中的 SoundFont 播放。仍要删除吗？';
+
+  @override
+  String get playWithTitleAlbum => '使用以下方式播放专辑…';
+
+  @override
+  String get playWithSave => '保存';
+
+  @override
+  String get shortcutsTitle => '键盘快捷键';
+
+  @override
+  String get shortcutsSubtitle => '播放、可视化和窗口按键';
+
+  @override
+  String get shortcutsHint => '文本框获得焦点时，单个按键会被忽略。可视化按键仅在可视化显示时有效。';
+
+  @override
+  String get shortcutsGroupTransport => '播放';
+
+  @override
+  String get shortcutsGroupVisualizer => '可视化';
+
+  @override
+  String get shortcutsGroupWindow => '窗口与导航';
+
+  @override
+  String get shortcutsKeySpace => '空格';
+
+  @override
+  String get shortcutsKeyEscape => 'Esc';
+
+  @override
+  String get shortcutPlayPause => '播放 / 暂停';
+
+  @override
+  String get shortcutPrevTrack => '上一曲';
+
+  @override
+  String get shortcutNextTrack => '下一曲';
+
+  @override
+  String get shortcutSeekBack10 => '后退 10 秒';
+
+  @override
+  String get shortcutSeekForward10 => '前进 10 秒';
+
+  @override
+  String get shortcutSeekBack60 => '后退 1 分钟';
+
+  @override
+  String get shortcutSeekForward60 => '前进 1 分钟';
+
+  @override
+  String get shortcutSeekPercent => '跳到曲目的 0 %…90 %';
+
+  @override
+  String get shortcutRepeat => '重复模式';
+
+  @override
+  String get shortcutShuffle => '随机播放';
+
+  @override
+  String get shortcutFavorite => '收藏';
+
+  @override
+  String get shortcutSpeedDown => '减速';
+
+  @override
+  String get shortcutSpeedUp => '加速';
+
+  @override
+  String get shortcutSpeedReset => '正常速度';
+
+  @override
+  String get shortcutVizNext => '下一个可视化';
+
+  @override
+  String get shortcutVizPrev => '上一个可视化';
+
+  @override
+  String get shortcutVizControls => '显示可视化控件';
+
+  @override
+  String get shortcutPmNext => 'projectM：下一个预设';
+
+  @override
+  String get shortcutPmPrev => 'projectM：上一个预设';
+
+  @override
+  String get shortcutPmLock => 'projectM：锁定预设';
+
+  @override
+  String get shortcutPmRandom => 'projectM：随机顺序';
+
+  @override
+  String get shortcutPmPicker => 'projectM：预设列表';
+
+  @override
+  String get shortcutMiniWindow => '迷你播放器';
+
+  @override
+  String get shortcutMiniViz => '带可视化的迷你播放器';
+
+  @override
+  String get shortcutAlwaysOnTop => '始终置顶';
+
+  @override
+  String get shortcutPlayer => '打开 / 关闭播放器';
+
+  @override
+  String get shortcutEscape => '关闭最上层面板';
+
+  @override
+  String get shortcutQueue => '队列面板';
+
+  @override
+  String get shortcutSearch => '搜索';
+
+  @override
+  String get shortcutTabs => '标签页（按侧栏顺序）';
+
+  @override
+  String get shortcutOpenFiles => '打开文件…';
+
+  @override
+  String get shortcutLinkFolder => '链接文件夹…';
+
+  @override
+  String get shortcutInfo => '曲目信息';
+
+  @override
+  String get shortcutSettings => '设置';
+
+  @override
+  String get shortcutFullscreen => '全屏';
+
+  @override
+  String get shortcutHelp => '此列表';
+
+  @override
+  String get navHelp => '帮助';
+
+  @override
+  String get helpTitle => '帮助';
+
+  @override
+  String get helpDocsTitle => '在线文档';
+
+  @override
+  String get helpDocsSubtitle => 'rewamp.app 上带截图的分步指南（英文）';
+
+  @override
+  String get sleepTimerTitle => '睡眠定时';
+
+  @override
+  String get sleepTimerExplain => '到达所选时间后暂停播放，并在最后 30 秒内淡出。';
+
+  @override
+  String sleepTimerMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 分钟',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sleepTimerRemainingMinutes(int count) {
+    return '$count 分钟';
+  }
+
+  @override
+  String sleepTimerRemainingSeconds(int count) {
+    return '$count 秒';
+  }
+
+  @override
+  String sleepTimerActiveRemaining(String time) {
+    return '剩余：$time';
+  }
+
+  @override
+  String get sleepTimerOff => '关闭';
+
+  @override
+  String get sleepTimerEnded => '睡眠定时已结束，播放已暂停';
+
+  @override
+  String get sleepTimerNothingToPlay => '没有可开始播放的最近收听记录';
+
+  @override
+  String get releaseNotesV11Autoplay => '自动播放（∞）：队列播完后，继续播放相关曲目（同一艺术家、团体、合集）。';
+
+  @override
+  String get releaseNotesV11LinkedFolders =>
+      '关联文件夹：文件原地播放，无需复制——桌面上的文件夹、iOS 的“文件”App 和 iCloud、Android 上的任意文件夹。';
+
+  @override
+  String get releaseNotesV11PlayWith =>
+      '“使用…播放”：为文件或专辑选择引擎，以及它的 SoundFont、MT-32 型号或 FM 音色库（可导入自己的 WOPL/WOPN 音色库）。';
+
+  @override
+  String get releaseNotesV11NewEngines =>
+      '新引擎：OPL3（libADLMIDI）和 OPN2/OPNA（libOPNMIDI）上的 MIDI、Beatnik .rmf、在模拟机器上运行的 ZX Spectrum .tap 磁带和 Amstrad CPC .dsk 磁盘、UnExoticA Mark II。';
+
+  @override
+  String get releaseNotesV11EngineUpdates =>
+      '引擎更新：支持 Namco WSG 芯片的 VGM 1.72、Furnace、AtariAudio 1.27（现为 .ym 的默认引擎）、Amiga 模块可选 libxmp、VGM 结尾淡出可调。';
+
+  @override
+  String get releaseNotesV11Sleep => '睡眠定时器：选择时长，音乐淡出后停止——空队列会自动填充。';
+
+  @override
+  String get releaseNotesV11Desktop =>
+      '桌面版：键盘快捷键（按 ? 查看列表）、链接到在线文档的“帮助”标签页、命令行（rewamp --mini --play …）以及单实例运行。';
+
+  @override
+  String get releaseNotesV11ArtistSync => '资料库中的艺术家会与账户同步，并带有封面。';
+
+  @override
+  String get releaseNotesV11PlayNext =>
+      '长按曲目：立即播放、下一首播放或最后播放；“全部播放”“电台”“惊喜”旁新增“…”菜单。';
+
+  @override
+  String get releaseNotesV11Composers => '所有专辑和子曲目页面中的作曲者都可点击；导入的文件会读取标题和作者。';
+
+  @override
+  String get releaseNotesV11Hindi => '新增印地语（19 种语言），界面已支持从右到左书写的语言。';
+
+  @override
+  String get releaseNotesV11Loops => '播放中开启无限循环：曲目会从自身的循环点继续，没有循环点的曲目则从头开始。';
+
+  @override
+  String get releaseNotesV11Visualizers =>
+      '可视化：示波器最多 64 个声部、每种 MIDI 打击乐器一种颜色、2SF 文件的音符、来自 FM 音色库的乐器名称。';
+
+  @override
+  String get releaseNotesV11Fixes =>
+      '已修复：部分被拒绝的 SSF 文件、无声的 WonderSwan 音轨、分成多个压缩包的专辑不完整，以及关闭播放器后的 projectM 预设。';
 }

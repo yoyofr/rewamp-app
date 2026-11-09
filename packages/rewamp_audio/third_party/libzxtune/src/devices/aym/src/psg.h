@@ -38,6 +38,11 @@ namespace AYM
       VoiceOfs = ofs;
     }
 
+    int GetVoiceOfs() const
+    {
+      return VoiceOfs;
+    }
+
     void SetDutyCycle(uint_t value, uint_t mask)
     {
       Device.SetDutyCycle(value, mask);

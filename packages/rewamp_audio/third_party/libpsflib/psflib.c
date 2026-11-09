@@ -3,6 +3,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #include <zlib.h>
 
@@ -53,6 +54,13 @@ enum { max_recursion_depth = 10 };
 typedef struct psf_load_state
 {
     int                        depth;
+    /* rewamp: la CHAÎNE des fichiers ouverts au-dessus de l'appel courant
+       (chain[1] = le fichier demandé). Un `_lib` qui y figure déjà est un
+       CYCLE — vu sur un vrai rip: « With You - Mitsumete Itai » (jw_ssf), dont
+       withyou.ssflib porte `_lib=withyou.ssflib`. Sans garde la récursion va
+       jusqu'à max_recursion_depth puis fait échouer TOUT le chargement: le
+       morceau était refusé. */
+    const char *               chain[ max_recursion_depth + 2 ];
 
     unsigned char              allowed_version;
 
@@ -68,6 +76,21 @@ typedef struct psf_load_state
 
     char                       lib_name_temp[32];
 } psf_load_state;
+
+/* rewamp: `name` est-il déjà ouvert plus haut dans la chaîne? (casse ignorée:
+   les rips viennent de Windows, où « WithYou.ssflib » et « withyou.ssflib »
+   désignent le même fichier). */
+static int psf_in_chain( const psf_load_state * state, const char * name )
+{
+    int i;
+    for ( i = 1; i <= state->depth; ++i )
+    {
+        const char * a = state->chain[ i ], * b = name;
+        while ( *a && *b && tolower( (unsigned char)*a ) == tolower( (unsigned char)*b ) ) { ++a; ++b; }
+        if ( !*a && !*b ) return 1;
+    }
+    return 0;
+}
 
 static int psf_load_internal( psf_load_state * state, const char * file_name );
 
@@ -382,6 +405,7 @@ static int psf_load_internal( psf_load_state * state, const char * file_name )
     size_t full_path_size;
 
     if ( ++state->depth > max_recursion_depth ) return -1;
+    state->chain[ state->depth ] = file_name;
 
     full_path_size = strlen(state->base_path) + strlen(file_name) + 1;
     full_path = (char *) malloc( full_path_size );
@@ -450,7 +474,7 @@ static int psf_load_internal( psf_load_state * state, const char * file_name )
     if ( !state->load_target ) goto done;
 
     tag = find_tag( tags, "_lib" );
-    if ( tag )
+    if ( tag && !psf_in_chain( state, tag->value ) )
     {
         if ( psf_load_internal( state, tag->value ) < 0 ) goto error_free_tags;
     }
@@ -517,7 +541,7 @@ static int psf_load_internal( psf_load_state * state, const char * file_name )
     tag = find_tag( tags, state->lib_name_temp );
     while ( tag )
     {
-        if ( psf_load_internal( state, tag->value ) < 0 ) goto error_free_tags;
+        if ( !psf_in_chain( state, tag->value ) && psf_load_internal( state, tag->value ) < 0 ) goto error_free_tags;
         ++n;
         snprintf( state->lib_name_temp, 31, "_lib%u", n );
         state->lib_name_temp[ 31 ] = '\0';

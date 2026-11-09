@@ -60,6 +60,9 @@ names = sorted((c_names | top) - skip)
 names = [n for n in names
          if not n.startswith(a.api) or n in top and n not in c_names]
 names = [n for n in names if not n.startswith("__") and n != "__clang_call_terminate"]
+# Les crochets rewamp_* (oscilloscope) sont NOTRE contrat avec le greffon:
+# ils doivent garder leur nom des deux côtés.
+names = [n for n in names if not n.startswith("rewamp_")]
 # L'API C publique est extern "C": un nom à son préfixe ET non mangé reste.
 names = [n for n in names if not (n.startswith(a.api) and n in c_names)]
 

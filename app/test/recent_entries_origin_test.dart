@@ -28,10 +28,19 @@ String _recentEntriesSql() {
   // Les fragments partagés que la requête INTERPOLE (Dart les résout, le
   // source non).
   final sql   = src.substring(start, end).replaceAll(
-      r'$kRecentAlbumLibraryMatch', LocalDb.kRecentAlbumLibraryMatch);
+      r'$kRecentAlbumLibraryMatch', LocalDb.kRecentAlbumLibraryMatch)
+      .replaceAll(r'$_kSameDirAsRecentAlbum', _sameDirFragment(src));
   expect(sql, contains('recent_albums'));
   expect(sql, isNot(contains(r'$')), reason: 'interpolation non résolue');
   return sql;
+}
+
+/// Le fragment privé `_kSameDirAsRecentAlbum`, lu dans le source lui aussi.
+String _sameDirFragment(String src) {
+  final at = src.indexOf('static const _kSameDirAsRecentAlbum');
+  expect(at, greaterThan(0));
+  final start = src.indexOf("'''", at) + 3;
+  return src.substring(start, src.indexOf("'''", start));
 }
 
 void main() {
@@ -127,5 +136,65 @@ void main() {
     final rows = await recents();
     expect(rows.single['platform_name'], isNull);
     expect(rows.single['format_ext'], isNull);
+  });
+
+  test("un album HOMONYME ne prête pas son origine (repli au nom borné au dossier)",
+      () async {
+    // Une piste catalogue « Dune » (Mega Drive) dans SON dossier d'album…
+    await db.insert('tracks', {
+      'id': 'c1',
+      'title': 'theme',
+      'meta_album': 'Dune',
+      'album_id': 'alb-md',
+      'online_id': 'u-md',
+      'file_path': '/x/online/jw_vgm/alb-md/01.vgz',
+      'entry_path': '',
+      'subsong_idx': 0,
+      'platform_name': 'Mega Drive',
+      'format_ext': 'vgz',
+      'last_played_at': 10,
+    });
+    // … et un import local homonyme, sans origine.
+    await db.insert('tracks', {
+      'id': 'l1',
+      'title': 'mine',
+      'meta_album': 'Dune',
+      'file_path': '/x/local/Dune/01.mod',
+      'entry_path': '',
+      'subsong_idx': 0,
+      'last_played_at': 400,
+    });
+    await db.insert('recent_albums', {
+      'album_key': 'Dune',
+      'meta_album': 'Dune',
+      'file_path': '/x/local/Dune/01.mod',
+      'last_played_at': 410,
+    });
+    final album = (await recents()).firstWhere((r) => r['kind'] == 'album');
+    expect(album['platform_name'], isNull);
+    expect(album['format_ext'], isNull);
+  });
+
+  test("le repli au nom vaut toujours DANS le dossier de l'album", () async {
+    await db.insert('tracks', {
+      'id': 'p1',
+      'title': 'old row',
+      'meta_album': 'Old',
+      'file_path': '/x/online/joshw/u-old/a.nsf',
+      'entry_path': '',
+      'subsong_idx': 0,
+      'platform_name': 'NES',
+      'format_ext': 'nsf',
+      'last_played_at': 50,
+    });
+    await db.insert('recent_albums', {
+      'album_key': 'u-old',
+      'meta_album': 'Old',
+      'album_id': 'u-old',
+      'file_path': '/x/online/joshw/u-old/a.nsf',
+      'last_played_at': 60,
+    });
+    final album = (await recents()).firstWhere((r) => r['kind'] == 'album');
+    expect(album['platform_name'], 'NES');
   });
 }

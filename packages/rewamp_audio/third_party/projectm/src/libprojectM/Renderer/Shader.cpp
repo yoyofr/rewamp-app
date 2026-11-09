@@ -2,6 +2,7 @@
 
 #include <glm/gtc/type_ptr.hpp>
 
+#include <algorithm>  // rewamp: std::transform — libc++ ne le fournit plus en transitif (vu sous Emscripten)
 #include <iostream>
 #include <sstream>
 #include <iomanip>

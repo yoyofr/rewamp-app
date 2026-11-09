@@ -223,6 +223,7 @@ bool DivEngine::loadIT(unsigned char* file, size_t len) {
     ds.compatFlags.rowResetsArpPos=true;
     ds.compatFlags.ignoreJumpAtEnd=false;
     ds.compatFlags.pitchSlideSpeed=8;
+    ds.compatFlags.oldCenterRate=true;
 
     logV("Impulse Tracker module");
 
@@ -571,9 +572,9 @@ bool DivEngine::loadIT(unsigned char* file, size_t len) {
       // note map
       ins->amiga.useNoteMap=true;
       for (int j=0; j<120; j++) {
-        ins->amiga.noteMap[j].freq=(unsigned char)reader.readC();
-        ins->amiga.noteMap[j].map=reader.readC()-1;
-        noteMap[i][j]=ins->amiga.noteMap[j].map;
+        ins->amiga.noteMap[j+60].freq=((unsigned char)reader.readC())+60;
+        ins->amiga.noteMap[j+60].map=reader.readC()-1;
+        noteMap[i][j]=ins->amiga.noteMap[j+60].map;
       }
 
       // envelopes...

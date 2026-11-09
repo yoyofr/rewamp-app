@@ -1,0 +1,14 @@
+AtariAudio 1.27 (f68f058, 2026-10-29, https://github.com/arnaud-carre/AtariAudio) — src/ vendored
+at this root, plus LICENSE and README.md. Previously ~v0.78 (Modizer era),
+replaced on 2026-10-30.
+
+Patched upstream files, every site marked "REWAMP" (grep -rn REWAMP after a
+resync, re-apply):
+  ym2149c.{h,cpp}        per-voice oscilloscope (voices 0..2, the 250 kHz
+                         ticks averaged per output sample) + notes
+  AtariMachine.cpp       STE DAC oscilloscope (voice 3)
+  SndhRenderer.{h,cpp}   native playback speed (fractional driver tick);
+                         FRMS and !#SN tables on an EVEN address, like TIME
+  YmRenderer.{h,cpp}     native playback speed (fractional driver tick,
+                         same as SndhRenderer)
+Mute is the library's own MuteVoices (plugin, from generic_mute_mask).

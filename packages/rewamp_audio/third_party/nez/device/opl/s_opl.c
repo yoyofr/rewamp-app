@@ -663,7 +663,12 @@ __inline static void LfoStep(OPL_LFO *lfop)
 
 static void sndsynth(OPLSOUND *sndp, Int32 *p)
 {
-	long accum[2] = { 0, 0 };
+	/* rewamp: Int32, not long - accum is passed to deltatpcm->synth(Int32 *p),
+	   which writes p[0] AND p[1]. With an 8-byte long (any 64-bit target)
+	   p[1] landed in the HIGH half of accum[0], which SSR(accum[0], ...)
+	   below shifted back into the output. Found by Emscripten clang
+	   (wasm32: 4-byte long, incompatible pointer types = error). */
+	Int32 accum[2] = { 0, 0 };
     
     //YOYOFR
     long tmpAccum;

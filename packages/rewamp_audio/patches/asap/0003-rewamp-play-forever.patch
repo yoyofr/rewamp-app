@@ -1,0 +1,17 @@
+--- upstream/asap.c
++++ asap.c
+@@ -3025,6 +3025,14 @@
+ 			remain = 0;
+ 		self->currentDuration = outPosMs + (int) (remain / speed + 0.5);
+ 	}
++}
++
++/* REWAMP: boucle infinie armee EN COURS de lecture. Un morceau qui reboucle
++ * de lui-meme (SAP « LOOP ») n'a plus de fin: ASAP_GenerateAt ne borne la
++ * sortie que si currentDuration > 0. */
++void ASAP_RewampPlayForever(ASAP *self)
++{
++	self->currentDuration = -1;
+ }
+ 
+ int ASAP_GetPosition(const ASAP *self)

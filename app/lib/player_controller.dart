@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show MethodChannel;
 import 'package:path_provider/path_provider.dart';
 import 'package:rewamp_audio/rewamp_audio.dart';
 import 'library_identity.dart' show libraryRefIsPath, libraryRefRewrite;
+import 'engine_choices.dart';
 import 'local_db.dart';
 import 'artwork_image.dart' show ArtworkCache;
 import 'artwork_url_version.dart';
@@ -53,6 +54,10 @@ class QueueEntry {
   /// marque, et couper le ∞ retire celles qui n'ont pas encore joué.
   final bool autoplay;
 
+  /// Ajoutée par une radio (série de l'accueil ou radio d'une liste): même
+  /// raison que [autoplay] — ce que l'utilisateur n'a pas mis là doit se voir.
+  final bool radio;
+
   const QueueEntry({
     required this.title,
     this.artist,
@@ -65,6 +70,7 @@ class QueueEntry {
     this.id,
     this.subsongIdx,
     this.autoplay = false,
+    this.radio = false,
   });
 
   /// N'énonce que la DIFFÉRENCE. Recopier dix champs à la main en perd en
@@ -82,6 +88,7 @@ class QueueEntry {
         formatHint: formatHint,
         subsongIdx: subsongIdx,
         autoplay: autoplay,
+        radio: radio,
       );
 }
 
@@ -774,6 +781,7 @@ class PlayerController extends ChangeNotifier {
     // tour de rôle qui empêche deux loadFile de se chevaucher — un « suivant »
     // martelé fait la queue au lieu d'ouvrir deux décodeurs. Le tour est rendu
     // dès que le natif a répondu, pas à la fin de la moitié métadonnées.
+    _loadsRequested.update(path, (n) => n + 1, ifAbsent: () => 1);
     final prevTurn = _loadTurn;
     final turnDone = Completer<void>();
     _loadTurn = turnDone.future;
@@ -788,6 +796,7 @@ class PlayerController extends ChangeNotifier {
     if (!adoptHandoff) loadingTrack.value = true;
     _autoplayAfterLoad = true;   // une pause PENDANT le chargement le baisse
     late final bool   loaded;
+    ({String? collectionSlug, String? platformName, int? year})? pendingContext;
     late final String audioPath;
     late final bool   loopSettingOn;
     late final int    loopModeCode;
@@ -871,11 +880,30 @@ class PlayerController extends ChangeNotifier {
       // de piste. Armer AVANT, pour que le tick n'avance pas la file — et le
       // tick s'abstient de toute façon tant que `_loadInFlight` est levé.
       if (isPlaying) _armEngineStart();
-      loaded = await audio.loadFileAsync(audioPath);
+      // « Lire avec… »: the engine chosen for THIS file, if any.
+      EngineChoices.instance.applyForLoad(audio, path);
+      // BUSY n'est pas un refus: le verrou natif de chargement est aussi pris
+      // par la SONDE des sous-chansons (rewamp_probe_subsong_count), que
+      // l'interface appelle de façon synchrone — pour un `.rsn` elle ouvre et
+      // décompresse l'archive RAR, assez longtemps sur un iPhone pour qu'un
+      // changement de piste tombe dedans. Rapporté en v1.0 comme « decode
+      // refused: Super Mario World.rsn » contre un morceau sain. On attend
+      // que le verrou se libère (borné à 5 s), sans rien rapporter.
+      var code = await audio.loadFileCodeAsync(audioPath);
+      for (var waitedMs = 0;
+          code == RewampAudio.kErrorBusy && waitedMs < 5000;
+          waitedMs += 50) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        code = await audio.loadFileCodeAsync(audioPath);
+      }
+      lastLoadCode = code;
+      loaded = code == 0;
       QueuePersistence.clearLoading();
     }
     } finally {
       releaseTurn();
+      // Même si le chargement LÈVE: sinon le chemin resterait « en cours ».
+      pendingContext = _takeLoadRequest(path);
     }
     // Either path leaves the boundary counter CONSUMED: a plain load resets
     // the native pipeline, an adoption IS the boundary being handled.
@@ -980,9 +1008,9 @@ class PlayerController extends ChangeNotifier {
       currentOnlineId          = (onlineId?.isEmpty ?? true) ? null : onlineId;
       currentSubsongCount      = subsongCount;
       currentFormatExt         = formatExt;
-      currentCollectionSlug    = null;
-      currentPlatformName      = null;
-      currentYear              = null;
+      currentCollectionSlug    = pendingContext?.collectionSlug;
+      currentPlatformName      = pendingContext?.platformName;
+      currentYear              = pendingContext?.year;
       // L'id de ligne appartient au morceau qu'on QUITTE: tant que
       // `_persistPlay` n'a pas rendu celui du nouveau, personne ne doit écrire
       // dessus. Vaut aussi pour `toggleFavorite`, qui posait sinon le ♥ sur la
@@ -1027,7 +1055,12 @@ class PlayerController extends ChangeNotifier {
       _logPlayFired     = false;
       _lastTickMs       = DateTime.now().millisecondsSinceEpoch;
       // Forced-loop (Settings → Lecture) state is per-track.
-      if (_fadingOut) { _fadingOut = false; audio.setVolume(1.0); }
+      if (_fadingOut) _fadingOut = false;
+      // Un nouveau son natif repart à 1.0 (le volume est porté par le
+      // ma_sound): on repose le PRODUIT, sinon un fondu de veille en cours
+      // sauterait au changement de piste.
+      _loopFadeGain = 1.0;
+      _applyVolume();
       // Displayed duration under a native forced loop. We must NOT trust the
       // plugin's own GetLength() here: some engines (libnsfplay for a plain
       // NSF with no embedded length) report a bogus 5-minute default, which is
@@ -1632,6 +1665,22 @@ class PlayerController extends ChangeNotifier {
   /// fichier, changer de sous-chanson ne l'invalide pas.
   void setAlbumContext({String? collectionSlug, String? platformName, int? year,
       String? forPath}) {
+    // Le fichier visé est encore EN COURS de chargement (le natif s'ouvre sur
+    // un isolate, et `_onFileReady*` n'attend pas `loadFile`): le contexte
+    // arrivait avant que `filePath` ne le désigne — jeté par la garde
+    // ci-dessous — ou juste avant la remise à zéro des champs `current*` du
+    // chargement, qui l'effaçait. Un album lancé depuis les Nouveautés du
+    // catalogue perdait ainsi sa collection. Mis de côté, il est posé par le
+    // chargement lui-même, au moment où il remet ces champs à zéro.
+    if (forPath != null && (_loadsRequested[forPath] ?? 0) > 0) {
+      final prev = _pendingContexts[forPath];
+      _pendingContexts[forPath] = (
+        collectionSlug: collectionSlug,
+        platformName: platformName,
+        year: year ?? prev?.year,
+      );
+      return;
+    }
     if (forPath != null && filePath != forPath) return;
     currentCollectionSlug = collectionSlug;
     currentPlatformName   = platformName;
@@ -2008,6 +2057,24 @@ class PlayerController extends ChangeNotifier {
   /// moteur n'a rien à dire d'une piste en cours d'ouverture), seek est ignoré,
   /// et un geste lecture/pause ne fait que décider si la piste DÉMARRE.
   bool _loadInFlight = false;
+
+  /// Chargements DEMANDÉS et pas encore arrivés à la remise à zéro de leurs
+  /// champs (par chemin, plusieurs peuvent attendre leur tour), et le contexte
+  /// d'album reçu pour eux pendant ce temps — voir [setAlbumContext].
+  final Map<String, int> _loadsRequested = {};
+  final Map<String, ({String? collectionSlug, String? platformName, int? year})>
+      _pendingContexts = {};
+
+  ({String? collectionSlug, String? platformName, int? year})? _takeLoadRequest(
+      String path) {
+    final n = (_loadsRequested[path] ?? 1) - 1;
+    if (n > 0) {
+      _loadsRequested[path] = n;
+      return _pendingContexts[path];
+    }
+    _loadsRequested.remove(path);
+    return _pendingContexts.remove(path);
+  }
   /// Baissé par une pause ou un stop reçus PENDANT un chargement.
   bool _autoplayAfterLoad = true;
   /// Pour l'UI: l'anneau d'attente des boutons lecture/pause (LoadingRing)
@@ -2016,6 +2083,18 @@ class PlayerController extends ChangeNotifier {
   /// l'affaire du widget.
   final ValueNotifier<bool> loadingTrack = ValueNotifier<bool>(false);
   bool get isLoadingTrack => _loadInFlight;
+
+  /// Completes once the loads requested so far have reached the native
+  /// answer AND their synchronous metadata half (filePath, durations…): a
+  /// result computed for a path just handed to [loadFile] (a cached SID
+  /// songlength comes back in microseconds) must wait for it, or `filePath`
+  /// still names the previous track and the result is dropped.
+  Future<void> get loadSettled async {
+    try { await _loadTurn; } catch (_) {}
+    // The turn completes in loadFile's `finally`; the metadata half runs
+    // synchronously right after, before this continuation (a microtask).
+    await Future<void>.delayed(Duration.zero);
+  }
 
   /// Au-delà, le moteur ne démarrera plus: on rend l'affichage HONNÊTE
   /// (`isPlaying = false`) plutôt que de laisser un lecteur qui se dit en
@@ -2216,6 +2295,8 @@ class PlayerController extends ChangeNotifier {
         ? durationS
         : UserSettings.instance.defaultTrackLengthSeconds;
     final audioPath = subsongIdx > 0 ? '$path?subsong=$subsongIdx' : path;
+    // « Lire avec… »: the next file keeps ITS engine across the relay.
+    EngineChoices.instance.applyForArm(audio, path);
     audio.setNextFile(
       audioPath,
       mode == 'on' ? 1 : 0,
@@ -2250,6 +2331,10 @@ class PlayerController extends ChangeNotifier {
   /// as one (report_song would gain a `no_playback` row for a perfectly good
   /// tune), and it is often recoverable - the catalogue can hand the file back.
   bool lastLoadMissingOnDisk = false;
+  /// Code natif du dernier chargement (0 = succès, `RewampResult` de
+  /// rewamp_audio.h). Il part dans le rapport d'un échec: « refusé » ne dit
+  /// pas QUI a refusé (aucun greffon, greffon qui échoue, sortie audio…).
+  int lastLoadCode = 0;
   String? lastLoadLabel;
   String? lastLoadFormatExt;
   int     lastLoadSubsongIdx = 0;
@@ -2735,7 +2820,8 @@ class PlayerController extends ChangeNotifier {
     final t = total > 0
         ? ((nowMs - _fadeStartMs) / 1000.0 / total).clamp(0.0, 1.0)
         : 1.0;
-    audio.setVolume(1.0 - t);
+    _loopFadeGain = 1.0 - t;
+    _applyVolume();
     if (t >= 1.0) {
       _fadingOut = false;
       _stopAfterForcedLoop();
@@ -2744,9 +2830,30 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
+  // ── Volume: deux fondus qui se COMPOSENT ────────────────────────────────
+  // Le fondu de boucle forcée (_tickForcedFadeout) et celui du mode veille
+  // (SleepTimer) agissent sur le MÊME volume natif. Chacun tient son gain, et
+  // seul le produit part au moteur: l'un ne peut plus remettre l'autre à 1.
+
+  double _loopFadeGain = 1.0;
+  double _sleepGain = 1.0;
+
+  /// Gain du mode veille (1 = rien), posé par la coquille depuis SleepTimer.
+  set sleepGain(double g) {
+    final v = g.clamp(0.0, 1.0);
+    if (v == _sleepGain) return;
+    _sleepGain = v;
+    _applyVolume();
+  }
+
+  // Refusé par le natif pendant un chargement (BUSY): `loadFile` repose le
+  // produit dès que le son est ouvert.
+  void _applyVolume() => audio.setVolume(_loopFadeGain * _sleepGain);
+
   void _stopAfterForcedLoop() {
     audio.stop();
-    audio.setVolume(1.0); // restore for whatever plays next
+    _loopFadeGain = 1.0; // restore for whatever plays next
+    _applyVolume();
     isPlaying = false;
     _disarmEngineStart();
     _maybeFireLogPlay(forceEnd: true);

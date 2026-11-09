@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'l10n.dart';
 import 'local_db.dart';
+import 'sheet_handle.dart';
 import 'user_settings.dart';
 import 'view_mode_picker.dart';
 import 'cancel_field.dart';
@@ -198,9 +199,8 @@ Future<void> showLibraryItemMenu(
   required VoidCallback onRemove,
 }) async {
   final l10n = context.l10n;
-  final removed = await showModalBottomSheet<bool>(
+  final removed = await showHandleSheet<bool>(
     context: context,
-    showDragHandle: true,
     builder: (ctx) => SafeArea(
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         ListTile(

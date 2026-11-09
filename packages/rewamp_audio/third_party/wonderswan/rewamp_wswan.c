@@ -65,6 +65,7 @@ static int      s_pending_read;
 static int      s_loaded;
 static int      s_sample_rate = 44100;
 static uint32   s_sram_size;
+static int      s_frames_since_reset;   /* see rescue_stopped_timers() */
 static uint8    s_song;          /* WSR track currently selected */
 static uint8    s_first_song;    /* the footer's default */
 
@@ -116,6 +117,18 @@ int rewamp_wswan_load(const uint8_t *data, size_t size, int sample_rate)
       case 0x04: s_sram_size = 256 * 1024; break;
       case 0x05: s_sram_size = 512 * 1024; break;
       default: break; /* the 0x10/0x20/0x50 cases are EEPROM sizes, not SRAM */
+   }
+   /* …and those EEPROM sizes must be SET, as upstream's Load() does. Left at 0,
+    * eeprom.c masks every cartridge-EEPROM access with (eeprom_size - 1) =
+    * 0xFFFFFFFF: reads and writes land OUTSIDE wsEEPROM[2048], and a driver
+    * that keeps its state there plays nothing. Measured on « With You -
+    * Mitsumete Itai » (jw_wsr, save type 0x20): 17 tracks, all silent. */
+   switch (header[5])
+   {
+      case 0x10: eeprom_size =  128; break;
+      case 0x20: eeprom_size = 2048; break;
+      case 0x50: eeprom_size = 1024; break;
+      default:   eeprom_size =    0; break;
    }
 
    /* Colour model: a .wsr may target WSC (Hyper Voice / Sound DMA), and a mono
@@ -175,6 +188,32 @@ void rewamp_wswan_reset(int song)
    /* Track selection: the driver reads it out of AW at entry. This one line is
     * the whole of "WSR support" beyond the footer and the padding. */
    v30mz_set_reg(NEC_AW, s_song);
+   s_frames_since_reset = 0;
+}
+
+/* Some WSR rips arm a line timer and never START it. « With You - Mitsumete
+ * Itai » (jw_wsr, 2ch Community rip) sets the HBlank-timer vector (B0/B2 =
+ * 0x80) and its period (A4 = 0xA0), drives everything from that interrupt —
+ * STI; JMP $ — and never writes the timer-control port A2. On a reset port
+ * table where A2 = 0 the timer never counts, the driver is never called: 17
+ * tracks, all silent, the CPU parked in its idle loop (traced). The rip relies
+ * on a player whose timer already runs.
+ * So, during the first frames after a track reset only: an ENABLED timer
+ * interrupt with a NON-ZERO period whose timer is STOPPED is started, in
+ * auto-reload mode. A driver that stops its timer on purpose later on is never
+ * touched, and a rip that starts its own timer is unaffected (bit already set). */
+#define REWAMP_WS_TIMER_RESCUE_FRAMES 8
+
+static void rescue_stopped_timers(void)
+{
+   const uint8 ie  = WSwan_readport(0xB2);
+   const uint8 ctl = WSwan_readport(0xA2);
+   const uint16 hb = (uint16)(WSwan_readport(0xA4) | (WSwan_readport(0xA5) << 8));
+   const uint16 vb = (uint16)(WSwan_readport(0xA6) | (WSwan_readport(0xA7) << 8));
+   uint8 want = ctl;
+   if ((ie & 0x80) && hb && !(ctl & 0x01)) want |= 0x03;   /* HBlank timer: run + reload */
+   if ((ie & 0x20) && vb && !(ctl & 0x04)) want |= 0x0C;   /* VBlank timer: run + reload */
+   if (want != ctl) WSwan_writeport(0xA2, want);
 }
 
 int rewamp_wswan_render(int16_t *out, int frames)
@@ -208,6 +247,11 @@ int rewamp_wswan_render(int16_t *out, int frames)
        * future upstream change. */
       while (!wsExecuteLine(&dummy_surface, true))
          ;
+      if (s_frames_since_reset < REWAMP_WS_TIMER_RESCUE_FRAMES)
+      {
+         s_frames_since_reset++;
+         rescue_stopped_timers();
+      }
 
       count = WSwan_SoundFlush(&s_sound_buf, &s_sound_buf_size);
       /* Upstream resets the CPU timestamp once the frame's audio is out; the

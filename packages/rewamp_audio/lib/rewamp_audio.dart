@@ -385,6 +385,18 @@ class RewampAudio {
   _TrackMessageDart? _mt32RomStatusFn;
   _IsPlayingDart?     _adlBankCountFn;
   _IndexedNameDart?   _adlBankNameFn;
+  _IsPlayingDart?     _opnBankCountFn;
+  _IndexedNameDart?   _opnBankNameFn;
+  void Function(Pointer<Utf8>)? _adlSetBankFileFn;
+  void Function(Pointer<Utf8>, Pointer<Utf8>)? _setPathPluginFn;
+  void Function()? _clearPathPluginsFn;
+  Pointer<Utf8> Function(Pointer<Utf8>)? _candidatesFn;
+  void Function(Pointer<Utf8>)? _opnSetBankFileFn;
+  // « Lire avec… »: bank per file, per engine ('adlmidi' / 'opnmidi').
+  final Map<String, void Function(Pointer<Utf8>, int, Pointer<Utf8>)> _setPathBankFns = {};
+  final Map<String, void Function()> _clearPathBanksFns = {};
+  void Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)? _setPathOptionFn;
+  void Function()? _clearPathOptionsFn;
   _IsPlayingDart?    _midiMt32FallbackFn;
   _SidMd5Dart?       _mt32IdentifyRomFn;
   _TrackMessageDart?  _outputDevicesFn;
@@ -698,8 +710,50 @@ class RewampAudio {
           'rewamp_adlmidi_bank_count');
       _adlBankNameFn = _lib.lookupFunction<_IndexedNameNative, _IndexedNameDart>(
           'rewamp_adlmidi_bank_name');
+      _adlSetBankFileFn = _lib.lookupFunction<Void Function(Pointer<Utf8>),
+          void Function(Pointer<Utf8>)>('rewamp_adlmidi_set_bank_file');
     } catch (_) {
       debugLog('rewamp_audio: rewamp_adlmidi_* not found — OPL3 engine absent from this binary');
+    }
+    // « Lire avec… » (rewamp_registry.c): per-file plugin + candidate list.
+    try {
+      _setPathPluginFn = _lib.lookupFunction<
+          Void Function(Pointer<Utf8>, Pointer<Utf8>),
+          void Function(Pointer<Utf8>, Pointer<Utf8>)>('rewamp_registry_set_path_plugin');
+      _clearPathPluginsFn = _lib.lookupFunction<Void Function(), void Function()>(
+          'rewamp_registry_clear_path_plugins');
+      _candidatesFn = _lib.lookupFunction<Pointer<Utf8> Function(Pointer<Utf8>),
+          Pointer<Utf8> Function(Pointer<Utf8>)>('rewamp_registry_candidates');
+      _setPathOptionFn = _lib.lookupFunction<
+          Void Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>),
+          void Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)>(
+          'rewamp_registry_set_path_option');
+      _clearPathOptionsFn = _lib.lookupFunction<Void Function(), void Function()>(
+          'rewamp_registry_clear_path_options');
+    } catch (_) {
+      debugLog('rewamp_audio: rewamp_registry_*_path_plugin not found');
+    }
+    // libOPNMIDI (REWAMP_WITH_OPNMIDI): its own try, like libADLMIDI.
+    try {
+      _opnBankCountFn = _lib.lookupFunction<_IsPlayingNative, _IsPlayingDart>(
+          'rewamp_opnmidi_bank_count');
+      _opnBankNameFn = _lib.lookupFunction<_IndexedNameNative, _IndexedNameDart>(
+          'rewamp_opnmidi_bank_name');
+      _opnSetBankFileFn = _lib.lookupFunction<Void Function(Pointer<Utf8>),
+          void Function(Pointer<Utf8>)>('rewamp_opnmidi_set_bank_file');
+    } catch (_) {
+      debugLog('rewamp_audio: rewamp_opnmidi_* not found — OPN2 engine absent from this binary');
+    }
+    for (final engine in const ['adlmidi', 'opnmidi']) {
+      try {
+        _setPathBankFns[engine] = _lib.lookupFunction<
+            Void Function(Pointer<Utf8>, Int32, Pointer<Utf8>),
+            void Function(Pointer<Utf8>, int, Pointer<Utf8>)>('rewamp_${engine}_set_path_bank');
+        _clearPathBanksFns[engine] = _lib.lookupFunction<Void Function(), void Function()>(
+            'rewamp_${engine}_clear_path_banks');
+      } catch (_) {
+        debugLog('rewamp_audio: rewamp_${engine}_set_path_bank not found');
+      }
     }
 
     try {
@@ -1001,6 +1055,24 @@ class RewampAudio {
   /// SÉRIALISATION des demandes est l'affaire de l'appelant (PlayerController).
   Future<bool> loadFileAsync(String path) =>
       Isolate.run(() => RewampAudio().loadFile(path), debugName: 'rewamp-load');
+
+  /// [loadFileAsync] qui rend le CODE natif (0 = succès, voir `RewampResult`
+  /// dans rewamp_audio.h) au lieu d'un booléen: un [kErrorBusy] n'est pas un
+  /// refus du décodeur — le verrou de chargement était tenu par une SONDE
+  /// (rewamp_probe_subsong_count), et confondre les deux faisait partir un
+  /// rapport « decode refused » contre un morceau sain.
+  Future<int> loadFileCodeAsync(String path) => Isolate.run(() {
+        final a = RewampAudio();
+        final ptr = path.toNativeUtf8();
+        try {
+          return a._loadFile(ptr);
+        } finally {
+          calloc.free(ptr);
+        }
+      }, debugName: 'rewamp-load');
+
+  /// `REWAMP_ERROR_BUSY`: un autre chargement ou une sonde tient le verrou.
+  static const int kErrorBusy = -5;
 
   void unload() => _unload();
 
@@ -1311,6 +1383,103 @@ class RewampAudio {
   /// "bank"). Empty when the binary was built without the engine.
   List<String> adlmidiBankNames() {
     final count = _adlBankCountFn, name = _adlBankNameFn;
+    if (count == null || name == null) return const [];
+    return [for (var i = 0; i < count(); i++) name(i).toDartString()];
+  }
+
+  /// « Lire avec… »: force the plugin [plugin] (its registry name) for the
+  /// file at [path] (no ?subsong=), or back to the ranking when null.
+  void setPathPlugin(String path, String? plugin) {
+    final fn = _setPathPluginFn;
+    if (fn == null) return;
+    final pp = path.toNativeUtf8();
+    final pl = (plugin ?? '').toNativeUtf8();
+    try {
+      fn(pp, pl);
+    } finally {
+      calloc.free(pp);
+      calloc.free(pl);
+    }
+  }
+
+  void clearPathPlugins() => _clearPathPluginsFn?.call();
+
+  /// The plugins able to play [path], in their DEFAULT order (no per-file
+  /// choice): the first plays it unless told otherwise. Reads the file's
+  /// header — call it for a file that is on the device.
+  List<String> pluginCandidates(String path) {
+    final fn = _candidatesFn;
+    if (fn == null) return const [];
+    final pp = path.toNativeUtf8();
+    try {
+      final s = fn(pp).toDartString();
+      return s.isEmpty ? const [] : s.split('\n');
+    } finally {
+      calloc.free(pp);
+    }
+  }
+
+  /// An IMPORTED bank file for libADLMIDI (.wopl) / libOPNMIDI (.wopn); ''
+  /// = back to the embedded bank. Taken at the next track open.
+  void setAdlmidiBankFile(String path) => _withUtf8(path, _adlSetBankFileFn);
+  void setOpnmidiBankFile(String path) => _withUtf8(path, _opnSetBankFileFn);
+
+  /// « Lire avec… »: the bank [engine] ('adlmidi' / 'opnmidi') plays [path]
+  /// with — an embedded [index], or an imported [file] (absolute path, index
+  /// ignored); neither = the engine's setting. Taken at the file's next open.
+  void setPathBank(String engine, String path, {int index = -1, String? file}) {
+    final fn = _setPathBankFns[engine];
+    if (fn == null) return;
+    final pp = path.toNativeUtf8();
+    final fp = (file ?? '').toNativeUtf8();
+    try {
+      fn(pp, index, fp);
+    } finally {
+      calloc.free(pp);
+      calloc.free(fp);
+    }
+  }
+
+  /// « Lire avec… »: an option of [plugin] for [path] — 'fluidlite': the
+  /// SoundFont's path; 'mt32': the model ('1' MT-32, '2' CM-32L). null =
+  /// the plugin's setting. Taken at the file's next open.
+  void setPathOption(String path, String plugin, String? value) {
+    final fn = _setPathOptionFn;
+    if (fn == null) return;
+    final pp = path.toNativeUtf8();
+    final pl = plugin.toNativeUtf8();
+    final vp = (value ?? '').toNativeUtf8();
+    try {
+      fn(pp, pl, vp);
+    } finally {
+      calloc.free(pp);
+      calloc.free(pl);
+      calloc.free(vp);
+    }
+  }
+
+  void clearPathOptions() => _clearPathOptionsFn?.call();
+
+  void clearPathBanks() {
+    for (final fn in _clearPathBanksFns.values) {
+      fn();
+    }
+  }
+
+  void _withUtf8(String s, void Function(Pointer<Utf8>)? fn) {
+    if (fn == null) return;
+    final ptr = s.toNativeUtf8();
+    try {
+      fn(ptr);
+    } finally {
+      malloc.free(ptr);
+    }
+  }
+
+  /// libOPNMIDI's EMBEDDED WOPN banks, by index (the engine param
+  /// "opnmidi"/"bank"). Empty when the binary was built without the engine.
+  List<String> opnmidiBankNames() {
+    final count = _opnBankCountFn, name = _opnBankNameFn;
     if (count == null || name == null) return const [];
     return [for (var i = 0; i < count(); i++) name(i).toDartString()];
   }

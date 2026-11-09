@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'fm_bank_manager.dart';
+import 'fm_bank_screen.dart';
+import 'fm_emulators.dart';
 import 'l10n.dart';
 import 'player_controller.dart';
 import 'settings_screen.dart' show SettingRow;
@@ -19,21 +22,6 @@ class AdlmidiEnginePanel extends StatefulWidget {
   @override
   State<AdlmidiEnginePanel> createState() => _AdlmidiEnginePanelState();
 }
-
-/// Les émulateurs COMPILÉS (rewamp_add_adlmidi), par valeur de ADL_Emulator.
-/// Des noms propres: rien à traduire.
-const List<(int, String)> kAdlEmulators = [
-  (0, 'Nuked OPL3 1.8'),
-  (1, 'Nuked OPL3 1.7.4'),
-  (2, 'DOSBox 0.74'),
-  (3, 'Opal'),
-  (5, 'ESFMu'),
-  (8, 'YMFM OPL3'),
-  (7, 'YMFM OPL2'),
-  (11, 'Nuked OPL2 Lite'),
-  (12, 'Nuked CQM'),
-  (13, 'DOSBox OPL2'),
-];
 
 /// ADLMIDI_VolumeModel_*, après « auto » (0) et « générique » (1), traduits:
 /// des noms de pilotes, donc propres.
@@ -73,9 +61,6 @@ class _AdlmidiEnginePanelState extends State<AdlmidiEnginePanel> {
   void _onChanged() {
     if (mounted) setState(() {});
   }
-
-  String _bankLabel(int i) =>
-      i >= 0 && i < _banks.length ? _banks[i] : '#$i';
 
   String _volumeLabel(BuildContext context, int v) {
     final l10n = context.l10n;
@@ -117,39 +102,26 @@ class _AdlmidiEnginePanelState extends State<AdlmidiEnginePanel> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final emu = kAdlEmulators.any((e) => e.$1 == _s.adlEmulator)
-        ? _s.adlEmulator
-        : 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_banks.isNotEmpty)
           ListTile(
             title: Text(l10n.settingsAdlBank),
-            subtitle: Text(_bankLabel(_s.adlBank)),
+            subtitle: Text(fmBankLabel(FmBankKind.wopl, _banks, _s.adlBank)),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              final v = await _pick(context, l10n.settingsAdlBank,
-                  [for (var i = 0; i < _banks.length; i++) (i, _banks[i])],
-                  _s.adlBank);
-              if (v != null) _s.adlBank = v;
-            },
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => FmBankScreen(
+                      kind: FmBankKind.wopl,
+                      builtin: _banks,
+                      builtinIndex: () => _s.adlBank,
+                      onSelectBuiltin: (i) => _s.adlBank = i,
+                    ))),
           ),
-        SettingRow(
-          label: l10n.settingsAdlEmulator,
-          resetKey: 'adlEmulator',
-          child: DropdownButton<int>(
-            value: emu,
-            isDense: true,
-            isExpanded: true,
-            items: [
-              for (final (v, n) in kAdlEmulators)
-                DropdownMenuItem(
-                    value: v,
-                    child: Text(n, overflow: TextOverflow.ellipsis)),
-            ],
-            onChanged: (v) { if (v != null) _s.adlEmulator = v; },
-          ),
+        FmEmulatorTile(
+          list: kAdlEmulators,
+          value: _s.adlEmulator,
+          onChanged: (v) => _s.adlEmulator = v,
         ),
         SettingRow(
           label: l10n.settingsAdlChips,

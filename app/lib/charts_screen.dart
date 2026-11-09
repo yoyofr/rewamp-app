@@ -519,7 +519,8 @@ class _ChartResultsScreenState extends State<ChartResultsScreen> {
     final play = widget.onPlayAlbum ?? globalOnPlayAlbum;
     if (play == null) return;
     playAlbumFromList(context, _albumNameOf(r),
-        collection: r.collection, platform: r.platform, onPlayAlbum: play);
+        collection: r.collection, platform: r.platform, albumId: r.albumId,
+        onPlayAlbum: play);
   }
 
   /// « Tout lire » d'un palmarès d'ALBUMS: les pistes de chaque album dans
@@ -563,7 +564,8 @@ class _ChartResultsScreenState extends State<ChartResultsScreen> {
     final play = widget.onPlayAlbum ?? globalOnPlayAlbum;
     if (play == null) return;
     playAlbumFromList(context, a.name,
-        collection: a.collection, platform: a.platform, onPlayAlbum: play);
+        collection: a.collection, platform: a.platform, albumId: a.albumId,
+        onPlayAlbum: play);
   }
 
   /// La même rangée pour la liste d'ALBUMS — radio = les albums enchaînés en
@@ -854,6 +856,7 @@ class _ChartPlaylistScreenState extends State<ChartPlaylistScreen> {
                                     a.name,
                                     collection: a.collection,
                                     platform: a.platform,
+                                    albumId: a.albumId,
                                     onPlayAlbum: widget.onPlayAlbum!,
                                   ),
                                 ),

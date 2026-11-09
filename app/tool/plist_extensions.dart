@@ -24,7 +24,8 @@
 //
 // The rule for the set is deliberately simple so the test can state it:
 // every extension of every engine, plus the local archive formats (an archive
-// of modules is openable), plus `m3u`/`m3u8` (a playlist names what to play).
+// of modules is openable), plus `m3u`/`m3u8` (a playlist names what to play),
+// plus the FM bank files (`wopl`/`wopn`: opening one imports it — AppShell).
 // Extensions a SYSTEM type already owns (mp3, zip, …) stay in the list: the
 // exported declaration is ignored for them, harmlessly, and they are ALSO
 // claimed by their real UTI in `CFBundleDocumentTypes` — that part of the plist
@@ -35,6 +36,9 @@ import 'package:rewamp/rewamp_db.dart';
 /// Playlist extensions the app opens as documents. Not an engine format.
 const kPlaylistExts = <String>{'m3u', 'm3u8'};
 
+/// FM instrument banks: opened to be IMPORTED (FmBankManager), not played.
+const kFmBankExts = <String>{'wopl', 'wopn'};
+
 /// Every extension the two plists must list, lower-case, plain-sorted.
 List<String> bundledExtensions() {
   final s = <String>{};
@@ -43,6 +47,7 @@ List<String> bundledExtensions() {
   }
   s.addAll(RewampDb.kLocalArchiveExts.map((x) => x.toLowerCase()));
   s.addAll(kPlaylistExts);
+  s.addAll(kFmBankExts);
   return s.toList()..sort();
 }
 

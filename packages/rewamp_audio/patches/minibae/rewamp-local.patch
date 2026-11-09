@@ -1,0 +1,47 @@
+--- a/src/BAE_Source/Common/GenSynth.c
++++ b/src/BAE_Source/Common/GenSynth.c
+@@ -3162,6 +3162,14 @@
+         fwrite(&s16, 2, 1, file);
+     }
+ }
++
++#ifdef REWAMP_BAE_CAPTURE
++/* REWAMP: the 16 per-channel DRY buffers go to the plugin's oscilloscope rings
++ * (rewamp_plugin_minibae.c) instead of WAV files. Called once per slice for
++ * each channel that produced sound, already scaled to the 16-bit range;
++ * `buf` is interleaved stereo, `validSamples` = frames x 2. */
++extern void rewamp_bae_channel_slice(int ch, const int32_t *buf, int validSamples);
++#endif
+ 
+ void PV_FlushChannelCaptureBuffers(GM_Mixer *pMixer)
+ {
+@@ -3189,6 +3197,7 @@
+ 
+         if (hasData)
+         {
++#ifndef REWAMP_BAE_CAPTURE   /* REWAMP: no files */
+             if (!pMixer->channelCaptureActive[ch])
+             {
+                 pMixer->channelCaptureActive[ch] = true;
+@@ -3201,6 +3210,7 @@
+                         fwrite(&zeroSample, 2, 1, bfile);
+                 }
+             }
++#endif
+ 
+             int32_t gv = (int32_t)pMixer->globalVolume;
+             for (int i = 0; i < validSamples; i++)
+@@ -3211,8 +3221,13 @@
+             }
+         }
+ 
++#ifdef REWAMP_BAE_CAPTURE   /* REWAMP: to the plugin, not to a file */
++        if (hasData)
++            rewamp_bae_channel_slice(ch, buf, validSamples);
++#else
+         PV_ChannelCaptureEnsureFile(pMixer, ch);
+         PV_ChannelCaptureWriteSlice(pMixer, ch, validSamples);
++#endif
+ 
+         memset(buf, 0, pMixer->channelCaptureBufSamples * sizeof(int32_t));
+     }

@@ -307,6 +307,15 @@ namespace Module
   void RewampTrackModelsClear();
   std::size_t RewampTrackModelsCount();
   TrackModel::Ptr RewampTrackModelAt(std::size_t idx);
+  //YOYOFR (rewamp) — a MultiTrackContainer announces each DELEGATE before
+  //building it (Begin) and its hardware voice count after (End); the models
+  //collected in between belong to it. A lone module never calls these: its
+  //models are delegate 0, and the delegate list stays empty.
+  void RewampDelegateBegin(std::size_t idx);
+  void RewampDelegateEnd(std::size_t idx, uint_t hwChannels);
+  std::size_t RewampDelegateCount();
+  uint_t RewampDelegateChannels(std::size_t idx);
+  std::size_t RewampTrackModelDelegateAt(std::size_t idx);
 
   class PatternsBuilder : public Formats::Chiptune::PatternBuilder
   {

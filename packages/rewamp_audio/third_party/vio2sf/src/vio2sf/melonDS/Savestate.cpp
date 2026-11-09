@@ -19,6 +19,8 @@
 #include <stdio.h>
 #include <cassert>
 #include <cstring>
+// rewamp: libc++ ne fournit plus cet en-tete en transitif (vu sous Emscripten).
+#include <cstdlib>  // malloc/free/realloc
 #include <vio2sf/Savestate.h>
 #include <vio2sf/Platform.h>
 

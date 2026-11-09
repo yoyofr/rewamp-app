@@ -370,6 +370,66 @@ int uade_find_amiga_file(char *realname, size_t maxlen, const char *aname,
 				}
 			}
 		}
+
+		/* rewamp: banque PARTAGÉE nommée sur le plus long PRÉFIXE du nom.
+
+		   La règle des points ci-dessus ne coupe qu'aux points. UnExoticA livre
+		   Captain Blood en « rh2.blood.dum » + « rh.ins »: une banque pour
+		   plusieurs morceaux (rh1, rh2…), nommée sur leur racine commune. Le
+		   player Infogrames demande « rh2.blood.ins », puis « rh2.bloo.ins »
+		   (il retire UN caractère, ce qui suffit à « bob4a.dum » + « bob4.ins »
+		   mais pas ici), la règle des points essaie « rh2.ins »: « score died ».
+
+		   On sert donc, dans le dossier du module SEULEMENT, le fichier de MÊME
+		   extension (casse indifférente) dont le radical est un PRÉFIXE du
+		   radical demandé — le plus long s'il y en a plusieurs, ce qui garde
+		   « rh-bobo.ins » devant un éventuel « rh.ins » dans un dossier
+		   d'auteur modland qui mêle plusieurs jeux. Radical d'au moins deux
+		   caractères: un « a.ins » ne doit pas répondre pour tout le dossier.
+		   Dernier recours, après toutes les autres règles. */
+		{
+			const char *base = strrchr(aname, '/');
+			base = base ? base + 1 : aname;
+			const char *ext = strrchr(base, '.');
+			const char *mdir = (moduledir && moduledir[0]) ? moduledir : NULL;
+			DIR *_rw_d = (ext != NULL && ext > base + 1 && mdir) ? opendir(mdir) : NULL;
+			if (_rw_d != NULL) {
+				const size_t stemlen = (size_t)(ext - base);
+				const size_t extlen  = strlen(ext);
+				char _rw_best[PATH_MAX] = "";
+				size_t bestlen = 0;
+				struct dirent *de;
+				while ((de = readdir(_rw_d)) != NULL) {
+					const size_t nlen = strlen(de->d_name);
+					if (nlen <= extlen + 1)
+						continue;
+					const size_t slen = nlen - extlen;   /* radical du candidat */
+					if (slen < 2 || slen >= stemlen || slen <= bestlen)
+						continue;
+					if (strcasecmp(de->d_name + slen, ext) != 0 ||
+					    strncasecmp(de->d_name, base, slen) != 0)
+						continue;
+					strlcpy(_rw_best, de->d_name, sizeof(_rw_best));
+					bestlen = slen;
+				}
+				closedir(_rw_d);
+				if (bestlen > 0) {
+					char _rw_full[PATH_MAX];
+					int wrote = snprintf(_rw_full, sizeof(_rw_full), "%s/%s",
+							     mdir, _rw_best);
+					if (wrote > 0 && (size_t)wrote < sizeof(_rw_full) &&
+					    stat(_rw_full, &_rw_st) == 0 && S_ISREG(_rw_st.st_mode)) {
+						FILE *_rw_f = fopen(_rw_full, "rb");
+						if (_rw_f != NULL) {
+							fclose(_rw_f);
+							strlcpy(realname, _rw_full, maxlen);
+							rewamp_loaded_files_add(realname);
+							return 0;
+						}
+					}
+				}
+			}
+		}
 	}
 #endif
 
@@ -593,7 +653,13 @@ int uade_arch_spawn(struct uade_ipc *ipc, pid_t *uadepid, const char *uadename,
 	int fds[2];
 	char input[32], output[32];
 
+#ifdef __EMSCRIPTEN__
+	/* rewamp (web): canal en mémoire, voir unixatomic.c. */
+	extern int uade_memchan_pair(int fds[2]);
+	if (uade_memchan_pair(fds)) {
+#else
 	if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds)) {
+#endif
 		uade_warning("Can not create socketpair: %s\n",
 			     strerror(errno));
 		return -1;

@@ -763,6 +763,14 @@ class AppLocalizationsHu extends AppLocalizations {
   String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
+  String get engineDescCpc =>
+      'Amstrad CPC — .dsk lemezek emulált CPC 6128-on futtatva';
+
+  @override
+  String get engineDescZxSpectrum =>
+      'ZX Spectrum — .tap kazetták emulált Spectrum 48K/128K gépen futtatva';
+
+  @override
   String get engineDescSidplayfp => 'Commodore 64 SID (reSIDfp motor)';
 
   @override
@@ -814,7 +822,7 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get engineDescSndh =>
-      'Atari ST .sndh — valódi 68000 emuláció + YM2149 + STE DAC';
+      'Atari ST .sndh — valódi 68000 emuláció + YM2149 + STE DAC · .ym (YM2–YM6, digidrums, SID)';
 
   @override
   String get engineDescLazyusf =>
@@ -836,6 +844,10 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get engineDescOrganya => 'Cave Story .org — Pixel saját motorja';
+
+  @override
+  String get engineDescMinibae =>
+      'Beatnik .rmf — Beatnik Audio Engine, a 90-es évek végének web- és játékzenéje';
 
   @override
   String get engineDescNtgs =>
@@ -1453,6 +1465,9 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get queueAutoplayRow => 'Automatikus lejátszás adta hozzá';
+
+  @override
+  String get queueRadioRow => 'A rádió adta hozzá';
 
   @override
   String get queueClearConfirmTitle => 'Üríti a várólistát?';
@@ -2835,7 +2850,7 @@ class AppLocalizationsHu extends AppLocalizations {
       'Egyes formátumokat több motor is le tud játszani. Válaszd ki, melyik legyen az alapértelmezett — a többi formátum útvonala automatikus.';
 
   @override
-  String get settingsDecoderAmigaTrackers => 'Amiga trackerek (mod, med, okt…)';
+  String get settingsDecoderAmigaTrackers => 'Amiga modulok (mod, med, okt…)';
 
   @override
   String get settingsEngineOpenmptSubtitle => 'Trackerek — MOD, XM, S3M, IT…';
@@ -3036,6 +3051,13 @@ class AppLocalizationsHu extends AppLocalizations {
   String get settingsNsfQuality => 'Minőség (nsfplay)';
 
   @override
+  String get settingsNsfFade => 'Elhalkítás a végén';
+
+  @override
+  String get settingsNsfFadeHelp =>
+      'Elhalkítás a szám végén, ha a fájl nem ad meg sajátot (egy .m3u vagy NSFe megadhatja). Beleszámít a szám hosszába. Ki = éles vágás.';
+
+  @override
   String get settingsLowpassFilter => 'Aluláteresztő szűrő';
 
   @override
@@ -3156,6 +3178,52 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get settingsGbsHpFilter => 'Felüláteresztő szűrő (gbsplay)';
+
+  @override
+  String get settingsEnginePsgplaySubtitle =>
+      'Atari ST / SNDH — a YM2149 csatornáinak keverése';
+
+  @override
+  String get settingsPsgMix => 'PSG-csatornák keverése';
+
+  @override
+  String get settingsPsgMixEmpiric => 'Empirikus (Atari ST)';
+
+  @override
+  String get settingsPsgMixLinear => 'Lineáris';
+
+  @override
+  String get settingsPsgMixStereo => 'Sztereó';
+
+  @override
+  String get settingsPsgMixEmpiricHint =>
+      'A három csatorna úgy keverve, mint egy valódi Atari ST-n (mért szintek): szemcsés hang, monóban.';
+
+  @override
+  String get settingsPsgMixLinearHint =>
+      'A három csatorna egyszerű összege: tisztább hang, monóban.';
+
+  @override
+  String get settingsPsgMixStereoHint =>
+      'Lineáris keverés, minden csatorna bal és jobb között elhelyezve.';
+
+  @override
+  String settingsPsgPanVoice(String voice) {
+    return '$voice csatorna';
+  }
+
+  @override
+  String get settingsPsgPanCentre => 'Közép';
+
+  @override
+  String settingsPsgPanLeft(int percent) {
+    return 'Bal $percent %';
+  }
+
+  @override
+  String settingsPsgPanRight(int percent) {
+    return 'Jobb $percent %';
+  }
 
   @override
   String get settingsGbsFilterDmg => 'DMG (klasszikus GB)';
@@ -4394,54 +4462,6 @@ class AppLocalizationsHu extends AppLocalizations {
   String get releaseNotesTitle => 'Újdonságok';
 
   @override
-  String get releaseNotesV10Loading =>
-      'A lassan betöltődő szám már nem fagyasztja le az alkalmazást: a lejátszás/szünet körüli vékony gyűrű jelzi, hogy még töltődik.';
-
-  @override
-  String get releaseNotesV10Piano =>
-      'Zongora-megjelenítő: a sok egyidejű szólamot vagy hangszert tartalmazó dalok több billentyűzetre oszlanak el.';
-
-  @override
-  String get releaseNotesV10Amiga =>
-      'Amiga: a StoneTracker, a SUNtronic (TSM-ripek) és további Soundtracker 2.6 modulok már lejátszhatók, a SoundPlayer dalok pedig iOS-en is szólnak.';
-
-  @override
-  String get releaseNotesV10ZxSpectrum =>
-      'ZX Spectrum: a zxart .mt3 fájljai lejátszhatók, Linuxon pedig elérhetők a ZXTune formátumok és a SAM Coupé .cop programok.';
-
-  @override
-  String get releaseNotesV10OpenWith =>
-      'macOS és iOS: minden támogatott formátum megjelenik a „Megnyitás ezzel” menüben.';
-
-  @override
-  String get releaseNotesV10MtcCrash =>
-      'Javítva: egyes, PT3-at TFM-mel vagy PSG-vel keverő .mtc fájlok összeomlasztották az alkalmazást.';
-
-  @override
-  String get releaseNotesV10Podiums =>
-      'Új „Dobogók” böngésző: a demoszcéna versenyeinek győztesei party, év vagy compo-típus szerint, dicsőségcsarnokkal.';
-
-  @override
-  String get releaseNotesV10Arcade =>
-      'Arcade: az Ensoniq ES5505/ES5506 zene (Taito F3…) lejátszható, az Apple IIGS VGM-fájlok már nem omlasztják össze az alkalmazást, és a motorok frissek (új: FM-Kingtracker .fmk).';
-
-  @override
-  String get releaseNotesV10InfoPanel =>
-      'Információs panel: formátum, motor, csatornák és hurokpontok elöl, a mezőnevek kiemelve.';
-
-  @override
-  String get releaseNotesV10LocalAlbums =>
-      'Az album- és alszám-képernyő mutatja a gyűjteményt; egy behúzott archívum minden számát listázza, „helyi” jelölést kap, és cseréje után már nem jelenik meg kétszer.';
-
-  @override
-  String get releaseNotesV10Crossfade =>
-      'Javítva: átúsztatással az átúsztatásnál rövidebb szám nem hallatszott.';
-
-  @override
-  String get releaseNotesV10Artwork =>
-      'Javítva: a szerveren lecserélt borító mindenhol megjelenik a „Fájl újraletöltése” után.';
-
-  @override
   String get releaseNotesDataReset =>
       'A helyi adatok törlődtek ehhez a verzióhoz. A könyvtár és a lejátszási listák a fiókból épülnek újra; a letöltéseket meg kell ismételni.';
 
@@ -4893,8 +4913,15 @@ class AppLocalizationsHu extends AppLocalizations {
   String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
 
   @override
+  String get settingsMidiSynthOpn2 => 'OPN2 FM (Mega Drive / Genesis)';
+
+  @override
   String get settingsEngineAdlmidiSubtitle =>
       'MIDI és DOS-os játékzene emulált OPL3 chipen';
+
+  @override
+  String get settingsEngineOpnmidiSubtitle =>
+      'MIDI emulált OPN2 / OPNA chipen (Mega Drive, PC-98)';
 
   @override
   String get settingsAdlBank => 'Hangszerbank';
@@ -4917,4 +4944,449 @@ class AppLocalizationsHu extends AppLocalizations {
   @override
   String get engineDescAdlmidi =>
       'MIDI, XMI, DMX MUS, HMI/HMP emulált OPL3 chipen (AdLib / Sound Blaster)';
+
+  @override
+  String get engineDescOpnmidi =>
+      'MIDI emulált OPN2 (Mega Drive) vagy OPNA (PC-98) chipen';
+
+  @override
+  String get fmBanksBuiltIn => 'Beépített';
+
+  @override
+  String get fmBanksImported => 'Importált';
+
+  @override
+  String get fmBanksFilterHint => 'Szűrés név szerint';
+
+  @override
+  String get fmBanksNoMatch => 'Nincs egyező bank';
+
+  @override
+  String get fmBanksImportedEmpty =>
+      'Még nincs importált bank. Húzz egy .wopl vagy .wopn fájlt az ablakra, nyisd meg a Rewamppal, vagy importáld itt.';
+
+  @override
+  String fmBankImported(String name, String engine) {
+    return '„$name” bank importálva és kiválasztva: $engine';
+  }
+
+  @override
+  String fmBankImportInvalid(String name) {
+    return '„$name” nem WOPL vagy WOPN bank';
+  }
+
+  @override
+  String fmBankDeleteConfirm(String name) {
+    return 'Törlöd a(z) „$name” bankot?';
+  }
+
+  @override
+  String get fmBanksImportTile => 'Bankok importálása…';
+
+  @override
+  String fmBanksImportSubtitle(String ext) {
+    return '$ext fájlok (Wohlstand bankszerkesztőiből vagy gyűjteményeiből). A fájl fejléce dönt; az importált bankok a banklistából távolíthatók el.';
+  }
+
+  @override
+  String get fmEmuAccuracyVeryHigh => 'Nagyon pontos';
+
+  @override
+  String get fmEmuAccuracyGood => 'Pontos';
+
+  @override
+  String get fmEmuAccuracyApproximate => 'Közelítő';
+
+  @override
+  String get fmEmuCpuLight => 'Gyors';
+
+  @override
+  String get fmEmuCpuMedium => 'Mérsékelt CPU-terhelés';
+
+  @override
+  String get fmEmuCpuHeavy => 'CPU-igényes';
+
+  @override
+  String settingsDefaultFor(String format) {
+    return 'Alapértelmezett lejátszó: $format';
+  }
+
+  @override
+  String get settingsDefaultForActive => 'Ez a motor játssza ezt a formátumot';
+
+  @override
+  String settingsDefaultForSet(String section) {
+    return 'Koppints, hogy ez a motor játssza ezt a formátumot – minden választás megvan itt is: „$section”';
+  }
+
+  @override
+  String get settingsDecoderDosMidi =>
+      'DOS-os játékok MIDI-je (XMI, MUS, HMI…)';
+
+  @override
+  String get playWithTitle => 'Lejátszás ezzel…';
+
+  @override
+  String playWithAuto(String engine) {
+    return 'Automatikus ($engine)';
+  }
+
+  @override
+  String get playWithPlayingNow => 'Most szól';
+
+  @override
+  String get playWithRemember => 'Emlékezzen erre a választásra';
+
+  @override
+  String get playWithRememberOn =>
+      'A fájl (vagy az album) minden lejátszásakor';
+
+  @override
+  String get playWithRememberOff => 'Csak erre a lejátszásra';
+
+  @override
+  String get playWithScopeFile => 'Ez a fájl';
+
+  @override
+  String get playWithScopeAlbum => 'Az egész album';
+
+  @override
+  String get playWithApply => 'Lejátszás';
+
+  @override
+  String playWithCurrent(String engine) {
+    return 'Motor: $engine';
+  }
+
+  @override
+  String get settingsForgetPlayWith =>
+      'A „Lejátszás ezzel…” választások elfelejtése';
+
+  @override
+  String settingsForgetPlayWithSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count megjegyzett választás',
+      zero: 'Nincs megjegyzett választás',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsForgetPlayWithBody =>
+      'Minden, amit egy fájlhoz vagy albumhoz megjegyeztünk (motor, bank, SoundFont, modell), törlődik: ismét az alapértelmezésekkel szólnak.';
+
+  @override
+  String get playWithBank => 'Hangszerbank';
+
+  @override
+  String playWithBankDefault(String name) {
+    return 'A beállítások bankja ($name)';
+  }
+
+  @override
+  String get fmBankInUseTitle => 'A bank használatban van';
+
+  @override
+  String fmBankInUseIntro(String name) {
+    return '„$name” ki van választva ehhez:';
+  }
+
+  @override
+  String fmBankInUseFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count fájl',
+      one: '$count fájl',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fmBankInUseAlbums(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count album',
+      one: '$count album',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fmBankInUseOutro =>
+      'Ezek ismét a motor beállításaiban megadott bankkal szólnak. Törlöd mégis?';
+
+  @override
+  String playWithSoundfontDefault(String name) {
+    return 'A beállítások SoundFontja ($name)';
+  }
+
+  @override
+  String playWithMt32Default(String model) {
+    return 'Beállítás: $model';
+  }
+
+  @override
+  String get playWithOptionSetting => 'Beállítás';
+
+  @override
+  String get soundfontInUseTitle => 'A SoundFont használatban van';
+
+  @override
+  String get soundfontInUseOutro =>
+      'Ezek ismét a beállításokban megadott SoundFonttal szólnak. Törlöd mégis?';
+
+  @override
+  String get playWithTitleAlbum => 'Album lejátszása ezzel…';
+
+  @override
+  String get playWithSave => 'Mentés';
+
+  @override
+  String get shortcutsTitle => 'Billentyűparancsok';
+
+  @override
+  String get shortcutsSubtitle => 'Lejátszás, vizualizáció és ablak billentyűi';
+
+  @override
+  String get shortcutsHint =>
+      'Az önálló billentyűk figyelmen kívül maradnak, amíg egy szövegmező van fókuszban. A vizualizáció billentyűi csak akkor hatnak, ha a vizualizáció látható.';
+
+  @override
+  String get shortcutsGroupTransport => 'Lejátszás';
+
+  @override
+  String get shortcutsGroupVisualizer => 'Vizualizáció';
+
+  @override
+  String get shortcutsGroupWindow => 'Ablak és navigáció';
+
+  @override
+  String get shortcutsKeySpace => 'Szóköz';
+
+  @override
+  String get shortcutsKeyEscape => 'Esc';
+
+  @override
+  String get shortcutPlayPause => 'Lejátszás / szünet';
+
+  @override
+  String get shortcutPrevTrack => 'Előző szám';
+
+  @override
+  String get shortcutNextTrack => 'Következő szám';
+
+  @override
+  String get shortcutSeekBack10 => 'Vissza 10 másodpercet';
+
+  @override
+  String get shortcutSeekForward10 => 'Előre 10 másodpercet';
+
+  @override
+  String get shortcutSeekBack60 => 'Vissza 1 percet';
+
+  @override
+  String get shortcutSeekForward60 => 'Előre 1 percet';
+
+  @override
+  String get shortcutSeekPercent => 'Ugrás a szám 0 %…90 %-ára';
+
+  @override
+  String get shortcutRepeat => 'Ismétlési mód';
+
+  @override
+  String get shortcutShuffle => 'Véletlenszerű';
+
+  @override
+  String get shortcutFavorite => 'Kedvenc';
+
+  @override
+  String get shortcutSpeedDown => 'Lassabban';
+
+  @override
+  String get shortcutSpeedUp => 'Gyorsabban';
+
+  @override
+  String get shortcutSpeedReset => 'Normál sebesség';
+
+  @override
+  String get shortcutVizNext => 'Következő vizualizáció';
+
+  @override
+  String get shortcutVizPrev => 'Előző vizualizáció';
+
+  @override
+  String get shortcutVizControls => 'A vizualizáció vezérlőinek megjelenítése';
+
+  @override
+  String get shortcutPmNext => 'projectM: következő preset';
+
+  @override
+  String get shortcutPmPrev => 'projectM: előző preset';
+
+  @override
+  String get shortcutPmLock => 'projectM: preset zárolása';
+
+  @override
+  String get shortcutPmRandom => 'projectM: véletlen sorrend';
+
+  @override
+  String get shortcutPmPicker => 'projectM: presetlista';
+
+  @override
+  String get shortcutMiniWindow => 'Minilejátszó';
+
+  @override
+  String get shortcutMiniViz => 'Minilejátszó vizualizációval';
+
+  @override
+  String get shortcutAlwaysOnTop => 'Mindig legfelül';
+
+  @override
+  String get shortcutPlayer => 'Lejátszó megnyitása / bezárása';
+
+  @override
+  String get shortcutEscape => 'A legfelső panel bezárása';
+
+  @override
+  String get shortcutQueue => 'Várólista panel';
+
+  @override
+  String get shortcutSearch => 'Keresés';
+
+  @override
+  String get shortcutTabs => 'Lapok az oldalsáv sorrendjében';
+
+  @override
+  String get shortcutOpenFiles => 'Fájlok megnyitása…';
+
+  @override
+  String get shortcutLinkFolder => 'Mappa csatolása…';
+
+  @override
+  String get shortcutInfo => 'A szám adatai';
+
+  @override
+  String get shortcutSettings => 'Beállítások';
+
+  @override
+  String get shortcutFullscreen => 'Teljes képernyő';
+
+  @override
+  String get shortcutHelp => 'Ez a lista';
+
+  @override
+  String get navHelp => 'Súgó';
+
+  @override
+  String get helpTitle => 'Súgó';
+
+  @override
+  String get helpDocsTitle => 'Online dokumentáció';
+
+  @override
+  String get helpDocsSubtitle =>
+      'Lépésről lépésre útmutatók képernyőképekkel a rewamp.app oldalon (angolul)';
+
+  @override
+  String get sleepTimerTitle => 'Elalváskapcsoló';
+
+  @override
+  String get sleepTimerExplain =>
+      'A lejátszás a választott idő után szünetel, az utolsó 30 másodpercben elhalkulva.';
+
+  @override
+  String sleepTimerMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count perc',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sleepTimerRemainingMinutes(int count) {
+    return '$count perc';
+  }
+
+  @override
+  String sleepTimerRemainingSeconds(int count) {
+    return '$count mp';
+  }
+
+  @override
+  String sleepTimerActiveRemaining(String time) {
+    return 'Hátralévő idő: $time';
+  }
+
+  @override
+  String get sleepTimerOff => 'Kikapcsolás';
+
+  @override
+  String get sleepTimerEnded =>
+      'Az elalváskapcsoló lejárt — a lejátszás szünetel';
+
+  @override
+  String get sleepTimerNothingToPlay =>
+      'Nincs legutóbbi hallgatás, amivel kezdeni lehetne';
+
+  @override
+  String get releaseNotesV11Autoplay =>
+      'Automatikus lejátszás (∞): ha a sor véget ér, a lejátszás rokon számokkal folytatódik (ugyanaz az előadó, csoport, gyűjtemény).';
+
+  @override
+  String get releaseNotesV11LinkedFolders =>
+      'Csatolt mappák: a fájljaid ott szólnak, ahol vannak, másolás nélkül — mappák a gépen, a Fájlok app és az iCloud iOS-en, bármely mappa Androidon.';
+
+  @override
+  String get releaseNotesV11PlayWith =>
+      '„Lejátszás ezzel…”: válaszd ki egy fájl vagy album motorját, valamint a SoundFontját, MT-32 modelljét vagy FM-bankját (saját WOPL/WOPN bankokat is importálhatsz).';
+
+  @override
+  String get releaseNotesV11NewEngines =>
+      'Új motorok: MIDI OPL3-on (libADLMIDI) és OPN2/OPNA-n (libOPNMIDI), Beatnik .rmf, ZX Spectrum .tap kazetták és Amstrad CPC .dsk lemezek emulált gépeken, UnExoticA Mark II.';
+
+  @override
+  String get releaseNotesV11EngineUpdates =>
+      'Frissített motorok: VGM 1.72 Namco WSG chipekkel, Furnace, AtariAudio 1.27 (mostantól alapértelmezett a .ym fájlokhoz), választható libxmp az Amiga modulokhoz, állítható lekeverés a VGM-ek végén.';
+
+  @override
+  String get releaseNotesV11Sleep =>
+      'Elalvási időzítő: válassz időtartamot, a zene elhalkul és leáll — az üres sor pedig magától megtelik.';
+
+  @override
+  String get releaseNotesV11Desktop =>
+      'Asztali gép: billentyűparancsok (lista a ? gombbal), Súgó lap az online dokumentációval, parancssor (rewamp --mini --play …) és egyetlen alkalmazáspéldány.';
+
+  @override
+  String get releaseNotesV11ArtistSync =>
+      'A könyvtáradban lévő előadók szinkronizálódnak a fiókoddal, borítóval együtt.';
+
+  @override
+  String get releaseNotesV11PlayNext =>
+      'Hosszú nyomás egy számon: lejátszás most, következőként vagy a végén; „…” menü az Összes lejátszása, a Rádió és a Meglepetés mellett.';
+
+  @override
+  String get releaseNotesV11Composers =>
+      'A zeneszerzők minden album- és alszám-képernyőn koppinthatók; a cím és a szerző az importált fájlokból olvasódik be.';
+
+  @override
+  String get releaseNotesV11Hindi =>
+      'Az app beszél hindiül (19 nyelv), és a felület kész a jobbról balra írt nyelvekre.';
+
+  @override
+  String get releaseNotesV11Loops =>
+      'Lejátszás közben bekapcsolt végtelen ismétlés: a szám a saját ismétlési pontján folytatódik, az ismétlés nélküli pedig elölről kezdődik.';
+
+  @override
+  String get releaseNotesV11Visualizers =>
+      'Vizualizációk: akár 64 szólam az oszcilloszkópokon, saját szín minden MIDI ütőhangszernek, hangjegyek 2SF fájlokhoz, hangszernevek az FM-bankokból.';
+
+  @override
+  String get releaseNotesV11Fixes =>
+      'Javítva: egyes elutasított SSF fájlok, néma WonderSwan ripek, több archívumra bontott hiányos albumok és a projectM presetek a lejátszó bezárása után.';
 }

@@ -21,6 +21,9 @@ void main() {
   test('opl3 épingle libADLMIDI', () {
     expect(preferredMidiPluginFor('opl3'), 'adlmidi');
   });
+  test('opn2 épingle libOPNMIDI', () {
+    expect(preferredMidiPluginFor('opn2'), 'opnmidi');
+  });
   test('une valeur inconnue vaut auto, jamais une épingle inventée', () {
     expect(preferredMidiPluginFor('adlmidi'), isNull);
     expect(preferredMidiPluginFor(''), isNull);

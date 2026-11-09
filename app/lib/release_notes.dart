@@ -46,9 +46,16 @@ import 'user_settings.dart';
 /// déposées, piano, formats Amiga et ZX, « Ouvrir avec » Apple, puis les
 /// corrections (crash `.mtc`, crossfade, pochette republiée). Le navigateur
 /// Podiums en tête. Le libellé n'est plus « Beta N » mais le numéro.
-const kReleaseNotesVersion = 10;
+///
+/// **11 = 1.1** (`1.1.0+19`, 2026-11-09). La 1.0 a été PUBLIÉE (tag v1.0.0),
+/// ses douze puces sont vues et RETIRÉES. Quatorze puces: les nouveautés qui
+/// changent l'usage d'abord (lecture automatique, dossiers liés, « Lire
+/// avec… », moteurs neufs et mis à jour, minuteur de sommeil, bureau,
+/// artistes synchronisés, appui long), puis les finitions (compositeurs,
+/// hindi, boucle infinie, visualiseurs), les corrections en dernier.
+const kReleaseNotesVersion = 11;
 
-const kReleaseNotesLabel = '1.0';
+const kReleaseNotesLabel = '1.1';
 
 /// Les points de la note, dans l'ordre d'affichage. Une note SYNTHÉTIQUE: ce
 /// que l'utilisateur verra changer, pas le journal des commits. Le dernier
@@ -56,18 +63,20 @@ const kReleaseNotesLabel = '1.0';
 /// délibérément en dernier et signalé, c'est la seule ligne qui demande
 /// quelque chose au lecteur plutôt que de lui annoncer un gain.
 List<String> releaseNotesBullets(AppLocalizations l10n) => [
-      l10n.releaseNotesV10Podiums,
-      l10n.releaseNotesV10Loading,
-      l10n.releaseNotesV10Arcade,
-      l10n.releaseNotesV10InfoPanel,
-      l10n.releaseNotesV10LocalAlbums,
-      l10n.releaseNotesV10Piano,
-      l10n.releaseNotesV10Amiga,
-      l10n.releaseNotesV10ZxSpectrum,
-      l10n.releaseNotesV10OpenWith,
-      l10n.releaseNotesV10MtcCrash,
-      l10n.releaseNotesV10Crossfade,
-      l10n.releaseNotesV10Artwork,
+      l10n.releaseNotesV11Autoplay,
+      l10n.releaseNotesV11LinkedFolders,
+      l10n.releaseNotesV11PlayWith,
+      l10n.releaseNotesV11NewEngines,
+      l10n.releaseNotesV11EngineUpdates,
+      l10n.releaseNotesV11Sleep,
+      l10n.releaseNotesV11Desktop,
+      l10n.releaseNotesV11ArtistSync,
+      l10n.releaseNotesV11PlayNext,
+      l10n.releaseNotesV11Composers,
+      l10n.releaseNotesV11Hindi,
+      l10n.releaseNotesV11Loops,
+      l10n.releaseNotesV11Visualizers,
+      l10n.releaseNotesV11Fixes,
     ];
 
 /// L'écran lui-même: fond du splash, logo réduit, la note, un bouton.

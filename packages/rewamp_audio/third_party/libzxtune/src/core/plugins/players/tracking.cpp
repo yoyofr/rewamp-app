@@ -390,11 +390,46 @@ namespace Module
   namespace
   {
     std::vector<TrackModel::Ptr> RewampModels;
+    std::vector<std::size_t> RewampModelDelegates;
+    std::vector<uint_t> RewampDelegateHw;
+    std::size_t RewampCurrentDelegate = 0;
   }
 
   void RewampTrackModelsClear()
   {
     RewampModels.clear();
+    RewampModelDelegates.clear();
+    RewampDelegateHw.clear();
+    RewampCurrentDelegate = 0;
+  }
+
+  void RewampDelegateBegin(std::size_t idx)
+  {
+    RewampCurrentDelegate = idx;
+  }
+
+  void RewampDelegateEnd(std::size_t idx, uint_t hwChannels)
+  {
+    if (idx >= RewampDelegateHw.size())
+    {
+      RewampDelegateHw.resize(idx + 1, 0);
+    }
+    RewampDelegateHw[idx] = hwChannels;
+  }
+
+  std::size_t RewampDelegateCount()
+  {
+    return RewampDelegateHw.size();
+  }
+
+  uint_t RewampDelegateChannels(std::size_t idx)
+  {
+    return idx < RewampDelegateHw.size() ? RewampDelegateHw[idx] : 0;
+  }
+
+  std::size_t RewampTrackModelDelegateAt(std::size_t idx)
+  {
+    return idx < RewampModelDelegates.size() ? RewampModelDelegates[idx] : 0;
   }
 
   std::size_t RewampTrackModelsCount()
@@ -410,6 +445,7 @@ namespace Module
   TrackStateIterator::Ptr CreateTrackStateIterator(TrackModel::Ptr model)
   {
     RewampModels.push_back(model);
+    RewampModelDelegates.push_back(RewampCurrentDelegate);
     return boost::make_shared<TrackStateIteratorImpl>(model);
   }
 }

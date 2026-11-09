@@ -27,6 +27,11 @@ namespace TFM
   class ChipAdapter
   {
   public:
+    ChipAdapter()
+      : VoiceBase(rewamp_zx_voice_base)   //YOYOFR (rewamp)
+    {
+    }
+
     void SetParams(uint64_t clock, uint_t sndFreq)
     {
       if (Helper.SetNewParams(clock, sndFreq))
@@ -59,11 +64,12 @@ namespace TFM
       Sound::Sample* const out = tgt.Allocate(count);
       FM::Details::YM2203SampleType* const outRaw = safe_ptr_cast<FM::Details::YM2203SampleType*>(out);
         
-        m_voicesForceOfs=0;//YOYOFR
+        m_voicesForceOfs=VoiceBase;//YOYOFR (rewamp): this chip's voice base
+        rewamp_voice_notes_clear(VoiceBase, 6);
         
       ::YM2203UpdateOne(Chips[0].get(), outRaw, count);
         
-        m_voicesForceOfs=3;//YOYOFR
+        m_voicesForceOfs=VoiceBase+3;//YOYOFR
         
       ::YM2203UpdateOne(Chips[1].get(), outRaw, count);
       Helper.ConvertSamples(outRaw, outRaw + count, out);
@@ -84,6 +90,7 @@ namespace TFM
   private:
     FM::Details::ChipAdapterHelper Helper;
     boost::array<FM::Details::ChipPtr, TFM::CHIPS> Chips;
+    const int VoiceBase;   //YOYOFR (rewamp)
   };
 
   struct Traits

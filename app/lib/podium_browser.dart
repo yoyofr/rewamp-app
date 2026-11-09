@@ -38,6 +38,8 @@ import 'radio_surprise_buttons.dart';
 import 'rewamp_db.dart';
 import 'scrolling_text.dart';
 import 'search_screen.dart' show ArtistResultsScreen;
+import 'sheet_handle.dart';
+import 'list_station.dart';
 import 'shell_insets.dart';
 import 'song_tile.dart';
 import 'track_options_sheet.dart' show globalOnPlayAlbum;
@@ -95,6 +97,19 @@ class _PodiumHubScreenState extends State<PodiumHubScreen> {
       if (!mounted) return;
       setState(() { _loading = false; _error = e.toString(); });
     }
+  }
+
+  /// Radio: une station (list_station.dart) sur tous les podiums.
+  Future<void> _startStation() async {
+    try {
+      await startRandomStation(
+        context,
+        (seed, offset, limit) => RewampDb.browse(
+            podium: 0, sortBy: 'random', seed: seed,
+            limit: limit, offset: offset),
+        fallback: widget.onPlayAlbum ?? globalOnPlayAlbum,
+      );
+    } catch (_) {}
   }
 
   Future<void> _playRandom(int n) async {
@@ -185,7 +200,7 @@ class _PodiumHubScreenState extends State<PodiumHubScreen> {
             ),
           ),
           RadioSurpriseButtons(
-              onRadio: () => _playRandom(50), onSurprise: () => _playRandom(1)),
+              onRadio: _startStation, onSurprise: () => _playRandom(1)),
         ]),
       ),
       Padding(
@@ -521,6 +536,29 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
 
   /// Radio (50) / Surprise (1): le serveur tire au hasard DANS la portée
   /// courante — pas un mélange de la page chargée.
+  /// Radio: une station (list_station.dart) sur la portée courante, critères
+  /// FIGÉS au geste (`_fetch` relit l'écran à chaque appel).
+  Future<void> _startStation() async {
+    final q = _titleFilter, fuzzy = _fuzzy, rank = _rank;
+    final criteria = _criteria.isEmpty ? null : _criteria;
+    final platform = _platform, format = _format;
+    try {
+      await startRandomStation(
+        context,
+        (seed, offset, limit) => q != null
+            ? RewampDb.search(q,
+                fuzzy: fuzzy, podium: rank, podiumCriteria: criteria,
+                platform: platform, formatFilter: format,
+                sortBy: 'random', seed: seed, limit: limit, offset: offset)
+            : RewampDb.browse(
+                podium: rank, podiumCriteria: criteria,
+                platform: platform, formatFilter: format,
+                sortBy: 'random', seed: seed, limit: limit, offset: offset),
+        fallback: widget.onPlayAlbum ?? globalOnPlayAlbum,
+      );
+    } catch (_) {}
+  }
+
   Future<void> _playRandom(int n) async {
     final seed = DateTime.now().microsecondsSinceEpoch.toString();
     try {
@@ -569,9 +607,8 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
   Future<String?> _pickLabelled(String title, List<_Choice> options, String? current) {
     final l10n = context.l10n;
     final accent = Theme.of(context).colorScheme.primary;
-    return showModalBottomSheet<String>(
+    return showHandleSheet<String>(
       context: context,
-      showDragHandle: true,
       isScrollControlled: true,
       builder: (ctx) => SafeArea(
         child: SingleChildScrollView(
@@ -616,10 +653,9 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
   /// plateformes; formats) — celle de la Recherche.
   Future<void> _pickRaw(String label, List<FacetCount> values, String? current,
       void Function(String?) onPick) {
-    return showModalBottomSheet<void>(
+    return showHandleSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
       builder: (ctx) => FacetPickerSheet(
         label: label,
         values: values,
@@ -642,9 +678,8 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
     final selYear = _criteria.yearMin != null && _criteria.yearMin == _criteria.yearMax
         ? _criteria.yearMin : null;
     final none = _criteria.yearMin == null && _criteria.yearMax == null;
-    return showModalBottomSheet<({_EraKind kind, int value})>(
+    return showHandleSheet<({_EraKind kind, int value})>(
       context: context,
-      showDragHandle: true,
       isScrollControlled: true,
       builder: (ctx) => SafeArea(
         child: ConstrainedBox(
@@ -856,7 +891,7 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
           const Spacer(),
           RadioSurpriseButtons(
             onPlayAll: _playAll,
-            onRadio: () => _playRandom(50),
+            onRadio: _startStation,
             onSurprise: () => _playRandom(1),
             dense: true,
           ),

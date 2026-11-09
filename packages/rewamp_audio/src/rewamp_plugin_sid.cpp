@@ -409,6 +409,11 @@ static uint64_t sid_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     // Apply voice-mute changes from the UI.
     sid_sync_mute(dec, false);
 
+    // Voice scope through the filter (reSIDfp patch, ~+50 % of the SID
+    // emulation): only while a voice oscilloscope reads the rings. Decided
+    // once per decode step — SID::clock runs many times per step.
+    sid_scope_filter_on = rewamp_voice_scope_wanted();
+
     // SID chip clock: PAL=985248 Hz, NTSC=1022727 Hz. Use PAL.
     static const double kSidClock = 985248.0;
 

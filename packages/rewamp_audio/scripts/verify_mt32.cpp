@@ -26,6 +26,13 @@ int rewamp_ext_in_list(const char* ext, const char* const* list) {
     return 0;
 }
 const char* rewamp_get_data_dir(void) { return ""; }
+/* PATH_MT32_MODEL=1|2 : « Lire avec… », le modèle de CE fichier. */
+extern "C" void rewamp_decoder_activity(void) {}
+extern "C" int rewamp_registry_path_option(const char*, const char* plugin, char* out, size_t n) {
+    const char* e = getenv("PATH_MT32_MODEL");
+    if (!e || strcmp(plugin, "mt32") != 0) { if (n) out[0] = 0; return 0; }
+    snprintf(out, n, "%s", e); return 1;
+}
 /* ⚠️ TROIS arguments, comme la vraie: un stub à deux rendait 0 et faussait
  * une mesure (fondu PSF). `model` vient de l'environnement
  * pour tester MT-32 / CM-32L: MT32_MODEL=1|2. */

@@ -30,3 +30,10 @@ comprise. Il n'est pas utilisé.
 (`Skip`) laissait un temps faux, donc une fin fausse. Calcul en `double`.
 
 Oracle: `scripts/verify_playback_speed.sh` (mode NOTES et mode longueur).
+
+## 3. Fraction décimale des temps .m3u (2026-11-03)
+
+`player/nsf/pls/ppls.cpp` `get_time()`: accepte `m:ss.mmm` (forme des rips
+joshw/Knurek: `0:06.559`, `0:12.800`). L'amont ne lisait que l'apostrophe
+NEZplug (`0:06'55`, centièmes) et s'arrêtait au point: temps ET fondu
+tronqués à la seconde (fin du morceau coupée jusqu'à 999 ms).

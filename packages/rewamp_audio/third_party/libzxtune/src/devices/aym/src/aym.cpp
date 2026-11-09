@@ -30,6 +30,10 @@ namespace AYM
     typedef PSG PSGType;
     typedef Chip ChipBaseType;
     static const uint_t VOICES = AYM::VOICES;
+    //rewamp: voices the oscilloscope captures — the three tone channels. VOICES
+    //counts noise and envelope too (the analyzer's bands), and binding that
+    //many wrote two voices into the NEXT chip of a MultiTrackContainer.
+    static const uint_t CAPTURE_VOICES = 3;
   };
 
   Chip::Ptr CreateChip(ChipParameters::Ptr params, MixerType::Ptr mixer, Sound::Receiver::Ptr target)

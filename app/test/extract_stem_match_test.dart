@@ -69,4 +69,13 @@ void main() {
     await put('autre chose.ogg');
     expect(await RewampDb.debugFindByStem(dir.path, 'Audio Track 01.wav'), isNull);
   });
+
+  // UnExoticA « Denaris »: nom Amiga à PRÉFIXE, le format est AVANT le point.
+  // « dz.title » et « dz.game_end » partagent le radical « dz » — servir l'un
+  // pour l'autre, c'est jouer le mauvais morceau.
+  test('nom Amiga à préfixe: le radical ne désigne rien', () async {
+    await put('Denaris/dz.game_end');
+    expect(await RewampDb.debugFindByStem(dir.path, 'Denaris/dz.title'),
+        isNull);
+  });
 }

@@ -1,9 +1,10 @@
-/*--------------------------------------------------------------------
-	Atari Audio Library
-	Small & accurate ATARI-ST audio emulation
-	Arnaud Carré aka Leonard/Oxygene
-	@leonard_coder
---------------------------------------------------------------------*/
+//----------------------------------------------------------
+//
+//	AtariAudio 1.27
+//	Small & accurate ATARI-ST audio emulation
+//	by Arnaud Carré aka Leonard/Oxygene (@leonard_coder)
+//
+//----------------------------------------------------------
 #pragma once
 #include <stdint.h>
 
@@ -11,25 +12,27 @@ class Ym2149c
 {
 public:
 
-	void	Reset(uint32_t hostReplayRate, uint32_t ymClock = 2000000);
+	void Reset(uint32_t hostReplayRate, uint32_t ymClock, bool predictibleState = false);
 	void	WritePort(uint8_t port, uint8_t value);
 	uint8_t ReadPort(uint8_t port) const;
-	int16_t	ComputeNextSample(uint32_t* pSampleDebugInfo = nullptr);
+	int16_t	ComputeNextSample();
 	void	InsideTimerIrq(bool inside);
 
-    int getYM2149_Freq(int channel);//YOYOFR
+	uint32_t ComputeCurrentVisualLevels() const; // only used for some player visual, contains 3 YM voices volume and STE DAC in 8888 format
+
+	void MuteVoices(uint32_t muteMask);
+	void RewampScopeSample(const int* view, int counter);	// REWAMP: scope + notes
+	int16_t		dcAdjust(int16_t v);
+
 private:
 	void	WriteReg(int reg, uint8_t value);
-	uint16_t Tick();
+	int Tick();
 
 	static const uint32_t kDcAdjustHistoryBit = 11;	// 2048 values (~20ms at 44Khz) 
-
-	int16_t		dcAdjust(uint16_t v);
 
 	int			m_selectedReg;
 	const uint8_t* m_pCurrentEnv;
 	uint32_t	m_ymClockOneEighth;
-	uint32_t	m_resamplingDividor;
 	uint32_t	m_hostReplayRate;
 	uint32_t	m_toneCounter[3];
 	uint32_t	m_tonePeriod[3];
@@ -44,15 +47,14 @@ private:
 	uint32_t	m_noiseMask;
 	uint32_t	m_noiseRndRack;
 	uint32_t	m_currentNoiseMask;
-	uint16_t	m_dcAdjustBuffer[1<<kDcAdjustHistoryBit];
-	unsigned int	m_dcAdjustPos;
-	uint32_t	m_dcAdjustSum;
+	uint16_t 	m_currentVisualLevels;
+	int16_t		m_dcAdjustBuffer[1<<kDcAdjustHistoryBit];
+	int32_t		m_dcAdjustPos;
+	int32_t		m_dcAdjustSum;
 	uint8_t		m_regs[14];
-	uint32_t	m_currentLevel;
 	uint32_t	m_innerCycle;
-	uint32_t 	m_noiseEnvHalf;
-	uint32_t	m_currentDebugThreeVoices;
+	uint32_t 	m_noiseHalf;
+	uint32_t 	m_enableMask;
 	bool		m_insideTimerIrq;
 	bool		m_edgeNeedReset[3];
 };
-

@@ -9,7 +9,7 @@ import 'library_presence.dart'
     show presentPaths, invalidateLocalPresence;
 import 'local_roots.dart' show LocalRoots, LinkedEntry;
 import 'portable_path.dart';
-import 'rewamp_db.dart' show catalogueSongId;
+import 'rewamp_db.dart' show catalogueSongId, RewampDb;
 import 'uade_info.dart';
 import 'user_settings.dart';
 
@@ -962,6 +962,10 @@ class LocalDb extends ChangeNotifier {
   static String? _sandboxRoot;
 
   static void setSandboxRoot(String root) => _sandboxRoot = root;
+
+  /// The stored form of a path (`{sandbox}/…` on iOS), for keys that must
+  /// survive the container moving at reinstall (EngineChoices).
+  static String normPath(String path) => _norm(path);
 
   static String _norm(String path) {
     final r = _sandboxRoot;
@@ -3744,6 +3748,43 @@ class LocalDb extends ChangeNotifier {
   /// Un morceau sans album est rangé sous son ARTISTE, et deux flux peuvent
   /// nommer le crédit différemment: chaque désaccord recrée le doublon, un
   /// balayage unique ne suffit pas.
+  /// Retire les lignes d'une tracklist serveur dont le RANG ne désigne plus
+  /// leur fichier. Une entrée de tracklist s'identifie par `<uuid>#<rang>`:
+  /// quand le serveur RETIRE une entrée (UnExoticA « Denaris »: le player
+  /// Amiga, rang 0, 2026-11-06), tous les rangs suivants glissent. Les lignes
+  /// encore listées sont ré-étiquetées par l'upsert de `materializeAlbumTracks`
+  /// (même chemin, nouveau rang); celle dont le fichier a QUITTÉ la liste
+  /// garderait son ancien rang, et `getTrackByOnlineId` — qui préfère la ligne
+  /// au fichier présent — rendait alors le player pour `mii.game_end`.
+  ///
+  /// Bornée au DOSSIER de l'album: ailleurs, une ligne au même uuid peut être
+  /// l'ancien emplacement d'un chemin dérivé qui a bougé (le repli « chemin
+  /// connu en base » en a besoin), pas un membre retiré.
+  Future<int> dropRanksOutsideTracklist(
+      String fileUuid, String albumDir, Set<String> keepPaths) async {
+    if (fileUuid.isEmpty || albumDir.isEmpty) return 0;
+    final keep = {for (final k in keepPaths) _norm(k)};
+    final dirNorm = _norm(albumDir);
+    final rows = await _database.rawQuery(
+      "SELECT id, file_path FROM tracks WHERE online_id LIKE ? ESCAPE '\\'",
+      ['${_likeEscape(fileUuid)}#%'],
+    );
+    final doomed = <String>[];
+    for (final r in rows) {
+      final fp = r['file_path'] as String? ?? '';
+      if (keep.contains(fp)) continue;
+      if (!p.isWithin(dirNorm, fp)) continue;
+      doomed.add(r['id'] as String);
+    }
+    if (doomed.isEmpty) return 0;
+    final marks = List.filled(doomed.length, '?').join(',');
+    await _database
+        .rawDelete('DELETE FROM tracks WHERE id IN ($marks)', doomed);
+    debugPrint('LocalDb: ${doomed.length} ligne(s) de $fileUuid hors '
+        'tracklist retirée(s)');
+    return doomed.length;
+  }
+
   Future<void> pruneMissingDuplicates(String onlineId, int subsongIdx,
       {required String keepPath}) async {
     final rows = await _database.rawQuery(
@@ -3783,6 +3824,18 @@ class LocalDb extends ChangeNotifier {
              THEN li.album_id = ra.album_id OR li.ref_id = ra.album_id
              ELSE li.album_id IS NULL AND li.ref_id = ra.meta_album END''';
 
+  /// Le repli au NOM de l'origine d'un album récent exige le même DOSSIER
+  /// que la piste de `ra` (le dossier d'un album est dédié). Au nom seul, un
+  /// album importé ou un album catalogue sans piste rattachée par uuid prenait
+  /// la plateforme d'un HOMONYME (« Dune » nomme trois albums et un import).
+  /// Même expression que la garde des pistes plus bas: le chemin moins son
+  /// dernier composant, `/` comme l'antislash de Windows (`char(92)`).
+  static const _kSameDirAsRecentAlbum = '''
+                rtrim(t2.file_path, replace(replace(
+                      t2.file_path, '/', ''), char(92), ''))
+                  = rtrim(ra.file_path, replace(replace(
+                      ra.file_path, '/', ''), char(92), ''))''';
+
   Future<List<RecentEntry>> getRecentEntries({int limit = 50}) async {
     final rows = await _database.rawQuery('''
       SELECT
@@ -3816,7 +3869,8 @@ class LocalDb extends ChangeNotifier {
         -- une chance par son nom, comme avant). Et c'est une CORRECTION au
         -- passage: le `OR … LIMIT 1` prenait la première piste AU NOM, donc
         -- l'album Saturn de « Battle Garegga » s'affichait « Toaplan 2 / vgz »
-        -- — un nom n'est pas une identité, trois albums le portent.
+        -- — un nom n'est pas une identité, trois albums le portent. Le repli
+        -- au nom est donc borné au DOSSIER de l'album (_kSameDirAsRecentAlbum).
         COALESCE(
           CASE WHEN ra.album_id IS NOT NULL THEN
             (SELECT t2.platform_name FROM tracks t2
@@ -3825,6 +3879,7 @@ class LocalDb extends ChangeNotifier {
           CASE WHEN ra.meta_album IS NOT NULL AND ra.meta_album != '' THEN
             (SELECT t2.platform_name FROM tracks t2
               WHERE t2.meta_album = ra.meta_album
+                AND $_kSameDirAsRecentAlbum
                 AND t2.platform_name IS NOT NULL LIMIT 1) END
         ) AS platform_name,
         COALESCE(
@@ -3835,6 +3890,7 @@ class LocalDb extends ChangeNotifier {
           CASE WHEN ra.meta_album IS NOT NULL AND ra.meta_album != '' THEN
             (SELECT t2.format_ext FROM tracks t2
               WHERE t2.meta_album = ra.meta_album
+                AND $_kSameDirAsRecentAlbum
                 AND t2.format_ext IS NOT NULL LIMIT 1) END
         ) AS format_ext,
         ra.last_played_at,
@@ -4531,13 +4587,20 @@ class LocalDb extends ChangeNotifier {
   /// Removes an artist across BOTH key forms (uuid ref_id, name ref_id) and
   /// by display name — one un-heart clears the pair a duplicate left behind,
   /// and a name-only caller still removes a uuid-saved row.
-  Future<void> removeArtistFromLibrary(String name, {String? refId}) async {
-    await _database.execute(
-      "DELETE FROM library_items WHERE type='artist' "
-      "AND (ref_id = ? OR ref_id = ? OR name = ?)",
-      [refId ?? name, name, name],
-    );
+  ///
+  /// Rend les ref_id effacés: un retrait demandé par le NOM peut emporter une
+  /// entrée clée par UUID, et c'est celle-là que le compte doit oublier
+  /// (`SyncService.recordArtistMembership`).
+  Future<List<String>> removeArtistFromLibrary(String name,
+      {String? refId}) async {
+    const where = "type='artist' AND (ref_id = ? OR ref_id = ? OR name = ?)";
+    final args = [refId ?? name, name, name];
+    final rows = await _database.query('library_items',
+        columns: const ['ref_id'], where: where, whereArgs: args);
+    if (rows.isEmpty) return const [];   // rien à retirer: rien à annoncer
+    await _database.delete('library_items', where: where, whereArgs: args);
     notifyListeners();
+    return [for (final r in rows) r['ref_id'] as String];
   }
 
   /// True when ANY subsong of [songId] is in the library — track keys are
@@ -5123,7 +5186,15 @@ class LocalDb extends ChangeNotifier {
     return TrackRecord.fromMap(rows.first);
   }
 
-  Future<TrackRecord?> getTrackByOnlineId(String onlineId) async {
+  /// [filename] = le fichier que la ligne DEMANDE (`SearchResult.filename`).
+  /// Donné, une ligne qui retient un AUTRE fichier est ignorée
+  /// ([RewampDb.knownPathFitsRow]): une entrée de tracklist s'identifie par
+  /// son RANG (`<uuid>#<i>`), et quand le serveur retire une entrée les rangs
+  /// glissent — UnExoticA « Denaris » rejouait le player Amiga pour
+  /// `mii.game_end` et `dz.title` pour `mii.title`, l'écran d'album les
+  /// croyait téléchargés et l'armement gapless les enchaînait.
+  Future<TrackRecord?> getTrackByOnlineId(String onlineId,
+      {String? filename}) async {
     var rows = await _database.rawQuery(
       'SELECT * FROM tracks WHERE online_id = ? LIMIT 8', [onlineId]);
     // `<uuid>#<n>` names ONE subsong; the uuid alone names the FILE, and this
@@ -5137,6 +5208,14 @@ class LocalDb extends ChangeNotifier {
       rows = await _database.rawQuery(
         'SELECT * FROM tracks WHERE online_id = ? LIMIT 8',
         [onlineId.split('#').first]);
+    }
+    if (filename != null && filename.isNotEmpty) {
+      rows = [
+        for (final m in rows)
+          if (RewampDb.knownPathFitsRow(
+              _denorm(m['file_path'] as String? ?? ''), filename))
+            m,
+      ];
     }
     if (rows.isEmpty) return null;
     // Several rows can share an online id: an archive member gets a row at its
@@ -5180,6 +5259,20 @@ class LocalDb extends ChangeNotifier {
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  /// Remplace [oldUrl] par [newUrl] sur TOUTES les entrées qui la portaient.
+  /// L'url de provenance est notée par ENTRÉE, mais les pistes d'un album en
+  /// archive partagent la même: sans cette réécriture groupée, chacune
+  /// détectait le changement À SON TOUR et vidait le dossier de l'album entier,
+  /// y compris le fichier que la voisine venait d'extraire (Atelier Annie
+  /// jw_2sf, 2026-11-07: « MISSING ON DISK » à la 1re lecture de chaque piste).
+  Future<int> rewriteDownloadSourceUrl(String oldUrl, String newUrl) async {
+    if (oldUrl == newUrl) return 0;
+    return _database.rawUpdate(
+      'UPDATE download_sources SET source_url = ?, updated_at = ? '
+      'WHERE source_url = ?',
+      [newUrl, DateTime.now().millisecondsSinceEpoch, oldUrl]);
   }
 
   /// Oublie l'url de provenance de [onlineId] — un re-téléchargement part d'une

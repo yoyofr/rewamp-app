@@ -213,6 +213,7 @@ bool DivEngine::loadXM(unsigned char* file, size_t len) {
     ds.compatFlags.rowResetsArpPos=true;
     ds.compatFlags.ignoreJumpAtEnd=false;
     ds.compatFlags.pitchSlideSpeed=8;
+    ds.compatFlags.oldCenterRate=true;
 
     logV("Extended Module");
 
@@ -559,7 +560,7 @@ bool DivEngine::loadXM(unsigned char* file, size_t len) {
         logV("sample header size: %d",sampleHeaderSize);
         for (int j=0; j<96; j++) {
           unsigned char nextMap=reader.readC();
-          ins->amiga.noteMap[j].map=ds.sample.size()+nextMap;
+          ins->amiga.noteMap[j+60].map=ds.sample.size()+nextMap;
           noteMap[(i<<7)|j]=nextMap;
         }
 

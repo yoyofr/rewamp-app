@@ -8,7 +8,9 @@ upstream is `./scripts/sync_sidplayfp.sh <sid-ref> <rfp-ref>`. This file explain
 WHY each patch exists; the patch files are the source of truth for WHAT.
 
 Patched files: libresidfp `SID.h` (4-voice capture, seek filter skip, playback
-speed), `Filter.h` + `ExternalFilter.h/.cpp` (digi voice `sid_v4`);
+speed), `Filter.h` + `ExternalFilter.h/.cpp` (digi voice `sid_v4`),
+`Filter.h` + `Filter6581.h/.cpp` + `Filter8580.h/.cpp` (voice scope through the
+filter, last section);
 libsidplayfp `Event.h` (§1), SIDLite `SID.cpp` + `WavGen.cpp/.h` + `Filter.cpp`
 (capture). Since 3.x, `SidConfig::playback` is gone: stereo is `initMixer(true)`.
 
@@ -181,3 +183,41 @@ preprocessor << 'HAVE_CXX23=1'   # → HAVE_CXX11 via sidcxx11.h cascade
 One `.mm` wrapper per `.cpp` source (no unity build — static name conflicts).
 Wrappers live in `Classes/sid_cores/`; `residfp/` subdir files get their own
 wrapper loop with `test.cpp` excluded (it defines `main()`).
+
+---
+
+## Voice oscilloscope AFTER the filter (libresidfp `Filter*`, `SID.h`)
+
+**Problem:** the voice scope wrote `voice[j].output()` — waveform × envelope,
+BEFORE the filter, the mixer and the volume. A voice routed through a low-pass
+looked like its raw pulse while one heard it rounded (reported on Linus,
+« Valleys of Europe », voice 1).
+
+**Fix:** `Filter::clock` also computes each voice ALONE through the same chain
+(`sid_scope_v[3]`): same summer/mixer tables for the current routing, same
+cutoff, resonance, mode and volume, every OTHER input held at its REST level —
+in this model a silent voice is a DC level the tables are built around, so a
+voice fed alone (others at 0) falls off the mixer table and comes out flat.
+Each filtered voice runs through its own copy of the two integrators
+(`scopeHp/scopeBp[0..2]`, kept in step by `updateCenterFrequency` /
+`setFilterCurve` / `restartIntegrators`); copy 3 is the filter fed with silence,
+the rest level of its outputs. The value is relative to the all-silent chain;
+`SID.h` removes its DC (one voice is unipolar) with a ~7 Hz blocker and scales
+it by 1/64 (a full voice at volume 15 peaks near ±110). The filter is not
+linear: the sum of the four traces is each voice's share, not the audio.
+
+**Split in two, for cost:** `Filter::clock` only steps the integrators,
+which must see every cycle; the mixer half (`Filter::scopeOutput`) runs from
+`SID.h` only where the resampler emits a sample, ~1 cycle in 22. The rest
+filter's input never changes, so it is stepped until a cycle leaves it
+unchanged, then FROZEN until resonance, routing or mode (a key compared each
+cycle) or the cutoff/curve (`updateCenterFrequency`, `setFilterCurve`) move it.
+A silent voice whose filter state equals the rest one is not integrated: the
+rest filter answers for it.
+
+**Cost:** +21 % of the SID emulation's instructions (109.8 → 133.1 G for
+120 s of « Valleys of Europe »; the first version, everything per cycle, was
++52 %). Paid only while a voice oscilloscope READS the rings
+(`rewamp_voice_scope_wanted`, decided once per decode step in the plugin's
+`read()`, `sid_scope_filter_on`); otherwise the raw voice is written as before.
+

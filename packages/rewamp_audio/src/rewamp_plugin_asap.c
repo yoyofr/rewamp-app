@@ -24,6 +24,13 @@
 /* Défini par le patch rewamp 0002 d'asap.c (patches/asap/): pas dans asap.h,
  * que sync_asap.sh recopie tel quel depuis l'amont. */
 void ASAP_RewampSetSpeed(ASAP *self, double speed, int songDurationMs, int songPosMs);
+void ASAP_RewampPlayForever(ASAP *self);   /* patch 0003 */
+
+/* Boucle forcée (rewamp_audio.c), lue dans open(). */
+extern int g_force_loop_mode;
+extern int g_force_loop_count;
+extern int g_force_loop_native_veto;
+extern int g_loop_lift_refused;
 
 struct RewampDecoder {
     ASAP*    asap;
@@ -31,6 +38,9 @@ struct RewampDecoder {
     int      outChannels;   /* 1 or 2 */
     int      song;
     int      durationMs;    /* per-song duration from the file, -1 = unknown */
+    int      loops;         /* the tune loops by itself (SAP « TIME … LOOP ») */
+    int      endMs;         /* where ASAP stops, song time; -1 = never */
+    int      infinite;      /* infinite loop armed (configure_loop 2) */
     int64_t  lastMuteMask;  /* applied generic_mute_mask snapshot */
     int16_t* pcm;           /* int16 scratch */
     int      pcmFrames;
@@ -173,6 +183,23 @@ static RewampDecoder* asap_open(const char* path, RewampAudioFormat* outFormat) 
     dec->asap        = asap;
     dec->song        = song;
     dec->durationMs  = durationMs;
+    dec->loops       = ASAPInfo_GetLoop(info, song) ? 1 : 0;
+
+    /* NATIVE loop, for a tune that loops by ITSELF (« LOOP » after its TIME):
+     * ASAP just goes on playing past one pass, from the composer's loop
+     * point and without a seam — the generic loop could only start it over
+     * from the intro. Infinite = no end at all; N repeats = N+1 passes (the
+     * generic C window fades the last seconds out). A tune that really ENDS,
+     * or whose length is unknown, keeps the generic loop (veto). */
+    dec->endMs = durationMs;
+    if (g_force_loop_mode != 0) {
+        if (!dec->loops || durationMs <= 0)
+            g_force_loop_native_veto = 1;
+        else if (g_force_loop_mode == 2)
+            dec->endMs = -1;
+        else
+            dec->endMs = durationMs * (g_force_loop_count + 1);
+    }
     dec->outChannels = ASAPInfo_GetChannels(info);   /* 1 or 2 */
     dec->voices      = dec->outChannels == 2 ? 8 : 4;
 
@@ -211,7 +238,7 @@ static RewampDecoder* asap_open(const char* path, RewampAudioFormat* outFormat) 
                                     dec->outChannels, songs);
     }
 
-    if (!ASAP_PlaySong(asap, song, durationMs)) {
+    if (!ASAP_PlaySong(asap, song, dec->endMs)) {
         ASAP_Delete(asap);
         free(dec);
         return NULL;
@@ -272,7 +299,7 @@ static void asap_seek(RewampDecoder* dec, uint64_t frameIndex) {
      * morceau, qui repose la fin à 1× ⇒ on la repose après. */
     ASAP_Seek(dec->asap, (int)(songMs / sp + 0.5));
     dec->songMs = songMs;
-    if (sp != 1.0) ASAP_RewampSetSpeed(dec->asap, sp, dec->durationMs, (int)songMs);
+    if (sp != 1.0) ASAP_RewampSetSpeed(dec->asap, sp, dec->endMs, (int)songMs);
 }
 
 /* Vitesse NATIVE (patch REWAMP d'asap.c): la routine de jeu est appelée tous
@@ -291,19 +318,35 @@ static int asap_set_speed(RewampDecoder* dec, double speed) {
     if (dec && dec->asap && speed > 1.0) {
         if (dec->speed > 0.0 && dec->speed != 1.0) {
             dec->speed = 1.0;
-            ASAP_RewampSetSpeed(dec->asap, 1.0, dec->durationMs, (int)dec->songMs);
+            ASAP_RewampSetSpeed(dec->asap, 1.0, dec->endMs, (int)dec->songMs);
         }
         return 0;
     }
     if (!dec || !dec->asap || speed < 0.2 || speed > 3.0) return 0;
     dec->speed = speed;
-    ASAP_RewampSetSpeed(dec->asap, speed, dec->durationMs, (int)dec->songMs);
+    ASAP_RewampSetSpeed(dec->asap, speed, dec->endMs, (int)dec->songMs);
     return 1;
 }
 
+/* ONE pass (the nominal length, and the base of the generic fade window
+ * under N repeats); 0 once the infinite loop is armed — the producer must not
+ * stop at it. */
 static uint64_t asap_length(RewampDecoder* dec) {
-    if (!dec || dec->durationMs <= 0) return 0;
+    if (!dec || dec->infinite || dec->durationMs <= 0) return 0;
     return (uint64_t)dec->durationMs * ASAP_SAMPLE_RATE / 1000ull;
+}
+
+/* The loop itself is set in open() (it decides ASAP_PlaySong's end); this
+ * call matters for mode 2 only, also when repeat is armed DURING playback
+ * (rewamp_lift_end_for_infinite): the end is lifted in flight, no restart.
+ * Refused for a tune that does not loop by itself. */
+static void asap_configure_loop(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (!dec || !dec->asap || mode != 2) return;
+    if (!dec->loops) { g_loop_lift_refused = 1; return; }
+    dec->infinite = 1;
+    dec->endMs = -1;
+    ASAP_RewampPlayForever(dec->asap);
 }
 
 static void asap_close(RewampDecoder* dec) {
@@ -321,7 +364,8 @@ static const RewampPluginVTable kAsapVTable = {
     asap_seek,
     asap_length,
     asap_close,
-    NULL, 0, NULL, NULL,          /* configure_loop … param_changed */
+    asap_configure_loop,          /* boucle native (morceaux « LOOP ») */
+    0, NULL, NULL,                /* supportsNativeFadeout … param_changed */
     NULL, NULL, NULL, NULL, NULL, /* pattern view */
     NULL, 0,                      /* probe_path, noPrefixProbe */
     asap_set_speed,               /* vitesse native (appel de la routine) */

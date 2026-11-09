@@ -32,11 +32,14 @@ struct RewampDecoder {
     int       ended;
     double    speed;      // native playback speed asked for (0 = 1×)
     int       seekPending;// the speed waits at 1× until UADE's seek completes
+    int       speedRefused;// paced by audio interrupts (TFMX): no native speed
 };
 
 /* uadecore/custom.c: native playback speed — CIA E clock and VBlank × speed,
  * Paula at its clock (the pitch does not move); libuade counts song time. */
 extern "C" volatile double uade_rewamp_speed;
+/* uadecore/custom.c: the replay is paced by audio interrupts (TFMX). */
+extern "C" int uade_rewamp_audio_paced(void);
 
 /* Settings → Moteurs → UADE (Modizer's UADE family; uade_effect_run applies
  * these inside libuade's own read pipeline). Defaults: post-FX ON, panning ON
@@ -824,6 +827,14 @@ static uint64_t uade_read_frames(RewampDecoder* dec, float* out, uint64_t frameC
         dec->seekPending = 0;
         uade_rewamp_speed = dec->speed > 0.0 ? dec->speed : 1.0;
     }
+    /* The player arms its interrupts AFTER open(): a speed accepted then may
+     * turn out to be unreachable (TFMX, see uade_set_speed). Hand it back. */
+    if (!dec->speedRefused && dec->speed > 0.0 && dec->speed != 1.0 &&
+        uade_rewamp_audio_paced()) {
+        dec->speedRefused = 1;
+        uade_rewamp_speed = 1.0;
+        rewamp_speed_renegotiate();
+    }
     if (n <= 0) { dec->ended = 1; return 0; }   // 0 = song end, -1 = error
 
     const int samples = (int)(n / (ssize_t)sizeof(int16_t));
@@ -845,6 +856,17 @@ static void uade_seek_frames(RewampDecoder* dec, uint64_t frameIndex) {
 /* Native speed: see uade_rewamp_speed. Refused while a seek is landing. */
 static int uade_set_speed(RewampDecoder* dec, double speed) {
     if (!dec || !dec->st || speed < 0.2 || speed > 3.0) return 0;
+    /* A replay timed by Paula's audio interrupts (TFMX) ignores CIA, VBlank
+     * and CPU alike: claiming the speed would change NOTHING, and the user
+     * hears 1x. Refusing hands it to the generic resampler (pitch moves too,
+     * but the tempo does). Asked here, after open(): the player has set its
+     * interrupts by the time the first block came out. */
+    if (speed != 1.0 && (dec->speedRefused || uade_rewamp_audio_paced())) {
+        dec->speedRefused = 1;
+        dec->speed = 1.0;
+        uade_rewamp_speed = 1.0;
+        return 0;
+    }
     dec->speed = speed;
     if (!dec->seekPending) uade_rewamp_speed = speed;
     return 1;

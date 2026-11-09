@@ -44,6 +44,12 @@
 
 #define PXTONE_RATE 44100
 
+extern "C" {
+extern int g_force_loop_mode;
+extern int g_force_loop_native_veto;
+extern int g_loop_lift_refused;
+}
+
 struct RewampDecoder {
     pxtnService*    pxtn;
     pxtnDescriptor* desc;
@@ -53,6 +59,10 @@ struct RewampDecoder {
     uint64_t        framePos;
     double          speed;       /* vitesse native, 0 = 1× */
     double          speedFrac;
+    /* Boucle infinie NATIVE armée (configure_loop 2): le moteur repart de
+     * lui-même à la mesure de reprise du morceau (master repeat_meas) au lieu
+     * que la relance générique reprenne l'INTRO. Plus de fin, length() = 0. */
+    int             infinite;
 };
 
 static const char* const kPxtoneExts[] = { "ptcop", "pttune", NULL };
@@ -155,6 +165,10 @@ static RewampDecoder* pxtone_open_impl(const char* path, RewampAudioFormat* outF
 
     dec->totalFrames = (uint64_t)dec->pxtn->moo_get_total_sample();
 
+    /* N passes: pas de compte natif (le moteur boucle sans fin ou pas du
+     * tout, et sa reprise n'est pas le début) — le générique compte. */
+    if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
+
     const char* name    = dec->pxtn->text->get_name_buf(NULL);
     const char* comment = dec->pxtn->text->get_comment_buf(NULL);
     if (name && name[0]) {
@@ -184,7 +198,7 @@ static RewampDecoder* pxtone_open_impl(const char* path, RewampAudioFormat* outF
 
 static uint64_t pxtone_read_impl(RewampDecoder* dec, float* out, uint64_t frameCount) {
     if (!dec || frameCount == 0) return 0;
-    if (dec->totalFrames > 0) {
+    if (dec->totalFrames > 0 && !dec->infinite) {
         if (dec->framePos >= dec->totalFrames) return 0;
         uint64_t remain = dec->totalFrames - dec->framePos;
         if (frameCount > remain) frameCount = remain;
@@ -217,13 +231,28 @@ static void pxtone_seek_impl(RewampDecoder* dec, uint64_t frameIndex) {
     if (frameIndex < dec->framePos) {
         if (!pxtone_prepare(dec, false)) return;
     }
+    // prepareVomitPxtone arme toujours la boucle du moteur et ramène une
+    // cible au-delà de la fin dans la partie qui boucle.
     dec->pxtn->prepareVomitPxtone((int)frameIndex);
     dec->framePos = frameIndex;
     dec->speedFrac = 0.0;
 }
 
+/* UNE passe; 0 une fois l'infini armé — le producteur ne doit plus s'y
+ * arrêter. */
 static uint64_t pxtone_length_impl(RewampDecoder* dec) {
-    return dec ? dec->totalFrames : 0;
+    if (!dec || dec->infinite) return 0;
+    return dec->totalFrames;
+}
+
+/* Mode 2 seulement, à l'ouverture comme EN COURS de lecture
+ * (rewamp_lift_end_for_infinite): la boucle du moteur est armée en vol, sans
+ * relance. Le mode 1 a posé son veto dans open(). */
+static void pxtone_configure_loop_impl(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (!dec || mode != 2) return;
+    if (!dec->pxtn->moo_set_loop(true)) { g_loop_lift_refused = 1; return; }
+    dec->infinite = 1;
 }
 
 /* Vitesse NATIVE: l'horloge des événements de pxtone (échantillons par
@@ -251,7 +280,7 @@ static const RewampPluginVTable kPxtoneVTable = {
     pxtone_seek_impl,
     pxtone_length_impl,
     pxtone_close_impl,
-    NULL,                   /* configure_loop */
+    pxtone_configure_loop_impl, /* boucle infinie native */
     0,                      /* supportsNativeFadeout */
     NULL,                   /* engine_id */
     NULL,                   /* param_changed */

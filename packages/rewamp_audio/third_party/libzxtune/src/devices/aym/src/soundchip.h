@@ -32,12 +32,29 @@ namespace AYM
       , PSG(VolTable)
       , Clock()
       , Renderers(Clock, PSG)
+      , VoiceBase(rewamp_zx_voice_base)   //YOYOFR (rewamp)
     {
       SoundChip::Reset();
+      //YOYOFR (rewamp): the PSG stamps notes by voice index outside the render
+      //window, so it must know the base too (TurboSound: both halves).
+      PSG.SetVoiceOfs(VoiceBase);
+    }
+
+    //YOYOFR (rewamp): the voice-capture globals the renderers read. They used
+    //to be set by the PLAYERS (0 and 3, hard-coded), so every AY chip of a
+    //MultiTrackContainer wrote the same voices 0-2 — three PT3 in one .mtc
+    //showed one oscilloscope three times and six flat ones. Each chip now
+    //binds its own range right before it renders.
+    void BindVoices() const
+    {
+      m_voicesForceOfs = VoiceBase;
+      m_voice_current_total = (char)Traits::CAPTURE_VOICES;
+      rewamp_voice_notes_clear(VoiceBase, (int)Traits::CAPTURE_VOICES);   //the frame starts blank, for THIS chip
     }
 
     virtual void RenderData(const typename Traits::DataChunkType& src)
     {
+      BindVoices();
       if (Clock.HasSamplesBefore(src.TimeStamp))
       {
         SynchronizeParameters();
@@ -52,6 +69,7 @@ namespace AYM
       {
         return;
       }
+      BindVoices();
       const Stamp end = src.back().TimeStamp;
       if (Clock.HasSamplesBefore(end))
       {
@@ -130,6 +148,7 @@ namespace AYM
     ClockSource Clock;
     Details::AnalysisMap Analyser;
     RenderersSet<typename Traits::PSGType> Renderers;
+    const int VoiceBase;   //YOYOFR (rewamp): first global voice of this chip
   };
 }
 }

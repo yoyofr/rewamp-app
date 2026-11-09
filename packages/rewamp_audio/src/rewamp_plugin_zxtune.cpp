@@ -13,6 +13,7 @@ extern "C" int g_force_loop_native_veto;
 #include "Spectre.h"   // ZxTuneWrapper + SongInfo (libzxtune/emscripten, on the include path)
 #include "chp2ym.h"    // libchpconv: .chp (Amstrad CPC ChipTracker) → YM3 conversion
 
+#include <mutex>
 #include <vector>
 #include <stdio.h>
 #include <stdint.h>
@@ -96,7 +97,16 @@ static const char* const kZxExts[] = {
     /* .mct: renommage vu sur zxart ("200%", Xenium 2024 — magie MTC1). La
      * sonde native attrape la magie quel que soit le nom; l'alias sert aux
      * portes DART (jouabilite par extension, palier de format). */
-    "mct", NULL
+    "mct",
+    /* Disquettes TR-DOS (.trd image brute, .scl compactée): le lecteur de
+     * conteneurs de zxtune (formats/archived/trd.cpp, scl.cpp) y cherche les
+     * modules, chacun devient une sous-chanson (sonde ci-dessous). Les décodeurs
+     * étaient compilés depuis le début, seul le routage manquait. Une disquette
+     * qui ne porte qu'un PROGRAMME (musique beeper: BASIC + code) n'a aucun
+     * module: open() échoue, comme pour tout fichier que zxtune ne reconnaît
+     * pas. Mesuré 2026-11-05 sur scene.org: nes.trd (DiHalt 2011) et
+     * hypno_.scl (Paradigmus 2003) jouent; gnampf.trd et BeepsEra.scl non. */
+    "trd", "scl", NULL
 };
 
 static int zx_probe(const char* ext, const uint8_t* hdr, size_t n) {
@@ -245,6 +255,10 @@ static RewampDecoder* zx_open(const char* path, RewampAudioFormat* outFormat) {
     outFormat->sampleRate = (uint32_t)ZXTUNE_RATE;
     return dec;
 }
+
+/* Pour le harnais (scripts/verify_zxtune_voices.cpp): le wrapper d'un
+ * décodeur ouvert. Linkage C++ (le type est C++), jamais exporté. */
+ZxTuneWrapper* rewamp_zxtune_wrapper_of(RewampDecoder* dec) { return dec ? dec->w : NULL; }
 
 static uint64_t zx_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     if (!dec || !dec->w || !out || frameCount == 0) return 0;
@@ -533,6 +547,61 @@ static int zx_set_speed(RewampDecoder* dec, double speed) {
     }
 }
 
+/* Disquette TR-DOS: réclamée seulement si zxtune y TROUVE un module.
+ *
+ * L'extension ne dit rien du contenu: une disquette de compo beeper (« Gnampf »,
+ * DiHalt 2011: un BASIC et du code machine) n'a aucun module. Réclamée sur son
+ * seul nom, elle gagnait le choix du fichier dans un zip de scene.org —
+ * `rewamp_can_play` ne regarde qu'extension et en-tête — puis échouait à
+ * l'ouverture: « unsupported format » là où rien n'aurait été proposé. On pose
+ * donc la vraie question (le même parcours que la sonde des sous-chansons),
+ * MÉMORISÉE par (chemin, taille): le registre interroge le même fichier
+ * plusieurs fois (jouabilité, choix, chargement). Les autres extensions
+ * gardent la sonde ordinaire. */
+static std::mutex       s_disk_mu;
+static std::string      s_disk_path;
+static uint64_t         s_disk_size = 0;
+static int              s_disk_ok = 0;
+
+static int zx_disk_has_module(const char* path, uint64_t size) {
+    {
+        std::lock_guard<std::mutex> g(s_disk_mu);
+        if (s_disk_size == size && s_disk_path == path) return s_disk_ok;
+    }
+    int ok = 0;
+    FILE* f = fopen(path, "rb");
+    if (f) {
+        std::vector<uint8_t> data((size_t)size);
+        const size_t got = size ? fread(data.data(), 1, (size_t)size, f) : 0;
+        fclose(f);
+        if (size > 0 && got == (size_t)size) {
+            try {
+                ZxTuneWrapper w(std::string(path), data.data(), (size_t)size, ZXTUNE_RATE);
+                w.parseModules();
+                SongInfo info;
+                w.get_song_info(1, info);
+                const char* total = info.get_total_tracks();
+                ok = total && atoi(total) > 0;
+            } catch (...) {
+                ok = 0;
+            }
+        }
+    }
+    std::lock_guard<std::mutex> g(s_disk_mu);
+    s_disk_path = path;
+    s_disk_size = size;
+    s_disk_ok = ok;
+    return ok;
+}
+
+static int zx_probe_path(const char* ext, const uint8_t* hdr, size_t n,
+                         const char* path, uint64_t fileSize) {
+    const int s = zx_probe(ext, hdr, n);
+    if (s <= 0 || !ext || !path) return s;
+    if (strcasecmp(ext, "trd") != 0 && strcasecmp(ext, "scl") != 0) return s;
+    return zx_disk_has_module(path, fileSize) ? s : 0;
+}
+
 static const RewampPluginVTable kZxVTable = {
     "zxtune",
     zx_probe,
@@ -550,7 +619,7 @@ static const RewampPluginVTable kZxVTable = {
     zx_pattern_num_rows,
     zx_pattern_get,
     zx_pattern_cursor,
-    NULL,                    /* probe_path */
+    zx_probe_path,           /* probe_path: disquettes TR-DOS jugées au contenu */
     0,                       /* noPrefixProbe */
     zx_set_speed,            /* vitesse native (durée de trame) */
 };

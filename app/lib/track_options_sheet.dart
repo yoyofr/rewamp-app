@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'app_snack.dart';
 
 import 'favorite_color.dart';
-import 'package:path/path.dart' as p;
 import 'l10n.dart';
 import 'library_identity.dart';
 import 'local_db.dart';
@@ -12,6 +11,9 @@ import 'queue_position_icon.dart';
 import 'player_controller.dart';
 import 'note_markdown.dart';
 import 'play_start.dart';
+import 'engine_choices.dart';
+import 'play_with_sheet.dart';
+import 'sheet_handle.dart';
 import 'playlist_picker.dart';
 import 'production_screen.dart';
 import 'rewamp_db.dart';
@@ -46,6 +48,8 @@ OnAlbumQueueAdd? globalOnAlbumQueueAdd;
 /// dead by the time the tap runs (popped), and _startAlbumQueue checks
 /// ctx.mounted before playing.
 Future<void> Function(SearchResult r)? globalOnPlayNowSong;
+/// Same for a whole album (« Lire avec… » of an album, then play it).
+Future<void> Function(List<SearchResult> songs)? globalOnPlayNowAlbum;
 /// Queue-add for LOCAL rows (TrackRecord — already on disk, no download).
 /// The rails resolve their entries into TrackRecords; _onQueueAdd only knows
 /// SearchResult and would try to re-download. Set once by AppShell.
@@ -80,6 +84,10 @@ OnOpenGroup? globalOnOpenGroup;
 /// sert à la feuille de choix, qui décide SEULE si une ligne mérite un « Voir
 /// l'album » (voir [showPlayChoiceSheet]).
 OnNavigateAlbum? globalOnNavigateAlbum;
+/// Écran d'ARTISTE, même contrat: le repli des écrans atteints sans
+/// `onArtistTap` (un album ouvert depuis une collection, un palmarès, les
+/// stats…) — sans lui leurs compositeurs s'affichaient sans être cliquables.
+OnNavigateArtist? globalOnNavigateArtist;
 /// Liste des SOUS-CHANSONS d'un fichier (ContainerSubsongScreen). Posé une
 /// fois par AppShell.
 void Function(SearchResult container)? globalOnOpenSubsongs;
@@ -91,6 +99,14 @@ void Function(TrackRecord track)? globalOnOpenSubsongsForTrack;
 
 /// Shows a modal bottom sheet with library + navigation + queue options for a
 /// [SearchResult]. Pass null for callbacks that are unavailable in context.
+/// An options sheet never covers the whole window: `isScrollControlled`
+/// lifts the height cap, and a list long enough to fill it left no barrier to
+/// tap and gave every vertical drag to its scroll view — no way to close it
+/// without picking an entry. The strip above stays tappable, the handle
+/// draggable.
+BoxConstraints optionsSheetConstraints(BuildContext context) =>
+    BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85);
+
 Future<void> showTrackOptions(
   BuildContext     context,
   SearchResult     result, {
@@ -103,14 +119,17 @@ Future<void> showTrackOptions(
     context: context,
     useRootNavigator: false,
     isScrollControlled: true,
+    constraints: optionsSheetConstraints(context),
     builder: (ctx) => SafeArea(
-      child: SingleChildScrollView(
-        child: _TrackOptionsSheet(
-          result:           result,
-          onNavigateAlbum:  onNavigateAlbum,
-          onNavigateArtist: onNavigateArtist,
-          onNavigateTag:    onNavigateTag,
-          onQueueAdd:       onQueueAdd ?? globalOnQueueAdd,
+      child: SheetWithHandle(
+        child: SingleChildScrollView(
+          child: _TrackOptionsSheet(
+            result:           result,
+            onNavigateAlbum:  onNavigateAlbum,
+            onNavigateArtist: onNavigateArtist ?? globalOnNavigateArtist,
+            onNavigateTag:    onNavigateTag,
+            onQueueAdd:       onQueueAdd ?? globalOnQueueAdd,
+          ),
         ),
       ),
     ),
@@ -169,17 +188,62 @@ class _TrackOptionsSheetState extends State<_TrackOptionsSheet> {
   Future<void> _resolveCachedPath() async {
     try {
       String? path = r.localPath;
+      String? target = path;
       if (path == null || !await File(path).exists()) {
         final rec = await LocalDb.instance.getTrackByOnlineId(r.songId);
         if (rec != null && await File(rec.filePath).exists()) {
           path = rec.filePath;
         } else {
           final computed = await RewampDb.localPath(r);
+          target ??= computed;
           path = await File(computed).exists() ? computed : null;
         }
       }
-      if (mounted) setState(() => _cachedPath = path);
+      // Not on the device: the path it will be downloaded to — the engines
+      // are then judged on the EXTENSION alone (every probe scores it with
+      // an empty header), and the choice is keyed where the file will land.
+      target = path ?? target;
+      final audio = PlayerController.current?.audio;
+      final playWith = target == null || audio == null
+          ? const <String>[]
+          : playWithCandidatesFor(audio, target);
+      if (mounted) {
+        setState(() {
+          _cachedPath = path;
+          _playWithPath = target;
+          _playWith = playWith;
+        });
+      }
     } catch (_) {}
+  }
+
+  /// « Lire avec… »: the engines able to play the file (empty = nothing to
+  /// choose) — its header when it is on the device, else its extension.
+  String? _playWithPath;
+  List<String> _playWith = const [];
+
+  Future<void> _openPlayWith() async {
+    final path = _playWithPath;
+    if (path == null) return;
+    final ctrl = PlayerController.current;
+    final play = globalOnPlayNowSong;
+    final nav = Navigator.of(context);
+    // The playing track: same sheet as the player's (« Lire » restarts it).
+    if (ctrl != null && ctrl.filePath == path) {
+      nav.pop();
+      await showPlayWithSheet(nav.context, ctrl);
+      return;
+    }
+    final action = await showPlayWithSheetFor(context, path: path, album: false);
+    if (!mounted || action == null || action == PlayWithAction.cancel) return;
+    nav.pop();
+    if (action == PlayWithAction.play && play != null) await play(r);
+  }
+
+  String _playWithSubtitle(AppLocalizations l10n) {
+    final path = _playWithPath!;
+    final chosen = EngineChoices.instance.choiceFor(path)?.$1;
+    return l10n.playWithCurrent(enginePluginLabel(chosen ?? _playWith.first));
   }
 
   Future<void> _deleteDownload() async {
@@ -544,6 +608,16 @@ class _TrackOptionsSheetState extends State<_TrackOptionsSheet> {
             ),
           ],
 
+          // « Lire avec… » — the file is on the device and several engines
+          // (or an engine's bank / SoundFont / model) can be chosen.
+          if (_playWithPath != null && _playWith.isNotEmpty)
+            ListTile(
+              leading: const Icon(Icons.alt_route),
+              title: Text(l10n.playWithTitle),
+              subtitle: Text(_playWithSubtitle(l10n)),
+              onTap: _openPlayWith,
+            ),
+
           // Delete the downloaded file + its local-DB rows.
           if (_cachedPath != null)
             ListTile(
@@ -584,21 +658,24 @@ Future<void> showAlbumOptions(
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    constraints: optionsSheetConstraints(context),
     builder: (ctx) => SafeArea(
-      child: SingleChildScrollView(
-        child: _AlbumOptionsSheet(
-          albumName:      albumName,
-          albumId:        albumId,
-          artworkUrl:     artworkUrl,
-          artist:         artist,
-          collectionSlug: collectionSlug,
-          platformName:   platformName,
-          onQueueAddNext: onQueueAddNext ?? globalOnAlbumQueueAdd,
-          onQueueAddAtEnd: onQueueAddAtEnd ?? globalOnAlbumQueueAdd,
-          fetchTracks:    fetchTracks,
-          onRedownload:   onRedownload,
-          onDeleted:      onDeleted,
-          canDeleteFiles: canDeleteFiles,
+      child: SheetWithHandle(
+        child: SingleChildScrollView(
+          child: _AlbumOptionsSheet(
+            albumName:      albumName,
+            albumId:        albumId,
+            artworkUrl:     artworkUrl,
+            artist:         artist,
+            collectionSlug: collectionSlug,
+            platformName:   platformName,
+            onQueueAddNext: onQueueAddNext ?? globalOnAlbumQueueAdd,
+            onQueueAddAtEnd: onQueueAddAtEnd ?? globalOnAlbumQueueAdd,
+            fetchTracks:    fetchTracks,
+            onRedownload:   onRedownload,
+            onDeleted:      onDeleted,
+            canDeleteFiles: canDeleteFiles,
+          ),
         ),
       ),
     ),
@@ -655,6 +732,62 @@ class _AlbumOptionsSheetState extends State<_AlbumOptionsSheet> {
     LocalDb.instance.isLibraryFavorite('album', _refId).then((v) {
       if (mounted) setState(() { _inLibrary = v; _loading = false; });
     });
+    _resolvePlayWith();
+  }
+
+  /// « Lire avec… » for the album: one of its files (the choice is its
+  /// folder's; on the device its header tells the candidates, else its
+  /// extension), and the album's tracks to play afterwards.
+  String? _playWithPath;
+  List<String> _playWith = const [];
+  List<SearchResult> _tracks = const [];
+
+  Future<void> _resolvePlayWith() async {
+    final audio = PlayerController.current?.audio;
+    if (audio == null) return;
+    try {
+      final tracks = await widget.fetchTracks();
+      // A file on the device first (its header decides); else the first
+      // track's download path, judged on its extension.
+      String? path;
+      String? first;
+      for (final t in tracks) {
+        final p = t.localPath ?? await RewampDb.localPath(t);
+        first ??= p;
+        if (await File(p).exists()) {
+          path = p;
+          break;
+        }
+      }
+      path ??= first;
+      if (path == null) return;
+      final c = playWithCandidatesFor(audio, path);
+      if (!mounted) return;
+      setState(() {
+        _tracks = tracks;
+        _playWithPath = path;
+        _playWith = c;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _openPlayWith() async {
+    final path = _playWithPath;
+    if (path == null) return;
+    final play = globalOnPlayNowAlbum;
+    final nav = Navigator.of(context);
+    final action = await showPlayWithSheetFor(context, path: path, album: true);
+    if (!mounted || action == null || action == PlayWithAction.cancel) return;
+    nav.pop();
+    if (action == PlayWithAction.play && play != null && _tracks.isNotEmpty) {
+      await play(_tracks);
+    }
+  }
+
+  String _playWithSubtitle(AppLocalizations l10n) {
+    final c = EngineChoices.instance.choiceFor(_playWithPath!);
+    final chosen = c != null && c.$2 == EngineChoiceScope.album ? c.$1 : null;
+    return l10n.playWithCurrent(enginePluginLabel(chosen ?? _playWith.first));
   }
 
   Future<void> _toggleLibrary() async {
@@ -734,8 +867,7 @@ class _AlbumOptionsSheetState extends State<_AlbumOptionsSheet> {
       final tracks = await widget.fetchTracks();
       if (tracks.isNotEmpty) {
         final first = tracks.first;
-        final path = first.localPath ?? await RewampDb.localPath(first);
-        dir = p.dirname(path);
+        dir = await RewampDb.albumDirForTrack(first);
         if (!await Directory(dir).exists()) dir = null;
       }
     } catch (_) {}
@@ -831,6 +963,13 @@ class _AlbumOptionsSheetState extends State<_AlbumOptionsSheet> {
             title: Text(l10n.trackOptionsPlayLast),
             onTap: () => _queueAdd(atEnd: true),
           ),
+        if (_playWithPath != null && _playWith.isNotEmpty)
+          ListTile(
+            leading: const Icon(Icons.alt_route),
+            title: Text(l10n.playWithTitleAlbum),
+            subtitle: Text(_playWithSubtitle(l10n)),
+            onTap: _openPlayWith,
+          ),
         if (widget.onRedownload != null)
           ListTile(
             leading: const Icon(Icons.refresh),
@@ -919,6 +1058,55 @@ Future<void> holdTrackChoice(BuildContext context, SearchResult r,
           ?.call(r, atEnd: choice == PlayChoice.end);
     });
 
+/// Le fichier sur lequel « Lire avec… » se décide pour la feuille de choix,
+/// et les moteurs candidats — null quand il n'y a rien à choisir. Une ligne
+/// LOCALE donne son chemin. Une ligne du catalogue: son fichier sur
+/// l'appareil s'il y est, sinon l'endroit où il SERA téléchargé — les moteurs
+/// sont alors jugés sur l'extension seule, et le choix est rangé là où le
+/// fichier atterrira. Même résolution que le menu « … » (_resolveCachedPath):
+/// sans elle, un `.mid` d'un résultat de recherche n'offrait « Lire avec… »
+/// qu'une fois téléchargé (retour auteur du 2026-11-02).
+Future<({String path, List<String> candidates})?> _playChoicePlayWith(
+    {TrackRecord? track, SearchResult? result}) async {
+  final audio = PlayerController.current?.audio;
+  if (audio == null) return null;
+  String? path;
+  try {
+    if (track?.filePath.isNotEmpty ?? false) {
+      path = track!.filePath;
+    } else if (result != null && !result.isAlbumRow) {
+      path = result.localPath;
+      if (path == null || !await File(path).exists()) {
+        final rec = result.songId.isEmpty
+            ? null
+            : await LocalDb.instance.getTrackByOnlineId(result.songId);
+        path = rec != null && await File(rec.filePath).exists()
+            ? rec.filePath
+            : await RewampDb.localPath(result);
+      }
+    }
+  } catch (_) {
+    return null;
+  }
+  if (path == null || path.isEmpty) return null;
+  try {
+    final c = playWithCandidatesFor(audio, path);
+    return c.isEmpty ? null : (path: path, candidates: c);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Le moteur affiché sous « Lire avec… »: le choix mémorisé (d'album pour un
+/// album), sinon le premier candidat — même règle que les feuilles d'options.
+String _playWithChosen(String path, List<String> candidates,
+    {required bool album}) {
+  final c = EngineChoices.instance.choiceFor(path);
+  if (c == null) return candidates.first;
+  if (album && c.$2 != EngineChoiceScope.album) return candidates.first;
+  return c.$1;
+}
+
 Future<PlayChoice?> showPlayChoiceSheet(
   BuildContext context, {
   String? title,
@@ -926,20 +1114,34 @@ Future<PlayChoice?> showPlayChoiceSheet(
   String? openLabel,
   SearchResult? result,
   TrackRecord? track,
-}) {
+  /// L'entrée désigne un ALBUM ([track] n'en est qu'un fichier): « Lire
+  /// avec… » s'applique alors à tout l'album (le choix est celui du dossier).
+  bool album = false,
+}) async {
   // L'appui long (withPlayChoiceSheet) DEMANDE la feuille: elle s'affiche
   // toujours, file vide comprise — sinon le geste lançait la lecture sans
   // rien montrer, et ses liens « voir » étaient injoignables.
+  // Geste « … → ensuite / à la fin » d'une rangée tout lire: déjà décidé.
+  final placement = takeQueuePlacement();
+  if (placement != null) {
+    if (!(globalQueueHasContent?.call() ?? true)) return PlayChoice.now;
+    return placement ? PlayChoice.end : PlayChoice.next;
+  }
   if (!playChoiceSheetForced) {
     // Nothing queued and nothing playing: every choice collapses into "play
     // now" — skip the popup and start playback directly.
     if (!(globalQueueHasContent?.call() ?? true)) {
-      return Future.value(PlayChoice.now);
+      return PlayChoice.now;
     }
     // Réglages → Lecture: « Toucher un morceau dans l'app » décidé d'avance.
     final preset = playChoiceFor(UserSettings.instance.playStartInApp);
-    if (preset != null) return Future.value(preset);
+    if (preset != null) return preset;
   }
+  // Résolu AVANT d'ouvrir: une tuile qui apparaîtrait après coup déplacerait
+  // les autres sous le doigt. Borné — au pire la feuille sort sans elle.
+  final pw = await _playChoicePlayWith(track: track, result: result)
+      .timeout(const Duration(milliseconds: 400), onTimeout: () => null);
+  if (!context.mounted) return null;
   return showModalBottomSheet<PlayChoice>(
     context: context,
     // ROOT navigator: the tab navigators live UNDER the floating chrome
@@ -1091,6 +1293,36 @@ Future<PlayChoice?> showPlayChoiceSheet(
                     artworkUrl: result.artworkUrl,
                     albumId:    result.albumId,
                   );
+                },
+              ),
+            // « Lire avec… »: la feuille de l'appui long est le SEUL menu
+            // d'une carte de rail (récents, stats, bibliothèque) — sans cette
+            // tuile, un album MIDI rejoué depuis les récents n'offrait aucun
+            // moyen de changer de synthé (retour auteur du 2026-11-01).
+            // « Lire » dans le sous-menu = lire maintenant, avec ce moteur.
+            if (pw != null)
+              ListTile(
+                leading: const Icon(Icons.alt_route),
+                title: Text(album ? l10n.playWithTitleAlbum : l10n.playWithTitle),
+                subtitle: Text(l10n.playWithCurrent(enginePluginLabel(
+                    _playWithChosen(pw.path, pw.candidates, album: album)))),
+                onTap: () async {
+                  final ctrl = PlayerController.current;
+                  // Le morceau EN COURS: la feuille du lecteur (« Lire » le
+                  // relance avec le moteur choisi).
+                  if (!album && ctrl != null && ctrl.filePath == pw.path) {
+                    Navigator.pop(ctx);
+                    await showPlayWithSheet(context, ctrl);
+                    return;
+                  }
+                  final action = await showPlayWithSheetFor(ctx,
+                      path: pw.path, album: album);
+                  if (!ctx.mounted) return;
+                  if (action == PlayWithAction.play) {
+                    Navigator.pop(ctx, PlayChoice.now);
+                  } else if (action == PlayWithAction.save) {
+                    Navigator.pop(ctx);
+                  }
                 },
               ),
             const SizedBox(height: 8),

@@ -222,14 +222,30 @@ public:
 		Module::RewampTrackModelsClear();
 		_player = PlayerWrapper::Create(_moduleHolder, _sampleRate);
 		_trackModels.clear();
-		for (std::size_t i = 0, n = Module::RewampTrackModelsCount(); i < n && i < 3; ++i)
+		_modelDelegate.clear();
+		for (std::size_t i = 0, n = Module::RewampTrackModelsCount(); i < n; ++i) {
 			_trackModels.push_back(Module::RewampTrackModelAt(i));
+			_modelDelegate.push_back((int)Module::RewampTrackModelDelegateAt(i));
+		}
+		//Delegates of a MultiTrackContainer, with their voice counts; a lone
+		//module is one delegate owning every voice.
+		_delegateHw.clear();
+		for (std::size_t i = 0, n = Module::RewampDelegateCount(); i < n; ++i)
+			_delegateHw.push_back((int)Module::RewampDelegateChannels(i));
+		if (_delegateHw.empty())
+			_delegateHw.push_back(_player->GetRenderer()->GetHWChannels());
 		Module::RewampTrackModelsClear();
+		const std::size_t models = _trackModels.size();
+		_timeline.assign(models, std::vector<TimelineEntry>());
+		_posStart.assign(models, std::vector<uint_t>());
+		_loopTick.assign(models, 0);
+		_totalTicks.assign(models, 0);
 		_modelChans.clear();
-		for (int m = 0; m < (int)_trackModels.size(); ++m) {
+		for (int m = 0; m < (int)models; ++m) {
 			build_timeline(m);
 			_modelChans.push_back(model_channels(m));
 		}
+		layout_models();
 				
 		if(!_player)
 			throw  std::invalid_argument("io unsupported format"); 	
@@ -451,35 +467,58 @@ public:
         return 0;
     }
 
-    //Grid column of model `m`'s first channel.
+    //Grid column of model `m`'s first channel, -1 when it has none (see
+    //layout_models).
     int model_offset(int m) const {
-        int off = 0;
-        for (int i = 0; i < m && (std::size_t)i < _modelChans.size(); ++i)
-            off += (int)_modelChans[(std::size_t)i];
-        return off;
+        return (m >= 0 && (std::size_t)m < _modelOffset.size()) ? _modelOffset[(std::size_t)m] : -1;
     }
 
-    //The grid is published only when every hardware voice is covered by a
-    //track model, one column each, in order — the pattern view maps columns
-    //onto voices (mute, colour, oscilloscope). `hw / models` used to stand for
-    //the per-model width; it is wrong as soon as a multi-track container has a
-    //delegate with voices but no model (an .mtc of a PT3 and an AY register
-    //dump: 6 voices, 1 model, 3-channel lines ⇒ GetChannel(3) ⇒ boost::array
-    //assertion, app killed — 2026-10-18). Widths are now ASKED of the lines,
-    //and a container they do not account for simply has no grid.
+    //Columns are the hardware voices, in delegate order — the pattern view maps
+    //columns onto voices (mute, colour, oscilloscope). A model sits on the
+    //voices of the delegate that built it: first voice of that delegate, after
+    //the models the same delegate built before (a TurboSound pair yields two
+    //3-wide models on one 6-voice delegate). A delegate without a model (an AY
+    //register dump, a TFM stream) keeps its columns EMPTY — until 2026-10-31
+    //such a container had no grid at all (14 of the 31 zxart .mtc), and before
+    //2026-10-18 `hw / models` stood for the per-model width and read past the
+    //lines of a PT3+TFM (boost::array assertion, app killed). A model that
+    //does not fit its delegate's voices disqualifies the whole grid.
+    void layout_models() {
+        _modelOffset.clear();
+        std::vector<int> used(_delegateHw.size(), 0);
+        for (std::size_t m = 0; m < _trackModels.size(); ++m) {
+            const int d = m < _modelDelegate.size() ? _modelDelegate[m] : -1;
+            const int width = m < _modelChans.size() ? (int)_modelChans[m] : 0;
+            if (d < 0 || (std::size_t)d >= _delegateHw.size() || width <= 0) { _modelOffset.push_back(-1); continue; }
+            int base = 0;
+            for (int i = 0; i < d; ++i) base += _delegateHw[(std::size_t)i];
+            const int off = base + used[(std::size_t)d];
+            if (used[(std::size_t)d] + width > _delegateHw[(std::size_t)d]) { _modelOffset.push_back(-1); continue; }
+            used[(std::size_t)d] += width;
+            _modelOffset.push_back(off);
+        }
+    }
+
     int pattern_channels() {
         const int models = pattern_models();
         if (models <= 0 || !_player) return 0;
         const int hw = _player->GetRenderer()->GetHWChannels();
         if (hw <= 0) return 0;
         if (!pattern_orders()) return 0;
-        int sum = 0;
         for (int m = 0; m < models; ++m) {
-            if (_timeline[m].empty()) return 0;
-            if ((std::size_t)m >= _modelChans.size() || _modelChans[(std::size_t)m] == 0) return 0;
-            sum += (int)_modelChans[(std::size_t)m];
+            if (_timeline[(std::size_t)m].empty()) return 0;
+            const int off = model_offset(m);
+            if (off < 0 || off + (int)_modelChans[(std::size_t)m] > hw) return 0;
         }
-        return sum == hw ? hw : 0;
+        return hw;
+    }
+
+    //For the harness (verify_zxtune_voices): how the grid was laid out.
+    int pattern_model_width(int m) const {
+        return (m >= 0 && (std::size_t)m < _modelChans.size()) ? (int)_modelChans[(std::size_t)m] : 0;
+    }
+    int pattern_model_delegate(int m) const {
+        return (m >= 0 && (std::size_t)m < _modelDelegate.size()) ? _modelDelegate[(std::size_t)m] : -1;
     }
 
     int pattern_orders() {
@@ -666,10 +705,13 @@ private:
 	//tick timeline of each — see the pattern view above.
 	std::vector<Module::TrackModel::Ptr> _trackModels;
 	std::vector<uint_t> _modelChans;   //line width of each model (see model_channels)
-	std::vector<TimelineEntry> _timeline[3];
-	std::vector<uint_t>        _posStart[3];
-	uint_t                     _loopTick[3];
-	uint_t                     _totalTicks[3];
+	std::vector<int>    _modelDelegate; //delegate that built each model (0 for a lone module)
+	std::vector<int>    _modelOffset;   //grid column of each model, -1 = none (layout_models)
+	std::vector<int>    _delegateHw;    //hardware voices of each delegate, in order
+	std::vector<std::vector<TimelineEntry> > _timeline;
+	std::vector<std::vector<uint_t> >        _posStart;
+	std::vector<uint_t>                      _loopTick;
+	std::vector<uint_t>                      _totalTicks;
 };
 
 ZxTuneWrapper::ZxTuneWrapper(std::string p, const void* data, size_t size, int sampleRate) : _pimpl(new ZxTuneWrapper::ZxTuneWrapperImpl(p, data, size, sampleRate)) {
@@ -729,6 +771,10 @@ int  ZxTuneWrapper::pattern_channels()            { return _pimpl->pattern_chann
 int  ZxTuneWrapper::pattern_orders()              { return _pimpl->pattern_orders(); }
 int  ZxTuneWrapper::pattern_order(int idx)        { return _pimpl->pattern_order(idx); }
 int  ZxTuneWrapper::pattern_rows(int pattern)     { return _pimpl->pattern_rows(pattern); }
+int  ZxTuneWrapper::pattern_model_count()        { return _pimpl->pattern_models(); }
+int  ZxTuneWrapper::pattern_model_width(int m)   { return _pimpl->pattern_model_width(m); }
+int  ZxTuneWrapper::pattern_model_offset(int m)  { return _pimpl->model_offset(m); }
+int  ZxTuneWrapper::pattern_model_delegate(int m){ return _pimpl->pattern_model_delegate(m); }
 int  ZxTuneWrapper::pattern_cells(int pattern, ZxPatternCell *out, int maxCells) {
     return _pimpl->pattern_cells(pattern, out, maxCells);
 }

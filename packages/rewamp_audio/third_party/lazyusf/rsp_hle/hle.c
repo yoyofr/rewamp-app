@@ -238,6 +238,17 @@ static void unknown_task(struct hle_t* hle)
     }
 }
 
+/* rewamp: remember which audio microcode this task uses (info panel), then
+ * hand the dispatcher back unchanged. */
+static ucode_func_t rw_audio_ucode(struct hle_t* hle, int abi, uint32_t id,
+                                   const char* name, ucode_func_t fn)
+{
+    hle->rw_aud_abi  = abi;
+    hle->rw_aud_id   = id;
+    hle->rw_aud_name = name;
+    return fn;
+}
+
 static ucode_func_t try_audio_task_detection(struct hle_t* hle)
 {
     /* identify audio ucode by using the content of ucode_data */
@@ -250,48 +261,50 @@ static ucode_func_t try_audio_task_detection(struct hle_t* hle)
             switch(v)
             {
             case 0x1e24138c: /* audio ABI (most common) */
-                return &alist_process_audio;
+                return rw_audio_ucode(hle, 1, v, "standard", &alist_process_audio);
             case 0x1dc8138c: /* GoldenEye */
-                return &alist_process_audio_ge;
+                return rw_audio_ucode(hle, 1, v, "GoldenEye", &alist_process_audio_ge);
             case 0x1e3c1390: /* BlastCorp, DiddyKongRacing */
-                return &alist_process_audio_bc;
+                return rw_audio_ucode(hle, 1, v, "BlastCorp, DiddyKongRacing", &alist_process_audio_bc);
             default:
                 HleWarnMessage(hle->user_defined, "ABI1 identification regression: v=%08x", v);
+                rw_audio_ucode(hle, 1, v, NULL, NULL);
             }
         } else {
             v = *dram_u32(hle, ucode_data + 0x10);
             switch(v)
             {
             case 0x11181350: /* MarioKart, WaveRace (E) */
-                return &alist_process_nead_mk;
+                return rw_audio_ucode(hle, 2, v, "MarioKart, WaveRace (E)", &alist_process_nead_mk);
             case 0x111812e0: /* StarFox (J) */
-                return &alist_process_nead_sfj;
+                return rw_audio_ucode(hle, 2, v, "StarFox (J)", &alist_process_nead_sfj);
             case 0x110412ac: /* WaveRace (J RevB) */
-                return &alist_process_nead_wrjb;
+                return rw_audio_ucode(hle, 2, v, "WaveRace (J RevB)", &alist_process_nead_wrjb);
             case 0x110412cc: /* StarFox/LylatWars (except J) */
-                return &alist_process_nead_sf;
+                return rw_audio_ucode(hle, 2, v, "StarFox/LylatWars (except J)", &alist_process_nead_sf);
             case 0x1cd01250: /* FZeroX */
-                return &alist_process_nead_fz;
+                return rw_audio_ucode(hle, 2, v, "FZeroX", &alist_process_nead_fz);
             case 0x1f08122c: /* YoshisStory */
-                return &alist_process_nead_ys;
+                return rw_audio_ucode(hle, 2, v, "YoshisStory", &alist_process_nead_ys);
             case 0x1f38122c: /* 1080° Snowboarding */
-                return &alist_process_nead_1080;
+                return rw_audio_ucode(hle, 2, v, "1080 Snowboarding", &alist_process_nead_1080);
             case 0x1f681230: /* Zelda OoT / Zelda MM (J, J RevA) */
-                return &alist_process_nead_oot;
+                return rw_audio_ucode(hle, 2, v, "Zelda OoT / Zelda MM (J, J RevA)", &alist_process_nead_oot);
             case 0x1f801250: /* Zelda MM (except J, J RevA, E Beta), PokemonStadium 2 */
-                return &alist_process_nead_mm;
+                return rw_audio_ucode(hle, 2, v, "Zelda MM (except J, J RevA, E Beta), PokemonStadium 2", &alist_process_nead_mm);
             case 0x109411f8: /* Zelda MM (E Beta) */
-                return &alist_process_nead_mmb;
+                return rw_audio_ucode(hle, 2, v, "Zelda MM (E Beta)", &alist_process_nead_mmb);
             case 0x1eac11b8: /* AnimalCrossing */
-                return &alist_process_nead_ac;
+                return rw_audio_ucode(hle, 2, v, "AnimalCrossing", &alist_process_nead_ac);
             case 0x00010010: /* MusyX v2 (IndianaJones, BattleForNaboo) */
-                return &musyx_v2_task;
+                return rw_audio_ucode(hle, 2, v, "MusyX v2 (IndianaJones, BattleForNaboo)", &musyx_v2_task);
             case 0x1f701238: /* Mario Artist Talent Studio */
-                return &alist_process_nead_mats;
+                return rw_audio_ucode(hle, 2, v, "Mario Artist Talent Studio - not emulated, silent", &alist_process_nead_mats);
             case 0x1f4c1230: /* FZeroX Expansion */
-                return &alist_process_nead_efz;
+                return rw_audio_ucode(hle, 2, v, "FZeroX Expansion - approximated with FZeroX", &alist_process_nead_efz);
             default:
                 HleWarnMessage(hle->user_defined, "ABI2 identification regression: v=%08x", v);
+                rw_audio_ucode(hle, 2, v, NULL, NULL);
             }
         }
     } else {
@@ -302,20 +315,21 @@ static ucode_func_t try_audio_task_detection(struct hle_t* hle)
             RogueSquadron, ResidentEvil2, PolarisSnoCross,
             TheWorldIsNotEnough, RugratsInParis, NBAShowTime,
             HydroThunder, Tarzan, GauntletLegend, Rush2049 */
-            return &musyx_v1_task;
+            return rw_audio_ucode(hle, 3, v, "MusyX v1 (RogueSquadron, ResidentEvil2, HydroThunder, GauntletLegend, ...)", &musyx_v1_task);
         case 0x0000127c: /* naudio (many games) */
-            return &alist_process_naudio;
+            return rw_audio_ucode(hle, 3, v, "naudio standard", &alist_process_naudio);
         case 0x00001280: /* BanjoKazooie */
-            return &alist_process_naudio_bk;
+            return rw_audio_ucode(hle, 3, v, "BanjoKazooie", &alist_process_naudio_bk);
         case 0x1c58126c: /* DonkeyKong */
-            return &alist_process_naudio_dk;
+            return rw_audio_ucode(hle, 3, v, "DonkeyKong", &alist_process_naudio_dk);
         case 0x1ae8143c: /* BanjoTooie, JetForceGemini, MickeySpeedWayUSA, PerfectDark */
-            return &alist_process_naudio_mp3;
+            return rw_audio_ucode(hle, 3, v, "BanjoTooie, JetForceGemini, MickeySpeedWayUSA, PerfectDark", &alist_process_naudio_mp3);
         case 0x1ab0140c: /* ConkerBadFurDay */
-            return &alist_process_naudio_cbfd;
+            return rw_audio_ucode(hle, 3, v, "ConkerBadFurDay", &alist_process_naudio_cbfd);
 
         default:
             HleWarnMessage(hle->user_defined, "ABI3 identification regression: v=%08x", v);
+            rw_audio_ucode(hle, 3, v, NULL, NULL);
         }
     }
 

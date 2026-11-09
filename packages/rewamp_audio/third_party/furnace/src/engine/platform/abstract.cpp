@@ -35,7 +35,7 @@ void DivDispatch::postProcess(short* buf, int outIndex, size_t len, int sampleRa
 void DivDispatch::tick(bool sysTick) {
 }
 
-void* DivDispatch::getChanState(int chan) {
+SharedChannel* DivDispatch::getChanState(int chan) {
   return NULL;
 }
 
@@ -88,6 +88,9 @@ int DivDispatch::dispatch(DivCommand c) {
   return 1;
 }
 
+void DivDispatch::softReset() {
+}
+
 void DivDispatch::reset() {
 }
 
@@ -121,8 +124,13 @@ float DivDispatch::getGain(int ch, int vol) {
   return (float)vol/volMax;
 }
 
+// by default we return 0xffff. I hope it's a good one.
+unsigned int DivDispatch::getMaxFreq(int ch) {
+  return 0xffff;
+}
+
 int DivDispatch::getPortaFloor(int ch) {
-  return 0x00;
+  return 60;
 }
 
 bool DivDispatch::getLegacyAlwaysSetVolume() {
@@ -209,6 +217,14 @@ const char** DivDispatch::getRegisterSheet() {
   return NULL;
 }
 
+int DivDispatch::getSampleGroup(int chan) {
+  return 0;
+}
+
+int DivDispatch::getMaxSamples(int index) {
+  return 32768;
+}
+
 const void* DivDispatch::getSampleMem(int index) {
   return NULL;
 }
@@ -237,6 +253,10 @@ const DivMemoryComposition* DivDispatch::getMemCompo(int index) {
   return NULL;
 }
 
+const void* DivDispatch::compileSampleMem(int index, size_t& size) {
+  return NULL;
+}
+
 bool DivDispatch::isSampleLoaded(int index, int sample) {
   printf("you are calling.\n");
   return false;
@@ -246,7 +266,7 @@ void DivDispatch::renderSamples(int sysID) {
   
 }
 
-void DivDispatch::notifyPitchTable() {
+void DivDispatch::notifyPitchTable(int sample) {
 }
 
 int DivDispatch::init(DivEngine* p, int channels, int sugRate, const DivConfig& flags) {

@@ -150,6 +150,7 @@ Pod::Spec.new do |s|
       SNDDEV_GA20 SNDDEV_MIKEY
       SNDDEV_K007232 SNDDEV_K005289 SNDDEV_MSM5205 SNDDEV_MSM5232 SNDDEV_BSMT2000
       SNDDEV_ICS2115 SNDDEV_ZSG2
+      SNDDEV_NAMCOWSG SNDDEV_NAMCOC15 SNDDEV_NAMCOC30 SNDDEV_NAMCOPPW
       SNDDEV_SELECT
       EC_AY8910_EMU2149 EC_AY8910_MAME EC_GB_SAMEBOY EC_GB_MAME EC_C6280_MAME EC_C6280_OOTAKE
       EC_NES_MAME EC_NES_NSFP_FDS EC_NES_NSFPLAY EC_QSOUND_CTR EC_QSOUND_MAME
@@ -533,6 +534,32 @@ Pod::Spec.new do |s|
     SH
   end
 
+  # Amstrad CPC .dsk: a whole CPC 6128 (floooh/chips, header-only) RUNs the
+  # disk. One TU — the plugin defines CHIPS_IMPL; chips symbols are renamed
+  # rwcpc_* by rewamp_chips_rename.h. Enabled by default.
+  if ENV['REWAMP_WITH_CPC'] != '0'
+    preprocessor << 'REWAMP_WITH_CPC=1'
+    header_dirs  << '$(PODS_TARGET_SRCROOT)/../third_party/chips'
+
+    prepare_parts << <<-'SH'
+      CLASSES="$(pwd)/Classes"
+      printf '#include "../../src/rewamp_plugin_cpc.c"\n' > "$CLASSES/rewamp_cpc_impl.m"
+    SH
+  end
+
+  # ZX Spectrum .tap: a whole 48K/128K (same floooh/chips tree) RUNs the
+  # tape. The chips core is implemented in the CPC TU when that one is built,
+  # in this one otherwise (#ifndef REWAMP_WITH_CPC in the plugin).
+  if ENV['REWAMP_WITH_ZXSPECTRUM'] != '0'
+    preprocessor << 'REWAMP_WITH_ZXSPECTRUM=1'
+    header_dirs << '$(PODS_TARGET_SRCROOT)/../third_party/chips'
+
+    prepare_parts << <<-'SH'
+      CLASSES="$(pwd)/Classes"
+      printf '#include "../../src/rewamp_plugin_zx.c"\n' > "$CLASSES/rewamp_zxspectrum_impl.m"
+    SH
+  end
+
   # Highly Experimental: PlayStation PSF/PSF2 decoder; enabled by default.
   if ENV['REWAMP_WITH_HIGHLYEXP'] != '0'
     preprocessor << 'REWAMP_WITH_HIGHLYEXP=1'
@@ -659,6 +686,7 @@ Pod::Spec.new do |s|
     header_dirs  << "#{furnace_root}/extern/IconFontCppHeaders"
     header_dirs  << "#{furnace_root}/extern/blip_buf"
     header_dirs  << "#{furnace_root}/src/icon"
+    header_dirs  << "#{furnace_root}/extern/klattsch-cpp/include"   # dev258: <klattsch/...> (platform/klattsch.cpp)
     header_dirs  << "#{furnace_root}/src/modizer"   # FurnacePlayer.h for the plugin
 
     prepare_parts << <<-'SH'
@@ -972,22 +1000,27 @@ Pod::Spec.new do |s|
 
   # --- SNDH: Atari ST chiptunes (.sndh) ----------------------------------------
   # Enabled by default; opt out with REWAMP_WITH_SNDH=0. Vendored AtariAudio
-  # (Arnaud Carré) + Musashi 68000 core, one TU per source (8: 5 top-level .cpp
-  # + Musashi's m68kcpu.c/m68kops.c, which #include m68kfpu.c/m68kops.h — NOT
-  # compiled standalone — + the ICE depacker). Per-voice scope + notes + mute
-  # live in the vendored cores (ym2149c.cpp/AtariMachine.cpp — grep YOYOFR).
+  # 1.27 (Arnaud Carré, MIT) with its own thread-safe C++ Musashi, one TU per
+  # source (14 — the list of cmake/rewamp.cmake's rewamp_add_sndh, keep in
+  # sync). Per-voice scope + notes live in the patched cores (grep REWAMP,
+  # REWAMP_VENDOR.txt); mute is the library's MuteVoices.
   if ENV['REWAMP_WITH_SNDH'] != '0'
     preprocessor << 'REWAMP_WITH_SNDH=1'
     header_dirs  << '$(PODS_TARGET_SRCROOT)/../third_party/atariaudio'
 
     prepare_parts << <<-'SH'
       CLASSES="$(pwd)/Classes"
-      for n in AtariMachine Mk68901 SndhFile SteDac ym2149c; do
+      rm -f "$CLASSES"/rewamp_sndh_*.c "$CLASSES"/rewamp_sndh_*.cpp
+      for n in AtariAudioRenderer AtariMachine Blitter Mk68901 SndhRenderer SteDac \
+               timedb ym2149c YmRenderer; do
         printf '#include "../../third_party/atariaudio/%s.cpp"\n' "$n" > "$CLASSES/rewamp_sndh_$n.cpp"
       done
-      printf '#include "../../third_party/atariaudio/external/ice_24.c"\n' > "$CLASSES/rewamp_sndh_ice_24.c"
-      printf '#include "../../third_party/atariaudio/external/Musashi/m68kcpu.c"\n' > "$CLASSES/rewamp_sndh_m68kcpu.c"
-      printf '#include "../../third_party/atariaudio/external/Musashi/m68kops.c"\n' > "$CLASSES/rewamp_sndh_m68kops.c"
+      for n in ice_24 lzh; do
+        printf '#include "../../third_party/atariaudio/external/%s.cpp"\n' "$n" > "$CLASSES/rewamp_sndh_$n.cpp"
+      done
+      for n in m68k m68kcpu m68kops; do
+        printf '#include "../../third_party/atariaudio/external/Musashi/%s.cpp"\n' "$n" > "$CLASSES/rewamp_sndh_$n.cpp"
+      done
       printf '#include "../../src/rewamp_plugin_sndh.cpp"\n' > "$CLASSES/rewamp_sndh_plugin_impl.cpp"
     SH
   end
@@ -1259,6 +1292,42 @@ Pod::Spec.new do |s|
     SH
   end
 
+
+  # --- miniBAE: Beatnik RMF (Rich Music Format) ---------------------------------
+  # Enabled by default; opt out with REWAMP_WITH_MINIBAE=0. NeoBAE fork of the
+  # Beatnik Audio Engine (Beatnik BSD-3 core, zefie's changes LGPL-3.0+): 48
+  # TUs = the library's own Makefile set for BAE_API=Dummy + MP3_DEC (RMF
+  # samples may be MPEG-compressed) + FIX_SPAN_DC. One TU per source; every
+  # wrapper carries the build defines and the forced rename header
+  # (rewamp_minibae_rename.h: adpcm-xq / minimp3 / g72x symbols that Furnace,
+  # libopenmpt and vgmstream also define). Include dirs are scoped per-file to
+  # Classes/minibae_cores/* in the app Podfiles, NOT pod-wide: X_API.h, g72x.h,
+  # minimp3.h, adpcm-lib.h are generic names. The plugin TU lives in the same
+  # directory to get them too.
+  if ENV['REWAMP_WITH_MINIBAE'] != '0'
+    preprocessor << 'REWAMP_WITH_MINIBAE=1'   # registry, pod-wide
+
+    prepare_parts << <<-'SH'
+      CLASSES="$(pwd)/Classes"
+      WRAP="$CLASSES/minibae_cores"
+      SRC="$(pwd)/../third_party/minibae"
+      REL="../../../third_party/minibae"
+      rm -rf "$WRAP"; mkdir -p "$WRAP"
+      DEFS='#define X_PLATFORM X_DUMMY
+#define USE_MINIMP3_WRAPPER 1
+#define USE_MPEG_DECODER 1
+#define BAE_FIX_SPAN_DC 1
+#define _THREAD_SAFE 1
+#define REWAMP_BAE_CAPTURE 1'
+      (cd "$SRC" && find src -name '*.c' | sort) | while read -r f; do
+        n="$(echo "$f" | sed 's|^src/||; s|/|_|g')"
+        printf '%s\n#include "%s/rewamp_minibae_rename.h"\n#include "%s/%s"\n' \
+          "$DEFS" "$REL" "$REL" "$f" > "$WRAP/$n"
+      done
+      printf '%s\n#include "../../../src/rewamp_plugin_minibae.c"\n' "$DEFS" \
+        > "$WRAP/zz_rewamp_minibae_plugin.c"
+    SH
+  end
 
   # --- ProWizard: packed Amiga modules -> Protracker MOD -----------------------
   # Enabled by default; opt out with REWAMP_WITH_PROWIZARD=0. NOT a decoder
@@ -1816,6 +1885,74 @@ Pod::Spec.new do |s|
         printf '#include "../../../third_party/libadlmidi/rewamp/adlmidi_rename.h"\n#include "../../../third_party/libadlmidi/%s"\n' "$f" > "$out"
       done
       printf '#include "../../../src/rewamp_plugin_adlmidi.cpp"\n' > "$WRAP/zz_rewamp_adlmidi_plugin.cpp"
+      [ -f "$CLASSES/rewamp_tml_impl.c" ] || printf '#include "../../src/rewamp_tml.c"\n' > "$CLASSES/rewamp_tml_impl.c"
+    SH
+  end
+
+  # --- libOPNMIDI: .mid (+ the DOS game formats) on an emulated OPN2 / OPNA --
+  # Enabled by default; opt out with REWAMP_WITH_OPNMIDI=0. GPL-3.0+ core
+  # (Wohlstand), vendored at v1.6.2, patched for the oscilloscope (REWAMP
+  # SCOPE). ⚠️ Each LIBRARY wrapper includes rewamp/opnmidi_rename.h FIRST —
+  # the podspec's force-include: libvgm (OPN2_*, ym2612_*), pmdmini (ymfm) and
+  # libADLMIDI (same sequencer classes) define the same names. The plugin
+  # wrapper does NOT (public opn2_* API only). Same file list as
+  # cmake/rewamp.cmake's rewamp_add_opnmidi — keep the two in sync.
+  if ENV['REWAMP_WITH_OPNMIDI'] != '0'
+    preprocessor << 'REWAMP_WITH_OPNMIDI=1'
+    preprocessor << 'OPNMIDI_DISABLE_GX_EMULATOR=1'
+    preprocessor << 'OPNMIDI_DISABLE_PMDWIN_EMULATOR=1'
+    preprocessor << 'ENABLE_END_SILENCE_SKIPPING=1'
+    header_dirs << '$(PODS_TARGET_SRCROOT)/../third_party/libopnmidi/include'
+    header_dirs << '$(PODS_TARGET_SRCROOT)/../third_party/tml'
+
+    prepare_parts << <<-'SH'
+      CLASSES="$(pwd)/Classes"
+      WRAP="$CLASSES/opnmidi_cores"
+      rm -rf "$WRAP"; mkdir -p "$WRAP"
+      for f in src/opnmidi.cpp \
+               src/opnmidi_load.cpp \
+               src/opnmidi_midiplay.cpp \
+               src/opnmidi_opn2.cpp \
+               src/opnmidi_private.cpp \
+               src/opnmidi_sequencer.cpp \
+               src/wopn/wopn_file.c \
+               src/models/model_generic.c \
+               src/models/model_freq_opn2.c \
+               src/models/model_freq_opna.c \
+               src/models/model_dmx.c \
+               src/models/model_apogee.c \
+               src/models/model_w9x.c \
+               src/chips/gens_opn2.cpp \
+               src/chips/gens/Ym2612.cpp \
+               src/chips/mame_opn2.cpp \
+               src/chips/mame/mame_ym2612fm.c \
+               src/chips/nuked_opn2.cpp \
+               src/chips/nuked/ym3438.c \
+               src/chips/np2_opna.cpp \
+               src/chips/np2/fmgen_opna.cpp \
+               src/chips/np2/fmgen_file.cpp \
+               src/chips/np2/fmgen_fmgen.cpp \
+               src/chips/np2/fmgen_fmtimer.cpp \
+               src/chips/np2/fmgen_psg.cpp \
+               src/chips/mame_opna.cpp \
+               src/chips/mamefm/fm.cpp \
+               src/chips/mamefm/ymdeltat.cpp \
+               src/chips/mamefm/emu2149.c \
+               src/chips/mamefm/resampler.cpp \
+               src/chips/ymfm_opn2.cpp \
+               src/chips/ymfm_opna.cpp \
+               src/chips/ymfm/ymfm_opn.cpp \
+               src/chips/ymfm/ymfm_misc.cpp \
+               src/chips/ymfm/ymfm_pcm.cpp \
+               src/chips/ymfm/ymfm_adpcm.cpp \
+               src/chips/ymfm/ymfm_ssg.cpp \
+               rewamp/opnmidi_banks.c; do
+        # opn_ prefix: libADLMIDI's wrappers carry the same basenames
+        # (chips_ymfm_ymfm_misc.cpp…), and object files are named by basename.
+        out="$WRAP/opn_$(echo "$f" | sed 's|^src/||; s|/|_|g')"
+        printf '#include "../../../third_party/libopnmidi/rewamp/opnmidi_rename.h"\n#include "../../../third_party/libopnmidi/%s"\n' "$f" > "$out"
+      done
+      printf '#include "../../../src/rewamp_plugin_opnmidi.cpp"\n' > "$WRAP/zz_rewamp_opnmidi_plugin.cpp"
       [ -f "$CLASSES/rewamp_tml_impl.c" ] || printf '#include "../../src/rewamp_tml.c"\n' > "$CLASSES/rewamp_tml_impl.c"
     SH
   end

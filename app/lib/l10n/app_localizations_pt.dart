@@ -763,6 +763,14 @@ class AppLocalizationsPt extends AppLocalizations {
   String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
+  String get engineDescCpc =>
+      'Amstrad CPC — disquetes .dsk executados num CPC 6128 emulado';
+
+  @override
+  String get engineDescZxSpectrum =>
+      'ZX Spectrum — cassetes .tap executadas num Spectrum 48K/128K emulado';
+
+  @override
   String get engineDescSidplayfp => 'Commodore 64 SID (motor reSIDfp)';
 
   @override
@@ -814,7 +822,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get engineDescSndh =>
-      'Atari ST .sndh — emulação real do 68000 + YM2149 + DAC STE';
+      'Atari ST .sndh — emulação real do 68000 + YM2149 + DAC STE · .ym (YM2–YM6, digidrums, SID)';
 
   @override
   String get engineDescLazyusf =>
@@ -836,6 +844,10 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get engineDescOrganya => 'Cave Story .org — o motor do próprio Pixel';
+
+  @override
+  String get engineDescMinibae =>
+      'Beatnik .rmf — Beatnik Audio Engine, música web e de jogos do final dos anos 90';
 
   @override
   String get engineDescNtgs =>
@@ -1454,6 +1466,9 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get queueAutoplayRow => 'Adicionada pela reprodução automática';
+
+  @override
+  String get queueRadioRow => 'Adicionada pela rádio';
 
   @override
   String get queueClearConfirmTitle => 'Limpar a fila?';
@@ -2836,7 +2851,7 @@ class AppLocalizationsPt extends AppLocalizations {
       'Alguns formatos podem ser lidos por vários motores. Escolhe qual usar por predefinição — todos os outros formatos são encaminhados automaticamente.';
 
   @override
-  String get settingsDecoderAmigaTrackers => 'Trackers Amiga (mod, med, okt…)';
+  String get settingsDecoderAmigaTrackers => 'Módulos Amiga (mod, med, okt…)';
 
   @override
   String get settingsEngineOpenmptSubtitle => 'Trackers — MOD, XM, S3M, IT…';
@@ -3035,6 +3050,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get settingsNsfQuality => 'Qualidade (nsfplay)';
 
   @override
+  String get settingsNsfFade => 'Fade final';
+
+  @override
+  String get settingsNsfFadeHelp =>
+      'Fade no fim da faixa quando o ficheiro não indica nenhum (um .m3u ou NSFe pode definir o seu). Conta na duração da faixa. Desligado = corte seco.';
+
+  @override
   String get settingsLowpassFilter => 'Filtro passa-baixo';
 
   @override
@@ -3153,6 +3175,52 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get settingsGbsHpFilter => 'Filtro passa-alto (gbsplay)';
+
+  @override
+  String get settingsEnginePsgplaySubtitle =>
+      'Atari ST / SNDH — mistura dos canais do YM2149';
+
+  @override
+  String get settingsPsgMix => 'Mistura dos canais PSG';
+
+  @override
+  String get settingsPsgMixEmpiric => 'Empírica (Atari ST)';
+
+  @override
+  String get settingsPsgMixLinear => 'Linear';
+
+  @override
+  String get settingsPsgMixStereo => 'Estéreo';
+
+  @override
+  String get settingsPsgMixEmpiricHint =>
+      'Os três canais misturados como num Atari ST real (níveis medidos): um som granulado, em mono.';
+
+  @override
+  String get settingsPsgMixLinearHint =>
+      'Soma simples dos três canais: um som mais limpo, em mono.';
+
+  @override
+  String get settingsPsgMixStereoHint =>
+      'Mistura linear, cada canal posicionado entre a esquerda e a direita.';
+
+  @override
+  String settingsPsgPanVoice(String voice) {
+    return 'Canal $voice';
+  }
+
+  @override
+  String get settingsPsgPanCentre => 'Centro';
+
+  @override
+  String settingsPsgPanLeft(int percent) {
+    return 'Esquerda $percent %';
+  }
+
+  @override
+  String settingsPsgPanRight(int percent) {
+    return 'Direita $percent %';
+  }
 
   @override
   String get settingsGbsFilterDmg => 'DMG (GB clássico)';
@@ -4399,54 +4467,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get releaseNotesTitle => 'Novidades';
 
   @override
-  String get releaseNotesV10Loading =>
-      'Abrir uma faixa lenta já não bloqueia a app: um anel fino à volta de reproduzir/pausa indica que ainda está a carregar.';
-
-  @override
-  String get releaseNotesV10Piano =>
-      'Visualizador de piano: as músicas com muitas vozes ou instrumentos em simultâneo repartem-se por mais teclados.';
-
-  @override
-  String get releaseNotesV10Amiga =>
-      'Amiga: StoneTracker, SUNtronic (rips TSM) e mais módulos Soundtracker 2.6 já tocam, e as músicas SoundPlayer tocam no iOS.';
-
-  @override
-  String get releaseNotesV10ZxSpectrum =>
-      'ZX Spectrum: os ficheiros .mt3 do zxart tocam, e no Linux os formatos ZXTune e os programas .cop do SAM Coupé estão incluídos.';
-
-  @override
-  String get releaseNotesV10OpenWith =>
-      'macOS e iOS: todos os formatos suportados aparecem agora em «Abrir com».';
-
-  @override
-  String get releaseNotesV10MtcCrash =>
-      'Corrigido: alguns ficheiros .mtc que misturam PT3 com TFM ou PSG faziam a app falhar.';
-
-  @override
-  String get releaseNotesV10Podiums =>
-      'Novo navegador «Pódios»: os vencedores das competições da demoscene por party, ano ou tipo de compo, com um quadro de honra.';
-
-  @override
-  String get releaseNotesV10Arcade =>
-      'Arcade: a música Ensoniq ES5505/ES5506 (Taito F3…) toca, os VGM de Apple IIGS já não fecham a app e os motores estão atualizados (FM-Kingtracker .fmk adicionado).';
-
-  @override
-  String get releaseNotesV10InfoPanel =>
-      'Painel de informações: formato, motor, canais e pontos de loop primeiro, e os nomes dos campos destacam-se.';
-
-  @override
-  String get releaseNotesV10LocalAlbums =>
-      'Os ecrãs de álbum e de subcanções mostram a coleção; um arquivo largado lista todas as faixas, indica «local» e já não aparece duas vezes quando substituído.';
-
-  @override
-  String get releaseNotesV10Crossfade =>
-      'Corrigido: com a transição cruzada, uma faixa mais curta do que a transição não se ouvia.';
-
-  @override
-  String get releaseNotesV10Artwork =>
-      'Corrigido: uma capa substituída no servidor aparece em todo o lado após «Baixar o ficheiro novamente».';
-
-  @override
   String get releaseNotesDataReset =>
       'Os dados locais foram repostos para esta versão. Biblioteca e playlists reconstroem-se a partir da conta; as transferências têm de ser refeitas.';
 
@@ -4901,8 +4921,15 @@ class AppLocalizationsPt extends AppLocalizations {
   String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
 
   @override
+  String get settingsMidiSynthOpn2 => 'OPN2 FM (Mega Drive / Genesis)';
+
+  @override
   String get settingsEngineAdlmidiSubtitle =>
       'MIDI e músicas de jogos de DOS num chip OPL3 emulado';
+
+  @override
+  String get settingsEngineOpnmidiSubtitle =>
+      'MIDI num chip OPN2 / OPNA emulado (Mega Drive, PC-98)';
 
   @override
   String get settingsAdlBank => 'Banco de instrumentos';
@@ -4925,4 +4952,448 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get engineDescAdlmidi =>
       'MIDI, XMI, MUS DMX, HMI/HMP num chip OPL3 emulado (AdLib / Sound Blaster)';
+
+  @override
+  String get engineDescOpnmidi =>
+      'MIDI num chip OPN2 (Mega Drive) ou OPNA (PC-98) emulado';
+
+  @override
+  String get fmBanksBuiltIn => 'Integrados';
+
+  @override
+  String get fmBanksImported => 'Importados';
+
+  @override
+  String get fmBanksFilterHint => 'Filtrar por nome';
+
+  @override
+  String get fmBanksNoMatch => 'Nenhum banco corresponde';
+
+  @override
+  String get fmBanksImportedEmpty =>
+      'Ainda não há bancos importados. Larga um ficheiro .wopl ou .wopn na janela, abre-o com o Rewamp ou importa-o aqui.';
+
+  @override
+  String fmBankImported(String name, String engine) {
+    return 'Banco «$name» importado e selecionado para $engine';
+  }
+
+  @override
+  String fmBankImportInvalid(String name) {
+    return '«$name» não é um banco WOPL nem WOPN';
+  }
+
+  @override
+  String fmBankDeleteConfirm(String name) {
+    return 'Eliminar o banco «$name»?';
+  }
+
+  @override
+  String get fmBanksImportTile => 'Importar bancos…';
+
+  @override
+  String fmBanksImportSubtitle(String ext) {
+    return 'Ficheiros $ext (dos editores de bancos ou coleções de Wohlstand). Decide o cabeçalho do ficheiro; os bancos importados removem-se na lista de bancos.';
+  }
+
+  @override
+  String get fmEmuAccuracyVeryHigh => 'Muito fiel';
+
+  @override
+  String get fmEmuAccuracyGood => 'Fiel';
+
+  @override
+  String get fmEmuAccuracyApproximate => 'Aproximado';
+
+  @override
+  String get fmEmuCpuLight => 'Rápido';
+
+  @override
+  String get fmEmuCpuMedium => 'CPU moderada';
+
+  @override
+  String get fmEmuCpuHeavy => 'Exigente em CPU';
+
+  @override
+  String settingsDefaultFor(String format) {
+    return 'Leitor predefinido para $format';
+  }
+
+  @override
+  String get settingsDefaultForActive => 'Este motor reproduz este formato';
+
+  @override
+  String settingsDefaultForSet(String section) {
+    return 'Toca para reproduzir este formato com este motor — todas as opções estão também em «$section»';
+  }
+
+  @override
+  String get settingsDecoderDosMidi => 'MIDI de jogos DOS (XMI, MUS, HMI…)';
+
+  @override
+  String get playWithTitle => 'Reproduzir com…';
+
+  @override
+  String playWithAuto(String engine) {
+    return 'Automático ($engine)';
+  }
+
+  @override
+  String get playWithPlayingNow => 'A tocar agora';
+
+  @override
+  String get playWithRemember => 'Lembrar esta escolha';
+
+  @override
+  String get playWithRememberOn =>
+      'Sempre que este ficheiro (ou o álbum) tocar';
+
+  @override
+  String get playWithRememberOff => 'Só para esta reprodução';
+
+  @override
+  String get playWithScopeFile => 'Este ficheiro';
+
+  @override
+  String get playWithScopeAlbum => 'Álbum inteiro';
+
+  @override
+  String get playWithApply => 'Reproduzir';
+
+  @override
+  String playWithCurrent(String engine) {
+    return 'Motor: $engine';
+  }
+
+  @override
+  String get settingsForgetPlayWith =>
+      'Esquecer as escolhas de «Reproduzir com…»';
+
+  @override
+  String settingsForgetPlayWithSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count escolhas guardadas',
+      one: '$count escolha guardada',
+      zero: 'Nenhuma escolha guardada',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsForgetPlayWithBody =>
+      'Tudo o que foi memorizado para um ficheiro ou álbum (motor, banco, SoundFont, modelo) é esquecido: voltam a tocar com as predefinições.';
+
+  @override
+  String get playWithBank => 'Banco de instrumentos';
+
+  @override
+  String playWithBankDefault(String name) {
+    return 'Banco das definições ($name)';
+  }
+
+  @override
+  String get fmBankInUseTitle => 'Banco em uso';
+
+  @override
+  String fmBankInUseIntro(String name) {
+    return '«$name» está escolhido para:';
+  }
+
+  @override
+  String fmBankInUseFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ficheiros',
+      one: '$count ficheiro',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fmBankInUseAlbums(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count álbuns',
+      one: '$count álbum',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fmBankInUseOutro =>
+      'Voltarão a tocar com o banco das definições do motor. Eliminar mesmo assim?';
+
+  @override
+  String playWithSoundfontDefault(String name) {
+    return 'SoundFont das definições ($name)';
+  }
+
+  @override
+  String playWithMt32Default(String model) {
+    return 'Definição: $model';
+  }
+
+  @override
+  String get playWithOptionSetting => 'Definição';
+
+  @override
+  String get soundfontInUseTitle => 'SoundFont em uso';
+
+  @override
+  String get soundfontInUseOutro =>
+      'Voltarão a tocar com a SoundFont das definições. Eliminar mesmo assim?';
+
+  @override
+  String get playWithTitleAlbum => 'Reproduzir o álbum com…';
+
+  @override
+  String get playWithSave => 'Guardar';
+
+  @override
+  String get shortcutsTitle => 'Atalhos de teclado';
+
+  @override
+  String get shortcutsSubtitle => 'Teclas de reprodução, visualizador e janela';
+
+  @override
+  String get shortcutsHint =>
+      'Teclas isoladas são ignoradas enquanto um campo de texto tem o foco. As teclas do visualizador só atuam quando ele está visível.';
+
+  @override
+  String get shortcutsGroupTransport => 'Reprodução';
+
+  @override
+  String get shortcutsGroupVisualizer => 'Visualizador';
+
+  @override
+  String get shortcutsGroupWindow => 'Janela e navegação';
+
+  @override
+  String get shortcutsKeySpace => 'Espaço';
+
+  @override
+  String get shortcutsKeyEscape => 'Esc';
+
+  @override
+  String get shortcutPlayPause => 'Reproduzir / pausar';
+
+  @override
+  String get shortcutPrevTrack => 'Faixa anterior';
+
+  @override
+  String get shortcutNextTrack => 'Faixa seguinte';
+
+  @override
+  String get shortcutSeekBack10 => 'Recuar 10 segundos';
+
+  @override
+  String get shortcutSeekForward10 => 'Avançar 10 segundos';
+
+  @override
+  String get shortcutSeekBack60 => 'Recuar 1 minuto';
+
+  @override
+  String get shortcutSeekForward60 => 'Avançar 1 minuto';
+
+  @override
+  String get shortcutSeekPercent => 'Ir para 0 %…90 % da faixa';
+
+  @override
+  String get shortcutRepeat => 'Modo de repetição';
+
+  @override
+  String get shortcutShuffle => 'Aleatório';
+
+  @override
+  String get shortcutFavorite => 'Favorito';
+
+  @override
+  String get shortcutSpeedDown => 'Mais lento';
+
+  @override
+  String get shortcutSpeedUp => 'Mais rápido';
+
+  @override
+  String get shortcutSpeedReset => 'Velocidade normal';
+
+  @override
+  String get shortcutVizNext => 'Visualizador seguinte';
+
+  @override
+  String get shortcutVizPrev => 'Visualizador anterior';
+
+  @override
+  String get shortcutVizControls => 'Mostrar os controles do visualizador';
+
+  @override
+  String get shortcutPmNext => 'projectM: preset seguinte';
+
+  @override
+  String get shortcutPmPrev => 'projectM: preset anterior';
+
+  @override
+  String get shortcutPmLock => 'projectM: bloquear o preset';
+
+  @override
+  String get shortcutPmRandom => 'projectM: ordem aleatória';
+
+  @override
+  String get shortcutPmPicker => 'projectM: lista de presets';
+
+  @override
+  String get shortcutMiniWindow => 'Mini player';
+
+  @override
+  String get shortcutMiniViz => 'Mini player com visualizador';
+
+  @override
+  String get shortcutAlwaysOnTop => 'Sempre visível';
+
+  @override
+  String get shortcutPlayer => 'Abrir / fechar o player';
+
+  @override
+  String get shortcutEscape => 'Fechar o painel superior';
+
+  @override
+  String get shortcutQueue => 'Painel da fila';
+
+  @override
+  String get shortcutSearch => 'Pesquisar';
+
+  @override
+  String get shortcutTabs => 'Abas, na ordem da barra lateral';
+
+  @override
+  String get shortcutOpenFiles => 'Abrir arquivos…';
+
+  @override
+  String get shortcutLinkFolder => 'Vincular uma pasta…';
+
+  @override
+  String get shortcutInfo => 'Informações da faixa';
+
+  @override
+  String get shortcutSettings => 'Configurações';
+
+  @override
+  String get shortcutFullscreen => 'Tela cheia';
+
+  @override
+  String get shortcutHelp => 'Esta lista';
+
+  @override
+  String get navHelp => 'Ajuda';
+
+  @override
+  String get helpTitle => 'Ajuda';
+
+  @override
+  String get helpDocsTitle => 'Documentação online';
+
+  @override
+  String get helpDocsSubtitle =>
+      'Guias passo a passo com capturas de ecrã em rewamp.app (em inglês)';
+
+  @override
+  String get sleepTimerTitle => 'Temporizador de suspensão';
+
+  @override
+  String get sleepTimerExplain =>
+      'A reprodução pausa após o tempo escolhido, com esmaecimento nos últimos 30 segundos.';
+
+  @override
+  String sleepTimerMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count minutos',
+      one: '$count minuto',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sleepTimerRemainingMinutes(int count) {
+    return '$count min';
+  }
+
+  @override
+  String sleepTimerRemainingSeconds(int count) {
+    return '$count s';
+  }
+
+  @override
+  String sleepTimerActiveRemaining(String time) {
+    return 'Tempo restante: $time';
+  }
+
+  @override
+  String get sleepTimerOff => 'Desativar';
+
+  @override
+  String get sleepTimerEnded => 'Temporizador terminado — reprodução em pausa';
+
+  @override
+  String get sleepTimerNothingToPlay => 'Nenhuma audição recente para começar';
+
+  @override
+  String get releaseNotesV11Autoplay =>
+      'Reprodução automática (∞): quando a fila termina, a reprodução continua com faixas relacionadas (mesmo artista, grupo, coleção).';
+
+  @override
+  String get releaseNotesV11LinkedFolders =>
+      'Pastas vinculadas: seus arquivos tocam onde estão, sem cópia — pastas do computador, o app Arquivos e o iCloud no iOS, qualquer pasta no Android.';
+
+  @override
+  String get releaseNotesV11PlayWith =>
+      '“Reproduzir com…”: escolha o motor de um arquivo ou álbum, além da SoundFont, do modelo MT-32 ou do banco FM (é possível importar seus bancos WOPL/WOPN).';
+
+  @override
+  String get releaseNotesV11NewEngines =>
+      'Novos motores: MIDI em OPL3 (libADLMIDI) e OPN2/OPNA (libOPNMIDI), Beatnik .rmf, fitas .tap de ZX Spectrum e disquetes .dsk de Amstrad CPC em máquinas emuladas, UnExoticA Mark II.';
+
+  @override
+  String get releaseNotesV11EngineUpdates =>
+      'Motores atualizados: VGM 1.72 com chips Namco WSG, Furnace, AtariAudio 1.27 (agora padrão para .ym), libxmp como opção para módulos Amiga, fade final ajustável em VGM.';
+
+  @override
+  String get releaseNotesV11Sleep =>
+      'Timer para dormir: escolha uma duração, a música diminui e para — e uma fila vazia se preenche sozinha.';
+
+  @override
+  String get releaseNotesV11Desktop =>
+      'Desktop: atalhos de teclado (lista com ?), uma aba Ajuda com a documentação online, linha de comando (rewamp --mini --play …) e uma única instância do app.';
+
+  @override
+  String get releaseNotesV11ArtistSync =>
+      'Os artistas da sua biblioteca são sincronizados com a sua conta, com a capa.';
+
+  @override
+  String get releaseNotesV11PlayNext =>
+      'Toque longo numa faixa: tocar agora, a seguir ou no fim; um menu “…” ao lado de Reproduzir tudo, Rádio e Surpresa.';
+
+  @override
+  String get releaseNotesV11Composers =>
+      'Os compositores são clicáveis em todas as telas de álbum e de subcanções; título e autor são lidos dos arquivos importados.';
+
+  @override
+  String get releaseNotesV11Hindi =>
+      'O app fala hindi (19 idiomas), e a interface está pronta para idiomas escritos da direita para a esquerda.';
+
+  @override
+  String get releaseNotesV11Loops =>
+      'Loop infinito ativado durante a reprodução: a faixa continua pelo próprio ponto de loop, e uma faixa sem loop recomeça do início.';
+
+  @override
+  String get releaseNotesV11Visualizers =>
+      'Visualizadores: até 64 vozes nos osciloscópios, uma cor por instrumento de percussão MIDI, notas de arquivos 2SF, nomes de instrumentos dos bancos FM.';
+
+  @override
+  String get releaseNotesV11Fixes =>
+      'Corrigido: alguns SSF recusados, rips de WonderSwan mudos, álbuns em vários arquivos incompletos e presets do projectM após fechar o player.';
 }

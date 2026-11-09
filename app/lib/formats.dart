@@ -53,6 +53,9 @@ const kZxtuneExts = <String>{
   'mtc',
   // .mct: renommage vu sur zxart (« 200% », Xenium 2024 — magie MTC1 dedans).
   'mct',
+  // Disquettes TR-DOS: zxtune y cherche les modules (un par sous-chanson).
+  // Une disquette qui ne porte qu'un programme beeper ne s'ouvre pas.
+  'trd', 'scl',
 };
 
 /// UADE Amiga custom-chip formats (68k emulation; prefix-convention names like
@@ -63,7 +66,10 @@ const kUadeExts = <String>{
   '4v',
   'arp', 'ast', 'ahx', 'thx', 'hvl', 'amc', 'abk', 'aam', 'alp', 'aon', 'aon4',
   'aon8', 'adsc', 'mod_adsc4', 'bss', 'bd', 'bds', 'uds', 'kris', 'cin', 'core',
-  'cus', 'cust', 'custom', 'cm', 'rk', 'rkb', 'dz', 'mkiio', 'dl', 'dl_deli',
+  'cus', 'cust', 'custom', 'cm', 'rk', 'rkb', 'dz', 'mkiio',
+  // Mark II (UnExoticA livre `mii.*`, ex. Denaris/Mark_II_Version): UADE le
+  // reconnaît au CONTENU (MKII) mais son préfixe n'est que mk2/mkii.
+  'mii', 'dl', 'dl_deli',
   'dln', 'dh', 'dw', 'dwold', 'dlm2', 'dm2', 'dlm1', 'dm1', 'dsr', 'db',
   'dsc', 'dss', 'dns', 'ems', 'emsv6', 'ex', 'fc13', 'fc3', 'fc', 'fc14',
   'fc4', 'fred', 'gray', 'bfc', 'bsi', 'fc-bsi', 'fp', 'fw', 'glue', 'gm',
@@ -125,6 +131,19 @@ const kGmeExts = <String>{
 /// que gbsplay est SEUL à charger — d'où son groupe à lui.
 const kGbsplayExts = <String>{ 'gbr' };
 
+/// Amstrad CPC — une image de disquette `.dsk` qu'on LANCE sur un CPC 6128
+/// émulé (floooh/chips). Le moteur ne la revendique que sur la MAGIE de
+/// l'image (« EXTENDED CPC DSK » / « MV - CPC »): `.dsk` désigne aussi des
+/// disquettes Apple II, MSX, Atari ST…
+const kCpcExts = <String>{ 'dsk' };
+
+/// ZX Spectrum — une image de CASSETTE `.tap` qu'on LANCE sur un Spectrum
+/// émulé (48K ou 128K selon ce que le programme joue, floooh/chips): une
+/// compo de musique ZX rend souvent un PROGRAMME (chargeur BASIC + code,
+/// beeper ou AY), où aucun module ne survit. `.tap` est aussi Commodore et
+/// Oric: le moteur ne revendique que la chaîne de blocs Spectrum.
+const kZxSpectrumExts = <String>{ 'tap' };
+
 /// libkss MSX chiptunes (.kss shared with GME; the rest libkss-only).
 const kKssExts = <String>{ 'kss', 'mgs', 'bgm', 'opx', 'mpk', 'mbm', 'mus' };
 
@@ -158,6 +177,17 @@ const kMidiExts = <String>{ 'mid', 'midi', 'kar', 'rmi' };
 /// (`MUS\x1A`): un `.mus` SID ou MSX reste à son moteur. IMF/CMF/KLM, que la
 /// bibliothèque sait aussi lire, restent à AdPlug.
 const kAdlmidiExts = <String>{
+  ...kMidiExts, 'xmi', 'mus', 'hmi', 'hmp', 'gmf',
+};
+
+/// Les formats MIDI des jeux DOS que seuls libADLMIDI et libOPNMIDI lisent —
+/// leur choix de moteur (« Décodeurs par défaut »).
+const kDosMidiExts = <String>['xmi', 'mus', 'hmi', 'hmp', 'gmf'];
+
+/// libOPNMIDI (OPN2 / OPNA): même séquenceur, donc mêmes formats. Les formats
+/// DOS restent d'abord à libADLMIDI (100 contre 90): ils ont été écrits pour
+/// une OPL; libOPNMIDI ne les prend que si libADLMIDI n'est pas bâti.
+const kOpnmidiExts = <String>{
   ...kMidiExts, 'xmi', 'mus', 'hmi', 'hmp', 'gmf',
 };
 
@@ -203,6 +233,9 @@ const kLibpt3Exts = <String>{ 'pt3', 'mt3' };
 
 /// Cave Story's own tracker format (Organya, webPixel/Wothke adapter).
 const kOrganyaExts = <String>{ 'org' };
+
+/// Beatnik RMF (Rich Music Format) — miniBAE / NeoBAE (Beatnik Audio Engine).
+const kMinibaeExts = <String>{ 'rmf' };
 
 /// PxTone Collage — Pixel's own tracker (project files + compiled tunes).
 const kPxtoneExts = <String>{ 'ptcop', 'pttune' };
@@ -281,6 +314,8 @@ final kAllDecoderExts = <String>{
   ...kSidExts,
   ...kGmeExts,
   ...kGbsplayExts,
+  ...kCpcExts,
+  ...kZxSpectrumExts,
   ...kKssExts,
   ...kPsfExts,
   ...kGsfExts,
@@ -299,6 +334,7 @@ final kAllDecoderExts = <String>{
   ...kHighlyTheoriticalExts,
   ...kLibpt3Exts,
   ...kOrganyaExts,
+  ...kMinibaeExts,
   ...kPxtoneExts,
   ...kPmdExts,
   ...kMdxExts,

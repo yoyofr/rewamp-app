@@ -74,10 +74,9 @@ namespace Module
     {
       if (Iterator->IsValid())
       {
-          //YOYOFR
-          memset(vgm_last_note,0,sizeof(vgm_last_note));
-          memset(vgm_last_vol,0,sizeof(vgm_last_vol));
-          //YOYOFR
+          //YOYOFR (rewamp): the chip clears ITS voices' notes when it renders (see
+          //rewamp_voice_notes_clear) — a whole-array wipe here erased the other
+          //delegates' notes in a MultiTrackContainer.
           
         SynchronizeParameters();
         if (LastChunk.TimeStamp == Devices::TFM::Stamp())

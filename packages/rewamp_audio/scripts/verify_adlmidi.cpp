@@ -17,8 +17,13 @@ extern "C" {
 #include "ModizerVoicesData.h"
 #include "rewamp_channel_data.h"
 #include "rewamp_plugin.h"
+#include "tml.h"
+
+extern "C" char modizInstrName[][MODIZ_VOICE_NAME_MAX_CHAR];
 const RewampPluginVTable* rewamp_adlmidi_plugin(void);
 int rewamp_adlmidi_probe_subsong_count(const char* path);
+void rewamp_adlmidi_set_bank_file(const char* path);
+void rewamp_adlmidi_set_path_bank(const char* path, int index, const char* file);
 int g_force_loop_mode = 0;
 int g_force_loop_native_veto = 0;
 static long g_activity = 0;
@@ -70,15 +75,32 @@ int main(int argc, char** argv) {
     const char* dot = strrchr(file, '.');
     printf("probe=%d subsongs=%d\n", vt->probe(dot ? dot + 1 : "", hdr, hn),
            rewamp_adlmidi_probe_subsong_count(file));
+    /* ADL_BANK_FILE=<fichier> : banque IMPORTÉE (repli sur l'embarquée). */
+    if (const char* bf = getenv("ADL_BANK_FILE")) rewamp_adlmidi_set_bank_file(bf);
+    /* PATH_BANK=n / PATH_BANK_FILE=<fichier> : « Lire avec… », la banque de CE
+     * fichier, devant le réglage (ⓘ doit la nommer). */
+    if (getenv("PATH_BANK") || getenv("PATH_BANK_FILE"))
+        rewamp_adlmidi_set_path_bank(file, getenv("PATH_BANK") ? atoi(getenv("PATH_BANK")) : -1,
+                                 getenv("PATH_BANK_FILE"));
     RewampAudioFormat fmt = {0};
     RewampDecoder* d = vt->open(file, &fmt);
     if (!d) { fprintf(stderr, "open a échoué\n"); return 3; }
     const double total = (double)vt->length(d) / fmt.sampleRate;
     printf("rate=%u ch=%u length=%.2fs voices=%d\n---\n%s---\n", fmt.sampleRate, fmt.channels,
            total, rewamp_channel_count_raw(), rewamp_track_message());
+    {
+        int named = 0;
+        for (int i = 1; i <= 128; i++) if (modizInstrName[i][0]) named++;
+        printf("instruments nommés: %d/128", named);
+        for (int i : {1, 2, 30, 31, 34, 41, 49, 57, 81, 128})
+            if (modizInstrName[i][0]) printf(" | %d=%s", i, modizInstrName[i]);
+        printf("\n");
+    }
     const unsigned rate = fmt.sampleRate;
     std::vector<float> pcm, buf(1024 * 2);
     int voiceHit[64] = {0};
+    long drumHit[256] = {0};  /* cases de batterie (≥ 129) vues par la timeline */
+    long attacks[64] = {0};   /* colonnes d'ATTAQUE (volume 255) par voix */
     int scopePeak[64] = {0}; long scopeNz[64] = {0}, scopeN = 0;
     double sxy = 0, sxx = 0, syy = 0;
     const int ringMask = SOUND_BUFFER_SIZE_SAMPLE * 4 * 2 - 1;
@@ -113,7 +135,12 @@ int main(int argc, char** argv) {
                 }
                 scopeN += (long)got;
             }
-            for (int v = 0; v < 64 && v < rewamp_channel_count_raw(); v++) if (vgm_last_note[v]) voiceHit[v]++;
+            for (int v = 0; v < 64 && v < rewamp_channel_count_raw(); v++) {
+                if (vgm_last_note[v]) voiceHit[v]++;
+                if (vgm_last_vol[v] == 255) attacks[v]++;
+                if (vgm_last_vol[v] == 255 && vgm_last_instr[v] >= 129 &&
+                    vgm_last_instr[v] < 256) drumHit[vgm_last_instr[v]]++;
+            }
         }
         if (n == 0) { printf("fin de piste à %.2fs\n", frames / (double)rate); break; }
         if (!loopTest || sec % 10 == 0) printf("%3ds rms=%.4f\n", sec, sqrt(sum / (n * 2.0)));
@@ -122,9 +149,30 @@ int main(int argc, char** argv) {
     printf("rendu %.2fs\nvoix avec notes:", frames / (double)rate);
     for (int v = 0; v < rewamp_channel_count_raw(); v++) if (voiceHit[v]) printf(" %d", v);
     printf("\n");
+    {
+        /* Attaques publiées contre note-on du FICHIER (tml, SMF seulement):
+         * à une colonne de lecture près (1024 trames), égales attendues. */
+        long on[16] = {0};
+        if (tml_message* ev = tml_load_filename(file)) {
+            for (tml_message* m = ev; m; m = m->next)
+                if (m->type == TML_NOTE_ON && m->velocity > 0 && m->channel < 16 &&
+                    m->time < (unsigned)(frames * 1000.0 / rate)) on[m->channel]++;
+            tml_free(ev);
+        }
+        printf("attaques par voix:");
+        for (int v = 0; v < rewamp_channel_count_raw() && v < 64; v++) printf(" %ld", attacks[v]);
+        printf("\nnote-on par canal (fichier):");
+        for (int c = 0; c < 16; c++) if (on[c]) printf(" c%d=%ld", c, on[c]);
+        printf("\n");
+    }
     for (int v = 0; v < rewamp_channel_count_raw() && v < 64; v++)
         printf("scope voix %2d: crête %3d, non nul %5.1f %%\n", v, scopePeak[v],
                scopeN ? 100.0 * scopeNz[v] / scopeN : 0.0);
+    /* Canal 10: une case par TOUCHE, nommée (rewamp_gm_drums.h). */
+    printf("batterie:");
+    for (int i = 129; i < 256; i++)
+        if (drumHit[i]) printf(" %d=%s×%ld", i, modizInstrName[i][0] ? modizInstrName[i] : "?", drumHit[i]);
+    printf("\n");
     printf("corrélation somme des voix / mixage: %.3f\n",
            sxx > 0 && syy > 0 ? sxy / sqrt(sxx * syy) : 0.0);
     vt->close(d);

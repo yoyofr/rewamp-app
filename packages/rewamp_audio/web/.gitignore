@@ -1,0 +1,5 @@
+/build/
+# produits par build.sh
+/site/dist/
+/site/samples/
+/build_ffmpeg.log

@@ -761,6 +761,14 @@ class AppLocalizationsNo extends AppLocalizations {
   String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
+  String get engineDescCpc =>
+      'Amstrad CPC — .dsk-disketter kjørt på en emulert CPC 6128';
+
+  @override
+  String get engineDescZxSpectrum =>
+      'ZX Spectrum — .tap-kassetter kjørt på en emulert Spectrum 48K/128K';
+
+  @override
   String get engineDescSidplayfp => 'Commodore 64 SID (reSIDfp-motor)';
 
   @override
@@ -812,7 +820,7 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get engineDescSndh =>
-      'Atari ST .sndh — ekte 68000-emulering + YM2149 + STE DAC';
+      'Atari ST .sndh — ekte 68000-emulering + YM2149 + STE DAC · .ym (YM2–YM6, digidrums, SID)';
 
   @override
   String get engineDescLazyusf =>
@@ -833,6 +841,10 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get engineDescOrganya => 'Cave Story .org — Pixels egen motor';
+
+  @override
+  String get engineDescMinibae =>
+      'Beatnik .rmf — Beatnik Audio Engine, nett- og spillmusikk fra slutten av 90-tallet';
 
   @override
   String get engineDescNtgs =>
@@ -1449,6 +1461,9 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get queueAutoplayRow => 'Lagt til av autoavspilling';
+
+  @override
+  String get queueRadioRow => 'Lagt til av radioen';
 
   @override
   String get queueClearConfirmTitle => 'Tømme køen?';
@@ -2823,7 +2838,7 @@ class AppLocalizationsNo extends AppLocalizations {
       'Enkelte formater kan spilles av flere motorer. Velg hvilken som skal brukes som standard — alle andre formater rutes automatisk.';
 
   @override
-  String get settingsDecoderAmigaTrackers => 'Amiga-trackere (mod, med, okt…)';
+  String get settingsDecoderAmigaTrackers => 'Amiga-moduler (mod, med, okt…)';
 
   @override
   String get settingsEngineOpenmptSubtitle => 'Trackere — MOD, XM, S3M, IT…';
@@ -3022,6 +3037,13 @@ class AppLocalizationsNo extends AppLocalizations {
   String get settingsNsfQuality => 'Kvalitet (nsfplay)';
 
   @override
+  String get settingsNsfFade => 'Uttoning på slutten';
+
+  @override
+  String get settingsNsfFadeHelp =>
+      'Uttoning på slutten av et spor når filen ikke angir noen (en .m3u eller NSFe kan angi sin egen). Den regnes med i sporets lengde. Av = brå stopp.';
+
+  @override
   String get settingsLowpassFilter => 'Lavpassfilter';
 
   @override
@@ -3141,6 +3163,52 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get settingsGbsHpFilter => 'Høypassfilter (gbsplay)';
+
+  @override
+  String get settingsEnginePsgplaySubtitle =>
+      'Atari ST / SNDH — kanalmiksing for YM2149';
+
+  @override
+  String get settingsPsgMix => 'PSG-kanalmiksing';
+
+  @override
+  String get settingsPsgMixEmpiric => 'Empirisk (Atari ST)';
+
+  @override
+  String get settingsPsgMixLinear => 'Lineær';
+
+  @override
+  String get settingsPsgMixStereo => 'Stereo';
+
+  @override
+  String get settingsPsgMixEmpiricHint =>
+      'De tre kanalene miksa som på en ekte Atari ST (målte nivåer): en kornete lyd, i mono.';
+
+  @override
+  String get settingsPsgMixLinearHint =>
+      'En enkel sum av de tre kanalene: en renere lyd, i mono.';
+
+  @override
+  String get settingsPsgMixStereoHint =>
+      'Lineær miksing, hver kanal plassert mellom venstre og høyre.';
+
+  @override
+  String settingsPsgPanVoice(String voice) {
+    return 'Kanal $voice';
+  }
+
+  @override
+  String get settingsPsgPanCentre => 'Midten';
+
+  @override
+  String settingsPsgPanLeft(int percent) {
+    return 'Venstre $percent %';
+  }
+
+  @override
+  String settingsPsgPanRight(int percent) {
+    return 'Høyre $percent %';
+  }
 
   @override
   String get settingsGbsFilterDmg => 'DMG (klassisk GB)';
@@ -4379,54 +4447,6 @@ class AppLocalizationsNo extends AppLocalizations {
   String get releaseNotesTitle => 'Nyheter';
 
   @override
-  String get releaseNotesV10Loading =>
-      'Et spor som laster sakte, fryser ikke lenger appen: en tynn ring rundt spill av/pause viser at det fortsatt laster.';
-
-  @override
-  String get releaseNotesV10Piano =>
-      'Pianovisualisering: låter med mange samtidige stemmer eller instrumenter fordeles på flere klaviaturer.';
-
-  @override
-  String get releaseNotesV10Amiga =>
-      'Amiga: StoneTracker, SUNtronic (TSM-ripper) og flere Soundtracker 2.6-moduler spilles nå, og SoundPlayer-låter spilles på iOS.';
-
-  @override
-  String get releaseNotesV10ZxSpectrum =>
-      'ZX Spectrum: .mt3-filer fra zxart spilles, og på Linux er ZXTune-formatene og SAM Coupé .cop-programmer med.';
-
-  @override
-  String get releaseNotesV10OpenWith =>
-      'macOS og iOS: alle støttede formater vises nå under «Åpne med».';
-
-  @override
-  String get releaseNotesV10MtcCrash =>
-      'Rettet: noen .mtc-filer som blander PT3 med TFM eller PSG, fikk appen til å krasje.';
-
-  @override
-  String get releaseNotesV10Podiums =>
-      'Ny utforsker «Podier»: vinnere av demoscene-konkurranser etter party, år eller type compo, med et æresgalleri.';
-
-  @override
-  String get releaseNotesV10Arcade =>
-      'Arkade: Ensoniq ES5505/ES5506-musikk (Taito F3 …) spilles, Apple IIGS-VGM-filer krasjer ikke lenger appen, og motorene er oppdatert (FM-Kingtracker .fmk lagt til).';
-
-  @override
-  String get releaseNotesV10InfoPanel =>
-      'Infopanelet: format, motor, kanaler og sløyfepunkter vises først, og feltnavnene skiller seg ut.';
-
-  @override
-  String get releaseNotesV10LocalAlbums =>
-      'Album- og delspor-skjermene viser samlingen; et sluppet arkiv viser alle sporene, er merket «lokal» og vises ikke lenger to ganger når det er erstattet.';
-
-  @override
-  String get releaseNotesV10Crossfade =>
-      'Rettet: med overtoning var et spor som er kortere enn overtoningen ikke hørbart.';
-
-  @override
-  String get releaseNotesV10Artwork =>
-      'Rettet: et omslag som er byttet på serveren vises overalt etter «Last ned filen på nytt».';
-
-  @override
   String get releaseNotesDataReset =>
       'Lokale data ble nullstilt for denne versjonen. Bibliotek og spillelister bygges opp fra kontoen; nedlastinger må gjøres på nytt.';
 
@@ -4880,8 +4900,15 @@ class AppLocalizationsNo extends AppLocalizations {
   String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
 
   @override
+  String get settingsMidiSynthOpn2 => 'OPN2 FM (Mega Drive / Genesis)';
+
+  @override
   String get settingsEngineAdlmidiSubtitle =>
       'MIDI og DOS-spillmusikk på en emulert OPL3-brikke';
+
+  @override
+  String get settingsEngineOpnmidiSubtitle =>
+      'MIDI på en emulert OPN2- / OPNA-brikke (Mega Drive, PC-98)';
 
   @override
   String get settingsAdlBank => 'Instrumentbank';
@@ -4904,4 +4931,450 @@ class AppLocalizationsNo extends AppLocalizations {
   @override
   String get engineDescAdlmidi =>
       'MIDI, XMI, DMX MUS, HMI/HMP på en emulert OPL3-brikke (AdLib / Sound Blaster)';
+
+  @override
+  String get engineDescOpnmidi =>
+      'MIDI på en emulert OPN2- (Mega Drive) eller OPNA-brikke (PC-98)';
+
+  @override
+  String get fmBanksBuiltIn => 'Innebygde';
+
+  @override
+  String get fmBanksImported => 'Importerte';
+
+  @override
+  String get fmBanksFilterHint => 'Filtrer etter navn';
+
+  @override
+  String get fmBanksNoMatch => 'Ingen bank samsvarer';
+
+  @override
+  String get fmBanksImportedEmpty =>
+      'Ingen importerte banker ennå. Slipp en .wopl- eller .wopn-fil på vinduet, åpne den med Rewamp eller importer den her.';
+
+  @override
+  String fmBankImported(String name, String engine) {
+    return 'Banken «$name» importert og valgt for $engine';
+  }
+
+  @override
+  String fmBankImportInvalid(String name) {
+    return '«$name» er ikke en WOPL- eller WOPN-bank';
+  }
+
+  @override
+  String fmBankDeleteConfirm(String name) {
+    return 'Slette banken «$name»?';
+  }
+
+  @override
+  String get fmBanksImportTile => 'Importer banker…';
+
+  @override
+  String fmBanksImportSubtitle(String ext) {
+    return '$ext-filer (fra Wohlstands bankredigerere eller samlinger). Filhodet avgjør; importerte banker fjernes i banklisten.';
+  }
+
+  @override
+  String get fmEmuAccuracyVeryHigh => 'Svært nøyaktig';
+
+  @override
+  String get fmEmuAccuracyGood => 'Nøyaktig';
+
+  @override
+  String get fmEmuAccuracyApproximate => 'Omtrentlig';
+
+  @override
+  String get fmEmuCpuLight => 'Rask';
+
+  @override
+  String get fmEmuCpuMedium => 'Moderat CPU-bruk';
+
+  @override
+  String get fmEmuCpuHeavy => 'CPU-krevende';
+
+  @override
+  String settingsDefaultFor(String format) {
+    return 'Standardspiller for $format';
+  }
+
+  @override
+  String get settingsDefaultForActive => 'Denne motoren spiller dette formatet';
+
+  @override
+  String settingsDefaultForSet(String section) {
+    return 'Trykk for å spille formatet med denne motoren – alle valg finnes også under «$section»';
+  }
+
+  @override
+  String get settingsDecoderDosMidi => 'MIDI fra DOS-spill (XMI, MUS, HMI…)';
+
+  @override
+  String get playWithTitle => 'Spill av med…';
+
+  @override
+  String playWithAuto(String engine) {
+    return 'Automatisk ($engine)';
+  }
+
+  @override
+  String get playWithPlayingNow => 'Spilles nå';
+
+  @override
+  String get playWithRemember => 'Husk dette valget';
+
+  @override
+  String get playWithRememberOn =>
+      'Hver gang denne filen (eller albumet) spilles';
+
+  @override
+  String get playWithRememberOff => 'Bare for denne avspillingen';
+
+  @override
+  String get playWithScopeFile => 'Denne filen';
+
+  @override
+  String get playWithScopeAlbum => 'Hele albumet';
+
+  @override
+  String get playWithApply => 'Spill av';
+
+  @override
+  String playWithCurrent(String engine) {
+    return 'Motor: $engine';
+  }
+
+  @override
+  String get settingsForgetPlayWith => 'Glem valgene for «Spill av med…»';
+
+  @override
+  String settingsForgetPlayWithSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count lagrede valg',
+      one: '$count lagret valg',
+      zero: 'Ingen lagrede valg',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsForgetPlayWithBody =>
+      'Alt som er husket for en fil eller et album (motor, bank, SoundFont, modell), glemmes: de spilles igjen med standardinnstillingene.';
+
+  @override
+  String get playWithBank => 'Instrumentbank';
+
+  @override
+  String playWithBankDefault(String name) {
+    return 'Innstillingenes bank ($name)';
+  }
+
+  @override
+  String get fmBankInUseTitle => 'Banken er i bruk';
+
+  @override
+  String fmBankInUseIntro(String name) {
+    return '«$name» er valgt for:';
+  }
+
+  @override
+  String fmBankInUseFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count filer',
+      one: '$count fil',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fmBankInUseAlbums(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count album',
+      one: '$count album',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fmBankInUseOutro =>
+      'De spilles igjen med motorens bankinnstilling. Slette likevel?';
+
+  @override
+  String playWithSoundfontDefault(String name) {
+    return 'Innstillingenes SoundFont ($name)';
+  }
+
+  @override
+  String playWithMt32Default(String model) {
+    return 'Innstilling: $model';
+  }
+
+  @override
+  String get playWithOptionSetting => 'Innstilling';
+
+  @override
+  String get soundfontInUseTitle => 'SoundFonten er i bruk';
+
+  @override
+  String get soundfontInUseOutro =>
+      'De spilles igjen med SoundFonten fra innstillingene. Slette likevel?';
+
+  @override
+  String get playWithTitleAlbum => 'Spill albumet med…';
+
+  @override
+  String get playWithSave => 'Lagre';
+
+  @override
+  String get shortcutsTitle => 'Tastatursnarveier';
+
+  @override
+  String get shortcutsSubtitle =>
+      'Taster for avspilling, visualisering og vindu';
+
+  @override
+  String get shortcutsHint =>
+      'Enkelttaster ignoreres når et tekstfelt har fokus. Visualiseringstastene virker bare når visualiseringen vises.';
+
+  @override
+  String get shortcutsGroupTransport => 'Avspilling';
+
+  @override
+  String get shortcutsGroupVisualizer => 'Visualisering';
+
+  @override
+  String get shortcutsGroupWindow => 'Vindu og navigasjon';
+
+  @override
+  String get shortcutsKeySpace => 'Mellomrom';
+
+  @override
+  String get shortcutsKeyEscape => 'Esc';
+
+  @override
+  String get shortcutPlayPause => 'Spill / pause';
+
+  @override
+  String get shortcutPrevTrack => 'Forrige spor';
+
+  @override
+  String get shortcutNextTrack => 'Neste spor';
+
+  @override
+  String get shortcutSeekBack10 => '10 sekunder tilbake';
+
+  @override
+  String get shortcutSeekForward10 => '10 sekunder frem';
+
+  @override
+  String get shortcutSeekBack60 => '1 minutt tilbake';
+
+  @override
+  String get shortcutSeekForward60 => '1 minutt frem';
+
+  @override
+  String get shortcutSeekPercent => 'Gå til 0 %…90 % av sporet';
+
+  @override
+  String get shortcutRepeat => 'Repetisjonsmodus';
+
+  @override
+  String get shortcutShuffle => 'Tilfeldig';
+
+  @override
+  String get shortcutFavorite => 'Favoritt';
+
+  @override
+  String get shortcutSpeedDown => 'Saktere';
+
+  @override
+  String get shortcutSpeedUp => 'Raskere';
+
+  @override
+  String get shortcutSpeedReset => 'Normal hastighet';
+
+  @override
+  String get shortcutVizNext => 'Neste visualisering';
+
+  @override
+  String get shortcutVizPrev => 'Forrige visualisering';
+
+  @override
+  String get shortcutVizControls => 'Vis visualiseringens kontroller';
+
+  @override
+  String get shortcutPmNext => 'projectM: neste forvalg';
+
+  @override
+  String get shortcutPmPrev => 'projectM: forrige forvalg';
+
+  @override
+  String get shortcutPmLock => 'projectM: lås forvalget';
+
+  @override
+  String get shortcutPmRandom => 'projectM: tilfeldig rekkefølge';
+
+  @override
+  String get shortcutPmPicker => 'projectM: forvalgsliste';
+
+  @override
+  String get shortcutMiniWindow => 'Minispiller';
+
+  @override
+  String get shortcutMiniViz => 'Minispiller med visualisering';
+
+  @override
+  String get shortcutAlwaysOnTop => 'Alltid øverst';
+
+  @override
+  String get shortcutPlayer => 'Åpne / lukk spilleren';
+
+  @override
+  String get shortcutEscape => 'Lukk det øverste panelet';
+
+  @override
+  String get shortcutQueue => 'Køpanel';
+
+  @override
+  String get shortcutSearch => 'Søk';
+
+  @override
+  String get shortcutTabs => 'Faner, i sidepanelets rekkefølge';
+
+  @override
+  String get shortcutOpenFiles => 'Åpne filer…';
+
+  @override
+  String get shortcutLinkFolder => 'Koble til en mappe…';
+
+  @override
+  String get shortcutInfo => 'Sporinformasjon';
+
+  @override
+  String get shortcutSettings => 'Innstillinger';
+
+  @override
+  String get shortcutFullscreen => 'Fullskjerm';
+
+  @override
+  String get shortcutHelp => 'Denne listen';
+
+  @override
+  String get navHelp => 'Hjelp';
+
+  @override
+  String get helpTitle => 'Hjelp';
+
+  @override
+  String get helpDocsTitle => 'Nettdokumentasjon';
+
+  @override
+  String get helpDocsSubtitle =>
+      'Trinnvise veiledninger med skjermbilder på rewamp.app (på engelsk)';
+
+  @override
+  String get sleepTimerTitle => 'Sovetimer';
+
+  @override
+  String get sleepTimerExplain =>
+      'Avspillingen pauses etter valgt tid og tones ut de siste 30 sekundene.';
+
+  @override
+  String sleepTimerMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count minutter',
+      one: '$count minutt',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sleepTimerRemainingMinutes(int count) {
+    return '$count min';
+  }
+
+  @override
+  String sleepTimerRemainingSeconds(int count) {
+    return '$count s';
+  }
+
+  @override
+  String sleepTimerActiveRemaining(String time) {
+    return 'Gjenstår: $time';
+  }
+
+  @override
+  String get sleepTimerOff => 'Slå av';
+
+  @override
+  String get sleepTimerEnded =>
+      'Sovetimeren er ferdig — avspillingen er satt på pause';
+
+  @override
+  String get sleepTimerNothingToPlay =>
+      'Ingen nylig avspilte spor å starte med';
+
+  @override
+  String get releaseNotesV11Autoplay =>
+      'Autoavspilling (∞): når køen er tom, fortsetter avspillingen med lignende spor (samme artist, gruppe, samling).';
+
+  @override
+  String get releaseNotesV11LinkedFolders =>
+      'Koblede mapper: filene dine spilles der de ligger, uten kopiering — mapper på datamaskinen, Filer-appen og iCloud på iOS, hvilken som helst mappe på Android.';
+
+  @override
+  String get releaseNotesV11PlayWith =>
+      '«Spill av med…»: velg motoren for en fil eller et album, og også SoundFont, MT-32-modell eller FM-bank (du kan importere egne WOPL/WOPN-banker).';
+
+  @override
+  String get releaseNotesV11NewEngines =>
+      'Nye motorer: MIDI på OPL3 (libADLMIDI) og OPN2/OPNA (libOPNMIDI), Beatnik .rmf, ZX Spectrum-kassetter .tap og Amstrad CPC-disketter .dsk på emulerte maskiner, UnExoticA Mark II.';
+
+  @override
+  String get releaseNotesV11EngineUpdates =>
+      'Oppdaterte motorer: VGM 1.72 med Namco WSG-brikker, Furnace, AtariAudio 1.27 (nå standard for .ym), libxmp som valg for Amiga-moduler, justerbar uttoning på slutten av VGM.';
+
+  @override
+  String get releaseNotesV11Sleep =>
+      'Sovetimer: velg en varighet, musikken tones ut og stopper — og en tom kø fyller seg selv.';
+
+  @override
+  String get releaseNotesV11Desktop =>
+      'Datamaskin: hurtigtaster (liste med ?), en Hjelp-fane med lenke til nettdokumentasjonen, kommandolinje (rewamp --mini --play …) og én appinstans.';
+
+  @override
+  String get releaseNotesV11ArtistSync =>
+      'Artistene i biblioteket ditt synkroniseres med kontoen din, med omslag.';
+
+  @override
+  String get releaseNotesV11PlayNext =>
+      'Langt trykk på et spor: spill nå, som neste eller til slutt; en «…»-meny ved siden av Spill alle, Radio og Overraskelse.';
+
+  @override
+  String get releaseNotesV11Composers =>
+      'Komponister kan trykkes på i alle album- og underspor-skjermer; tittel og opphav leses fra importerte filer.';
+
+  @override
+  String get releaseNotesV11Hindi =>
+      'Appen snakker hindi (19 språk), og grensesnittet er klart for språk som skrives fra høyre mot venstre.';
+
+  @override
+  String get releaseNotesV11Loops =>
+      'Uendelig løkke slått på under avspilling: sporet fortsetter gjennom sitt eget løkkepunkt, og et spor uten løkke starter på nytt.';
+
+  @override
+  String get releaseNotesV11Visualizers =>
+      'Visualiseringer: opptil 64 stemmer i oscilloskopene, én farge per MIDI-trommeinstrument, noter for 2SF-filer, instrumentnavn fra FM-banker.';
+
+  @override
+  String get releaseNotesV11Fixes =>
+      'Rettet: noen avviste SSF-filer, stille WonderSwan-ripper, ufullstendige album fordelt på flere arkiver og projectM-forhåndsinnstillinger etter at spilleren er lukket.';
 }

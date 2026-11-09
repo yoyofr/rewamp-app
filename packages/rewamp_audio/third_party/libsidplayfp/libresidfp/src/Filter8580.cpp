@@ -60,6 +60,8 @@ void Filter8580::updateCenterFrequency()
 
     hpIntegrator.setFc(wl);
     bpIntegrator.setFc(wl);
+    for (int i = 0; i < 4; i++) { scopeHp[i].setFc(wl); scopeBp[i].setFc(wl); }  // REWAMP
+    m_scopeRestConverged = false;
 }
 
 void Filter8580::setFilterCurve(double curvePosition)
@@ -70,6 +72,8 @@ void Filter8580::setFilterCurve(double curvePosition)
 
     hpIntegrator.setV(cp);
     bpIntegrator.setV(cp);
+    for (int i = 0; i < 4; i++) { scopeHp[i].setV(cp); scopeBp[i].setV(cp); }  // REWAMP
+    m_scopeRestConverged = false;
 }
 
 } // namespace reSIDfp

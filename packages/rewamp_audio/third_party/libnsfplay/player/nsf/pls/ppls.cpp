@@ -187,6 +187,19 @@ static int get_time(SST *sst, int default_value)
   time *= 1000 ;
 
   if(check_section(sst,'\'')) time += get_number(sst,0) * 10 ;
+  /* REWAMP: fraction décimale « m:ss.mmm » (forme des rips joshw/Knurek);
+   * l'amont ne connaissait que l'apostrophe NEZplug (centièmes) et lisait
+   * 0:06.559 comme 6 s — fin coupée de 559 ms, fondu raccourci d'autant. */
+  else if(check_section(sst,'.'))
+  {
+    int scale = 100, n = 0 ;
+    for(;;)
+    {
+      c = SST_getc(sst) ;
+      if(!is_digit(c)) { SST_ungetc(sst,c) ; break ; }
+      if(n++ < 3) { time += (c - '0') * scale ; scale /= 10 ; }
+    }
+  }
 
   return time ;
 }

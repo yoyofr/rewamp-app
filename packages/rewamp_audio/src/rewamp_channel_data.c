@@ -52,6 +52,7 @@ int               m_voice_fadeout_factor   = 0;
 
 int64_t           generic_mute_mask  = 0;
 int               m_voicesForceOfs   = 0;
+int               rewamp_zx_voice_base = 0;
 
 int64_t           mdz_ratio_fp_cnt = 0;
 int64_t           mdz_ratio_fp_inc = 0;
@@ -83,6 +84,8 @@ void             *m_sid_chipId[MAXSID_CHIPS] = {0};
 int               m_sid_chipNb = 1;
 char              mSIDSeekInProgress = 0;
 int               sid_v4 = 0;
+int               sid_scope_v[3] = {0, 0, 0};
+int               sid_scope_filter_on = 0;
 
 short int         pmBuffer[PM_BUFFER_SIZE * 2];
 int               pmBufferPosWrite = 0;
@@ -256,6 +259,7 @@ void rewamp_channel_data_reset(int channelCount) {
     m_voice_current_systemSub  = 0;
     m_voice_current_systemPairedOfs = 0;
     m_voice_current_total      = 0;
+    rewamp_zx_voice_base       = 0;
     m_voice_current_samplerate = 44100;
     m_voice_current_rateratio  = 1.0;
 
@@ -430,7 +434,25 @@ static int channel_muted(int ch) {
     return (ch >= 0 && ch < 64) && ((generic_mute_mask >> ch) & 1);
 }
 
+/* Is a voice oscilloscope READING the rings? Each read bumps a counter; a
+ * core that has an expensive way to make its capture truer (reSIDfp: every
+ * voice through its own copy of the filter, ~+50 % of the SID emulation)
+ * asks once per decode step (its plugin's read()) and pays only while
+ * someone looks. Still true for ~50 steps after the last read (well over a
+ * display frame at the producer's step size), false after. */
+static volatile unsigned g_scope_reads = 0;
+
+int rewamp_voice_scope_wanted(void) {
+    static unsigned last = 0;
+    static int idle = 1000;
+    const unsigned r = g_scope_reads;
+    if (r != last) { last = r; idle = 0; return 1; }
+    if (idle < 50) { idle++; return 1; }
+    return 0;
+}
+
 int rewamp_channel_buf(int ch, int8_t* out, int outLen) {
+    g_scope_reads++;
     if (g_channel_count == 0)            /* waveform fallback (L/R) */
         return rewamp_waveform_read_i8(ch, out, outLen);
     if (ch < 0 || ch >= g_channel_count) return 0;
@@ -552,6 +574,7 @@ int rewamp_trigger_align_i8(const int8_t* raw, int got, int outLen, int8_t* tmpl
 }
 
 int rewamp_channel_buf_triggered(int ch, int8_t* out, int outLen) {
+    g_scope_reads++;
     if (g_channel_count == 0) {
         /* Repli L/R (moteur sans données par voie): lu sans alignement jusqu'au
          * 2026-10-10, donc il tremblait comme l'oscilloscope stéréo d'alors.
@@ -653,6 +676,12 @@ int rewamp_voices_add_chip(const char* name, int startVoice, int count) {
      * (rewamp_voice_chip in rewamp_audio.c). */
     modizChipsetCount++;
     return idx;
+}
+
+void rewamp_voice_notes_clear(int first, int count) {
+    if (first < 0) { count += first; first = 0; }
+    if (count > SOUND_MAXVOICES_BUFFER_FX - first) count = SOUND_MAXVOICES_BUFFER_FX - first;
+    for (int v = first; v < first + count; v++) { vgm_last_note[v] = 0; vgm_last_vol[v] = 0; }
 }
 
 void rewamp_voice_set_name(int v, const char* name) {

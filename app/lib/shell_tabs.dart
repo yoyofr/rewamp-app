@@ -30,6 +30,8 @@ enum ShellTab {
   library('library', Icons.library_music_outlined, Icons.library_music),
   stats('stats', Icons.bar_chart_outlined, Icons.bar_chart),
   settings('settings', Icons.settings_outlined, Icons.settings),
+  // Guide des fonctions principales + raccourcis clavier (help_screen.dart).
+  help('help', Icons.help_outline, Icons.help),
   about('about', Icons.info_outline, Icons.info);
 
   const ShellTab(this.id, this.icon, this.selectedIcon);
@@ -53,6 +55,7 @@ enum ShellTab {
         ShellTab.library  => l10n.navLibrary,
         ShellTab.stats    => l10n.navStats,
         ShellTab.settings => l10n.navSettings,
+        ShellTab.help     => l10n.navHelp,
         ShellTab.about    => l10n.navAbout,
       };
 }
@@ -77,6 +80,7 @@ const List<ShellTab> kPhoneTabsDefault = [
   ShellTab.stats,
   ShellTab.local,
   ShellTab.settings,
+  ShellTab.help,
   ShellTab.about,
 ];
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'l10n.dart';
+import 'play_start.dart' show withQueuePlacement;
 
 /// The « Radio » / « Surprise » pair, identical on every screen that offers it.
 ///
@@ -101,6 +102,33 @@ class RadioSurpriseButtons extends StatelessWidget {
         SizedBox(width: gap),
         button(Icons.casino_outlined, l10n.searchSurprise,
             l10n.searchSurpriseTooltip, onSurprise),
+        // « … »: le MÊME contenu que « tout lire », ajouté à la file au lieu
+        // de la remplacer. Rien à écrire par écran: withQueuePlacement marque
+        // la zone du geste et les entonnoirs d'AppShell la lisent.
+        if (onPlayAll != null) ...[
+          SizedBox(width: gap),
+          MenuAnchor(
+            menuChildren: [
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.playlist_play),
+                onPressed: () => withQueuePlacement(
+                    atEnd: false, gesture: () => onPlayAll!()),
+                child: Text(l10n.trackOptionsPlayNext),
+              ),
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.playlist_add),
+                onPressed: () => withQueuePlacement(
+                    atEnd: true, gesture: () => onPlayAll!()),
+                child: Text(l10n.trackOptionsPlayLast),
+              ),
+            ],
+            builder: (context, menu, _) => bare(
+              Icons.more_horiz,
+              MaterialLocalizations.of(context).moreButtonTooltip,
+              () => menu.isOpen ? menu.close() : menu.open(),
+            ),
+          ),
+        ],
       ],
     );
   }

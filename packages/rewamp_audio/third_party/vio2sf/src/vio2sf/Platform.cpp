@@ -19,6 +19,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+// rewamp: libc++ ne fournit plus cet en-tete en transitif (vu sous Emscripten).
+#include <errno.h>  // EAGAIN
 #include <unistd.h>
 
 #include <string>

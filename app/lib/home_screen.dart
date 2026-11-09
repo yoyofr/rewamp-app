@@ -397,7 +397,8 @@ class HomeScreen extends StatelessWidget {
                       final choice = await showPlayChoiceSheet(ctx,
                           title: entry.label,
                           subtitle: entry.artist,
-                          track: entry.asTrackRecord());
+                          track: entry.asTrackRecord(),
+                          album: entry.isAlbum);
                       if (choice == null || !ctx.mounted) return;
                       final queueLocal  = globalOnLocalQueueAdd;
                       final queueOnline = globalOnAlbumQueueAdd;

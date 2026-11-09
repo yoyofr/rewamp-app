@@ -100,7 +100,7 @@ private:
 
             if (generic_mute_mask&(1<<m_voice_ofs+j)) chanout=0;
             else {
-                chanout = PSG.GetLevelsChan(j+m_voicesForceOfs).Left()+PSG.GetLevelsChan(j+m_voicesForceOfs).Right();
+                chanout = PSG.GetLevelsChan(j).Left()+PSG.GetLevelsChan(j).Right();   //YOYOFR (rewamp): chip-local channel, global voice m_voice_ofs+j
             }
             
             if (ofs_end>ofs_start)
@@ -133,8 +133,7 @@ private:
     void RenderMultipleSamples(uint_t samples, Sound::ChunkBuilder& target)
     {
         //YOYOFR
-        memset(vgm_last_note,0,sizeof(vgm_last_note));
-        memset(vgm_last_vol,0,sizeof(vgm_last_vol));
+        rewamp_voice_notes_clear(m_voicesForceOfs, m_voice_current_total);   //this chip only
         //YOYOFR
         for (uint_t count = samples; count != 0; --count)
         {
@@ -278,7 +277,7 @@ public:
             Filter.Feed(Delegate.GetLevels());
             
             for (int i=0;i<m_voice_current_total;i++)
-                Filter_mdz[(i+m_voicesForceOfs)%6].Feed(Delegate.GetLevelsChan(i));
+                Filter_mdz[i].Feed(Delegate.GetLevelsChan(i));   //YOYOFR (rewamp): per-chip filters, chip-local index like Get()
             
             Delegate.Tick(1);
         }

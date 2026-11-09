@@ -21,7 +21,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum PickerSlot { music, presets, mt32Roms, soundfont, backup }
+enum PickerSlot { music, presets, mt32Roms, soundfont, backup, fmBanks }
 
 class PickerMemory {
   PickerMemory._();

@@ -89,6 +89,67 @@ static double samplePitches[11]={
   2, 3, 4, 5, 6
 };
 
+// REWAMP: resynchronisation des en-têtes de samples d'un .dmf abîmé.
+//
+// Environ 19 % des .dmf de modland (341 sur 1 807, surtout Genesis) ont une
+// Adler-32 de fin fausse, et ce n'est PAS qu'une somme: le flux deflate se
+// décode en entier mais rend quelques octets de moins (ou de plus) DANS les
+// données PCM d'un sample (mesuré: -1, -3, -77). Le format ne porte aucune
+// marque de synchronisation: la lecture se décale, l'en-tête suivant est lu au
+// mauvais endroit (« sample pitch is wrong », « depth is wrong ») et tout finit
+// en « premature end of file » — le module entier est refusé pour un défaut de
+// quelques octets dans un échantillon.
+//
+// Un en-tête de sample est très contraint (longueur bornée, nom imprimable,
+// débit 0-5, pitch 0-10, volume 0-100, profondeur 8/16), et on exige en plus
+// qu'il ENCHAÎNE: ses données doivent finir là où commence un autre en-tête
+// plausible, ou sur la fin du fichier pour le dernier. On cherche donc le plus
+// proche autour de la position courante. Le prix est un clic dans le sample
+// abîmé, au lieu d'un morceau qui ne joue pas.
+static bool dmfSampleHeaderEnd(const unsigned char* buf, size_t len, size_t pos, int version, size_t* dataEnd) {
+  if (pos+4>len) return false;
+  int length=(int)((unsigned int)buf[pos]|((unsigned int)buf[pos+1]<<8)|((unsigned int)buf[pos+2]<<16)|((unsigned int)buf[pos+3]<<24));
+  if (length<0 || length>(1<<24)) return false;
+  size_t p=pos+4;
+  if (version>0x16) {
+    if (p>=len) return false;
+    size_t nl=buf[p++];
+    if (p+nl>len) return false;
+    for (size_t k=0; k<nl; k++) {
+      if (buf[p+k]<0x20 || buf[p+k]==0x7f) return false;
+    }
+    p+=nl;
+  }
+  if (version>=0x0b) {
+    if (p+3>len) return false;
+    if (buf[p]>5 || buf[p+1]>10 || buf[p+2]>100) return false;
+    p+=3;
+  }
+  if (version>0x15) {
+    if (p>=len) return false;
+    if (buf[p]!=8 && buf[p]!=16) return false;
+    p++;
+  }
+  if (version>=0x1b) p+=8;
+  size_t bytes=(version>=0x0b)?(size_t)length*2:(size_t)length;
+  *dataEnd=p+bytes;
+  return true;
+}
+
+// Plausible ET chaîné: `remaining` en-têtes restent à lire, celui-ci compris.
+static bool dmfSampleHeaderChains(const unsigned char* buf, size_t len, size_t pos, int version, int remaining) {
+  size_t end=0;
+  if (!dmfSampleHeaderEnd(buf,len,pos,version,&end)) return false;
+  if (remaining<=1) {
+    // dernier: les données finissent sur la fin (un octet de queue est
+    // normal), ou un peu au-delà si le fichier a perdu des octets.
+    return end+1>=len ? (end<=len+256) : (len-end<=256);
+  }
+  size_t next=0;
+  if (!dmfSampleHeaderEnd(buf,len,end,version,&next)) return false;
+  return true;
+}
+
 bool DivEngine::loadDMF(unsigned char* file, size_t len) {
   SafeReader reader=SafeReader(file,len);
   warnings="";
@@ -217,6 +278,7 @@ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
       ds.compatFlags.delayBehavior=0;
       ds.compatFlags.jumpTreatment=2;
       ds.compatFlags.oldAlwaysSetVolume=true;
+      ds.compatFlags.arpSpeedGlobal=true;
 
       // 1.1 compat flags
       if (ds.version>24) {
@@ -304,7 +366,7 @@ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
       return false;
     }
     if (ds.subsong[0]->ordersLen>127) {
-      logE("song is too long!");
+      logE("song is too long! (%d)",ds.subsong[0]->ordersLen);
       lastError="song is too long!";
       delete[] file;
       return false;
@@ -849,6 +911,10 @@ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
                 if (newVal>0xff) newVal=0xff;
                 pat->newData[k][DIV_PAT_FXVAL(l)]=newVal;
               }
+              // apply TimeBase
+              if ((pat->newData[k][DIV_PAT_FX(l)]==0x09 || pat->newData[k][DIV_PAT_FX(l)]==0x0f) && pat->newData[k][DIV_PAT_FXVAL(l)]!=-1) {
+                pat->newData[k][DIV_PAT_FXVAL(l)]=CLAMP(pat->newData[k][DIV_PAT_FXVAL(l)]*(oldTimeBase+1),1,255);
+              }
             }
             // instrument
             pat->newData[k][DIV_PAT_INS]=reader.readS();
@@ -915,6 +981,25 @@ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
     }
     if (ds.sampleLen>0) ds.sample.reserve(ds.sampleLen);
     for (int i=0; i<ds.sampleLen; i++) {
+      // REWAMP: voir dmfSampleHeaderChains — un sample abîmé décale la lecture.
+      {
+        const size_t here=reader.tell();
+        const int remaining=ds.sampleLen-i;
+        if (!dmfSampleHeaderChains(file,len,here,ds.version,remaining)) {
+          size_t found=(size_t)-1;
+          for (size_t d=1; d<=512 && found==(size_t)-1; d++) {
+            if (d<=here && dmfSampleHeaderChains(file,len,here-d,ds.version,remaining)) found=here-d;
+            else if (dmfSampleHeaderChains(file,len,here+d,ds.version,remaining)) found=here+d;
+          }
+          if (found==(size_t)-1) {
+            logW("%d: sample header lost (at %x) — keeping the %d sample(s) read so far",i,(unsigned int)here,i);
+            ds.sampleLen=i;
+            break;
+          }
+          logW("%d: sample header resynchronized %+d bytes (damaged sample data before it)",i,(int)((long long)found-(long long)here));
+          reader.seek(found,SEEK_SET);
+        }
+      }
       DivSample* sample=new DivSample;
       int length=reader.readI();
       int cutStart=0;
@@ -979,7 +1064,19 @@ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
             length/=2;
           } else {
             data=new short[length];
-            reader.read(data,length*2);
+            // REWAMP: un DERNIER sample tronqué (octets perdus) se complète
+            // par du silence au lieu de lever « premature end of file ».
+            {
+              const size_t want=(size_t)length*2;
+              const size_t avail=reader.size()-reader.tell();
+              if (avail<want) {
+                logW("%d: sample data truncated (%d of %d bytes) — padding with silence",i,(int)avail,(int)want);
+                memset(data,0,want);
+                reader.read(data,avail);
+              } else {
+                reader.read(data,want);
+              }
+            }
           }
           
 #ifdef TA_BIG_ENDIAN
@@ -1412,7 +1509,7 @@ SafeWriter* DivEngine::saveDMF(unsigned char version) {
     addWarning(".dmf format does not support virtual tempo");
   }
 
-  if (song.tuning<439.99 && song.tuning>440.01) {
+  if (song.tuning<439.99 || song.tuning>440.01) {
     addWarning(".dmf format does not support tuning");
   }
 
@@ -1769,9 +1866,9 @@ SafeWriter* DivEngine::saveDMF(unsigned char version) {
               if (convIns>=0 && convIns<song.insLen) {
                 DivInstrument* convInsInst=song.ins[convIns];
                 if (convInsInst->amiga.useNoteMap) {
-                  int mapTarget=pat->newData[k][DIV_PAT_NOTE]-60;
+                  int mapTarget=pat->newData[k][DIV_PAT_NOTE];
                   if (mapTarget<0) mapTarget=0;
-                  if (mapTarget>119) mapTarget=119;
+                  if (mapTarget>179) mapTarget=179;
                   insertEBxx=convInsInst->amiga.noteMap[mapTarget].map/12;
                   pat->newData[k][DIV_PAT_NOTE]=(12*(pat->newData[k][DIV_PAT_NOTE]/12))+(convInsInst->amiga.noteMap[mapTarget].map%12);
                 } else {

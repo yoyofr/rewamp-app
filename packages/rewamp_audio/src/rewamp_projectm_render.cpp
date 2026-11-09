@@ -5,7 +5,7 @@
 //
 // GL header (<GLES3/gl3.h> on ANGLE, <OpenGL/gl3.h> desktop) is included by the
 // platform wrapper TU before this file, same as the other renderers.
-#if defined(__ANDROID__) || (defined(__linux__) && !defined(__ANDROID__)) || defined(_WIN32)
+#if defined(__ANDROID__) || (defined(__linux__) && !defined(__ANDROID__)) || defined(_WIN32) || defined(__EMSCRIPTEN__)
 // Sur Apple, le TU wrapper du podspec inclut l'en-tete GL avant ce fichier; la
 // build cmake (Android, Linux de bureau, Windows) le compile directement, donc
 // on le tire nous-memes. Linux prend le meme <GLES3/gl3.h>, servi par Mesa;
@@ -156,6 +156,9 @@ static pthread_mutex_t g_playlist_mtx = PTHREAD_MUTEX_INITIALIZER;
 static std::vector<std::string> g_playlist;       // staged; empty = default dir
 static long g_playlist_start = -1;                // preset to open on; -1 = usual pick
 static std::atomic<bool> g_playlist_dirty{false};
+// Presets AJOUTÉS en attente (rewamp_projectm_append_presets), sous g_playlist_mtx.
+static std::vector<std::string> g_append_pending;
+static std::atomic<bool> g_append_dirty{false};
 static pthread_mutex_t g_texdirs_mtx = PTHREAD_MUTEX_INITIALIZER;
 static std::vector<std::string> g_tex_dirs;       // staged; empty = default dir
 static std::atomic<bool> g_texdirs_dirty{false};
@@ -587,6 +590,7 @@ static void _on_switch_requested(bool is_hard_cut, void* user); // defined below
 static void _preload_start(void);        // defined with the preload worker below
 static void _preload_stop(void);
 static void _pick_next_and_preload(void);
+static void _append_if_pending(void);   // presets ajoutés (rewamp_projectm_append_presets)
 static void _preload_kick_tick(void);
 static void _warm_transitions(void); // defined with the PSO warm code below
 static void _warm_rt_forget(void);   // idem — drops handles after a context rebuild
@@ -731,6 +735,7 @@ extern "C" REWAMP_EXPORT void rewamp_projectm_render(void) {
     // indexed the OLD list.
     if (g_texdirs_dirty.exchange(false)) _apply_texture_dirs();
     _playlist_swap_if_pending();
+    _append_if_pending();
     _apply_pending_preset();
     _preload_kick_tick();   // deferred worker kick — see _pick_next_and_preload
 
@@ -1409,6 +1414,26 @@ static void _apply_pending_preset(void) {
         _pick_next_and_preload();
     }
 }
+// Presets AJOUTÉS (rewamp_projectm_append_presets): en fin de liste, sous le
+// verrou que le travailleur de préchargement prend pour lire g_presets. Seule
+// la prédiction du suivant est recalculée — en ordre, le premier ajout peut
+// être le prochain preset.
+static void _append_if_pending(void) {
+    if (!g_append_dirty.exchange(false)) return;
+    pthread_mutex_lock(&g_playlist_mtx);
+    std::vector<std::string> add;
+    add.swap(g_append_pending);
+    pthread_mutex_unlock(&g_playlist_mtx);
+    if (add.empty()) return;
+    pthread_mutex_lock(&g_pl_mtx);
+    g_presets.insert(g_presets.end(), add.begin(), add.end());
+    g_pl_req_idx = -1;
+    _pl_drop_result_locked();
+    pthread_mutex_unlock(&g_pl_mtx);
+    g_pl_kick_countdown = -1;
+    if (g_pm && g_pm_preset_loaded) _pick_next_and_preload();
+}
+
 // Adopt a Dart-pushed preset list. Render thread (or init, context current).
 // Returns true when a swap happened.
 static bool _playlist_swap_if_pending(void) {
@@ -1474,6 +1499,22 @@ extern "C" REWAMP_EXPORT void rewamp_projectm_set_playlist(const char* paths,
     g_playlist_start = start_index;
     pthread_mutex_unlock(&g_playlist_mtx);
     g_playlist_dirty.store(true);
+}
+
+/* AJOUTE des presets à la liste en cours, SANS rien recharger ni vider
+ * l'historique (rewamp_projectm_set_playlist, lui, enchaîne aussitôt sur un
+ * preset de la nouvelle liste). Pour l'app web, qui télécharge les presets d'un
+ * pack au fil de l'eau et garde quelques-uns d'avance: projectM garde son
+ * minutage, ses fondus et ses coupes sur le temps fort. Appliqué sur le fil de
+ * rendu (_append_if_pending). */
+extern "C" REWAMP_EXPORT void rewamp_projectm_append_presets(const char* paths) {
+    std::vector<std::string> add;
+    _split_lines(paths, add);
+    if (add.empty()) return;
+    pthread_mutex_lock(&g_playlist_mtx);
+    g_append_pending.insert(g_append_pending.end(), add.begin(), add.end());
+    pthread_mutex_unlock(&g_playlist_mtx);
+    g_append_dirty.store(true);
 }
 
 // Pointer state for the MilkDrop3 "mouse" uniform, forwarded into libprojectM

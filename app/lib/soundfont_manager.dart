@@ -53,7 +53,44 @@ class SoundfontManager {
 
   bool isInstalled(String slug) => File(pathFor(slug)).existsSync();
 
-  Future<List<RemoteAsset>> catalogue() => RewampDb.listAssets('soundfont');
+  Future<List<RemoteAsset>> catalogue() async {
+    final list = await RewampDb.listAssets('soundfont');
+    _catalogueNames = {for (final a in list) a.slug: a.name};
+    return list;
+  }
+
+  /// Names of the catalogue entries, from the last [catalogue] read.
+  Map<String, String> _catalogueNames = const {};
+
+  /// The SoundFonts on the device that can be selected — catalogue downloads
+  /// and imports — as (slug, name), sorted by name. The name of a catalogue
+  /// entry needs its catalogue read once (else the slug shows).
+  List<(String, String)> installedFonts() {
+    final out = <(String, String)>[
+      for (final f in localFonts()) (f.slug, f.name),
+    ];
+    final dir = Directory(_dir);
+    if (dir.existsSync()) {
+      for (final e in dir.listSync()) {
+        final base = p.basename(e.path);
+        if (e is! File || !base.endsWith('.sf2') || isLocalSlug(base)) continue;
+        final slug = base.substring(0, base.length - 4);
+        if (slug == 'default') continue;   // the native fallback, not a choice
+        out.add((slug, _catalogueNames[slug] ?? slug));
+      }
+    }
+    out.sort((a, b) => a.$2.toLowerCase().compareTo(b.$2.toLowerCase()));
+    return out;
+  }
+
+  /// The name a SoundFont shows by: its import name, its catalogue name, or
+  /// the slug.
+  String nameOf(String slug) {
+    for (final f in installedFonts()) {
+      if (f.$1 == slug) return f.$2;
+    }
+    return _catalogueNames[slug] ?? slug;
+  }
 
   /// Applies the persisted selection at startup (no network). Falls back to
   /// the native default (`<datadir>/soundfonts/default.sf2`) when nothing is

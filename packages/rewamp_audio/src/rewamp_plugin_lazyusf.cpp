@@ -48,7 +48,22 @@ struct RewampDecoder {
     uint64_t fadeFrames;    /* rampe finale (tag `fade`), 0 = aucune */
     uint64_t framePos;
     char     path[4096];    /* kept for usf_restart-based seek (re-open on rewind) */
+    bool     ucodeShown;    /* ligne « Audio microcode » déjà au panneau ⓘ */
 };
+
+/* Le microcode audio n'est connu qu'à la première tâche audio du RSP, souvent
+ * APRÈS l'ouverture: la ligne s'ajoute au message dès qu'il l'est (le panneau
+ * relit le message à chaque affichage). Appelé par open() puis read(), sur le
+ * fil qui décode — le relais gapless ouvre le suivant sur ce même fil, donc
+ * jamais par-dessus le message d'une autre piste. Un microcode INCONNU y est
+ * nommé: la tâche n'est alors pas émulée et le morceau reste muet. */
+static void lazyusf_publish_ucode(RewampDecoder* dec) {
+    if (dec->ucodeShown) return;
+    char line[160];
+    if (!usf_rewamp_audio_ucode(dec->state, line, sizeof(line))) return;
+    rewamp_track_message_append("Audio microcode: %s\n", line);
+    dec->ucodeShown = true;
+}
 
 // ── psflib stdio callbacks ──────────────────────────────────────────────────
 static void*   lu_fopen(const char* uri)                         { return fopen(uri, "rb"); }
@@ -180,6 +195,7 @@ static RewampDecoder* lazyusf_open(const char* path, RewampAudioFormat* outForma
     if (tags.title[0])  rewamp_track_message_append("Title: %s\n", tags.title);
     if (tags.artist[0]) rewamp_track_message_append("Artist: %s\n", tags.artist);
     rewamp_track_message_append("Sample rate: %dHz\n", dec->sampleRate);
+    lazyusf_publish_ucode(dec);
 
     if (outFormat) {
         outFormat->channels   = 2;
@@ -243,6 +259,7 @@ static uint64_t lazyusf_read(RewampDecoder* dec, float* out, uint64_t frameCount
         dec->framePos += (uint64_t)want;
     }
     lazyusf_clear_stale_voices();
+    lazyusf_publish_ucode(dec);
     rewamp_psf_fade_apply(out, written, 2, fadeBase,
                           dec->totalFrames, dec->fadeFrames);
     return written;

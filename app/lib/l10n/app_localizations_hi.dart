@@ -759,6 +759,14 @@ class AppLocalizationsHi extends AppLocalizations {
   String get engineDescGbsplay => 'Game Boy GBS/GBR';
 
   @override
+  String get engineDescCpc =>
+      'Amstrad CPC — एमुलेटेड CPC 6128 पर चलाई गई .dsk डिस्क';
+
+  @override
+  String get engineDescZxSpectrum =>
+      'ZX Spectrum — एमुलेटेड Spectrum 48K/128K पर चलाई गई .tap कैसेट';
+
+  @override
   String get engineDescSidplayfp => 'Commodore 64 SID (reSIDfp इंजन)';
 
   @override
@@ -809,7 +817,7 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get engineDescSndh =>
-      'Atari ST .sndh — असली 68000 एमुलेशन + YM2149 + STE DAC';
+      'Atari ST .sndh — असली 68000 एमुलेशन + YM2149 + STE DAC · .ym (YM2–YM6, digidrums, SID)';
 
   @override
   String get engineDescLazyusf =>
@@ -830,6 +838,10 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get engineDescOrganya => 'Cave Story .org — Pixel का अपना इंजन';
+
+  @override
+  String get engineDescMinibae =>
+      'Beatnik .rmf — Beatnik Audio Engine, 90 के दशक के अंत का वेब और गेम संगीत';
 
   @override
   String get engineDescNtgs =>
@@ -1446,6 +1458,9 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get queueAutoplayRow => 'ऑटोप्ले द्वारा जोड़ा गया';
+
+  @override
+  String get queueRadioRow => 'रेडियो द्वारा जोड़ा गया';
 
   @override
   String get queueClearConfirmTitle => 'कतार खाली करें?';
@@ -2818,7 +2833,7 @@ class AppLocalizationsHi extends AppLocalizations {
       'कुछ फ़ॉर्मेट कई इंजन चला सकते हैं। डिफ़ॉल्ट रूप से कौन-सा इस्तेमाल हो, चुनें — बाकी हर फ़ॉर्मेट अपने-आप सही इंजन पर जाता है।';
 
   @override
-  String get settingsDecoderAmigaTrackers => 'Amiga ट्रैकर (mod, med, okt…)';
+  String get settingsDecoderAmigaTrackers => 'Amiga मॉड्यूल (mod, med, okt…)';
 
   @override
   String get settingsEngineOpenmptSubtitle => 'ट्रैकर — MOD, XM, S3M, IT…';
@@ -3014,6 +3029,13 @@ class AppLocalizationsHi extends AppLocalizations {
   String get settingsNsfQuality => 'क्वालिटी (nsfplay)';
 
   @override
+  String get settingsNsfFade => 'अंत में फ़ेड';
+
+  @override
+  String get settingsNsfFadeHelp =>
+      'फ़ाइल में न दिया हो तो ट्रैक के अंत में फ़ेड-आउट (.m3u या NSFe अपना तय कर सकता है)। यह ट्रैक की अवधि में गिना जाता है। बंद = सीधा रुकना।';
+
+  @override
   String get settingsLowpassFilter => 'लो-पास फ़िल्टर';
 
   @override
@@ -3130,6 +3152,52 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get settingsGbsHpFilter => 'हाई-पास फ़िल्टर (gbsplay)';
+
+  @override
+  String get settingsEnginePsgplaySubtitle =>
+      'Atari ST / SNDH — YM2149 चैनलों का मिश्रण';
+
+  @override
+  String get settingsPsgMix => 'PSG चैनल मिश्रण';
+
+  @override
+  String get settingsPsgMixEmpiric => 'अनुभवजन्य (Atari ST)';
+
+  @override
+  String get settingsPsgMixLinear => 'रैखिक';
+
+  @override
+  String get settingsPsgMixStereo => 'स्टीरियो';
+
+  @override
+  String get settingsPsgMixEmpiricHint =>
+      'तीनों चैनल असली Atari ST की तरह मिलाए गए (मापे गए स्तर): खुरदरी ध्वनि, मोनो में।';
+
+  @override
+  String get settingsPsgMixLinearHint =>
+      'तीनों चैनलों का सीधा योग: अधिक साफ़ ध्वनि, मोनो में।';
+
+  @override
+  String get settingsPsgMixStereoHint =>
+      'रैखिक मिश्रण, हर चैनल बाएँ और दाएँ के बीच रखा गया।';
+
+  @override
+  String settingsPsgPanVoice(String voice) {
+    return 'चैनल $voice';
+  }
+
+  @override
+  String get settingsPsgPanCentre => 'बीच में';
+
+  @override
+  String settingsPsgPanLeft(int percent) {
+    return 'बायाँ $percent %';
+  }
+
+  @override
+  String settingsPsgPanRight(int percent) {
+    return 'दायाँ $percent %';
+  }
 
   @override
   String get settingsGbsFilterDmg => 'DMG (क्लासिक GB)';
@@ -4368,54 +4436,6 @@ class AppLocalizationsHi extends AppLocalizations {
   String get releaseNotesTitle => 'नया क्या है';
 
   @override
-  String get releaseNotesV10Loading =>
-      'धीमा ट्रैक खोलने पर अब ऐप अटकता नहीं: प्ले/पॉज़ के चारों ओर एक पतली रिंग दिखाती है कि वह अभी लोड हो रहा है।';
-
-  @override
-  String get releaseNotesV10Piano =>
-      'पियानो विज़ुअलाइज़र: एक साथ कई वॉइस या इंस्ट्रूमेंट वाले गाने ज़्यादा कीबोर्ड पर फैलाए जाते हैं।';
-
-  @override
-  String get releaseNotesV10Amiga =>
-      'Amiga: StoneTracker, SUNtronic (TSM रिप) और Soundtracker 2.6 के और मॉड्यूल अब चलते हैं, और SoundPlayer गाने iOS पर चलते हैं।';
-
-  @override
-  String get releaseNotesV10ZxSpectrum =>
-      'ZX Spectrum: zxart की .mt3 फ़ाइलें चलती हैं, और Linux पर ZXTune फ़ॉर्मेट और SAM Coupé .cop प्रोग्राम शामिल हैं।';
-
-  @override
-  String get releaseNotesV10OpenWith =>
-      'macOS और iOS: हर समर्थित फ़ॉर्मेट अब “इसके साथ खोलें” में दिखता है।';
-
-  @override
-  String get releaseNotesV10MtcCrash =>
-      'ठीक किया: PT3 को TFM या PSG के साथ मिलाने वाली कुछ .mtc फ़ाइलों से ऐप क्रैश होता था।';
-
-  @override
-  String get releaseNotesV10Podiums =>
-      'नया “पोडियम” ब्राउज़र: डेमोसीन प्रतियोगिता के विजेता पार्टी, साल या compo के प्रकार के अनुसार, हॉल ऑफ़ फ़ेम के साथ।';
-
-  @override
-  String get releaseNotesV10Arcade =>
-      'आर्केड: Ensoniq ES5505/ES5506 संगीत (Taito F3…) अब चलता है, Apple IIGS VGM फ़ाइलों से ऐप अब क्रैश नहीं होता, और इंजन अपडेट हैं (FM-Kingtracker .fmk जोड़ा गया)।';
-
-  @override
-  String get releaseNotesV10InfoPanel =>
-      'जानकारी पैनल: फ़ॉर्मेट, इंजन, चैनल और लूप पॉइंट सबसे पहले आते हैं, और फ़ील्ड के नाम उभरकर दिखते हैं।';
-
-  @override
-  String get releaseNotesV10LocalAlbums =>
-      'एल्बम और सबसॉन्ग स्क्रीन कलेक्शन दिखाती हैं; ड्रॉप किया गया आर्काइव अपने सभी ट्रैक दिखाता है, “लोकल” लिखा होता है, और बदलने के बाद दो बार नहीं दिखता।';
-
-  @override
-  String get releaseNotesV10Crossfade =>
-      'ठीक किया: क्रॉसफ़ेड चालू होने पर फ़ेड से छोटा ट्रैक सुनाई नहीं देता था।';
-
-  @override
-  String get releaseNotesV10Artwork =>
-      'ठीक किया: सर्वर पर बदली गई आर्टवर्क अब “फ़ाइल फिर से डाउनलोड करें” के बाद हर जगह दिखती है।';
-
-  @override
   String get releaseNotesDataReset =>
       'इस वर्शन के लिए लोकल डेटा रीसेट किया गया। आपकी लाइब्रेरी और प्लेलिस्ट आपके अकाउंट से फिर से बनती हैं; डाउनलोड नए सिरे से शुरू होते हैं।';
 
@@ -4869,8 +4889,15 @@ class AppLocalizationsHi extends AppLocalizations {
   String get settingsMidiSynthOpl3 => 'OPL3 FM (AdLib / Sound Blaster)';
 
   @override
+  String get settingsMidiSynthOpn2 => 'OPN2 FM (Mega Drive / Genesis)';
+
+  @override
   String get settingsEngineAdlmidiSubtitle =>
       'एमुलेटेड OPL3 चिप पर MIDI और DOS गेम संगीत';
+
+  @override
+  String get settingsEngineOpnmidiSubtitle =>
+      'एम्युलेट की गई OPN2 / OPNA चिप पर MIDI (Mega Drive, PC-98)';
 
   @override
   String get settingsAdlBank => 'वाद्य बैंक';
@@ -4893,4 +4920,447 @@ class AppLocalizationsHi extends AppLocalizations {
   @override
   String get engineDescAdlmidi =>
       'एमुलेटेड OPL3 चिप पर MIDI, XMI, DMX MUS, HMI/HMP (AdLib / Sound Blaster)';
+
+  @override
+  String get engineDescOpnmidi =>
+      'एम्युलेट की गई OPN2 (Mega Drive) या OPNA (PC-98) चिप पर MIDI';
+
+  @override
+  String get fmBanksBuiltIn => 'अंतर्निहित';
+
+  @override
+  String get fmBanksImported => 'आयात किए गए';
+
+  @override
+  String get fmBanksFilterHint => 'नाम से फ़िल्टर करें';
+
+  @override
+  String get fmBanksNoMatch => 'कोई बैंक मेल नहीं खाता';
+
+  @override
+  String get fmBanksImportedEmpty =>
+      'अभी कोई आयात किया गया बैंक नहीं है। .wopl या .wopn फ़ाइल को विंडो पर छोड़ें, उसे Rewamp से खोलें, या यहाँ आयात करें।';
+
+  @override
+  String fmBankImported(String name, String engine) {
+    return 'बैंक “$name” आयात किया गया और $engine के लिए चुना गया';
+  }
+
+  @override
+  String fmBankImportInvalid(String name) {
+    return '“$name” WOPL या WOPN बैंक नहीं है';
+  }
+
+  @override
+  String fmBankDeleteConfirm(String name) {
+    return 'बैंक “$name” हटाएँ?';
+  }
+
+  @override
+  String get fmBanksImportTile => 'बैंक आयात करें…';
+
+  @override
+  String fmBanksImportSubtitle(String ext) {
+    return '$ext फ़ाइलें (Wohlstand के बैंक संपादकों या संग्रहों से)। फ़ाइल का हेडर तय करता है; आयात किए गए बैंक बैंक सूची से हटाए जा सकते हैं।';
+  }
+
+  @override
+  String get fmEmuAccuracyVeryHigh => 'बहुत सटीक';
+
+  @override
+  String get fmEmuAccuracyGood => 'सटीक';
+
+  @override
+  String get fmEmuAccuracyApproximate => 'अनुमानित';
+
+  @override
+  String get fmEmuCpuLight => 'तेज़';
+
+  @override
+  String get fmEmuCpuMedium => 'मध्यम CPU';
+
+  @override
+  String get fmEmuCpuHeavy => 'CPU पर भारी';
+
+  @override
+  String settingsDefaultFor(String format) {
+    return '$format के लिए डिफ़ॉल्ट प्लेयर';
+  }
+
+  @override
+  String get settingsDefaultForActive => 'यह इंजन इस फ़ॉर्मैट को चलाता है';
+
+  @override
+  String settingsDefaultForSet(String section) {
+    return 'इस फ़ॉर्मैट को इस इंजन से चलाने के लिए टैप करें — सभी विकल्प “$section” में भी हैं';
+  }
+
+  @override
+  String get settingsDecoderDosMidi => 'DOS गेम MIDI (XMI, MUS, HMI…)';
+
+  @override
+  String get playWithTitle => 'इससे चलाएँ…';
+
+  @override
+  String playWithAuto(String engine) {
+    return 'स्वचालित ($engine)';
+  }
+
+  @override
+  String get playWithPlayingNow => 'अभी चल रहा है';
+
+  @override
+  String get playWithRemember => 'यह चुनाव याद रखें';
+
+  @override
+  String get playWithRememberOn => 'हर बार जब यह फ़ाइल (या एल्बम) चले';
+
+  @override
+  String get playWithRememberOff => 'केवल इस बार के लिए';
+
+  @override
+  String get playWithScopeFile => 'यह फ़ाइल';
+
+  @override
+  String get playWithScopeAlbum => 'पूरा एल्बम';
+
+  @override
+  String get playWithApply => 'चलाएँ';
+
+  @override
+  String playWithCurrent(String engine) {
+    return 'इंजन: $engine';
+  }
+
+  @override
+  String get settingsForgetPlayWith => '“इससे चलाएँ…” के चुनाव भूलें';
+
+  @override
+  String settingsForgetPlayWithSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count याद रखे चुनाव',
+      one: '$count याद रखा चुनाव',
+      zero: 'कोई याद रखा चुनाव नहीं',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsForgetPlayWithBody =>
+      'किसी फ़ाइल या एल्बम के लिए याद रखी गई हर चीज़ (इंजन, बैंक, SoundFont, मॉडल) भुला दी जाती है: वे फिर से डिफ़ॉल्ट सेटिंग से बजते हैं।';
+
+  @override
+  String get playWithBank => 'इंस्ट्रूमेंट बैंक';
+
+  @override
+  String playWithBankDefault(String name) {
+    return 'सेटिंग का बैंक ($name)';
+  }
+
+  @override
+  String get fmBankInUseTitle => 'बैंक उपयोग में है';
+
+  @override
+  String fmBankInUseIntro(String name) {
+    return '“$name” इनके लिए चुना गया है:';
+  }
+
+  @override
+  String fmBankInUseFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count फ़ाइलें',
+      one: '$count फ़ाइल',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fmBankInUseAlbums(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count एल्बम',
+      one: '$count एल्बम',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fmBankInUseOutro =>
+      'ये फिर से इंजन की सेटिंग वाले बैंक से बजेंगे। फिर भी हटाएँ?';
+
+  @override
+  String playWithSoundfontDefault(String name) {
+    return 'सेटिंग का SoundFont ($name)';
+  }
+
+  @override
+  String playWithMt32Default(String model) {
+    return 'सेटिंग: $model';
+  }
+
+  @override
+  String get playWithOptionSetting => 'सेटिंग';
+
+  @override
+  String get soundfontInUseTitle => 'SoundFont उपयोग में है';
+
+  @override
+  String get soundfontInUseOutro =>
+      'ये फिर से सेटिंग वाले SoundFont से बजेंगे। फिर भी हटाएँ?';
+
+  @override
+  String get playWithTitleAlbum => 'एल्बम इससे चलाएँ…';
+
+  @override
+  String get playWithSave => 'सहेजें';
+
+  @override
+  String get shortcutsTitle => 'कीबोर्ड शॉर्टकट';
+
+  @override
+  String get shortcutsSubtitle => 'प्लेबैक, विज़ुअलाइज़र और विंडो की कुंजियाँ';
+
+  @override
+  String get shortcutsHint =>
+      'जब किसी टेक्स्ट फ़ील्ड पर फ़ोकस हो, अकेली कुंजियाँ अनदेखी की जाती हैं। विज़ुअलाइज़र की कुंजियाँ केवल तब काम करती हैं जब विज़ुअलाइज़र दिख रहा हो।';
+
+  @override
+  String get shortcutsGroupTransport => 'प्लेबैक';
+
+  @override
+  String get shortcutsGroupVisualizer => 'विज़ुअलाइज़र';
+
+  @override
+  String get shortcutsGroupWindow => 'विंडो और नेविगेशन';
+
+  @override
+  String get shortcutsKeySpace => 'स्पेस';
+
+  @override
+  String get shortcutsKeyEscape => 'Esc';
+
+  @override
+  String get shortcutPlayPause => 'चलाएँ / रोकें';
+
+  @override
+  String get shortcutPrevTrack => 'पिछला ट्रैक';
+
+  @override
+  String get shortcutNextTrack => 'अगला ट्रैक';
+
+  @override
+  String get shortcutSeekBack10 => '10 सेकंड पीछे';
+
+  @override
+  String get shortcutSeekForward10 => '10 सेकंड आगे';
+
+  @override
+  String get shortcutSeekBack60 => '1 मिनट पीछे';
+
+  @override
+  String get shortcutSeekForward60 => '1 मिनट आगे';
+
+  @override
+  String get shortcutSeekPercent => 'ट्रैक के 0 %…90 % पर जाएँ';
+
+  @override
+  String get shortcutRepeat => 'रिपीट मोड';
+
+  @override
+  String get shortcutShuffle => 'शफ़ल';
+
+  @override
+  String get shortcutFavorite => 'पसंदीदा';
+
+  @override
+  String get shortcutSpeedDown => 'धीमा';
+
+  @override
+  String get shortcutSpeedUp => 'तेज़';
+
+  @override
+  String get shortcutSpeedReset => 'सामान्य गति';
+
+  @override
+  String get shortcutVizNext => 'अगला विज़ुअलाइज़र';
+
+  @override
+  String get shortcutVizPrev => 'पिछला विज़ुअलाइज़र';
+
+  @override
+  String get shortcutVizControls => 'विज़ुअलाइज़र के नियंत्रण दिखाएँ';
+
+  @override
+  String get shortcutPmNext => 'projectM: अगला प्रीसेट';
+
+  @override
+  String get shortcutPmPrev => 'projectM: पिछला प्रीसेट';
+
+  @override
+  String get shortcutPmLock => 'projectM: प्रीसेट लॉक करें';
+
+  @override
+  String get shortcutPmRandom => 'projectM: यादृच्छिक क्रम';
+
+  @override
+  String get shortcutPmPicker => 'projectM: प्रीसेट सूची';
+
+  @override
+  String get shortcutMiniWindow => 'मिनी प्लेयर';
+
+  @override
+  String get shortcutMiniViz => 'विज़ुअलाइज़र के साथ मिनी प्लेयर';
+
+  @override
+  String get shortcutAlwaysOnTop => 'हमेशा सबसे ऊपर';
+
+  @override
+  String get shortcutPlayer => 'प्लेयर खोलें / बंद करें';
+
+  @override
+  String get shortcutEscape => 'सबसे ऊपर का पैनल बंद करें';
+
+  @override
+  String get shortcutQueue => 'कतार पैनल';
+
+  @override
+  String get shortcutSearch => 'खोज';
+
+  @override
+  String get shortcutTabs => 'टैब, साइडबार के क्रम में';
+
+  @override
+  String get shortcutOpenFiles => 'फ़ाइलें खोलें…';
+
+  @override
+  String get shortcutLinkFolder => 'फ़ोल्डर लिंक करें…';
+
+  @override
+  String get shortcutInfo => 'ट्रैक की जानकारी';
+
+  @override
+  String get shortcutSettings => 'सेटिंग्स';
+
+  @override
+  String get shortcutFullscreen => 'पूर्ण स्क्रीन';
+
+  @override
+  String get shortcutHelp => 'यह सूची';
+
+  @override
+  String get navHelp => 'सहायता';
+
+  @override
+  String get helpTitle => 'सहायता';
+
+  @override
+  String get helpDocsTitle => 'ऑनलाइन दस्तावेज़';
+
+  @override
+  String get helpDocsSubtitle =>
+      'rewamp.app पर स्क्रीनशॉट के साथ चरण-दर-चरण गाइड (अंग्रेज़ी में)';
+
+  @override
+  String get sleepTimerTitle => 'स्लीप टाइमर';
+
+  @override
+  String get sleepTimerExplain =>
+      'चुने गए समय के बाद प्लेबैक रुक जाएगा, अंतिम 30 सेकंड में धीरे-धीरे धीमा होते हुए।';
+
+  @override
+  String sleepTimerMinutes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count मिनट',
+      one: '$count मिनट',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sleepTimerRemainingMinutes(int count) {
+    return '$count मिनट';
+  }
+
+  @override
+  String sleepTimerRemainingSeconds(int count) {
+    return '$count सेकंड';
+  }
+
+  @override
+  String sleepTimerActiveRemaining(String time) {
+    return 'शेष समय: $time';
+  }
+
+  @override
+  String get sleepTimerOff => 'बंद करें';
+
+  @override
+  String get sleepTimerEnded => 'स्लीप टाइमर समाप्त — प्लेबैक रोका गया';
+
+  @override
+  String get sleepTimerNothingToPlay =>
+      'शुरू करने के लिए कोई हाल की सुनवाई नहीं';
+
+  @override
+  String get releaseNotesV11Autoplay =>
+      'ऑटोप्ले (∞): कतार खत्म होने पर मिलते-जुलते ट्रैक (वही कलाकार, समूह, संग्रह) बजते रहते हैं।';
+
+  @override
+  String get releaseNotesV11LinkedFolders =>
+      'लिंक किए गए फ़ोल्डर: आपकी फ़ाइलें जहाँ हैं वहीं से बजती हैं, बिना कॉपी किए — डेस्कटॉप के फ़ोल्डर, iOS पर Files ऐप और iCloud, Android पर कोई भी फ़ोल्डर।';
+
+  @override
+  String get releaseNotesV11PlayWith =>
+      '“इससे चलाएँ…”: किसी फ़ाइल या एल्बम का इंजन चुनें, साथ ही उसका SoundFont, MT-32 मॉडल या FM बैंक (आप अपने WOPL/WOPN बैंक भी इंपोर्ट कर सकते हैं)।';
+
+  @override
+  String get releaseNotesV11NewEngines =>
+      'नए इंजन: OPL3 (libADLMIDI) और OPN2/OPNA (libOPNMIDI) पर MIDI, Beatnik .rmf, एमुलेट की गई मशीनों पर ZX Spectrum .tap टेप और Amstrad CPC .dsk डिस्क, UnExoticA Mark II।';
+
+  @override
+  String get releaseNotesV11EngineUpdates =>
+      'इंजन अपडेट: Namco WSG चिप्स के साथ VGM 1.72, Furnace, AtariAudio 1.27 (अब .ym के लिए डिफ़ॉल्ट), Amiga मॉड्यूल के लिए libxmp का विकल्प, VGM के अंत में समायोज्य फ़ेड।';
+
+  @override
+  String get releaseNotesV11Sleep =>
+      'स्लीप टाइमर: अवधि चुनें, संगीत धीमा होकर रुक जाता है — और खाली कतार अपने आप भर जाती है।';
+
+  @override
+  String get releaseNotesV11Desktop =>
+      'डेस्कटॉप: कीबोर्ड शॉर्टकट (? से सूची), ऑनलाइन दस्तावेज़ों से जुड़ा सहायता टैब, कमांड लाइन (rewamp --mini --play …) और ऐप का केवल एक इंस्टेंस।';
+
+  @override
+  String get releaseNotesV11ArtistSync =>
+      'आपकी लाइब्रेरी के कलाकार आपके खाते से सिंक होते हैं, उनके आर्टवर्क के साथ।';
+
+  @override
+  String get releaseNotesV11PlayNext =>
+      'किसी ट्रैक को देर तक दबाएँ: अभी, अगला या अंत में चलाएँ; सब चलाएँ, रेडियो और सरप्राइज़ के पास “…” मेनू।';
+
+  @override
+  String get releaseNotesV11Composers =>
+      'हर एल्बम और सबसॉन्ग स्क्रीन पर संगीतकार टैप किए जा सकते हैं; इंपोर्ट की गई फ़ाइलों से शीर्षक और लेखक पढ़े जाते हैं।';
+
+  @override
+  String get releaseNotesV11Hindi =>
+      'ऐप अब हिंदी बोलता है (19 भाषाएँ), और इंटरफ़ेस दाएँ से बाएँ लिखी जाने वाली भाषाओं के लिए तैयार है।';
+
+  @override
+  String get releaseNotesV11Loops =>
+      'चलते ट्रैक में अनंत लूप चालू करने पर ट्रैक अपने लूप पॉइंट से आगे चलता रहता है, और बिना लूप वाला ट्रैक शुरू से बजता है।';
+
+  @override
+  String get releaseNotesV11Visualizers =>
+      'विज़ुअलाइज़र: ऑसिलोस्कोप में 64 तक आवाज़ें, हर MIDI ड्रम वाद्य का अलग रंग, 2SF फ़ाइलों के नोट्स, FM बैंकों से वाद्यों के नाम।';
+
+  @override
+  String get releaseNotesV11Fixes =>
+      'ठीक किया गया: कुछ अस्वीकृत SSF फ़ाइलें, मूक WonderSwan रिप, कई आर्काइव में बँटे अधूरे एल्बम, और प्लेयर बंद करने के बाद projectM प्रीसेट।';
 }

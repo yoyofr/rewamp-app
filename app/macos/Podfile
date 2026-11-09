@@ -339,6 +339,16 @@ post_install do |installer|
       # (Classes/xmp_cores/*), tout le reste se résout en relatif.
       xmp_inc = '-w -I$(PODS_TARGET_SRCROOT)/../third_party/libxmp/include'
 
+      # miniBAE (Beatnik RMF): scopé ici et PAS pod-wide. Ses en-têtes locaux
+      # sont souvent inclus en <chevrons> (GenSnd.h, X_API.h…), d'où -I; mais
+      # adpcm-lib.h et minimp3.h existent AUSSI chez Furnace / libopenmpt /
+      # vgmstream et sont inclus entre guillemets: -iquote, cherché AVANT tout
+      # -I, garantit que ce sont les siens. Défines cuits dans les wrappers.
+      bae_root = '$(PODS_TARGET_SRCROOT)/../third_party/minibae'
+      bae_inc = "-w -iquote #{bae_root}/src/thirdparty/adpcm-xq -iquote #{bae_root}/src/thirdparty/minimp3 " \
+                "-I#{bae_root} -I#{bae_root}/src/BAE_Source/Common -I#{bae_root}/src/BAE_Source/Platform " \
+                "-I#{bae_root}/src/BAE_MPEG_Source_II"
+
       target.source_build_phase.files.each do |bf|
         path = bf.file_ref.respond_to?(:path) ? bf.file_ref.path.to_s : ''
         if path.include?('zxtune_cores') && path.end_with?('.cpp', '.cc')
@@ -400,6 +410,9 @@ post_install do |installer|
         elsif path.include?('projectm_cores')
           flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
           bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{pm_inc}".strip }
+        elsif path.include?('minibae_cores')
+          flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
+          bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{bae_inc}".strip }
         elsif path.include?('xmp_cores')
           flags = (bf.settings && bf.settings['COMPILER_FLAGS']) || ''
           bf.settings = { 'COMPILER_FLAGS' => "#{flags} #{xmp_inc}".strip }

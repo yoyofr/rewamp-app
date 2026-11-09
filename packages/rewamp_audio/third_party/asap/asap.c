@@ -3027,6 +3027,14 @@ void ASAP_RewampSetSpeed(ASAP *self, double speed, int songDurationMs, int songP
 	}
 }
 
+/* REWAMP: boucle infinie armee EN COURS de lecture. Un morceau qui reboucle
+ * de lui-meme (SAP « LOOP ») n'a plus de fin: ASAP_GenerateAt ne borne la
+ * sortie que si currentDuration > 0. */
+void ASAP_RewampPlayForever(ASAP *self)
+{
+	self->currentDuration = -1;
+}
+
 int ASAP_GetPosition(const ASAP *self)
 {
 	return self->blocksPlayed * 10 / (self->currentSampleRate / 100);

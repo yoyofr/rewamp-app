@@ -27,6 +27,11 @@ extern "C" int    g_force_loop_count;
 extern "C" int    g_force_fadeout_enabled;
 extern "C" double g_force_fadeout_seconds;
 extern "C" double g_force_base_duration_secs;
+extern "C" int    g_force_loop_native_veto;
+extern "C" int    g_loop_lift_refused;
+extern "C" double g_track_end_fade_secs;          /* rewamp_audio.c */
+extern "C" int    g_track_length_authoritative;   /* rewamp_audio.c */
+extern "C" double g_crossfade_seconds;            /* rewamp_datasource.c */
 
 #define NSFPLAY_RATE     44100
 #define NSFPLAY_CHANNELS 2
@@ -85,7 +90,15 @@ struct RewampDecoder {
     // VRC7 15-23, N163 24+).
     int                   maskBit[REWAMP_MAX_CHANNELS];
     int64_t               lastMuteMask; // applied generic_mute_mask snapshot
+    bool                  infinite;     // configure_loop(2): no end any more
+    // Fondu de fin sur du SILENCE: un morceau qui ne boucle pas a fini à la
+    // durée du .m3u, et nsfplay fond quand même — `fade` secondes de vide.
+    // Muet ≥ kNsfSilentEndMs PENDANT le fondu ⇒ fin du morceau.
+    uint32_t              silentFrames; // trames muettes consécutives en sortie
+    bool                  endedEarly;   // fin décidée par ce filet (seek la lève)
 };
+
+static const uint32_t kNsfSilentEndMs = 400;
 
 static const char* const kNsfplayExts[] = { "nsf", "nsfe", NULL };
 
@@ -213,34 +226,54 @@ static RewampDecoder* nsfplay_open(const char* path, RewampAudioFormat* outForma
         delete nsf; delete player; delete cfg; return NULL;
     }
 
-    // Forced-loop (Settings → Lecture). NSF's own LOOP_NUM only *replays* a
-    // tune that has a defined loop region (GetLoopTime()>0); a tune that plays
-    // once and goes silent can't be looped natively — and nsfplay's silence/
-    // playtime auto-detect would then just terminate it at the first pass, so
-    // "force loop" appeared to do nothing. Per the project rule (a plugin that
-    // can't loop natively must be looped generically), nsfplay does NOT
-    // advertise native loop support (configure_loop is NULL in the vtable):
-    // the Dart-side generic loop (seek-to-start replay + fade) drives the
-    // repeats instead. All we do here is:
-    //   1. Set the single-pass length (SetDefaults playtime) so nsfplay_length
-    //      reports the real per-track length — the generic loop uses it to
-    //      know when one pass has ended. loopnum=1 / fade=0 keep GetLength() a
-    //      single pass (GetLoopNum()→0), and a known catalogue base overrides
-    //      the library's 5-minute default_playtime for plain NSFs.
-    //   2. Make playback INFINITE (PLAY_ADVANCE=1) so nsfplay never self-fades
-    //      or self-stops on silence/playtime — the generic loop owns the end.
-    if (g_force_loop_mode != 0) {
-        const int kBasePlayTimeMs = (g_force_base_duration_secs > 0.0)
-            ? (int)(g_force_base_duration_secs * 1000.0)
-            : 5 * 60 * 1000;
-        nsf->SetDefaults(kBasePlayTimeMs, 0, 1);
-        (*cfg)["PLAY_ADVANCE"] = 1;   // infinite: no native fade/stop
-        player->UpdateInfinite();
-    }
-
     player->SetChannels(NSFPLAY_CHANNELS);
     player->SetPlayFreq(NSFPLAY_RATE);
-    player->SetSong(subsong);
+    player->SetSong(subsong);   // GetPlayTime() below reads the song's entry
+
+    // ── Length and end fade (after SetSong: an NSFe/.m3u time is per song) ──
+    // Fade = Settings → Moteurs → NSF (0-16 s, 0 = hard stop) when the file
+    // gives none; none either under a crossfade (the overlap is the fade —
+    // same rule as libvgm and the PSF ramp).
+    const int fadeSetMs = g_crossfade_seconds > 0.0 ? 0
+        : (int)(rewamp_get_engine_param("nsfplay", "fade_secs", 5.0) * 1000.0);
+    // Base of a song WITHOUT a known time: the APP's length, not libnsfplay's
+    // 5:00 — Dart sends the catalogue length, else Settings → Lecture →
+    // default length.
+    const int baseMs = (g_force_base_duration_secs > 0.0)
+        ? (int)(g_force_base_duration_secs * 1000.0)
+        : 5 * 60 * 1000;
+    nsf->SetDefaults(-1, fadeSetMs, 0);          // -1 = probe: time unknown?
+    const bool timeKnown = nsf->GetPlayTime() >= 0;
+    if (g_force_loop_mode == 0) {
+        if (timeKnown) {
+            // NSFe / .m3u time = the MUSIC; libnsfplay plays its loops and
+            // fade AFTER it, and length() (GetLength) counts them. A
+            // catalogue length counts the music only and Dart, which prefers
+            // it, cut the fade off — the same trap as libvgm: say so.
+            const int fadeMs = nsf->GetFadeTime();
+            if (fadeMs > 50) g_track_end_fade_secs = fadeMs / 1000.0;
+            if (nsf->GetLoopTime() > 0 && nsf->GetLoopNum() > 0)
+                g_track_length_authoritative = 1;
+        } else {
+            // Unknown time: the length asked for is the TOTAL, fade included
+            // (never more than half of it).
+            const int fadeMs = fadeSetMs < baseMs / 2 ? fadeSetMs : baseMs / 2;
+            nsf->SetDefaults(baseMs - fadeMs, fadeMs, 0);
+        }
+    } else {
+        // Forced loop. A tune that plays once and goes silent can't loop
+        // natively: a COUNTED loop (mode 1) is the Dart generic loop's job
+        // (veto ⇒ configure_loop is not trusted for this file), on a single
+        // pass of known length (loopnum 1 / fade 0) and without nsfplay ever
+        // ending on its own (PLAY_ADVANCE). INFINITE (mode 2) is lifted by
+        // nsfplay_configure_loop — the same call that arms it IN FLIGHT.
+        nsf->SetDefaults(baseMs, 0, 1);
+        if (g_force_loop_mode == 1) {
+            g_force_loop_native_veto = 1;
+            (*cfg)["PLAY_ADVANCE"] = 1;
+            player->UpdateInfinite();
+        }
+    }
     player->Reset();
 
     RewampDecoder* dec = (RewampDecoder*)calloc(1, sizeof(*dec));
@@ -391,7 +424,7 @@ static void nsfplay_capture_voices(RewampDecoder* dec) {
 
 static uint64_t nsfplay_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
     if (!dec || !dec->player || frameCount == 0) return 0;
-    if (dec->player->IsStopped()) return 0;
+    if (dec->player->IsStopped() || dec->endedEarly) return 0;
 
     // Apply voice-mute changes from the UI: rebuild the nsfplay "MASK" config
     // from generic_mute_mask via the per-voice bit map, then Notify(-1) so
@@ -418,6 +451,22 @@ static uint64_t nsfplay_read(RewampDecoder* dec, float* out, uint64_t frameCount
     for (xgm::UINT32 i = 0; i < framesRendered * NSFPLAY_CHANNELS; i++)
         out[i] = tmp[i] / 32768.0f;
 
+    // Silence en sortie (|x| ≤ 8/32768, -72 dB: le filtre DC ramène une
+    // sortie figée vers 0). Ne décide qu'en FONDU: avant, un silence est une
+    // pause du morceau; muet ici, le morceau est fini et le fondu n'ajouterait
+    // que du vide. Voix coupées (MASK) exclues: le silence y est voulu.
+    for (xgm::UINT32 f = 0; f < framesRendered; f++) {
+        bool quiet = true;
+        for (int c = 0; c < NSFPLAY_CHANNELS; c++) {
+            const int v = tmp[f * NSFPLAY_CHANNELS + c];
+            if (v > 8 || v < -8) { quiet = false; break; }
+        }
+        dec->silentFrames = quiet ? dec->silentFrames + 1 : 0;
+    }
+    if (!dec->infinite && dec->lastMuteMask == 0 && dec->player->fader.IsFading() &&
+        dec->silentFrames >= (uint32_t)((uint64_t)NSFPLAY_RATE * kNsfSilentEndMs / 1000))
+        dec->endedEarly = true;   // ce bloc part, le suivant rend 0 = fin
+
     // Write mixed mono into channel 0 ring buffer (monotonic ptr, auto-detected
     // in ring_read via ptr always increasing — no wrap since RING_BUF_SAMPLES is
     // large enough for sustained playback at 44100 Hz).
@@ -431,6 +480,8 @@ static uint64_t nsfplay_read(RewampDecoder* dec, float* out, uint64_t frameCount
 static void nsfplay_seek(RewampDecoder* dec, uint64_t frameIndex) {
     if (!dec || !dec->player) return;
     dec->player->Reset();
+    dec->silentFrames = 0;
+    dec->endedEarly = false;
     // Skip(samples): same frame-based unit as Render's length. Il saute des
     // échantillons de SORTIE à la vitesse en vigueur; la cible est en temps du
     // MORCEAU ⇒ ÷ vitesse (la vitesse survit au Reset: NES_CPU la garde).
@@ -451,7 +502,7 @@ static int nsfplay_set_speed(RewampDecoder* dec, double speed) {
 // ── length ────────────────────────────────────────────────────────────────────
 
 static uint64_t nsfplay_length(RewampDecoder* dec) {
-    if (!dec || !dec->nsf) return 0;
+    if (!dec || !dec->nsf || dec->infinite) return 0;   /* no end any more */
     int ms = dec->nsf->GetLength();
     if (ms <= 0) return 0;
     return (uint64_t)((double)ms / 1000.0 * NSFPLAY_RATE);
@@ -469,10 +520,21 @@ static void nsfplay_close(RewampDecoder* dec) {
 
 // ── vtable ────────────────────────────────────────────────────────────────────
 
-// configure_loop is intentionally NULL: nsfplay can't natively replay a tune
-// without a loop region, so it defers to the Dart generic loop (seek-replay +
-// fade). nsfplay_open still makes playback infinite when force-loop is on so
-// the native side never self-terminates before the generic loop acts.
+/* Infinite loop (mode 2), at open AND in flight (rewamp_lift_end_for_infinite,
+ * "nsfplay" is in rewamp_loop_lifts_live): an NSF's driver loops by itself,
+ * only the player's end has to go — PLAY_ADVANCE stops CheckTerminal from
+ * starting the fade (it survives Reset/seek: UpdateInfinite rereads it).
+ * Already fading = the end is under way: refused, the generic loop restarts.
+ * Mode 1 vetoed itself in open(). */
+static void nsfplay_configure_loop(RewampDecoder* dec, int mode, int count) {
+    (void)count;
+    if (!dec || !dec->player || mode != 2) return;
+    if (dec->player->fader.IsFading()) { g_loop_lift_refused = 1; return; }
+    (*dec->config)["PLAY_ADVANCE"] = 1;
+    dec->player->UpdateInfinite();
+    dec->infinite = true;
+}
+
 /* Live settings change (called under the decode lock): update the config the
  * player holds, then Notify(-1) so every device re-reads it (Modizer's
  * optNSFPLAY_UpdateParam). */
@@ -491,7 +553,7 @@ static const RewampPluginVTable kNsfplayVTable = {
     nsfplay_seek,
     nsfplay_length,
     nsfplay_close,
-    /* configure_loop        */ NULL,
+    /* configure_loop        */ nsfplay_configure_loop,
     /* supportsNativeFadeout */ 0,
     "nsfplay",              /* engine_id */
     nsfplay_param_changed,  /* live settings */

@@ -131,6 +131,22 @@ import UniformTypeIdentifiers
       let channel = FlutterMethodChannel(
         name: "rewamp/now_playing", binaryMessenger: registrar.messenger())
       channel.setMethodCallHandler { call, result in
+        // Repeat / shuffle EN COURS: audio_service branche les deux commandes
+        // mais n'écrit jamais leur état courant — CarPlay montrerait alors
+        // un bouton éteint et ferait tourner le mode à partir de « off ».
+        if call.method == "setModes" {
+          let args = call.arguments as? [String: Any]
+          let repeatType = MPRepeatType(
+            rawValue: args?["repeat"] as? Int ?? 0) ?? .off
+          let shuffle = args?["shuffle"] as? Bool ?? false
+          DispatchQueue.main.async {
+            let cc = MPRemoteCommandCenter.shared()
+            cc.changeRepeatModeCommand.currentRepeatType = repeatType
+            cc.changeShuffleModeCommand.currentShuffleType =
+              shuffle ? .items : .off
+          }
+          result(nil); return
+        }
         guard call.method == "setPlaybackState" else {
           result(FlutterMethodNotImplemented); return
         }

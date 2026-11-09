@@ -6,11 +6,12 @@
  * se compile donc VIDE — mais archive_write_disk_posix.c appelle toujours
  * archive_write_disk_set_acls(). D'où ce no-op, sans quoi le lien de la .so
  * échoue sur un symbole non défini que rien ne désigne comme venant des ACL.
+ * Même cas sous Emscripten (cible web, chemin Linux de rewamp.cmake).
  * Vide sur toute autre plateforme (Apple garde ses vrais backends).
  *
  * (Ne fait pas partie de libarchive amont — ajouté pour rewamp.)
  */
-#ifdef __linux__
+#if defined(__linux__) || defined(__EMSCRIPTEN__)
 #include "archive_platform.h"
 #include "archive_write_disk_private.h"
 
@@ -21,4 +22,4 @@ archive_write_disk_set_acls(struct archive *a, int fd, const char *name,
 	(void)a; (void)fd; (void)name; (void)abstract_acl; (void)mode;
 	return (ARCHIVE_OK);
 }
-#endif /* __linux__ */
+#endif /* __linux__ || __EMSCRIPTEN__ */
