@@ -328,7 +328,20 @@ void CustomShape::Draw()
     m_renderData.Update();
     m_borderFlag.Update();
     
+    // HwBlend: the GPU blends (premultiplied output, see FramebufferFetch.hpp).
+    const bool hwBlend = MilkdropPreset::FramebufferFetch() == MilkdropPreset::FramebufferFetchMode::HwBlend;
+    if (hwBlend)
+    {
+        Renderer::BlendMode::SetBlendActive(true);
+        glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+
     m_fillMesh.Draw();
+
+    if (hwBlend)
+    {
+        Renderer::BlendMode::SetBlendActive(false);
+    }
     
     glBindTexture(GL_TEXTURE_2D, 0);
     Renderer::Sampler::Unbind(0);

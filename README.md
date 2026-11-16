@@ -7,14 +7,16 @@
 
 Rewamp is the successor to Modizer, a demoscene and retrogaming oriented music player that was limited to iOS devices.
 
-It is multiplatform, with a focus on **MacOS/iOS/Android** as primary targets and Linux/Windows as secondary ones. 
+It is multiplatform, with a focus on **MacOS/iOS/Android** as primary targets and Linux/Windows as secondary ones.
+A **web version** runs the same engine in the browser, compiled to WebAssembly — early alpha at
+[rewamp.app/web](https://rewamp.app/web/), no install. 
 
 Development of Rewamp involves AI usage, mostly as an accelerator to develop the UI part and some of the backend features.
 Several playback engines customization are reusing the work I've done previously for Modizer.
 
 ## Main features
 
-- **1248 file extensions, 45 decoding engines** — Amiga MOD, C64 SID, NSF, SPC,
+- **1260 file extensions, 50 decoding engines** — Amiga MOD, C64 SID, NSF, SPC,
   GBS, PSF, VGM, SNDH, ZX Spectrum AY, PC-98, X68000, game streams (Wwise,
   FSB…). Real chip emulation, not renderings: a 6502 runs the NSF driver, a
   68000 runs the Amiga replayers.
@@ -43,22 +45,32 @@ Several playback engines customization are reusing the work I've done previously
   playback needs no server at all.
 - Plays archives (zip/7z/rar/lha) in place, follows an M3U found inside one,
   and takes files dropped on the window or opened from the file manager.
-- **18 languages.**
+- **19 languages.**
 
 ## Current coverage
 
 | Platform | Minimum | Status |
 | --- | --- | --- |
-| **iOS** | 15.0 | Primary target — beta on TestFlight |
-| **Android** | 8.0 (API 26) | Primary target — beta on the Play internal track |
-| **macOS** | 13.0 (Ventura) | Primary target — beta as a notarized DMG |
+| **iOS** | 15.0 | Primary target — on the App Store |
+| **Android** | 8.0 (API 26) | Primary target — on Google Play; Android TV support in progress |
+| **macOS** | 13.0 (Ventura) | Primary target — notarized DMG, direct download |
 | **Linux** | glibc 2.35 (Ubuntu 22.04, Debian 12) | Released as an AppImage, x86_64 and aarch64 — see [Releases](https://github.com/yoyofr/rewamp-app/releases) |
 | **Windows** | 10, x64 | Released as a portable zip — see [Releases](https://github.com/yoyofr/rewamp-app/releases) |
+| **Web** | A recent Chrome, Edge, Firefox or Safari | Early alpha at [rewamp.app/web](https://rewamp.app/web/) |
 
-Android ships **64-bit only** (`arm64-v8a`, `x86_64`). A 32-bit build links and
-runs but silently loses the formats whose codec goes through
-[FFmpeg](https://ffmpeg.org/), and only
-32-bit-only devices — pre-2018, low end — would ever have received it.
+Android builds `arm64-v8a`, `x86_64` and, for **Android TV boxes** — which often
+run a 32-bit userland even on a 64-bit chip — `armeabi-v7a` (new, not in a
+store release yet). Every ABI carries
+its own [FFmpeg](https://ffmpeg.org/): without it a build links and runs but
+silently loses the formats whose codec goes through it, so the build refuses
+an ABI that has none (see *Known gap* below). The app shows up in the Android
+TV launcher; navigation with the remote is still being worked on.
+
+The web version is the same C/C++ engine compiled to WebAssembly
+(`packages/rewamp_audio/web`), with every decoder and the visualizers. It needs
+WebAssembly threads, AudioWorklet and WebGL 2 — any current browser, desktop or
+mobile. It plays from the online catalogue; opening your own files is not
+supported there yet.
 
 These floors come from what the engine needs, not from taste: API 26 is where
 AAudio arrives on Android, and the Apple versions are what the GLES visualizer
@@ -114,9 +126,11 @@ sound**, joined by FFI.
 
 ## Building from source
 
-Flutter **3.41 or newer** (Dart 3; the Linux CI builds with 3.47.5, the
-Windows CI with 3.47.6). Then, per platform: Xcode for macOS/iOS, the Android
-SDK + NDK for Android, Visual Studio 2022 or newer with the *Desktop
+Flutter **3.50 or newer** (Dart 3; the Linux and Windows CI build with
+3.50.0). Then, per platform: Xcode for macOS/iOS, the Android SDK with NDK
+28.2 for Android (the Gradle wrapper fetches Gradle 9.5; AGP 9.3.1 and
+Kotlin 2.4.20 — Flutter 3.50 refuses anything below Gradle 9.3.1, AGP 9.1.1
+and Kotlin 2.4.10), Visual Studio 2022 or newer with the *Desktop
 development with C++* workload for Windows (CMake and Ninja come with it), and
 on Linux:
 
@@ -217,7 +231,7 @@ no package source fails with `primarySources` while blaming the package — add
 `https://api.nuget.org/v3/index.json` as a source.
 
 Android and Linux build every decoder from source through CMake — nothing to
-prebuild.
+prebuild except FFmpeg for Android (see *Known gap*).
 
 ### 5. Build and run
 
@@ -264,11 +278,19 @@ Linux, Windows); a `-D` on the CMake command line takes precedence.
 
 ### Known gap
 
-The prebuilt **ffmpeg-kit** slices for Android are not redistributed here.
-Without them vgmstream builds without FFmpeg and loses the formats whose codec
-goes through it; everything else is unaffected. Drop your own under
-`packages/rewamp_audio/third_party/ffmpeg-kit/android-{arm64,x86_64}/ffmpeg/`,
-or point CMake at a build with `REWAMP_FFMPEG_DIR` (environment or `-D`). On
+The prebuilt **ffmpeg-kit** slices for Android (`arm64-v8a`, `x86_64`) are not
+redistributed here, and the Android build **stops** on an ABI without FFmpeg —
+without it vgmstream loses the formats whose codec goes through it, and that
+loss would otherwise be silent. Three ways out:
+
+- `armeabi-v7a`: `scripts/android/build_ffmpeg_android.sh armeabi-v7a` builds a
+  minimal FFmpeg 7.1 with the NDK and puts it where the build looks for it;
+- drop your own under
+  `packages/rewamp_audio/third_party/ffmpeg-kit/android-{arm64,x86_64,arm}/ffmpeg/`,
+  or point CMake at a build with `REWAMP_FFMPEG_DIR` (environment or `-D`);
+- or build without, knowingly: `REWAMP_ALLOW_NO_FFMPEG=1`. Everything else is
+  unaffected.
+ On
 Linux the system FFmpeg is found through `pkg-config` instead, and the
 AppImage carries its own minimal build (`scripts/appimage/build_ffmpeg_minimal.sh`).
 On Windows, `build_ffmpeg_windows.ps1` (step 4) builds it.
@@ -283,19 +305,19 @@ apart from the engines and libraries it bundles. Recomputed at every snapshot.
 [ LANGUAGES BREAKDOWN — lines of code ]
 
                     Rewamp      Bundled        Total
-C                   12,571    1,902,499    1,915,070
-C/C++ Header         2,220    1,423,210    1,425,430
-C++                 23,835    1,051,251    1,075,086
-Dart                93,690            0       93,690
+C                   12,636    1,902,536    1,915,172
+C/C++ Header         2,220    1,423,249    1,425,469
+C++                 24,125    1,051,494    1,075,619
+Dart                98,503            0       98,503
 Assembly                 0       36,627       36,627
 Objective-C++          767        3,044        3,811
+Swift                1,865            0        1,865
 GLSL                   362          989        1,351
-Swift                  790            0          790
-Kotlin                 672            0          672
+Kotlin                 688            0          688
 Objective-C             26            0           26
-Others               9,965      264,608      274,573
+Others              10,548      264,608      275,156
 
-TOTAL              144,898    4,682,228    4,827,126
+TOTAL              151,740    4,682,547    4,834,287
 ```
 <!-- CODE STATS END -->
 

@@ -23,6 +23,7 @@
 // de la mig 285 les puces de dimension disparaissent et un critère posé est
 // annoncé puis retiré — jamais une liste non filtrée présentée comme filtrée.
 
+import 'tv_focus.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -32,6 +33,7 @@ import 'artwork_image.dart';
 import 'cancel_field.dart';
 import 'competition_screen.dart' show podiumColor;
 import 'facet_picker_sheet.dart';
+import 'load_error.dart';
 import 'l10n.dart';
 import 'podium_filter.dart';
 import 'radio_surprise_buttons.dart';
@@ -216,7 +218,7 @@ class _PodiumHubScreenState extends State<PodiumHubScreen> {
       if (_error != null)
         Padding(
           padding: const EdgeInsets.all(16),
-          child: Text(_error!, style: TextStyle(color: cs.error)),
+          child: LoadErrorView(error: _error!, onRetry: _load),
         ),
       // Les trois rangs: une rangée de puces aux couleurs des coupes.
       if (total > 0)
@@ -845,7 +847,9 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
           child: CancelField(
             controller: _filterCtrl,
             onCleared: _onFilterChanged,
-            builder: (_) => TextField(
+            builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
               controller: _filterCtrl,
               decoration: InputDecoration(
                 hintText: l10n.browseFilterByTitle,
@@ -854,7 +858,7 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
                 border: const OutlineInputBorder(),
               ),
               onChanged: _onFilterChanged,
-            ),
+            )),
           ),
         ),
         _chipBar(),
@@ -867,7 +871,7 @@ class _PodiumListScreenState extends State<PodiumListScreen> {
     final l10n = context.l10n;
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
-      return Center(child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)));
+      return Center(child: LoadErrorView(error: _error!, onRetry: _reload));
     }
     if (_rows.isEmpty) {
       return Center(child: Text(
@@ -1078,7 +1082,7 @@ class _PodiumHallOfFameScreenState extends State<PodiumHallOfFameScreen> {
     if (_loading) {
       body = const Center(child: CircularProgressIndicator());
     } else if (_error != null) {
-      body = Center(child: Text(_error!, style: TextStyle(color: cs.error)));
+      body = Center(child: LoadErrorView(error: _error!, onRetry: () { setState(() { _error = null; _loading = true; }); _load(); }));
     } else if (_rows.isEmpty) {
       body = Center(child: Text(l10n.searchNoResults));
     } else {

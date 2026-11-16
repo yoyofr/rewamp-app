@@ -9,6 +9,7 @@
 extern "C" int g_force_loop_mode;
 extern "C" int g_force_loop_native_veto;
 #include "rewamp_channel_data.h"   // per-voice oscilloscope buffers (m_voice_buff[*])
+#include "ModizerVoicesData.h"     // vgm_last_instr[] (instrument de chaque voie, .chp)
 
 #include "Spectre.h"   // ZxTuneWrapper + SongInfo (libzxtune/emscripten, on the include path)
 #include "chp2ym.h"    // libchpconv: .chp (Amstrad CPC ChipTracker) → YM3 conversion
@@ -20,6 +21,7 @@ extern "C" int g_force_loop_native_veto;
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <ctype.h>
 #include <string>
 
 static const int ZXTUNE_RATE = 44100;
@@ -39,6 +41,10 @@ struct RewampDecoder {
     int            cursorMoves;  // 1 dès que (ordre,ligne) a bougé une fois
     int64_t        stalledFrames;// images rendues sans que la LIGNE bouge
     int            ayEmul;       // .ay ZXAYEMUL: code Z80 émulé (vitesse générique)
+    // .chp: la chanson CHIPNSFX (grille de motifs) et, par image YM3,
+    // l'instrument de chaque voie — voir chp_* plus bas. NULL ailleurs.
+    ChpSong*       chp;
+    uint8_t*       chpInstr;     // [frames * 3]
 };
 
 /* Boucle infinie: au-delà de ce temps rendu SANS que la LIGNE du motif change,
@@ -133,6 +139,246 @@ static int zx_probe(const char* ext, const uint8_t* hdr, size_t n) {
     return 55;
 }
 
+// ── En-tête texte des .chp (CHIPNSFX) ───────────────────────────────────────
+// Un .chp est un TEXTE: « CHIPNSFX format », le TITRE, la DESCRIPTION (« by
+// CNGSOFT after Ben Daglish » sur 805 des 808 fichiers de la distribution),
+// une ligne « === », puis « hertz/diviseur ±transposition » (loadsong() de
+// CHIPNSFX.C). La conversion en YM3 pour zxtune les PERD — le YM3 n'a aucun
+// champ de titre —, d'où un panneau ⓘ vide et le nom de fichier comme titre.
+// ⚠️ Encodage DOS CP437, pas Latin-1: 0x81 = ü (« Markus Müller »), 0xA2 = ó
+// (« Mortadelo & Filemón »). Un texte déjà en UTF-8 valide passe tel quel.
+static void chp_cp437_to_utf8(const std::string& in, std::string& out) {
+    static const uint16_t hi[128] = {
+        0x00C7,0x00FC,0x00E9,0x00E2,0x00E4,0x00E0,0x00E5,0x00E7,0x00EA,0x00EB,0x00E8,0x00EF,0x00EE,0x00EC,0x00C4,0x00C5,
+        0x00C9,0x00E6,0x00C6,0x00F4,0x00F6,0x00F2,0x00FB,0x00F9,0x00FF,0x00D6,0x00DC,0x00A2,0x00A3,0x00A5,0x20A7,0x0192,
+        0x00E1,0x00ED,0x00F3,0x00FA,0x00F1,0x00D1,0x00AA,0x00BA,0x00BF,0x2310,0x00AC,0x00BD,0x00BC,0x00A1,0x00AB,0x00BB,
+        0x2591,0x2592,0x2593,0x2502,0x2524,0x2561,0x2562,0x2556,0x2555,0x2563,0x2551,0x2557,0x255D,0x255C,0x255B,0x2510,
+        0x2514,0x2534,0x252C,0x251C,0x2500,0x253C,0x255E,0x255F,0x255A,0x2554,0x2569,0x2566,0x2560,0x2550,0x256C,0x2567,
+        0x2568,0x2564,0x2565,0x2559,0x2558,0x2552,0x2553,0x256B,0x256A,0x2518,0x250C,0x2588,0x2584,0x258C,0x2590,0x2580,
+        0x03B1,0x00DF,0x0393,0x03C0,0x03A3,0x03C3,0x00B5,0x03C4,0x03A6,0x0398,0x03A9,0x03B4,0x221E,0x03C6,0x03B5,0x2229,
+        0x2261,0x00B1,0x2265,0x2264,0x2320,0x2321,0x00F7,0x2248,0x00B0,0x2219,0x00B7,0x221A,0x207F,0x00B2,0x25A0,0x00A0,
+    };
+    // UTF-8 valide (un fichier réenregistré par un éditeur moderne)?
+    bool utf8 = true;
+    for (size_t i = 0; i < in.size() && utf8;) {
+        const uint8_t c = (uint8_t)in[i];
+        const size_t n = c < 0x80 ? 0 : (c & 0xE0) == 0xC0 ? 1 : (c & 0xF0) == 0xE0 ? 2 : (c & 0xF8) == 0xF0 ? 3 : 4;
+        if (n == 4 || i + n >= in.size() + (n ? 0 : 1)) { utf8 = false; break; }
+        for (size_t k = 1; k <= n; k++)
+            if (((uint8_t)in[i + k] & 0xC0) != 0x80) { utf8 = false; break; }
+        i += n + 1;
+    }
+    if (utf8) { out = in; return; }
+    out.clear();
+    for (unsigned char c : in) {
+        const uint32_t u = c < 0x80 ? c : hi[c - 0x80];
+        if (u < 0x80) out += (char)u;
+        else if (u < 0x800) { out += (char)(0xC0 | (u >> 6)); out += (char)(0x80 | (u & 0x3F)); }
+        else { out += (char)(0xE0 | (u >> 12)); out += (char)(0x80 | ((u >> 6) & 0x3F)); out += (char)(0x80 | (u & 0x3F)); }
+    }
+}
+
+struct ChpHeader {
+    std::string title, desc;
+    int hertz = 0, divisor = 0;
+    std::vector<std::pair<int, std::string>> instruments;   // (n°, nom), ordre du fichier
+};
+
+// Tout le fichier: l'en-tête en tête, la table des INSTRUMENTS en fin
+// (« :01 EFE2 0000 077 Chan1 Beep7 » = n°, deux enveloppes, fréquence, puis le
+// NOM, espaces compris — loadsong() de CHIPNSFX.C).
+static bool chp_read_header(const char* path, ChpHeader& h) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    std::vector<std::string> lines;
+    char buf[1024];
+    while (lines.size() < 20000 && fgets(buf, sizeof buf, f)) {
+        std::string l(buf);
+        while (!l.empty() && (l.back() == '\n' || l.back() == '\r')) l.pop_back();
+        lines.push_back(l);
+    }
+    fclose(f);
+    if (lines.size() < 3) return false;
+    std::string id = lines[0];
+    if (id.size() >= 3 && (uint8_t)id[0] == 0xEF && (uint8_t)id[1] == 0xBB && (uint8_t)id[2] == 0xBF) id.erase(0, 3);
+    if (id != "CHIPNSFX format") return false;
+    chp_cp437_to_utf8(lines[1], h.title);
+    chp_cp437_to_utf8(lines[2], h.desc);
+    if (lines.size() >= 5) sscanf(lines[4].c_str(), "%d/%d", &h.hertz, &h.divisor);
+    for (size_t k = 5; k < lines.size(); k++) {
+        const std::string& l = lines[k];
+        if (l.empty() || l[0] != ':') continue;
+        unsigned no, a, b, c; int used = 0;
+        if (sscanf(l.c_str() + 1, "%x %x %x %x%n", &no, &a, &b, &c, &used) != 4) continue;
+        if (no == 0 || no > 255) continue;
+        size_t at = 1 + (size_t)used;
+        while (at < l.size() && l[at] == ' ') at++;
+        std::string name;
+        chp_cp437_to_utf8(l.substr(at), name);
+        h.instruments.emplace_back((int)no, name);
+    }
+    return true;
+}
+
+// Les tags structurés. La ligne de titre suit un motif constant dans la
+// distribution (808 fichiers): « "Jeu" partie année éditeur » — « "Zub"
+// in-game 1987 Mastertronic », « "Mechanicus" (main menu) 1991 Game On ».
+// TITRE = « Jeu – partie » (la partie est ce qui DISTINGUE les morceaux d'un
+// même jeu), ALBUM = le jeu, ARTISTE = la description sans son « by »
+// (« CNGSOFT after Ben Daglish »: l'arrangeur ET le compositeur d'origine,
+// tels que le fichier les crédite). Sans guillemets, la ligne entière.
+static std::string chp_trim(const std::string& x) {
+    size_t a = 0, b = x.size();
+    while (a < b && x[a] == ' ') a++;
+    while (b > a && x[b - 1] == ' ') b--;
+    return x.substr(a, b - a);
+}
+
+static void chp_publish(const ChpHeader& h) {
+    std::string title = h.title, album;
+    const size_t q1 = h.title.find('"');
+    const size_t q2 = q1 == std::string::npos ? q1 : h.title.find('"', q1 + 1);
+    if (q2 != std::string::npos && q2 > q1 + 1) {
+        album = h.title.substr(q1 + 1, q2 - q1 - 1);
+        std::string rest = h.title.substr(q2 + 1);
+        // La partie s'arrête à l'ANNÉE (19xx / 20xx, mot entier).
+        size_t cut = rest.size();
+        for (size_t k = 0; k + 4 <= rest.size(); k++) {
+            const bool start = k == 0 || rest[k - 1] == ' ';
+            const bool end = k + 4 == rest.size() || rest[k + 4] == ' ' || rest[k + 4] == ',';
+            if (start && end && (rest.compare(k, 2, "19") == 0 || rest.compare(k, 2, "20") == 0) &&
+                isdigit((unsigned char)rest[k + 2]) && isdigit((unsigned char)rest[k + 3])) { cut = k; break; }
+        }
+        std::string part = chp_trim(rest.substr(0, cut));
+        if (part.size() >= 2 && part.front() == '(' && part.back() == ')') part = part.substr(1, part.size() - 2);
+        title = part.empty() ? album : album + " \u2013 " + part;
+    }
+    std::string artist = h.desc;
+    if (artist.size() > 3 && strncasecmp(artist.c_str(), "by ", 3) == 0) artist.erase(0, 3);
+    rewamp_track_tag_set(title.empty() ? nullptr : title.c_str(),
+                         artist.empty() ? nullptr : artist.c_str(),
+                         album.empty() ? nullptr : album.c_str());
+    if (!h.title.empty()) rewamp_track_message_append("Title: %s\n", h.title.c_str());
+    if (!h.desc.empty())  rewamp_track_message_append("Description: %s\n", h.desc.c_str());
+    if (h.hertz > 0)
+        rewamp_track_message_append(h.divisor > 1 ? "Clock: %d Hz / %d\n" : "Clock: %d Hz\n", h.hertz, h.divisor);
+    rewamp_track_message_append("Program: CHIPNSFX\n");
+    // Liste dans le panneau ⓘ, comme la liste d'instruments d'un module. Les
+    // noms nomment aussi les voix des viz (zx_open: rewamp_instrument_set_name,
+    // et l'instrument de chaque voie posé à la lecture, chp_instrument_track).
+    if (!h.instruments.empty()) {
+        rewamp_track_message_append("\nInstruments:\n");
+        for (const auto& in : h.instruments)
+            rewamp_track_message_append("%02X: %s\n", in.first, in.second.c_str());
+    }
+}
+
+// ── Grille de motifs des .chp ────────────────────────────────────────────────
+// zxtune joue un YM3 (registres seuls), sans motifs: la grille vient de la
+// chanson CHIPNSFX elle-même (chp2ym_song). UN motif générique par LIGNE
+// D'ORDRE — chaque voie y désigne son propre score, avec sa transposition —,
+// trois voies, longueur = le score de la voie C (c'est lui qui fait avancer
+// l'ordre, snd_frame de chp2ym.c). Le curseur et l'instrument de chaque voie
+// sont lus par IMAGE YM3, telles que le rejeu de conversion les a vues.
+
+// Image YM3 en cours, boucle comprise: `Frame()` continue de compter après la
+// reprise (voir ZX_LOOP_STALL_FRAMES), le YM3b reprend à loop_frame.
+static int chp_frame_now(const RewampDecoder* dec) {
+    const ChpSong* c = dec->chp;
+    long f = (long)dec->w->get_current_position() / 20;   // ms, 50 Hz nominaux
+    if (f < 0) f = 0;
+    if (f >= c->frames) {
+        const long lp = c->loop_frame > 0 && c->loop_frame < c->frames ? c->loop_frame : 0;
+        f = lp + (f - lp) % (c->frames - lp);
+    }
+    return (int)f;
+}
+
+// Instrument de chaque voie à chaque image: le dernier déclenché (une note
+// AVEC instrument), 0 après un silence « ^^^ ». Une note sans instrument est
+// un portamento: l'instrument ne change pas.
+static uint8_t* chp_instrument_track(const ChpSong* c) {
+    uint8_t* t = (uint8_t*)calloc((size_t)c->frames * 3, 1);
+    if (!t) return NULL;
+    uint8_t cur[3] = {0, 0, 0};
+    int lo = -1, lr = -1;
+    for (int f = 0; f < c->frames; f++) {
+        const int o = c->cur_order[f], r = c->cur_row[f];
+        if ((o != lo || r != lr) && o >= 0 && o < c->orders && r >= 0) {
+            for (int ch = 0; ch < 3; ch++) {
+                const int p = c->order[ch][o][0];
+                if (r >= c->scrln[p]) continue;
+                const int n = c->score[p][r][0], ins = c->score[p][r][1];
+                if (n == 112) cur[ch] = 0;
+                else if (n >= 1 && n <= 109 && ins) cur[ch] = (uint8_t)ins;
+            }
+            lo = o; lr = r;
+        }
+        memcpy(t + (size_t)f * 3, cur, 3);
+    }
+    return t;
+}
+
+static int chp_pattern_song_info(const ChpSong* c, RewampPatternSongInfo* out) {
+    memset(out, 0, sizeof(*out));
+    out->num_channels = 3;
+    out->num_orders   = c->orders;
+    out->num_patterns = c->orders;   // un motif par ligne d'ordre
+    out->max_fx_cols  = 0;
+    out->instr_digits = 2;
+    // Ni volume ni effets dans une cellule CHIPNSFX (« A-4:01 »): colonnes
+    // RETIRÉES (largeur négative), pas dessinées en points.
+    out->vol_chars    = -1;
+    out->fxcode_chars = -1;
+    out->fxval_digits = -1;
+    return c->orders > 0;
+}
+
+static int chp_pattern_rows(const ChpSong* c, int o) {
+    if (o < 0 || o >= c->orders) return 0;
+    return c->scrln[c->order[2][o][0]];
+}
+
+static int chp_pattern_get(const ChpSong* c, int o, RewampPatternCell* out, int maxCells) {
+    const int rows = chp_pattern_rows(c, o);
+    int n = rows * 3;
+    if (n > maxCells) n = maxCells - maxCells % 3;
+    for (int i = 0; i < n; i++) {
+        const int r = i / 3, ch = i % 3;
+        RewampPatternCell& cell = out[i];
+        memset(&cell, 0, sizeof(cell));
+        cell.note = REWAMP_NOTE_EMPTY;
+        cell.instrument = -1;
+        cell.volume = -1;
+        for (int k = 0; k < REWAMP_PATTERN_MAX_FX; k++) cell.fxval[k] = -1;
+        const int p = c->order[ch][o][0];
+        if (r >= c->scrln[p]) continue;
+        const int nt = c->score[p][r][0], ins = c->score[p][r][1];
+        if (nt >= 1 && nt <= 108) {
+            // La note ENTENDUE: transpositions du morceau et de l'ordre comprises.
+            int v = nt - 1 + c->transpose + (signed char)c->order[ch][o][1];
+            cell.note = (int16_t)(v < 0 ? 0 : v > 107 ? 107 : v);
+            if (ins) cell.instrument = ins;
+        } else if (nt == 109) {
+            // SFX (bruitage de l'instrument, sans hauteur): le tracker l'écrit
+            // « C-9 », la note juste au-dessus de B-8 (musical() de CHIPNSFX.C).
+            cell.note = 108;
+            if (ins) cell.instrument = ins;
+        } else if (nt == 110) {
+            cell.note = REWAMP_NOTE_OFF;   // « === » frein
+        } else if (nt == 112) {
+            cell.note = REWAMP_NOTE_CUT;   // « ^^^ » silence
+        }
+    }
+    return n;
+}
+
+static void chp_pattern_cursor(const RewampDecoder* dec, int* order, int* row) {
+    const int f = chp_frame_now(dec);
+    if (order) *order = dec->chp->cur_order[f];
+    if (row)   *row   = dec->chp->cur_row[f];
+}
+
 static RewampDecoder* zx_open(const char* path, RewampAudioFormat* outFormat) {
     if (!path) return NULL;
 
@@ -151,10 +397,12 @@ static RewampDecoder* zx_open(const char* path, RewampAudioFormat* outFormat) {
 
     void* data = NULL;
     long  len  = 0;
+    ChpSong* chpSong = NULL;
     if (isChp) {
         uint8_t* ym = NULL;
-        int ymLen = chp2ym(clean, &ym);
-        if (ymLen <= 0 || !ym) { free(ym); return NULL; }
+        chpSong = (ChpSong*)calloc(1, sizeof(ChpSong));
+        int ymLen = chpSong ? chp2ym_song(clean, &ym, chpSong) : chp2ym(clean, &ym);
+        if (ymLen <= 0 || !ym) { free(ym); free(chpSong); return NULL; }
         data = ym;
         len  = ymLen;
         mdz_amstrad_cph_hack = true;
@@ -174,6 +422,8 @@ static RewampDecoder* zx_open(const char* path, RewampAudioFormat* outFormat) {
     }
 
     const int ayEmul = len >= 8 && memcmp(data, "ZXAYEMUL", 8) == 0;
+    ChpHeader chpHdr;
+    bool chpHdrOk = false;
     ZxTuneWrapper* w = NULL;
     try {
         w = new ZxTuneWrapper(std::string(clean), data, (size_t)len, ZXTUNE_RATE);
@@ -181,8 +431,10 @@ static RewampDecoder* zx_open(const char* path, RewampAudioFormat* outFormat) {
         SongInfo info;
         w->get_song_info((unsigned)(subsong + 1), info);
         w->decodeInitialize((unsigned)(subsong + 1), info);
-        // Info panel: zxtune module metadata.
-        {
+        // Info panel: zxtune module metadata. Un .chp converti n'en a aucune
+        // (YM3): son en-tête TEXTE la remplace (chp_read_header).
+        if (isChp && (chpHdrOk = chp_read_header(clean, chpHdr))) chp_publish(chpHdr);
+        else {
             const char* v;
             v = info.get_title();
             if (v && v[0]) rewamp_track_message_append("Title: %s\n", v);
@@ -228,6 +480,7 @@ static RewampDecoder* zx_open(const char* path, RewampAudioFormat* outFormat) {
     } catch (...) {
         free(data);
         if (w) delete w;
+        if (chpSong) { chp_song_free(chpSong); free(chpSong); }
         return NULL;
     }
     free(data);   // wrapper copies what it needs
@@ -237,8 +490,24 @@ static RewampDecoder* zx_open(const char* path, RewampAudioFormat* outFormat) {
     if (g_force_loop_mode == 1) g_force_loop_native_veto = 1;
 
     RewampDecoder* dec = (RewampDecoder*)calloc(1, sizeof(*dec));
-    if (!dec) { delete w; return NULL; }
+    if (!dec) {
+        delete w;
+        if (chpSong) { chp_song_free(chpSong); free(chpSong); }
+        return NULL;
+    }
     dec->w         = w;
+    if (chpSong && chpSong->frames > 0) {
+        dec->chp = chpSong;
+        dec->chpInstr = chp_instrument_track(chpSong);
+        // Les noms, APRÈS rewamp_voices_meta_reset (posé avec les voix, plus
+        // haut), qui les effacerait.
+        if (chpHdrOk)
+            for (const auto& in : chpHdr.instruments)
+                if (!in.second.empty()) rewamp_instrument_set_name(in.first, in.second.c_str());
+    } else if (chpSong) {
+        chp_song_free(chpSong);
+        free(chpSong);
+    }
     dec->ayEmul    = ayEmul;
     dec->subsong   = subsong;
     dec->rate      = ZXTUNE_RATE;
@@ -326,6 +595,13 @@ static uint64_t zx_read(RewampDecoder* dec, float* out, uint64_t frameCount) {
         if (rendered <= 0) return 0;
     }
 
+    // .chp: l'instrument de chaque voie, lu par les viz (vgm_last_instr[] ↔
+    // rewamp_notes, piano, oscilloscopes) au rythme du producteur.
+    if (dec->chp && dec->chpInstr) {
+        const uint8_t* t = dec->chpInstr + (size_t)chp_frame_now(dec) * 3;
+        for (int ch = 0; ch < 3; ch++) vgm_last_instr[ch] = t[ch];
+    }
+
     const int samples = rendered * 2;
     const float inv = 1.0f / 32768.0f;
     for (int i = 0; i < samples; i++) out[i] = dec->pcm[i] * inv;
@@ -364,6 +640,8 @@ static void zx_configure_loop(RewampDecoder* dec, int mode, int count) {
 static void zx_close(RewampDecoder* dec) {
     if (!dec) return;
     if (dec->w) delete dec->w;
+    if (dec->chp) { chp_song_free(dec->chp); free(dec->chp); }
+    free(dec->chpInstr);
     free(dec->pcm);
     free(dec);
 }
@@ -448,6 +726,7 @@ extern "C" const char* rewamp_zxtune_probe_get_title(int idx) {
 
 static int zx_pattern_song_info(RewampDecoder* dec, RewampPatternSongInfo* out) {
     if (!dec || !dec->w || !out) return 0;
+    if (dec->chp) return chp_pattern_song_info(dec->chp, out);
     const int chans = dec->w->pattern_channels();
     const int orders = dec->w->pattern_orders();
     if (chans <= 0 || orders <= 0) return 0;
@@ -468,16 +747,19 @@ static int zx_pattern_song_info(RewampDecoder* dec, RewampPatternSongInfo* out) 
 }
 
 static int zx_pattern_order(RewampDecoder* dec, int order) {
+    if (dec && dec->chp) return order >= 0 && order < dec->chp->orders ? order : -1;
     return (dec && dec->w) ? dec->w->pattern_order(order) : -1;
 }
 
 static int zx_pattern_num_rows(RewampDecoder* dec, int pattern) {
+    if (dec && dec->chp) return chp_pattern_rows(dec->chp, pattern);
     return (dec && dec->w) ? dec->w->pattern_rows(pattern) : 0;
 }
 
 static int zx_pattern_get(RewampDecoder* dec, int pattern,
                           RewampPatternCell* out, int maxCells) {
     if (!dec || !dec->w || !out) return 0;
+    if (dec->chp) return chp_pattern_get(dec->chp, pattern, out, maxCells);
     const int chans = dec->w->pattern_channels();
     const int rows  = dec->w->pattern_rows(pattern);
     if (chans <= 0 || rows <= 0) return 0;
@@ -525,6 +807,7 @@ static int zx_pattern_get(RewampDecoder* dec, int pattern,
 static void zx_pattern_cursor(RewampDecoder* dec, int* order, int* row) {
     if (order) *order = -1;
     if (row)   *row   = -1;
+    if (dec && dec->w && dec->chp) { chp_pattern_cursor(dec, order, row); return; }
     if (dec && dec->w) dec->w->pattern_cursor(order, row);
 }
 

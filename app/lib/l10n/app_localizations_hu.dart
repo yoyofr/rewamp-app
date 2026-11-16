@@ -661,6 +661,9 @@ class AppLocalizationsHu extends AppLocalizations {
   String get videoWatchDemo => 'Demó megtekintése';
 
   @override
+  String get albumVideo => 'Videó';
+
+  @override
   String searchFacetSelected(String label, String value) {
     return '$label: $value';
   }
@@ -1078,6 +1081,29 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get commonRetry => 'Újra';
+
+  @override
+  String get netErrorOffline =>
+      'Offline vagy. A letöltött zene továbbra is szól; az online tartalom a kapcsolattal együtt visszatér.';
+
+  @override
+  String get netErrorSlow =>
+      'A szerver túl lassan válaszol – a hálózat instabil lehet, vagy a szerver túlterhelt. A tartalom magától újratöltődik, amint újra válaszol.';
+
+  @override
+  String get netErrorServer =>
+      'A szerverrel jelenleg gond van. Próbáld újra egy kicsit később.';
+
+  @override
+  String get netErrorGeneric =>
+      'Ezt a tartalmat nem sikerült betölteni. Próbáld újra egy kicsit később.';
+
+  @override
+  String get netBannerOffline => 'Offline – a letöltött zene elérhető marad';
+
+  @override
+  String get netBannerSlow =>
+      'A szerver nem válaszol – automatikus újrapróbálás';
 
   @override
   String get commonOptions => 'Opciók';
@@ -1916,6 +1942,9 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get sortDateAdded => 'Hozzáadás dátuma';
+
+  @override
+  String get sortDateModified => 'Módosítás dátuma';
 
   @override
   String get commonClear => 'Törlés';
@@ -5375,6 +5404,10 @@ class AppLocalizationsHu extends AppLocalizations {
       'A zeneszerzők minden album- és alszám-képernyőn koppinthatók; a cím és a szerző az importált fájlokból olvasódik be.';
 
   @override
+  String get releaseNotesV11AlbumNotes =>
+      'Albumok: jegyzetek és videók (játékmenet, superplay…) az album képernyőjén, a lejátszóban is a szám sajátjai mellett.';
+
+  @override
   String get releaseNotesV11Hindi =>
       'Az app beszél hindiül (19 nyelv), és a felület kész a jobbról balra írt nyelvekre.';
 
@@ -5384,9 +5417,58 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get releaseNotesV11Visualizers =>
-      'Vizualizációk: akár 64 szólam az oszcilloszkópokon, saját szín minden MIDI ütőhangszernek, hangjegyek 2SF fájlokhoz, hangszernevek az FM-bankokból.';
+      'Vizualizációk: akár 64 szólam az oszcilloszkópokon, saját szín minden MIDI ütőhangszernek, hangjegyek 2SF fájlokhoz, hangszernevek az FM-bankokból, gyorsan ismételt hangjegyek a Mega Drive-on.';
+
+  @override
+  String get releaseNotesV11AndroidTv =>
+      'Android TV: teljes képernyős nézet, távirányítós navigáció (nyilak és OK, az OK nyomva tartásával a menü) és egy változat a 32 bites TV-boxokhoz.';
+
+  @override
+  String get releaseNotesV11Network =>
+      'Lassú vagy elérhetetlen szerver: érthető üzenet technikai hiba helyett, sáv, amíg tart, és a képernyők maguktól újratöltődnek, amikor visszatér.';
+
+  @override
+  String get releaseNotesV11ArtistFilter =>
+      'Előadói oldal: szűrő egy szám vagy album megtalálásához egy hosszú listában.';
+
+  @override
+  String get releaseNotesV11ChpPatterns =>
+      'Patternmegjelenítő a CHIPNSFX-dalokhoz (.chp, Amstrad CPC), hangszernevekkel.';
 
   @override
   String get releaseNotesV11Fixes =>
-      'Javítva: egyes elutasított SSF fájlok, néma WonderSwan ripek, több archívumra bontott hiányos albumok és a projectM presetek a lejátszó bezárása után.';
+      'Javítva: egyes elutasított SSF fájlok, néma WonderSwan ripek, több archívumra bontott hiányos albumok, hibás bejegyzések egyes albumokban (számként listázott mappa) és a projectM presetek a lejátszó bezárása után.';
+
+  @override
+  String get settingsRenderBackend => 'Renderelőmotor';
+
+  @override
+  String get settingsRenderBackendAuto => 'Automatikus';
+
+  @override
+  String get settingsRenderBackendAutoHint =>
+      'Impeller Apple Silicon Maceken, Skia Intel Maceken';
+
+  @override
+  String get settingsRenderBackendImpellerHint =>
+      'Modern renderelés, teljes üveghatás. Egyes Intel Maceken eltorzíthatja a szöveget.';
+
+  @override
+  String get settingsRenderBackendSkiaHint =>
+      'Klasszikus renderelés, biztonságosabb Intel Maceken. Egyszerűsített üveghatás.';
+
+  @override
+  String settingsRenderBackendActive(String name) {
+    return 'Aktív: $name';
+  }
+
+  @override
+  String get settingsRenderBackendRestart =>
+      'A következő indításkor lép életbe';
+
+  @override
+  String get carPlayNext => 'Következő szám';
+
+  @override
+  String get carPlayPrevious => 'Előző szám';
 }

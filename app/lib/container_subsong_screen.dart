@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'favorite_color.dart';
 import 'package:rewamp_audio/rewamp_audio.dart' show SubsongInfo, RewampAudio;
+import 'load_error.dart';
 import 'l10n.dart';
 import 'rewamp_db.dart';
 import 'scrolling_text.dart';
@@ -679,7 +680,7 @@ class _ContainerSubsongScreenState extends State<ContainerSubsongScreen> {
                     children: [
                       Icon(Icons.error_outline, size: 48, color: cs.error),
                       const SizedBox(height: 12),
-                      Text(_error!, textAlign: TextAlign.center,
+                      Text(netErrorMessageOrNull(l10n, _error!) ?? _error!, textAlign: TextAlign.center,
                           style: TextStyle(color: cs.onSurfaceVariant)),
                       const SizedBox(height: 16),
                       FilledButton.tonal(

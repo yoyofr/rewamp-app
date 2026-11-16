@@ -53,6 +53,18 @@ void main() {
     expect(files2.map((e) => e.name), ['mdat.apidya', 'mdat.turrican 2']);
   });
 
+  test('date d\'un sous-dossier = la plus récente de son contenu', () async {
+    await LocalDb.replaceLinkedEntriesOn(db, 'r3', const [
+      LinkedEntry('r3', 'A/x.mod', mtimeMs: 100),
+      LinkedEntry('r3', 'A/deep/y.mod', mtimeMs: 300),
+      LinkedEntry('r3', 'B/z.mod', mtimeMs: 200),
+      LinkedEntry('r3', 'C/w.mod'),
+      LinkedEntry('r3', 'top.mod', mtimeMs: 999),
+    ]);
+    expect(await LocalDb.linkedFolderMtimesOn(db, 'r3', ''), {'A': 300, 'B': 200});
+    expect(await LocalDb.linkedFolderMtimesOn(db, 'r3', 'A/'), {'deep': 300});
+  });
+
   test('le sous-arbre, dans l\'ordre des chemins, borné à SA racine',
       () async {
     final all = await LocalDb.linkedSubtreeOn(db, root, 'C64/');

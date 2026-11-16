@@ -22,7 +22,7 @@ permissions:
 
 env:
   # ⚠️ ÉPINGLÉE (même règle qu'appimage.yml): la version validée sous Windows.
-  FLUTTER_VERSION: '3.47.6'
+  FLUTTER_VERSION: '3.50.0'
 
 jobs:
   build:

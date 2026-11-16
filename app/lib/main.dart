@@ -4,6 +4,7 @@ import 'frame_stats.dart';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_easy/liquid_glass_easy.dart';
 import 'package:flutter/services.dart' show rootBundle, AssetManifest;
@@ -13,7 +14,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:rewamp_audio/rewamp_audio.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'data_reset.dart';
+import 'client_info.dart';
 import 'keyboard_dismiss.dart';
+import 'load_error.dart' show NetworkBanner;
+import 'network_status.dart';
 import 'l10n.dart';
 import 'rewamp_db.dart' show RewampDb;
 import 'local_db.dart';
@@ -30,6 +34,7 @@ import 'user_settings.dart';
 import 'app_shell.dart';
 import 'app_snack.dart';
 import 'orientation_lock.dart';
+import 'tv_focus.dart';
 import 'system_ui.dart';
 import 'splash_intro.dart';
 import 'artwork_image.dart';
@@ -187,13 +192,23 @@ Future<String> _prepareDataDir() async {
 /// [args] = la ligne de commande. C'est ainsi que Linux et Windows livrent un
 /// fichier à ouvrir (Apple passe par `application(_:open:)`), et le runner GTK
 /// les transmet déjà — il ne manquait qu'un `main` qui les lise.
-void main([List<String> args = const []]) async {
+// Toute l'app tourne avec NetworkAwareClient (network_status.dart): chaque
+// requête vers le serveur rapporte si le lien répond, sans toucher aux appels.
+// main() ENTIER dans la zone, et pas seulement runApp: la liaison Flutter
+// initialisée dans une autre zone que runApp lève « Zone mismatch » en debug.
+void main([List<String> args = const []]) =>
+    http.runWithClient(() => _main(args), NetworkAwareClient.new);
+
+Future<void> _main(List<String> args) async {
   if (!kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows)) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
 
   WidgetsFlutterBinding.ensureInitialized();
+  // Version et plateforme pour l'en-tête X-Rewamp-Client (network_status.dart):
+  // chargées tôt, sans attendre — d'ici là l'en-tête porte la plateforme seule.
+  unawaited(ClientInfo.instance.ensureLoaded());
   // REWAMP_VIZ_STATS=1: temps de build/raster par image, blocages de l'isolate
   // UI, pire tick — inerte sans la variable (voir frame_stats.dart).
   FrameStats.instance.start();
@@ -211,6 +226,9 @@ void main([List<String> args = const []]) async {
 
   // Phones are portrait-only (tablets/desktop rotate freely); the fullscreen
   // visualizer/video temporarily unlocks this — see PlayerScreen.
+  // Android TV n'est jamais un téléphone: demandé AVANT le verrou.
+  await OrientationLock.initTv();
+  TvFocus.install();
   OrientationLock.lock();
 
   // Android tablets pin a navigation/dock strip at the bottom; hide it the way
@@ -298,18 +316,8 @@ void main([List<String> args = const []]) async {
   final dataDir = await _prepareDataDir();
   final audio = RewampAudio();
   audio.init();
-  // iOS: **une app dont l'unité audio TOURNE est « en lecture » pour le
-  // système**, quoi qu'annonce la session média — c'est la leçon déjà payée
-  // sur la PAUSE (voir rewamp_device_suspend et PlayerController.togglePlay),
-  // et le lancement tombait dans le même trou: `rewamp_init` démarre le device
-  // aussitôt (il rend du silence), donc l'écran verrouillé affichait le glyphe
-  // PAUSE sur une app qui n'avait jamais joué. Ni le `playbackRate` ni
-  // `MPNowPlayingInfoCenter.playbackState` n'y peuvent quoi que ce soit: le
-  // système ne les consulte pas pour cette décision-là.
-  //
-  // On suspend donc le device tant que rien ne joue. Sans risque: `rewamp_play`
-  // est le SEUL chemin qui démarre le son, et il redémarre le device d'abord.
-  if (!kIsWeb && Platform.isIOS) audio.deviceSuspend();
+  // iOS creates its output device on the first playback request, after the
+  // media session activates. Startup and CarPlay browsing stay silent.
   audio.setDataDir(dataDir);
   // SoundFonts (MIDI): apply the persisted selection; if none is installed,
   // quietly fetch the server-default one in the background.
@@ -443,8 +451,14 @@ class _RewampAppState extends State<RewampApp> {
       // Mobile: un doigt posé hors du champ en cours d'édition ferme le
       // clavier virtuel. Autour du Navigator pour couvrir routes, feuilles et
       // le lecteur en overlay d'un seul geste — voir keyboard_dismiss.dart.
-      builder: (context, child) =>
-          KeyboardDismissOnTapOutside(child: child ?? const SizedBox.shrink()),
+      // Bandeau « hors ligne / serveur injoignable » au-dessus de TOUT (voir
+      // load_error.dart), lecteur en overlay compris.
+      // Android TV: les flèches de la télécommande traversent aussi les
+      // frontières de route (menu latéral ↔ contenu ↔ mini lecteur) —
+      // tv_focus.dart. Inerte ailleurs.
+      builder: (context, child) => NetworkBanner(
+          child: KeyboardDismissOnTapOutside(
+              child: tvFocusScope(child ?? const SizedBox.shrink()))),
       home: SplashGate(
         image: widget.splashImage,
         effect: widget.splashEffect,
@@ -543,7 +557,15 @@ class _SplashGateState extends State<SplashGate> {
     final showIntro = !_introDone && img != null;
     return Stack(
       children: [
-        const AppShell(),               // builds/warms up under the intro
+        // Tant que l'intro ou la note couvrent l'écran, AppShell (monté
+        // dessous) ne doit RIEN pouvoir focaliser: sinon une télécommande
+        // (Android TV) envoie son focus dans une app invisible et la note n'a
+        // plus de bouton activable. `excluding` change, la forme de l'arbre
+        // non (AppShell n'est jamais remonté).
+        ExcludeFocus(
+          excluding: showIntro || _showNotes,
+          child: const AppShell(),      // builds/warms up under the intro
+        ),
         // La note PROLONGE l'intro: elle prend le relais sur le même fond,
         // sans que l'app apparaisse entre les deux. Elle reste dans la même
         // pile (pas une route) pour la même raison que le lecteur — rien à

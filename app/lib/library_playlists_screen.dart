@@ -1,3 +1,4 @@
+import 'tv_focus.dart';
 import 'package:flutter/material.dart';
 import 'package:rewamp_audio/rewamp_audio.dart' show RewampAudio;
 import 'artwork_image.dart';
@@ -550,7 +551,9 @@ class _LibraryPlaylistsScreenState extends State<LibraryPlaylistsScreen> {
                   child: CancelField(
                     controller: _searchCtrl,
                     onCleared: (_) => _load(),
-                    builder: (_) => TextField(
+                    builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                       controller: _searchCtrl,
                       decoration: InputDecoration(
                         hintText: l10n.playlistSearchHint,
@@ -560,7 +563,7 @@ class _LibraryPlaylistsScreenState extends State<LibraryPlaylistsScreen> {
                             borderRadius: BorderRadius.circular(10)),
                       ),
                       onChanged: (_) => _load(),
-                    ),
+                    )),
                   ),
                 ),
                 // While dragging inside a folder, a banner to drop the playlist

@@ -331,6 +331,16 @@ class LibraryRefRefused extends LibraryRefDecision {
   const LibraryRefRefused([this.reason = LibraryRefRefusal.noCatalogueId]);
 }
 
+/// L'identité à écrire pour un ajout, SANS interface (CarPlay: ni feuille ni
+/// snack sur l'écran de la voiture). Seule une identité ACCEPTÉE passe: une
+/// demande d'import ou un refus rendent null, l'appelant le signale à sa façon.
+Future<String?> acceptedLibraryRefForAdd(String refId) async {
+  final decision = await resolveLibraryRefForAdd(refId);
+  if (decision is! LibraryRefAccepted) return null;
+  recordLibraryRefRewrite(refId, decision.refId);
+  return decision.refId;
+}
+
 /// La décision, sans UI — testable et réutilisable.
 Future<LibraryRefDecision> resolveLibraryRefForAdd(String refId) async {
   final (base, sub) = splitLibraryRefId(refId);

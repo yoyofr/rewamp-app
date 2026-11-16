@@ -493,7 +493,11 @@ class _TrackCard extends StatelessWidget {
       if (elsewhere) libraryElsewhereLabel(context),
       trackSubtitle(item),
     ].where((t) => t.isNotEmpty).join(' · ');
-    return HoverGrow(child: Opacity(
+    return HoverGrow(
+        onTap: onPlay,
+        onLongPress: () =>
+            showLibraryItemMenu(context, title: item.name, onRemove: onRemove),
+        child: Opacity(
       opacity: elsewhere ? 0.45 : 1.0,
       child: GestureDetector(
       onTap: onPlay,

@@ -1,3 +1,4 @@
+import 'tv_focus.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -405,6 +406,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     _stateFlashTimer?.cancel();
     _stateFlashCtrl.dispose();
     _fadeCtrl.dispose();
+    _tvSurfaceNode.dispose();
     // Leaving the visualizer for real — release the shared GL context the
     // children were told not to touch. Order matters: hand ownership back
     // BEFORE unregistering, so nothing can re-register behind us.
@@ -533,6 +535,10 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
 
   static const _kOverlayHold = Duration(seconds: 3);
 
+  /// Focus de la télécommande sur la surface du visualiseur (Android TV):
+  /// c'est là qu'il revient quand les contrôles s'effacent.
+  final FocusNode _tvSurfaceNode = FocusNode(debugLabel: 'tv-viz');
+
   void _showOverlay() {
     // forward(), not forward(from: 0): tapping again while the controls are up
     // (or still fading out) should just carry on to full opacity, not snap back
@@ -562,6 +568,14 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
       return;
     }
     _hideTimer = null;
+    // Le focus de la télécommande était dans les contrôles qui disparaissent:
+    // il revient sur la surface, sinon il serait perdu.
+    final pf = FocusManager.instance.primaryFocus;
+    if (TvFocus.enabled && pf != null && !identical(pf, _tvSurfaceNode) &&
+        _tvSurfaceNode.context != null &&
+        pf.context != null && pf.context!.findAncestorStateOfType<_VizSelectorWidgetState>() == this) {
+      _tvSurfaceNode.requestFocus();
+    }
     _fadeCtrl.reverse();
   }
 
@@ -853,7 +867,12 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     return hasKeyboard ? '$tooltip  ($key)' : tooltip;
   }
 
-  Widget _pmControls(AppLocalizations l10n, ColorScheme cs) {
+  /// [horizontal]: les trois pastilles côte à côte au lieu d'empilées — sur
+  /// un panneau BAS (téléviseur 960×540 dp) la colonne descendait jusqu'au
+  /// milieu du bord gauche et recouvrait la flèche « preset précédent », qui
+  /// n'était plus ni visible ni atteignable à la télécommande.
+  Widget _pmControls(AppLocalizations l10n, ColorScheme cs,
+      {bool horizontal = false}) {
     final idle = Colors.white.withValues(alpha: 0.85);
     Widget btn(IconData icon, String tooltip, VoidCallback onTap) => Tooltip(
           message: tooltip,
@@ -873,16 +892,16 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: children),
         );
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    final gap = horizontal
+        ? const SizedBox(width: 6)
+        : const SizedBox(height: 6);
+    final children = <Widget>[
         pill([
           btn(Icons.queue_music, l10n.pmSourceTooltip, _showPmSourceSheet),
           btn(Icons.playlist_add, l10n.pmAddToPlaylistTooltip,
               _addCurrentPresetToPlaylist),
         ]),
-        const SizedBox(height: 6),
+        gap,
         // Jump straight to a preset of the source already playing. The source
         // sheet above changes WHICH list plays; this one picks inside it, which
         // is the thing you want when you remember a name and the rotation is on
@@ -891,7 +910,7 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
           btn(Icons.search, _withKeyHint(l10n.pmPickTooltip, 'L'),
               _showPmPresetPicker),
         ]),
-        const SizedBox(height: 6),
+        gap,
         // The two projectM settings you reach for WHILE watching: lock (a
         // preset you like must not rotate away in 15 s) and the shuffle/
         // sequential order. Same switches as Settings → Visualisation →
@@ -942,8 +961,14 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
             ]);
           },
         ),
-      ],
-    );
+    ];
+    return horizontal
+        ? Row(mainAxisSize: MainAxisSize.min, children: children)
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          );
   }
 
   /// Compact source sheet: switch what projectM plays WITHOUT leaving the viz.
@@ -1765,11 +1790,14 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
           // per-viz controls corner). Only when the native build carries the
           // playlist API.
           if (widget.audio.hasProjectMPlaylist)
-            Align(
-              alignment: AlignmentDirectional.topStart,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: _fitControlBar(_pmControls(l10n, cs)),
+            LayoutBuilder(
+              builder: (context, box) => Align(
+                alignment: AlignmentDirectional.topStart,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: _fitControlBar(_pmControls(l10n, cs,
+                      horizontal: box.maxHeight < 340)),
+                ),
               ),
             ),
         ],
@@ -1843,7 +1871,17 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
     final vizStack = Stack(
       children: [
         Positioned.fill(
-          child: GestureDetector(
+          child: TvFocusRing(
+            radius: radius,
+            // Android TV: la surface du visualiseur est une cible de la
+            // télécommande — OK montre ses contrôles (choix du mode, réglages;
+            // ils deviennent alors focalisables), OK maintenu / Menu bascule
+            // le plein écran (le double tap).
+            child: TvActivatable(
+            focusNode: _tvSurfaceNode,
+            onTap: _showOverlay,
+            onLongPress: widget.onToggleFullscreen,
+            child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onTap: _showOverlay,
             onDoubleTap: widget.onToggleFullscreen,
@@ -1884,18 +1922,32 @@ class _VizSelectorWidgetState extends State<VizSelectorWidget>
               ],
               ),
             ),
-          ),
+          ))),
         ),
         Positioned.fill(
           child: AnimatedBuilder(
             animation: _fadeCtrl,
-            builder: (_, child) => IgnorePointer(
-              ignoring: _fadeCtrl.value < 0.05,
-              child: child,
+            builder: (_, child) => ExcludeFocus(
+              // Cachés ⇒ hors d'atteinte de la télécommande aussi.
+              excluding: _fadeCtrl.value < 0.05,
+              child: IgnorePointer(
+                ignoring: _fadeCtrl.value < 0.05,
+                child: child,
+              ),
             ),
             child: FadeTransition(
               opacity: _fadeAnim,
-              child: overlayButtons,
+              // Une touche pressée dans les contrôles les garde affichés,
+              // comme un mouvement de souris (`_pokeOverlay`).
+              child: Focus(
+                canRequestFocus: false,
+                skipTraversal: true,
+                onKeyEvent: (_, __) {
+                  _pokeOverlay();
+                  return KeyEventResult.ignored;
+                },
+                child: overlayButtons,
+              ),
             ),
           ),
         ),
@@ -2186,7 +2238,9 @@ class _PmPresetPickerSheetState extends State<_PmPresetPickerSheet> {
             padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
             child: CancelField(
               controller: _filter,
-              builder: (_) => TextField(
+              builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                 controller: _filter,
                 autofocus: true,
                 // The list filters as you type, so the search key has nothing
@@ -2199,7 +2253,7 @@ class _PmPresetPickerSheetState extends State<_PmPresetPickerSheet> {
                   isDense: true,
                   border: const OutlineInputBorder(),
                 ),
-              ),
+              )),
             ),
           ),
           Expanded(

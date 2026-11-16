@@ -1,3 +1,4 @@
+import 'tv_focus.dart';
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart' as fp;
@@ -684,7 +685,9 @@ class _BrowseTabState extends State<_BrowseTab> {
                   _query = '';
                   _reload();
                 },
-                builder: (_) => TextField(
+                builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                   controller: _searchCtrl,
                   decoration: InputDecoration(
                     isDense: true,
@@ -698,7 +701,7 @@ class _BrowseTabState extends State<_BrowseTab> {
                       _reload();
                     });
                   },
-                ),
+                )),
               );
               if (c.maxWidth < 520) {
                 return Column(

@@ -3,6 +3,7 @@
 #include <projectM-4/projectM.h>
 
 #include <Audio/AudioConstants.hpp>
+#include <MilkdropPreset/MilkdropPreset.hpp>
 
 #include <cstring>
 #include <projectM-4/parameters.h>
@@ -93,6 +94,25 @@ void projectm_loadpreload_preset_file(projectm_handle instance, const char* file
 {
     auto projectMInstance = handle_to_instance(instance);
     projectMInstance->LoadPreLoadPresetFile(filename,warpP,compP,smoothTransition,randSeed);
+}
+
+bool projectm_begin_load_preset_file(projectm_handle instance, const char* filename, bool smooth_transition)
+{
+    if (filename == nullptr) return false;
+    auto projectMInstance = handle_to_instance(instance);
+    return projectMInstance->BeginDeferredPresetLoad(filename, smooth_transition);
+}
+
+int projectm_poll_preset_load(projectm_handle instance, int max_frames)
+{
+    auto projectMInstance = handle_to_instance(instance);
+    return projectMInstance->PollDeferredPresetLoad(max_frames);
+}
+
+void projectm_prewarm_preset_shaders(const char* filename)
+{
+    if (filename == nullptr) return;
+    libprojectM::MilkdropPreset::MilkdropPreset::PrewarmShaders(filename);
 }
 
 int projectm_preloaded_random_texture_count(projectm_handle instance, uint64_t randSeed)

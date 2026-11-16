@@ -1,3 +1,4 @@
+import 'tv_focus.dart';
 import 'package:flutter/material.dart';
 
 import 'l10n.dart';
@@ -72,7 +73,9 @@ class _FacetPickerSheetState extends State<FacetPickerSheet> {
                 child: CancelField(
                   hasText: _query.isNotEmpty,
                   onCleared: (_) => setState(() => _query = ''),
-                  builder: (_) => TextField(
+                  builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                     autofocus: true,
                     decoration: InputDecoration(
                       isDense: true,
@@ -81,7 +84,7 @@ class _FacetPickerSheetState extends State<FacetPickerSheet> {
                       border: const OutlineInputBorder(),
                     ),
                     onChanged: (v) => setState(() => _query = v),
-                  ),
+                  )),
                 ),
               ),
               Flexible(

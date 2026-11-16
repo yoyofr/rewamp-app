@@ -1,3 +1,4 @@
+import 'tv_focus.dart';
 import 'dart:async';
 import 'dart:math' show Random;
 
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'album_detail_screen.dart';
 import 'artwork_image.dart';
 import 'horizontal_scroll_arrows.dart' show MouseDragScrollConfiguration;
+import 'load_error.dart';
 import 'l10n.dart';
 import 'note_markdown.dart' show openExternalLink;
 import 'player_controller.dart';
@@ -196,7 +198,7 @@ class _ProductionScreenState extends State<ProductionScreen> {
         ],
       ),
       body: _error != null
-          ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+          ? Center(child: LoadErrorView(error: _error!, onRetry: () { setState(() => _error = null); _load(); }))
           : _tracks == null
               ? const Center(child: CircularProgressIndicator())
               : _isVideoOnly
@@ -601,7 +603,9 @@ class _ProductionsBrowseScreenState extends State<ProductionsBrowseScreen> {
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
-              builder: (_) => TextField(
+              builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                 controller: _filterCtrl,
                 decoration: InputDecoration(
                   hintText: l10n.browseFilterFacet(
@@ -611,7 +615,7 @@ class _ProductionsBrowseScreenState extends State<ProductionsBrowseScreen> {
                   border: const OutlineInputBorder(),
                 ),
                 onChanged: _onFilterChanged,
-              ),
+              )),
             ),
           ),
           Align(
@@ -633,7 +637,7 @@ class _ProductionsBrowseScreenState extends State<ProductionsBrowseScreen> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+              child: LoadErrorView(error: _error!, onRetry: _load),
             ),
           Expanded(
             child: _loading

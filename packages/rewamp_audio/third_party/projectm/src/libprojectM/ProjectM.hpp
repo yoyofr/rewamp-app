@@ -23,6 +23,7 @@
 #include <projectM-4/projectM_export.h>
 
 #include <Renderer/RenderContext.hpp>
+#include <Renderer/Shader.hpp>
 
 #include <Audio/PCM.hpp>
 
@@ -85,6 +86,21 @@ public:
     
     void PreLoadPresetFile(const std::string& presetFilename,uint32_t *warpP,uint32_t *compP,uint64_t *randSeed=nullptr);
     void LoadPreLoadPresetFile(const std::string& presetFilename,uint32_t warpP,uint32_t compP, bool smoothTransition,uint64_t randSeed=0);
+
+    /**
+     * rewamp (web): LoadPresetFile in two halves, so the browser compiles the
+     * preset's shaders while the current preset keeps rendering. Begin builds
+     * and initializes the preset WITHOUT waiting on any shader status, Poll
+     * (once per frame, before rendering) starts the transition when every
+     * program has linked. A link failure falls back to LoadPresetFile, which
+     * handles a broken shader exactly as before. A new Begin drops a pending
+     * one.
+     * @return Begin: true when a load is now pending (false: it failed, and
+     *         the failure was reported like LoadPresetFile does).
+     *         Poll: 0 nothing pending, 1 still compiling, 2 applied.
+     */
+    bool BeginDeferredPresetLoad(const std::string& presetFilename, bool smoothTransition);
+    int PollDeferredPresetLoad(int maxFrames);
 
     /**
      * @brief How many randNN textures the preload behind @p randSeed resolved.
@@ -293,7 +309,8 @@ public:
 private:
     void Initialize();
 
-    void StartPresetTransition(std::unique_ptr<Preset>&& preset, bool hardCut);
+    void StartPresetTransition(std::unique_ptr<Preset>&& preset, bool hardCut, bool initialized = false);
+    void DropDeferredPresetLoad();
 
     void LoadIdlePreset();
 
@@ -343,6 +360,13 @@ private:
     std::unique_ptr<Renderer::PresetTransition> m_transition;                     //!< Transition effect used for blending.
     std::unique_ptr<TimeKeeper> m_timeKeeper;                                     //!< Keeps the different timers used to render and switch presets.
     std::unique_ptr<UserSprites::SpriteManager> m_spriteManager;                  //!< Manages all types of user sprites.
+
+    // rewamp: deferred load (BeginDeferredPresetLoad).
+    std::unique_ptr<Preset> m_deferredPreset;
+    std::vector<Renderer::Shader::PendingLink> m_deferredLinks;
+    std::string m_deferredFilename;
+    bool m_deferredSmooth{false};
+    int m_deferredFrames{0};
 };
 
 } // namespace libprojectM

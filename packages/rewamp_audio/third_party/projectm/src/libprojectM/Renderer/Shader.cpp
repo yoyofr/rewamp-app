@@ -114,6 +114,56 @@ Shader::Shader()
 {
 }
 
+// ── rewamp: deferred link status (web) ──────────────────────────────────────
+// Render thread only (the flag is never raised elsewhere), so no locking.
+static bool mdzDeferLinks = false;
+static std::vector<Shader::PendingLink> mdzPendingLinks;
+
+void Shader::BeginDeferredLinks()
+{
+    mdzDeferLinks = true;
+    mdzPendingLinks.clear();
+}
+
+auto Shader::EndDeferredLinks() -> std::vector<PendingLink>
+{
+    mdzDeferLinks = false;
+    std::vector<PendingLink> out;
+    out.swap(mdzPendingLinks);
+    return out;
+}
+
+bool Shader::PendingLinksDone(const std::vector<PendingLink>& links)
+{
+    for (const auto& link : links)
+    {
+        GLint done = GL_FALSE;
+        glGetProgramiv(link.program, GL_COMPLETION_STATUS_KHR, &done);
+        // Without the extension the query is an error and leaves 0: we cannot
+        // know, so we stop waiting (FinishPendingLinks then blocks, as before).
+        if (glGetError() != GL_NO_ERROR) return true;
+        if (done != GL_TRUE) return false;
+    }
+    return true;
+}
+
+bool Shader::FinishPendingLinks(std::vector<PendingLink>& links)
+{
+    bool allLinked = true;
+    for (const auto& link : links)
+    {
+        GLint linked = GL_FALSE;
+        glGetProgramiv(link.program, GL_LINK_STATUS, &linked);
+        if (linked != GL_TRUE) allLinked = false;
+        glDetachShader(link.program, link.vertexShader);
+        glDetachShader(link.program, link.fragmentShader);
+        glDeleteShader(link.vertexShader);
+        glDeleteShader(link.fragmentShader);
+    }
+    links.clear();
+    return allLinked;
+}
+
 Shader::~Shader()
 {
     if (m_shaderProgram)
@@ -170,6 +220,13 @@ void Shader::CompileProgram(const std::string& vertexShaderSource,
         mdzGlProgramCount++;
 #endif
         
+        // rewamp (web): deferred status — hand the link to the caller, who polls
+        // it across frames instead of blocking on the queries below.
+        if (mainThread && mdzDeferLinks) {
+            mdzPendingLinks.push_back({m_shaderProgram, vertexShader, fragmentShader});
+            return;
+        }
+
         //if precompiling (not main thread)
         //do not check linkage status to let the // thread work
         if (!mainThread) {
@@ -517,6 +574,13 @@ GLuint Shader::CompileShader(const std::string& source, GLenum type)
     if (pthread_equal(pthread_self(), mdzMainThreadId) == 0 &&
         mdzParallelCompileEnable()) {
         mdzPollCompletion(shader, false);
+    }
+
+    // Deferred (web): no status query here — it would wait for the browser's
+    // compile. A failed compile fails the link, which the caller checks.
+    if (mdzDeferLinks && pthread_equal(pthread_self(), mdzMainThreadId) != 0)
+    {
+        return shader;
     }
 
     glGetShaderiv(shader, GL_COMPILE_STATUS, &shaderCompiled);

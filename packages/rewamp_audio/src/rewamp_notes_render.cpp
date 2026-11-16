@@ -362,7 +362,10 @@ REWAMP_EXPORT void rewamp_noteviz_render(void) {
             if (nv_voice_muted(v)) continue;
             float val = g_nv_hz[c * vc + v];
             if (val < 1.0f) continue;
-            float l = log2f(val);
+            /* The SEMITONE BIN, as the blocks are drawn (below), not the raw
+             * pitch: a bin rounds up to half a semitone above the raw value,
+             * so a range fitted on raw pitches let the top block poke out. */
+            float l = log2f(440.0f) + roundf(12.0f * log2f(val / 440.0f)) / 12.0f;
             if (l < omin) omin = l;
             if (l > omax) omax = l;
         }
@@ -381,8 +384,11 @@ REWAMP_EXPORT void rewamp_noteviz_render(void) {
             float m   = (omin + omax) * 0.5f;
             float tlo = m - span * 0.5f;
             float thi = m + span * 0.5f;
-            g_nv_cal_lo += (tlo - g_nv_cal_lo) * 0.04f;    /* gentle ease */
-            g_nv_cal_hi += (thi - g_nv_cal_hi) * 0.04f;
+            /* Gentle ease; quicker when a note is OUTSIDE (it is drawn
+             * pinned to the edge until the range has caught up). */
+            const float k = outside ? 0.12f : 0.04f;
+            g_nv_cal_lo += (tlo - g_nv_cal_lo) * k;
+            g_nv_cal_hi += (thi - g_nv_cal_hi) * k;
         }
     }
     const float lo = g_nv_cal_lo, hi = g_nv_cal_hi,
@@ -399,6 +405,12 @@ REWAMP_EXPORT void rewamp_noteviz_render(void) {
     const float  Hf = (float)rewamp_gl_height();
     const float  exB = (Wf > 0 ? 4.0f / Wf : 0.005f);   /* ~2px edge */
     const float  eyB = (Hf > 0 ? 4.0f / Hf : 0.005f);
+    /* The range maps block CENTRES; inset it by the tallest a block can reach
+     * above/below its centre (active height bump + vibrato tremble + edge), so
+     * a note at the top or bottom of the range — or pinned there while the
+     * auto range catches up — is drawn WHOLE instead of cut in half. */
+    const float  yPad = blockH * 1.35f * 0.5f + 0.75f * vibGain + eyB;
+    const float  yScale = 1.0f - yPad;
 
     const double stepEst = 512.0; /* capture step (DS_STEP_FRAMES); last-col width */
 
@@ -446,9 +458,9 @@ REWAMP_EXPORT void rewamp_noteviz_render(void) {
             float  t = (log2f(binHz) - lo) / span;
             if (t < 0) t = 0; if (t > 1) t = 1;
 #if REWAMP_GL_Y_FLIPPED
-            float yc = 1.0f - 2.0f * t;          /* macOS: texture reaches Flutter flipped */
+            float yc = (1.0f - 2.0f * t) * yScale;   /* macOS: texture reaches Flutter flipped */
 #else
-            float yc = 2.0f * t - 1.0f;          /* +y = screen top (Android, iOS)         */
+            float yc = (2.0f * t - 1.0f) * yScale;   /* +y = screen top (Android, iOS)         */
 #endif
             const int active = (played >= runStart && played <= runEnd);
             // Vibrato tremble: the ACTIVE block follows the instantaneous

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import 'favorite_color.dart';
 import 'package:path/path.dart' as p;
+import 'load_error.dart';
 import 'l10n.dart';
 import 'local_db.dart';
 import 'production_screen.dart';
@@ -25,6 +26,9 @@ import 'library_button.dart';
 import 'track_options_sheet.dart';
 import 'shell_insets.dart';
 import 'play_start.dart';
+import 'note_markdown.dart' show NoteMarkdown, openExternalLink;
+import 'player_controller.dart';
+import 'video_screen.dart';
 
 // Human-readable byte size (B / KB / MB).
 String _fmtBytes(AppLocalizations l10n, int b) {
@@ -654,9 +658,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         // Un échec RÉSEAU se dit en une phrase; le texte brut d'une exception
         // n'apprend rien à qui lit l'écran.
         if (offset == 0) {
-          _error = RewampDb.isOffline(e)
-              ? context.l10n.accountErrorNetwork
-              : e.toString();
+          // Le message vient de LoadErrorView (load_error.dart), qui
+          // distingue hors ligne / serveur lent / panne serveur.
+          _error = e.toString();
         }
       });
     }
@@ -1351,8 +1355,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           else if (_error != null)
             SliverFillRemaining(
               child: Center(
-                child: Text(_error!,
-                    style: const TextStyle(color: Colors.red)),
+                child: LoadErrorView(error: _error!, onRetry: () { setState(() { _error = null; _tracksLoading = true; }); _loadTracks(0); }),
               ),
             )
           else ...[
@@ -1534,17 +1537,37 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                 childCount: display.length + (_hasMore ? 1 : 0),
               ),
             ),
-            // Description — after track list
-            if (_details?.description != null &&
-                _details!.description!.isNotEmpty)
+            // Texte de l'album — après la liste des pistes: la description
+            // des importeurs (texte brut) PUIS la note ÉDITORIALE (mig 303,
+            // HTML avec liens, posée depuis l'admin). Les deux se COMBINENT:
+            // la note complète, elle ne remplace pas.
+            if ((_details?.description?.isNotEmpty ?? false) ||
+                _details?.notes != null)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 24),
-                  child: Text(
-                    _details!.description!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_details!.description?.isNotEmpty ?? false)
+                        Text(
+                          _details!.description!,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      if ((_details!.description?.isNotEmpty ?? false) &&
+                          _details!.notes != null)
+                        const SizedBox(height: 12),
+                      if (_details!.notes != null)
+                        NoteMarkdown(
+                          text: _details!.notes!,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                          onOpenLink: (u) => openExternalLink(context, u),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -1707,6 +1730,34 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
                       onPressed: () => openProduction(context, prod),
+                    ),
+                ],
+              ),
+            ],
+
+            // Vidéos de l'album (mig 303): une puce par vidéo, ouverte dans le
+            // lecteur vidéo de l'app (la musique s'y met en pause, comme pour
+            // une vidéo de morceau). Ni production ni morceau derrière: un
+            // signalement de vidéo morte ne part pas (VideoScreen le sait).
+            if (d.videos.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (var i = 0; i < d.videos.length; i++)
+                    ActionChip(
+                      avatar: const Icon(Icons.ondemand_video, size: 14),
+                      label: Text(
+                          (d.videos[i].title?.trim().isNotEmpty ?? false)
+                              ? d.videos[i].title!.trim()
+                              : context.l10n.albumVideo,
+                          style: const TextStyle(fontSize: 12)),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => VideoScreen.open(
+                          context, PlayerController.current, d.videos,
+                          index: i),
                     ),
                 ],
               ),

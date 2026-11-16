@@ -1,5 +1,5 @@
 diff --git a/emu/cores/fmopn.c b/emu/cores/fmopn.c
-index d67da82..362ffee 100644
+index d67da82..a7e2022 100644
 --- a/emu/cores/fmopn.c
 +++ b/emu/cores/fmopn.c
 @@ -166,6 +166,11 @@
@@ -14,16 +14,19 @@ index d67da82..362ffee 100644
  #ifndef SNDDEV_SELECT
  #define SNDDEV_YM2203
  #define SNDDEV_YM2608
-@@ -617,6 +622,8 @@ typedef struct
+@@ -617,6 +622,11 @@ typedef struct
  	UINT8   kcode;      /* key code:                        */
  	UINT32  block_fnum; /* current blk/fnum value for this slot (can be different betweeen slots of one channel in 3slot mode) */
  	UINT8   Muted;
 +    //YOYOFR
 +    UINT8   keyonff_triggered;
++    //REWAMP: attaque à signaler aux visualiseurs (-1 = vient d'arriver,
++    // >0 = échantillons restants), voir rw_fm_note_capture.
++    INT32   rw_attack;
  } FM_CH;
  
  
-@@ -770,6 +777,10 @@ INLINE void FM_IRQMASK_SET(FM_ST *ST,int flag)
+@@ -770,12 +780,17 @@ INLINE void FM_IRQMASK_SET(FM_ST *ST,int flag)
  INLINE void FM_KEYON(FM_OPN *OPN, FM_CH *CH , int s )
  {
  	FM_SLOT *SLOT = &CH->SLOT[s];
@@ -34,7 +37,14 @@ index d67da82..362ffee 100644
  
  	// Note by Valley Bell:
  	//  I assume that the CSM mode shouldn't affect channels
-@@ -808,6 +819,10 @@ INLINE void FM_KEYON(FM_OPN *OPN, FM_CH *CH , int s )
+ 	//  other than FM3, so I added a check for it here.
+ 	if( !SLOT->key && (!OPN->SL3.key_csm || CH != &OPN->P_CH[2]))
+ 	{
++		CH->rw_attack = -1;   //REWAMP: nouvelle attaque (relance comprise)
+ 		/* restart Phase Generator */
+ 		SLOT->phase = 0;
+ 
+@@ -808,6 +823,10 @@ INLINE void FM_KEYON(FM_OPN *OPN, FM_CH *CH , int s )
  INLINE void FM_KEYOFF(FM_OPN *OPN, FM_CH *CH , int s )
  {
  	FM_SLOT *SLOT = &CH->SLOT[s];
@@ -45,7 +55,7 @@ index d67da82..362ffee 100644
  
  	if (SLOT->key && (!OPN->SL3.key_csm || CH != &OPN->P_CH[2]))
  	{
-@@ -850,6 +865,10 @@ INLINE void FM_KEYOFF(FM_OPN *OPN, FM_CH *CH , int s )
+@@ -850,6 +869,10 @@ INLINE void FM_KEYOFF(FM_OPN *OPN, FM_CH *CH , int s )
  INLINE void FM_KEYON_CSM(FM_OPN *OPN, FM_CH *CH , int s )
  {
  	FM_SLOT *SLOT = &CH->SLOT[s];
@@ -56,7 +66,7 @@ index d67da82..362ffee 100644
  
  	if (!SLOT->key && !OPN->SL3.key_csm)
  	{
-@@ -882,6 +901,11 @@ INLINE void FM_KEYON_CSM(FM_OPN *OPN, FM_CH *CH , int s )
+@@ -882,6 +905,11 @@ INLINE void FM_KEYON_CSM(FM_OPN *OPN, FM_CH *CH , int s )
  
  INLINE void FM_KEYOFF_CSM(FM_CH *CH , int s )
  {
@@ -68,7 +78,50 @@ index d67da82..362ffee 100644
  	FM_SLOT *SLOT = &CH->SLOT[s];
  	if (!SLOT->key)
  	{
-@@ -2374,7 +2398,68 @@ void ym2203_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -2354,6 +2382,42 @@ typedef struct
+ } YM2203;
+ 
+ /* Generate samples for one of the YM2203s */
++//REWAMP: capture des notes d'une voie FM pour la notation et le piano.
++// La capture Modizer d'origine n'écrivait que si la SORTIE changeait et ne
++// remettait jamais rien à zéro: une note restait affichée après la fin du son,
++// et le volume (« si plus grand ») restait bloqué à 2 — or c'est un SAUT de
++// volume que les visualiseurs lisent comme une réattaque (rewamp_notes_render:
++// « vol > précédent + 2 »). Des notes relancées vite sur la même hauteur
++// (Moonwalker MD, « Smooth Criminal ») fusionnaient en une seule barre.
++// Ici: la note vaut tant qu'une touche de la voie est ENFONCÉE (0 sinon), et
++// chaque key on réel marque 255 pendant 25 ms (au moins une colonne de
++// capture, DS_STEP_FRAMES = 512 à 44,1 kHz ≈ 11,6 ms), 1 ensuite — le contraste
++// franc qu'utilise déjà UADE.
++static void rw_fm_note_capture(FM_CH *CH, int voice, UINT32 rate, UINT32 length)
++{
++	if (!(CH->SLOT[SLOT1].key | CH->SLOT[SLOT2].key | CH->SLOT[SLOT3].key | CH->SLOT[SLOT4].key))
++	{
++		vgm_last_note[voice] = 0;
++		vgm_last_vol[voice] = 0;
++		CH->rw_attack = 0;
++		return;
++	}
++	if (CH->block_fnum == 0)
++		vgm_last_note[voice] = 220.0f; //arbitrary choosing A-3
++	else
++	{
++		int freq = (CH->block_fnum) & 0x7FF;
++		int octave = ((CH->block_fnum) >> 11) & 0x7;
++		vgm_last_note[voice] = (freq << octave) * 110.0f / 1081.0f;
++	}
++	vgm_last_instr[voice] = voice;
++	if (CH->rw_attack < 0)
++		CH->rw_attack = (INT32)(rate / 40);   // 25 ms
++	vgm_last_vol[voice] = CH->rw_attack > 0 ? 255 : 1;
++	if (CH->rw_attack > 0)
++		CH->rw_attack = (CH->rw_attack > (INT32)length) ? CH->rw_attack - (INT32)length : 0;
++}
++
+ void ym2203_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+ {
+ 	YM2203 *F2203 = (YM2203 *)chip;
+@@ -2374,7 +2438,50 @@ void ym2203_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  	cch[0]   = &F2203->CH[0];
  	cch[1]   = &F2203->CH[1];
  	cch[2]   = &F2203->CH[2];
@@ -111,25 +164,7 @@ index d67da82..362ffee 100644
 +    if (m_voice_ofs>=0) {
 +        for (int ii=0;ii<3;ii++) {
 +            if (!(cch[ii]->Muted)) {
-+                if (cch[ii]->block_fnum==0) {
-+                    if ((OPN->out_fm[ii]!=old_out_fm[ii])) {
-+                        vgm_last_note[ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
-+                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
-+                        int newvol=cch[ii]->keyonff_triggered+1;
-+                        cch[ii]->keyonff_triggered=0;
-+                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
-+                    }
-+                } else {
-+                    if ((OPN->out_fm[ii]!=old_out_fm[ii])) {
-+                        int freq=(cch[ii]->block_fnum)&0x7FF;
-+                        int octave=((cch[ii]->block_fnum)>>11)&0x7;
-+                        vgm_last_note[ii+m_voice_ofs]=(freq<<octave)*110.0f/1081.0f; //1148.0f;
-+                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
-+                        int newvol=cch[ii]->keyonff_triggered+1;
-+                        cch[ii]->keyonff_triggered=0;
-+                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
-+                    }
-+                }
++                rw_fm_note_capture(cch[ii], ii+m_voice_ofs, OPN->ST.rate, length); //REWAMP
 +            }
 +            old_out_fm[ii]=OPN->out_fm[ii];
 +        }
@@ -138,7 +173,7 @@ index d67da82..362ffee 100644
  
  	/* refresh PG and EG */
  	refresh_fc_eg_chan( OPN, cch[0] );
-@@ -2421,6 +2506,24 @@ void ym2203_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -2421,6 +2528,24 @@ void ym2203_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  		chan_calc(OPN, cch[0], 0 );
  		chan_calc(OPN, cch[1], 1 );
  		chan_calc(OPN, cch[2], 2 );
@@ -163,7 +198,7 @@ index d67da82..362ffee 100644
  
  		/* advance envelope generator */
  		OPN->eg_timer += OPN->eg_timer_add;
-@@ -3034,6 +3137,75 @@ void ym2608_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -3034,6 +3159,57 @@ void ym2608_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  	cch[3]   = &F2608->CH[3];
  	cch[4]   = &F2608->CH[4];
  	cch[5]   = &F2608->CH[5];
@@ -192,25 +227,7 @@ index d67da82..362ffee 100644
 +    if (m_voice_ofs>=0) {
 +        for (int ii=0;ii<6;ii++) {
 +            if (!(cch[ii]->Muted)) {
-+                if (cch[ii]->block_fnum==0) {
-+                    if ((out_fm[ii]!=old_out_fm[ii])) {
-+                        vgm_last_note[ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
-+                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
-+                        int newvol=cch[ii]->keyonff_triggered+1;
-+                        cch[ii]->keyonff_triggered=0;
-+                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
-+                    }
-+                } else {
-+                    if ((out_fm[ii]!=old_out_fm[ii])) {
-+                        int freq=(cch[ii]->block_fnum)&0x7FF;
-+                        int octave=((cch[ii]->block_fnum)>>11)&0x7;
-+                        vgm_last_note[ii+m_voice_ofs]=(freq<<octave)*110.0f/1081.0f; //1148.0f;
-+                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
-+                        int newvol=cch[ii]->keyonff_triggered+1;
-+                        cch[ii]->keyonff_triggered=0;
-+                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
-+                    }
-+                }
++                rw_fm_note_capture(cch[ii], ii+m_voice_ofs, OPN->ST.rate, length); //REWAMP
 +            }
 +            old_out_fm[ii]=out_fm[ii];
 +        }
@@ -239,7 +256,7 @@ index d67da82..362ffee 100644
  
  	/* refresh PG and EG */
  	refresh_fc_eg_chan( OPN, cch[0] );
-@@ -3152,6 +3324,29 @@ void ym2608_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -3152,6 +3328,29 @@ void ym2608_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  			/* buffering */
  			bufL[i] = lt;
  			bufR[i] = rt;
@@ -269,7 +286,7 @@ index d67da82..362ffee 100644
  		}
  
  		/* CSM mode: if CSM Key ON has occured, CSM Key OFF need to be sent       */
-@@ -3606,6 +3801,25 @@ void ym2610_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -3606,6 +3805,25 @@ void ym2610_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  	DEV_SMPL  *bufL,*bufR;
  	FM_CH   *cch[4];
  	INT32 *out_fm = OPN->out_fm;
@@ -295,7 +312,7 @@ index d67da82..362ffee 100644
  
  	/* buffer setup */
  	if (buffer != NULL)
-@@ -3622,6 +3836,60 @@ void ym2610_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -3622,6 +3840,42 @@ void ym2610_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  	cch[1] = &F2610->CH[2];
  	cch[2] = &F2610->CH[4];
  	cch[3] = &F2610->CH[5];
@@ -305,25 +322,7 @@ index d67da82..362ffee 100644
 +    if (m_voice_ofs>=0) {
 +        for (int ii=0;ii<4;ii++) {
 +            if (!(cch[ii]->Muted)) {
-+                if (cch[ii]->block_fnum==0) {
-+                    if ((out_fm[ii]!=old_out_fm[ii])) {
-+                        vgm_last_note[ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
-+                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
-+                        int newvol=cch[ii]->keyonff_triggered+1;
-+                        cch[ii]->keyonff_triggered=0;
-+                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
-+                    }
-+                } else {
-+                    if ((out_fm[ii]!=old_out_fm[ii])) {
-+                        int freq=(cch[ii]->block_fnum)&0x7FF;
-+                        int octave=((cch[ii]->block_fnum)>>11)&0x7;
-+                        vgm_last_note[ii+m_voice_ofs]=(freq<<octave)*110.0f/1081.0f; //1148.0f;
-+                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
-+                        int newvol=cch[ii]->keyonff_triggered+1;
-+                        cch[ii]->keyonff_triggered=0;
-+                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
-+                    }
-+                }
++                rw_fm_note_capture(cch[ii], ii+m_voice_ofs, OPN->ST.rate, length); //REWAMP
 +            }
 +        }
 +        old_out_fm[0]=out_fm[1];
@@ -356,7 +355,7 @@ index d67da82..362ffee 100644
  
  #ifdef YM2610B_WARNING
  #define FM_KEY_IS(SLOT) ((SLOT)->key)
-@@ -3663,6 +3931,9 @@ void ym2610_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -3663,6 +3917,9 @@ void ym2610_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  		update_ssg_eg_channel(&cch[2]->SLOT[SLOT1]);
  		update_ssg_eg_channel(&cch[3]->SLOT[SLOT1]);
  	}
@@ -366,7 +365,7 @@ index d67da82..362ffee 100644
  
  	/* buffering */
  	for(i=0; i < length ; i++)
-@@ -3741,6 +4012,36 @@ void ym2610_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -3741,6 +3998,36 @@ void ym2610_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  			/* buffering */
  			bufL[i] = lt;
  			bufR[i] = rt;
@@ -403,7 +402,7 @@ index d67da82..362ffee 100644
  		}
  
  		/* CSM mode: if CSM Key ON has occured, CSM Key OFF need to be sent       */
-@@ -3801,6 +4102,75 @@ void ym2610b_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -3801,6 +4088,57 @@ void ym2610b_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  	cch[3] = &F2610->CH[3];
  	cch[4] = &F2610->CH[4];
  	cch[5] = &F2610->CH[5];
@@ -432,25 +431,7 @@ index d67da82..362ffee 100644
 +    if (m_voice_ofs>=0) {
 +        for (int ii=0;ii<6;ii++) {
 +            if (!(cch[ii]->Muted)) {
-+                if (cch[ii]->block_fnum==0) {
-+                    if ((out_fm[ii]!=old_out_fm[ii])) {
-+                        vgm_last_note[ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
-+                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
-+                        int newvol=cch[ii]->keyonff_triggered+1;
-+                        cch[ii]->keyonff_triggered=0;
-+                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
-+                    }
-+                } else {
-+                    if ((out_fm[ii]!=old_out_fm[ii])) {
-+                        int freq=(cch[ii]->block_fnum)&0x7FF;
-+                        int octave=((cch[ii]->block_fnum)>>11)&0x7;
-+                        vgm_last_note[ii+m_voice_ofs]=(freq<<octave)*110.0f/1081.0f; //1148.0f;
-+                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
-+                        int newvol=cch[ii]->keyonff_triggered+1;
-+                        cch[ii]->keyonff_triggered=0;
-+                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
-+                    }
-+                }
++                rw_fm_note_capture(cch[ii], ii+m_voice_ofs, OPN->ST.rate, length); //REWAMP
 +            }
 +            old_out_fm[ii]=out_fm[ii];
 +        }
@@ -479,7 +460,7 @@ index d67da82..362ffee 100644
  
  	/* refresh PG and EG */
  	refresh_fc_eg_chan( OPN, cch[0] );
-@@ -3919,6 +4289,31 @@ void ym2610b_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -3919,6 +4257,31 @@ void ym2610b_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  			/* buffering */
  			bufL[i] = lt;
  			bufR[i] = rt;
@@ -511,7 +492,7 @@ index d67da82..362ffee 100644
  		}
  
  		/* CSM mode: if CSM Key ON has occured, CSM Key OFF need to be sent       */
-@@ -4371,6 +4766,8 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -4371,6 +4734,8 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  	INT32 dacout;
  	FM_CH   *cch[6];
  	INT32 lt,rt;
@@ -520,7 +501,7 @@ index d67da82..362ffee 100644
  
  	/* set buffer */
  	if (buffer != NULL)
-@@ -4417,14 +4814,32 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -4417,14 +4782,32 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  	refresh_fc_eg_chan( OPN, cch[5] );
  	if (! length)
  	{
@@ -559,7 +540,7 @@ index d67da82..362ffee 100644
  
  	/* buffering */
  	for(i=0; i < length ; i++)
-@@ -4474,7 +4889,7 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -4474,7 +4857,7 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  		{
  			OPN->eg_timer -= OPN->eg_timer_overflow;
  			OPN->eg_cnt++;
@@ -568,7 +549,7 @@ index d67da82..362ffee 100644
  			advance_eg_channel(OPN, &cch[0]->SLOT[SLOT1]);
  			advance_eg_channel(OPN, &cch[1]->SLOT[SLOT1]);
  			advance_eg_channel(OPN, &cch[2]->SLOT[SLOT1]);
-@@ -4496,6 +4911,22 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -4496,6 +4879,22 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  		else if (out_fm[4] < -8192) out_fm[4] = -8192;
  		if (out_fm[5] > 8191) out_fm[5] = 8191;
  		else if (out_fm[5] < -8192) out_fm[5] = -8192;
@@ -591,7 +572,7 @@ index d67da82..362ffee 100644
  
  		/* 6-channels mixing  */
  		lt  = ((out_fm[0]>>0) & OPN->pan[0]);
-@@ -4555,6 +4986,44 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
+@@ -4555,6 +4954,28 @@ void ym2612_update_one(void *chip, UINT32 length, DEV_SMPL **buffer)
  			OPN->SL3.key_csm = 0;
  		}
  	}
@@ -600,31 +581,15 @@ index d67da82..362ffee 100644
 +    if (m_voice_ofs>=0)
 +        for (int ii=0;ii<6;ii++) {
 +            if (!(cch[ii]->Muted) ) {
-+                if (cch[ii]->block_fnum==0) {
-+                   if ((out_fm[ii]!=old_out_fm[ii])) {
++                if ((ii==5)&&(F2612->dacen)) {
++                    // Voie 6 en DAC (échantillons): pas de touches, la sortie
++                    // fait foi (capture Modizer d'origine), attaque au passage en DAC.
++                    if ((out_fm[ii]!=old_out_fm[ii])) {
 +                        vgm_last_note[ii+m_voice_ofs]=220.0f; //arbitrary choosing A-3
 +                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
-+                        if ((ii==5)&&(F2612->dacen)) {
-+                            if (!old_dacen) {
-+                                vgm_last_vol[ii+m_voice_ofs]=2;
-+                            } else vgm_last_vol[ii+m_voice_ofs]=1;
-+                        } else {
-+                            int newvol=cch[ii]->keyonff_triggered+1;
-+                            cch[ii]->keyonff_triggered=0;
-+                            if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
-+                        }
++                        vgm_last_vol[ii+m_voice_ofs]=old_dacen ? 1 : 255;
 +                    }
-+                } else {
-+                    if ((out_fm[ii]!=old_out_fm[ii])) {
-+                        int freq=(cch[ii]->block_fnum)&0x7FF;
-+                        int octave=((cch[ii]->block_fnum)>>11)&0x7;
-+                        vgm_last_note[ii+m_voice_ofs]=(freq<<octave)*110.0f/1081.0f; //1148.0f;
-+                        vgm_last_instr[ii+m_voice_ofs]=ii+m_voice_ofs;
-+                        int newvol=cch[ii]->keyonff_triggered+1;
-+                        cch[ii]->keyonff_triggered=0;
-+                        if (vgm_last_vol[ii+m_voice_ofs]<newvol) vgm_last_vol[ii+m_voice_ofs]=newvol;
-+                    }
-+                }
++                } else rw_fm_note_capture(cch[ii], ii+m_voice_ofs, OPN->ST.rate, length); //REWAMP
 +            }
 +        }
 +    

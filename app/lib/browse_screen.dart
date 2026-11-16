@@ -1,8 +1,10 @@
+import 'tv_focus.dart';
 import 'collection_families.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'app_snack.dart';
+import 'load_error.dart';
 import 'l10n.dart';
 import 'library_toolbar.dart' show ListFilterField, kListFilterThreshold,
     matchesFilterQuery;
@@ -419,7 +421,9 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
-              builder: (_) => TextField(
+              builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                 controller: _filterCtrl,
                 decoration: InputDecoration(
                   hintText: l10n.browseFilterByTitle,
@@ -428,7 +432,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
                   border: const OutlineInputBorder(),
                 ),
                 onChanged: _onFilterChanged,
-              ),
+              )),
             ),
           ),
         Expanded(child: _buildBody()),
@@ -515,7 +519,7 @@ class _BrowseResultsScreenState extends State<BrowseResultsScreen> {
     final l10n = context.l10n;
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
-      return Center(child: Text(_error!, style: const TextStyle(color: Colors.red)));
+      return Center(child: LoadErrorView(error: _error!, onRetry: _reload));
     }
     return ValueListenableBuilder<List<SearchResult>>(
       valueListenable: _notifier,
@@ -982,7 +986,9 @@ class _FacetValuesScreenState extends State<FacetValuesScreen> {
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
-              builder: (_) => TextField(
+              builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                 controller: _filterCtrl,
                 decoration: InputDecoration(
                   hintText: context.l10n.browseFilterFacet(widget.title.toLowerCase()),
@@ -991,13 +997,13 @@ class _FacetValuesScreenState extends State<FacetValuesScreen> {
                   border: const OutlineInputBorder(),
                 ),
                 onChanged: _onFilterChanged,
-              ),
+              )),
             ),
           ),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+              child: LoadErrorView(error: _error!, onRetry: _load),
             ),
           // Une VALEUR de facette se déplie par `browse_music`: la collection
           // elle-même en mode collections, le tag dans sa catégorie sinon.
@@ -1158,7 +1164,7 @@ class _PartyDetailScreenState extends State<PartyDetailScreen> {
       appBar: AppBar(title: Text(widget.party)),
       body: _error != null
           ? Center(
-              child: Text(_error!, style: const TextStyle(color: Colors.red)))
+              child: LoadErrorView(error: _error!, onRetry: () { setState(() => _error = null); _load(); }))
           : _playlists == null
               ? const Center(child: CircularProgressIndicator())
               : ListView(
@@ -1444,7 +1450,7 @@ class _PlaylistTracksScreenState extends State<PlaylistTracksScreen> {
       ),
       body: _error != null
           ? Center(
-              child: Text(_error!, style: const TextStyle(color: Colors.red)))
+              child: LoadErrorView(error: _error!, onRetry: () { setState(() => _error = null); _load(); }))
           : _tracks == null
               ? const Center(child: CircularProgressIndicator())
               : Builder(builder: (context) {
@@ -2025,7 +2031,9 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
-              builder: (_) => TextField(
+              builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                 controller: _filterCtrl,
                 decoration: InputDecoration(
                   hintText: _recursive
@@ -2036,7 +2044,7 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
                   border: const OutlineInputBorder(),
                 ),
                 onChanged: _onFilterChanged,
-              ),
+              )),
             ),
           ),
           // The two filter scopes are a real distinction (this list vs the whole
@@ -2088,7 +2096,7 @@ class _CollectionFolderScreenState extends State<CollectionFolderScreen> {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
-          child: Text(_error!, style: const TextStyle(color: Colors.red)));
+          child: LoadErrorView(error: _error!, onRetry: _load));
     }
     final dirs  = _visibleDirs;
     final songs = _visibleSongs;
@@ -2519,7 +2527,9 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
               child: CancelField(
                 controller: _filterCtrl,
                 onCleared: _onFilterChanged,
-                builder: (_) => TextField(
+                builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                   controller: _filterCtrl,
                   decoration: InputDecoration(
                     hintText: context.l10n.browseSearchAlbum,
@@ -2528,7 +2538,7 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
                     border: const OutlineInputBorder(),
                   ),
                   onChanged: _onFilterChanged,
-                ),
+                )),
               ),
             ),
             // Embarqué: pas d'AppBar à soi, le sélecteur de disposition
@@ -2634,7 +2644,7 @@ class _CollectionAlbumsScreenState extends State<CollectionAlbumsScreen> {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
-          child: Text(_error!, style: const TextStyle(color: Colors.red)));
+          child: LoadErrorView(error: _error!, onRetry: _load));
     }
     if (_albums.isEmpty) {
       return Center(
@@ -3070,7 +3080,9 @@ class _CollectionArtistsScreenState extends State<CollectionArtistsScreen> {
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
-              builder: (_) => TextField(
+              builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                 controller: _filterCtrl,
                 decoration: InputDecoration(
                   hintText: context.l10n.browseSearchArtist,
@@ -3079,7 +3091,7 @@ class _CollectionArtistsScreenState extends State<CollectionArtistsScreen> {
                   border: const OutlineInputBorder(),
                 ),
                 onChanged: _onFilterChanged,
-              ),
+              )),
             ),
           ),
           Expanded(child: _buildBody(cs)),
@@ -3093,7 +3105,7 @@ class _CollectionArtistsScreenState extends State<CollectionArtistsScreen> {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
-          child: Text(_error!, style: const TextStyle(color: Colors.red)));
+          child: LoadErrorView(error: _error!, onRetry: _load));
     }
     if (_artists.isEmpty) {
       return Center(
@@ -3693,7 +3705,9 @@ class _CollectionGroupsScreenState extends State<CollectionGroupsScreen> {
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
-              builder: (_) => TextField(
+              builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                 controller: _filterCtrl,
                 decoration: InputDecoration(
                   hintText: l10n.browseFilterFacet(
@@ -3703,7 +3717,7 @@ class _CollectionGroupsScreenState extends State<CollectionGroupsScreen> {
                   border: const OutlineInputBorder(),
                 ),
                 onChanged: _onFilterChanged,
-              ),
+              )),
             ),
           ),
           Expanded(child: _buildBody(cs, l10n)),
@@ -3716,7 +3730,7 @@ class _CollectionGroupsScreenState extends State<CollectionGroupsScreen> {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
-          child: Text(_error!, style: const TextStyle(color: Colors.red)));
+          child: LoadErrorView(error: _error!, onRetry: _load));
     }
     if (_groups.isEmpty) {
       return Center(child: Text(l10n.searchNoResults));
@@ -3945,7 +3959,9 @@ class _CollectionFormatsScreenState extends State<_CollectionFormatsScreen> {
           child: CancelField(
             controller: _filterCtrl,
             onCleared: (_) => setState(() {}),
-            builder: (_) => TextField(
+            builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
               controller: _filterCtrl,
               decoration: InputDecoration(
                 isDense: true,
@@ -3954,7 +3970,7 @@ class _CollectionFormatsScreenState extends State<_CollectionFormatsScreen> {
                 border: const OutlineInputBorder(),
               ),
               onChanged: (_) => setState(() {}),
-            ),
+            )),
           ),
         ),
         // Les actions portent sur ce qui est AFFICHÉ (liste filtrée): un

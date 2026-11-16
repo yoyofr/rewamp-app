@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'client_info.dart';
 import 'l10n.dart';
+import 'remote_scroll.dart';
 import 'user_settings.dart';
 import 'app_theme.dart';
 
@@ -69,9 +71,15 @@ class _OnboardingPages extends StatefulWidget {
 class _OnboardingPagesState extends State<_OnboardingPages> {
   final _ctrl = PageController();
   int _index = 0;
+  // Un contrôleur par page: ↑ / ↓ de la télécommande font défiler la page
+  // COURANTE (remote_scroll.dart) quand son texte dépasse l'écran.
+  final _pageScroll = List.generate(4, (_) => ScrollController());
 
   @override
   void dispose() {
+    for (final c in _pageScroll) {
+      c.dispose();
+    }
     _ctrl.dispose();
     super.dispose();
   }
@@ -106,7 +114,34 @@ class _OnboardingPagesState extends State<_OnboardingPages> {
           l10n.onboardingPlayerBody),
     ];
     final last = pages.length - 1;
+    assert(pages.length == _pageScroll.length, 'un ScrollController par page');
 
+    // Télécommande (Android TV) / clavier: le bouton principal a le focus
+    // d'entrée (sans nœud focalisé la croix directionnelle n'a rien à
+    // déplacer), OK / Entrée l'activent, ← / → tournent les pages.
+    void prev() {
+      if (_index > 0) {
+        _ctrl.previousPage(
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic);
+      }
+    }
+
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () {
+          if (_index < last) _next(last); // → ne FERME pas la visite
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): prev,
+        const SingleActivator(LogicalKeyboardKey.escape): _close,
+        ...remoteScrollBindings(() => _pageScroll[_index]),
+      },
+      child: _scaffold(context, pages, last, cs, info, l10n),
+    );
+  }
+
+  Widget _scaffold(BuildContext context, List<_Page> pages, int last,
+      ColorScheme cs, ClientInfo info, AppLocalizations l10n) {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
@@ -126,36 +161,58 @@ class _OnboardingPagesState extends State<_OnboardingPages> {
                 onPageChanged: (i) => setState(() => _index = i),
                 itemBuilder: (_, i) {
                   final p = pages[i];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(p.icon, size: 72, color: cs.primary),
-                        const SizedBox(height: 28),
-                        Text(p.title,
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.headlineSmall),
-                        const SizedBox(height: 16),
-                        Text(p.body,
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodyMedium),
-                        // Version and build under the welcome page: what a user
-                        // quotes in a bug report.
-                        if (i == 0) ...[
-                          const SizedBox(height: 20),
-                          Text(
-                            l10n.onboardingVersion(
-                                info.appVersion ?? '?', info.appBuild ?? '?'),
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: cs.onSurfaceVariant),
-                          ),
-                        ],
-                      ],
-                    ),
-                  );
+                  // Un écran BAS (téléviseur 960×540 dp, téléphone en
+                  // paysage) n'a pas la hauteur de la page: elle défile au
+                  // lieu de déborder, et reste centrée quand elle tient.
+                  return LayoutBuilder(
+                      builder: (context, box) => SingleChildScrollView(
+                            controller: _pageScroll[i],
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: ConstrainedBox(
+                              constraints:
+                                  BoxConstraints(minHeight: box.maxHeight),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  // Page basse (TV, paysage): icône réduite,
+                                  // pour que titre ET texte tiennent sans
+                                  // défiler — une télécommande ne fait pas
+                                  // défiler un texte sans focus.
+                                  Icon(p.icon,
+                                      size: box.maxHeight < 320 ? 40 : 72,
+                                      color: cs.primary),
+                                  SizedBox(
+                                      height: box.maxHeight < 320 ? 12 : 28),
+                                  Text(p.title,
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .headlineSmall),
+                                  const SizedBox(height: 16),
+                                  Text(p.body,
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium),
+                                  // Version and build under the welcome page: what a user
+                                  // quotes in a bug report.
+                                  if (i == 0) ...[
+                                    const SizedBox(height: 20),
+                                    Text(
+                                      l10n.onboardingVersion(
+                                          info.appVersion ?? '?',
+                                          info.appBuild ?? '?'),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                              color: cs.onSurfaceVariant),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ));
                 },
               ),
             ),
@@ -182,6 +239,7 @@ class _OnboardingPagesState extends State<_OnboardingPages> {
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton(
+                  autofocus: true,
                   onPressed: () => _next(last),
                   child: Text(_index >= last
                       ? l10n.onboardingStart

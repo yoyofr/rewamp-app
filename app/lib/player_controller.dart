@@ -339,9 +339,49 @@ class PlayerController extends ChangeNotifier {
   /// Demozoo production videos of the current track (server song context,
   /// fetched async after load — empty until then / for local files). Drives
   /// the player's "watch the demo" button.
-  List<SongVideo> videos = const [];
-  /// Demozoo notes of the current track (same async fetch as [videos]).
-  List<SongNote> notes = const [];
+  List<SongVideo> songVideos = const [];
+  /// Demozoo notes of the current track (same async fetch as [songVideos]).
+  List<SongNote> songNotes = const [];
+
+  /// Vidéos et notes PRÉSENTÉES par le lecteur: celles du morceau (contexte
+  /// demozoo: production, compo) PUIS celles de son ALBUM (mig serveur 303:
+  /// description des importeurs, note éditoriale, vidéos de l'admin). Une
+  /// seule liste chacune, quelle que soit la source — même bouton vidéo, même
+  /// feuille de notes (« Crystal Dream II » comme « DoDonPachi Saidaioujou »).
+  /// Une vidéo d'album porte `kind: 'album'`: rien à quoi rattacher un
+  /// signalement de vidéo morte (VideoScreen s'abstient).
+  List<SongVideo> get videos {
+    final a = albumInfo?.videos ?? const <SongVideo>[];
+    if (a.isEmpty) return songVideos;
+    final seen = {for (final v in songVideos) v.videoId ?? v.url};
+    return [
+      ...songVideos,
+      for (final v in a)
+        if (seen.add(v.videoId ?? v.url))
+          SongVideo(provider: v.provider, url: v.url, thumbnail: v.thumbnail,
+              title: v.title, kind: 'album', videoId: v.videoId,
+              startSeconds: v.startSeconds),
+    ];
+  }
+  List<SongNote> get notes {
+    final d = albumInfo;
+    if (d == null) return songNotes;
+    final desc = d.description?.trim() ?? '';
+    return [
+      ...songNotes,
+      // Le titre d'une note demozoo est la production qu'elle décrit; celui
+      // d'une note d'album est l'album (une fois, sur la première).
+      if (desc.isNotEmpty) SongNote(kind: 'album', title: d.name, note: desc),
+      if (d.notes != null)
+        SongNote(kind: 'album', title: desc.isEmpty ? d.name : null, note: d.notes!),
+    ];
+  }
+  /// Détails de l'ALBUM en cours (get_album_details, mig serveur 303 pour la
+  /// note éditoriale et les vidéos), rappelés par le lecteur (« À propos de
+  /// l'album »). Chargés après le chargement de la piste, mémorisés par album;
+  /// null tant qu'ils ne sont pas là, pour un fichier local ou hors album.
+  AlbumDetails? albumInfo;
+  static final Map<String, AlbumDetails?> _albumInfoCache = {};
   /// Searchable tags of the current track, category → names (same fetch).
   Map<String, List<String>> songTags = const {};
   /// Demozoo productions the current track is used in (same fetch, migs
@@ -1017,8 +1057,9 @@ class PlayerController extends ChangeNotifier {
       // ligne précédente pendant la même fenêtre.
       _currentTrackId          = null;
       _currentTrackIdPath      = null;
-      videos                   = const [];
-      notes                    = const [];
+      songVideos               = const [];
+      songNotes                = const [];
+      albumInfo                = null;
       // The row that started this play already CARRIED its podium
       // (`compo_podium` is a column of every listing: search, album tracks,
       // playlist tracks), so the cup can be up on the very first frame instead
@@ -1028,6 +1069,7 @@ class PlayerController extends ChangeNotifier {
       songTags                 = const {};
       songProductions          = const [];
       _fetchVideos(onlineId);  // async; notifies when they land
+      _fetchAlbumInfo(metaAlbumId);
       isFavorite               = false; // reset; updated async after DB upsert
       // Une pause demandée PENDANT le chargement (togglePlay/stop) vaut pour
       // la piste qui arrive: chargée, affichée, pas lancée.
@@ -1147,7 +1189,11 @@ class PlayerController extends ChangeNotifier {
       // décodeur prime côté C quand il en a une; re-posée à chaque
       // correction asynchrone (songdb UADE, songlengths SID).
       audio.setTrackEndSeconds(_producerTrackEndSecs);
-      if (!adoptHandoff && _autoplayAfterLoad) _playAndConfirmStart();
+      if (!adoptHandoff && _autoplayAfterLoad) {
+        await ensureAudioSession?.call();
+        // A pause/stop may have arrived while session activation was pending.
+        if (_autoplayAfterLoad) _playAndConfirmStart();
+      }
       notifyListeners();
       _notifyTrackChange();
 
@@ -1932,8 +1978,8 @@ class PlayerController extends ChangeNotifier {
       if (ctx.videos.isNotEmpty || ctx.notes.isNotEmpty ||
           ctx.tags.isNotEmpty || ctx.productions.isNotEmpty ||
           ctx.song.podium != null) {
-        videos          = ctx.videos;
-        notes           = ctx.notes;
+        songVideos      = ctx.videos;
+        songNotes       = ctx.notes;
         songTags        = ctx.tags;
         songProductions = ctx.productions;
         // Never DOWNGRADE a podium the play path already handed over: both come
@@ -1944,6 +1990,26 @@ class PlayerController extends ChangeNotifier {
         notifyListeners();
       }
     } catch (_) {/* context extras are optional */}
+  }
+
+  /// [albumInfo] de [albumId] — même règle que [_fetchVideos]: sans attente,
+  /// ignoré si la piste a changé d'album entre-temps, un échec ne coûte rien
+  /// (et n'est pas mémorisé: il sera retenté au prochain morceau de l'album).
+  Future<void> _fetchAlbumInfo(String? albumId) async {
+    if (albumId == null || albumId.isEmpty) return;
+    if (_albumInfoCache.containsKey(albumId)) {
+      albumInfo = _albumInfoCache[albumId];
+      if (albumInfo != null) notifyListeners();
+      return;
+    }
+    try {
+      final list = await RewampDb.fetchAlbumDetails('', albumId: albumId);
+      final d = list.isEmpty ? null : list.first;
+      _albumInfoCache[albumId] = d;
+      if (currentAlbumId != albumId) return;
+      albumInfo = d;
+      if (d != null) notifyListeners();
+    } catch (_) {/* optionnel, comme le contexte du morceau */}
   }
 
   void togglePlay() {
@@ -2865,13 +2931,24 @@ class PlayerController extends ChangeNotifier {
 
   List<QueueEntry> _queue    = const [];
   int               _queueIdx = -1;
+  int               _queueRevision = 0;
 
   List<QueueEntry> get queue    => _queue;
   int               get queueIdx => _queueIdx;
+  int               get queueRevision => _queueRevision;
+
+  bool _playbackPreparing = false;
+  bool get playbackPreparing => _playbackPreparing;
+  void setPlaybackPreparing(bool value) {
+    if (_playbackPreparing == value) return;
+    _playbackPreparing = value;
+    notifyListeners();
+  }
 
   void setQueue(List<QueueEntry> entries, {int currentIdx = 0}) {
     _queue    = entries;
     _queueIdx = currentIdx;
+    _queueRevision++;
     notifyListeners();
   }
 
@@ -2903,6 +2980,7 @@ class PlayerController extends ChangeNotifier {
     for (var i = 0; i < _queue.length; i++) {
       if (!identical(next[i], _queue[i])) {
         _queue = next;
+        _queueRevision++;
         notifyListeners();
         return;
       }
@@ -2912,6 +2990,7 @@ class PlayerController extends ChangeNotifier {
   void clearQueue() {
     _queue    = const [];
     _queueIdx = -1;
+    _queueRevision++;
     notifyListeners();
   }
 
@@ -3101,7 +3180,8 @@ class PlayerController extends ChangeNotifier {
     // seek to zero makes no sound, and the button read as broken: that is the
     // case after a queue finishes, and after a queue is restored at launch and
     // sits primed. Both are exactly when a user reaches for "previous".
-    final restartInPlace = isPlaying && position >= _kPrevRestartSecs;
+    final restartInPlace =
+        !playbackPreparing && isPlaying && position >= _kPrevRestartSecs;
     if (_queuePrev != null && !restartInPlace) {
       await _queuePrev!.call();
       return;

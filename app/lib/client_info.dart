@@ -19,6 +19,19 @@ class ClientInfo {
 
   bool _loaded = false;
 
+  /// Valeur de l'en-tête `X-Rewamp-Client` (network_status.dart), lue par le
+  /// serveur pour compter qui utilise quelle plateforme et quelle version
+  /// (docs/client_platform_proposal.md): `ios/1.1.0+19`, `android/…`,
+  /// `macos/…`, `linux/…`, `windows/…`. Plateforme seule tant que la version
+  /// n'est pas chargée — l'en-tête part dès la première requête.
+  static String get headerValue {
+    final platform = kIsWeb ? 'web' : Platform.operatingSystem;
+    final i = instance;
+    if (i.appVersion == null) return platform;
+    final b = i.appBuild;
+    return '$platform/${i.appVersion}${b == null || b.isEmpty ? '' : '+$b'}';
+  }
+
   /// Populates the fields once. Safe to call repeatedly (no-op after the first
   /// success). Call early (app start) so a later report has the data ready.
   Future<void> ensureLoaded() async {

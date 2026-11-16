@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -1286,7 +1287,7 @@ class _RecentCard extends StatelessWidget {
 
     // Appui long / clic droit: la feuille de choix et ses liens « voir »,
     // même quand le réglage fait lancer le tap d'office (play_start.dart).
-    return HoverGrow(child: PlayChoiceHold(onTap: onTap, child: GestureDetector(
+    return HoverGrow(onTap: onTap, onLongPress: () => unawaited(withPlayChoiceSheet(onTap)), child: PlayChoiceHold(onTap: onTap, child: GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
@@ -2324,7 +2325,7 @@ class _MoreRailCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HoverGrow(child: GestureDetector(
+    return HoverGrow(onTap: onTap, child: GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
@@ -2402,7 +2403,7 @@ class _RailCard extends StatelessWidget {
 
     // Appui long / clic droit: la feuille de choix et ses liens « voir »,
     // même quand le réglage fait lancer le tap d'office (play_start.dart).
-    return HoverGrow(child: PlayChoiceHold(onTap: onTap, child: GestureDetector(
+    return HoverGrow(onTap: onTap, onLongPress: () => unawaited(withPlayChoiceSheet(onTap)), child: PlayChoiceHold(onTap: onTap, child: GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: SizedBox(

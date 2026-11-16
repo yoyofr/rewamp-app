@@ -555,6 +555,14 @@ extern "C" REWAMP_EXPORT int rewamp_projectm_take_slow_verdict(void) {
     return g_watch_verdict.exchange(0);
 }
 
+// Web: a preset whose shaders the browser is still compiling (projectM's
+// deferred load). The CURRENT preset keeps rendering; _poll_deferred_load
+// applies the new one, and only then does everything below "loaded" happen.
+static bool      g_load_deferred = false;
+static long long g_load_deferred_t0 = 0;
+static void _after_load(void);
+static bool _preload_enabled(void);   // with the preload worker below
+
 static void _load_current(bool smooth) {
     if (g_presets.empty() || !g_pm) return;
     if (g_preset_idx >= g_presets.size()) g_preset_idx = 0;
@@ -562,7 +570,24 @@ static void _load_current(bool smooth) {
     mdzGlCompileNs = mdzGlLinkNs = 0;
     mdzGlProgramCount = 0;
     long long t0 = _prof_now_ns();
-    projectm_load_preset_file(g_pm, g_presets[g_preset_idx].c_str(), smooth);
+    // No shared preload context (the web): the browser compiles the shaders
+    // while the current preset keeps playing — the status queries of a
+    // synchronous load are what froze the frame (link alone up to 107 ms
+    // measured in Chrome). Not for the very first preset: nothing would be on
+    // screen to keep playing.
+    if (!_preload_enabled() && g_pm_preset_loaded) {
+        if (projectm_begin_load_preset_file(g_pm, g_presets[g_preset_idx].c_str(), smooth)) {
+            g_load_deferred = true;
+            g_load_deferred_t0 = t0;
+            PM_PROF("load '%s' (deferred): begin %.1f ms", g_presets[g_preset_idx].c_str(),
+                    (_prof_now_ns() - t0) / 1e6);
+            return;
+        }
+        // Failed (and reported): same as a failed synchronous load below.
+    } else {
+        g_load_deferred = false;   // projectM drops a pending load on its own
+        projectm_load_preset_file(g_pm, g_presets[g_preset_idx].c_str(), smooth);
+    }
     long long totalNs = _prof_now_ns() - t0;
 
     long long glNs  = mdzGlCompileNs + mdzGlLinkNs;
@@ -575,7 +600,11 @@ static void _load_current(bool smooth) {
             mdzGlCompileNs / 1e6, mdzGlLinkNs / 1e6, mdzGlProgramCount,
             smooth ? 1 : 0);
     g_prof_frames_after_load = 5;   // catch driver-deferred compile at first draws
+    _after_load();
+}
 
+// What a load means for us once projectM has the preset on screen.
+static void _after_load(void) {
     _sprites_apply(g_presets[g_preset_idx]);
     g_pm_preset_loaded = true;
     _update_preset_name();
@@ -635,6 +664,7 @@ extern "C" REWAMP_EXPORT int rewamp_projectm_init(int width, int height) {
             _preload_stop();   // worker dereferences g_pm — must be gone first
             projectm_destroy(g_pm);
             g_pm = nullptr;
+            g_load_deferred = false;
             g_pm_preset_loaded = false;
         }
         // Our own render target went with the context too. Forget the handles
@@ -799,6 +829,18 @@ extern "C" REWAMP_EXPORT void rewamp_projectm_render(void) {
     }
     projectm_pcm_add_int16(g_pm, pcm, 512, PROJECTM_STEREO);
 
+    // Web: apply a preset whose shaders have finished compiling. 120 frames is
+    // the bound after which the old blocking queries take over.
+    if (g_load_deferred) {
+        int st = projectm_poll_preset_load(g_pm, 120);
+        if (st != 1) {
+            g_load_deferred = false;
+            PM_PROF("load '%s' (deferred): applied after %.1f ms",
+                    g_presets[g_preset_idx].c_str(), (_prof_now_ns() - g_load_deferred_t0) / 1e6);
+            _after_load();
+        }
+    }
+
     long long ft0 = _prof_now_ns();
     _declare_measured_fps(ft0);
     mdzRenderInProgress = true;
@@ -850,6 +892,7 @@ extern "C" REWAMP_EXPORT void rewamp_projectm_render(void) {
 extern "C" REWAMP_EXPORT void rewamp_projectm_uninit(void) {
     _preload_stop();   // worker dereferences g_pm — must be gone first
     if (g_pm) { projectm_destroy(g_pm); g_pm = nullptr; }
+    g_load_deferred = false;
     g_pm_preset_loaded = false;   // a fresh instance will have nothing loaded
     _destroy_pm_target();
     g_w = g_h = 0;
@@ -914,6 +957,7 @@ static uint32_t         g_pl_warp = 0, g_pl_comp = 0;
 static uint64_t         g_pl_seed = 0;
 static size_t           g_next_idx = 0;       // predicted next preset
 static std::atomic<bool> g_pl_enabled{false}; // preload ctx created OK — written by the worker too
+static bool _preload_enabled(void) { return g_pl_enabled; }
 
 // ── Worker-side pipeline warm-up (iOS/ANGLE-Metal) ───────────────────────────
 //
@@ -1233,6 +1277,49 @@ static bool _recently_shown(size_t idx, size_t window) {
     return false;
 }
 
+// ── Shader prewarm, for platforms WITHOUT a preload context (the web) ─────────
+// WebGL has no share groups, so the preload worker above cannot exist there and
+// every switch is a synchronous load on the render thread. Measured in Chrome
+// (2026-11-11, 43 switches): median 53 ms, of which ~25 ms is ONE step, the
+// HLSLTypeFixer pass of ShaderPreprocessor::preprocess (std::regex-heavy), and
+// it is pure CPU on pure text. This thread runs that step for the PREDICTED
+// next preset (projectm_prewarm_preset_shaders), whose result the switch then
+// finds in preprocess's cache. No GL, no g_pm: it only reads the preset file.
+// It lives for the process; a newer request replaces an unstarted older one.
+static pthread_mutex_t  g_pw_mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t   g_pw_cv  = PTHREAD_COND_INITIALIZER;
+static std::string      g_pw_path;          // pending request ("" = none)
+static bool             g_pw_up = false;    // render thread only
+
+static void* _prewarm_thread_main(void*) {
+    pthread_mutex_lock(&g_pw_mtx);
+    for (;;) {
+        while (g_pw_path.empty()) pthread_cond_wait(&g_pw_cv, &g_pw_mtx);
+        std::string path;
+        path.swap(g_pw_path);
+        pthread_mutex_unlock(&g_pw_mtx);
+        long long t0 = _prof_now_ns();
+        projectm_prewarm_preset_shaders(path.c_str());
+        PM_PROF("prewarm '%s': %.1f ms (thread)", path.c_str(), (_prof_now_ns() - t0) / 1e6);
+        (void)t0;
+        pthread_mutex_lock(&g_pw_mtx);
+    }
+    return nullptr;
+}
+
+static void _prewarm_request(const std::string& path) {
+    if (!g_pw_up) {
+        pthread_t t;
+        if (pthread_create(&t, nullptr, _prewarm_thread_main, nullptr) != 0) return;
+        pthread_detach(t);
+        g_pw_up = true;
+    }
+    pthread_mutex_lock(&g_pw_mtx);
+    g_pw_path = path;
+    pthread_cond_signal(&g_pw_cv);
+    pthread_mutex_unlock(&g_pw_mtx);
+}
+
 static void _pick_next_and_preload(void) {
     if (g_presets.empty()) return;
     size_t next = g_preset_idx;
@@ -1259,7 +1346,11 @@ static void _pick_next_and_preload(void) {
     }
     g_next_idx = next;
     PM_PROF("arm kick: next=%zu enabled=%d", next, (int)g_pl_enabled);
-    if (!g_pl_enabled) return;
+    if (!g_pl_enabled) {
+        // No preload context: warm the CPU half of the next load instead.
+        _prewarm_request(g_presets[next]);
+        return;
+    }
     g_pl_kick_countdown = 6;
 }
 

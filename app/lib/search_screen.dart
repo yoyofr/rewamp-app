@@ -1,3 +1,4 @@
+import 'tv_focus.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' show Random;
@@ -14,6 +15,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'favorite_color.dart';
 import 'download_cancel.dart';
+import 'library_toolbar.dart' show ListFilterField, kListFilterThreshold, matchesFilterQuery;
+import 'load_error.dart';
 import 'l10n.dart';
 import 'player_controller.dart' show PlayerController;
 import 'podium_badge.dart';
@@ -59,12 +62,15 @@ part 'group_screen.dart';
 
 /// Downloads [r] to local storage then calls [onFileReady].
 /// Shows a loading dialog and handles errors via SnackBar.
+/// With [showUI] false, errors propagate to the caller and no phone dialog or
+/// snackbar is presented (CarPlay supplies its own progress/cancel/error UI).
 /// Safe to call from any BuildContext (checks mounted before every UI op).
 Future<void> downloadAndPlay(
   BuildContext    context,
   SearchResult    r,
   OnFileReady     onFileReady, {
   bool            afterSourceRefresh = false,
+  bool            showUI = true,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   final nav       = Navigator.of(context);
@@ -76,27 +82,29 @@ Future<void> downloadAndPlay(
   // otherwise. This is the single choke point of every catalogue play.
   PlayerController.primePodium(r.songId, r.podium);
 
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    useRootNavigator: false,
-    builder: (_) => AlertDialog(
-      content: Row(children: [
-        const CircularProgressIndicator(),
-        const SizedBox(width: 16),
-        Expanded(child: Text(l10n.searchDownloading)),
-      ]),
-      // This dialog is MODAL: its barrier sits over the global download banner,
-      // so without an action here the ✕ down there is unreachable and a
-      // several-hundred-MB album archive can only be waited out.
-      actions: [
-        TextButton(
-          onPressed: RewampDb.cancelAmbientDownloads,
-          child: Text(l10n.downloadsCancel),
-        ),
-      ],
-    ),
-  );
+  if (showUI) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: false,
+      builder: (_) => AlertDialog(
+        content: Row(children: [
+          const CircularProgressIndicator(),
+          const SizedBox(width: 16),
+          Expanded(child: Text(l10n.searchDownloading)),
+        ]),
+        // This dialog is MODAL: its barrier sits over the global download banner,
+        // so without an action here the ✕ down there is unreachable and a
+        // several-hundred-MB album archive can only be waited out.
+        actions: [
+          TextButton(
+            onPressed: RewampDb.cancelAmbientDownloads,
+            child: Text(l10n.downloadsCancel),
+          ),
+        ],
+      ),
+    );
+  }
 
   // Closes the dialog exactly once. `nav` was captured synchronously and
   // showDialog pushes the dialog route synchronously too, so popping works even
@@ -105,7 +113,7 @@ Future<void> downloadAndPlay(
   // the modal. Guarded against the navigator itself being gone.
   var dialogClosed = false;
   void dismiss() {
-    if (dialogClosed) return;
+    if (!showUI || dialogClosed) return;
     dialogClosed = true;
     try { nav.pop(); } catch (_) {}
   }
@@ -258,6 +266,7 @@ Future<void> downloadAndPlay(
             resolved = r;
           }
         } on ArchiveEntryMissingException catch (e) {
+    if (!showUI) rethrow;
     // La tracklist nomme un fichier que l'archive ne contient pas. Dire QUOI
     // manque, et le SIGNALER: c'est une lacune du catalogue (le rip liste ses
     // pistes vocales sans les livrer), pas un incident de téléchargement, et
@@ -278,6 +287,7 @@ Future<void> downloadAndPlay(
       );
     }
   } on DownloadTimeoutException catch (e) {
+    if (!showUI) rethrow;
     // L'origine n'a pas répondu. Le fait UTILE est le nom de l'hôte — pas
     // « TimeoutException after 0:00:20.000000: Future not completed », qui est
     // ce que le bandeau affichait. Rien à signaler au serveur: le fichier
@@ -506,10 +516,12 @@ Future<void> downloadAndPlay(
       // not unsupported, just un-retryable here.
       if (context.mounted) {
         debugPrint('[search] ${e.filename} replaced server-side — retrying');
-        return downloadAndPlay(context, fresh, onFileReady);
+        return downloadAndPlay(context, fresh, onFileReady,
+            showUI: showUI, afterSourceRefresh: afterSourceRefresh);
       }
       return;
     }
+    if (!showUI) rethrow;
     // Fetched fine, but no engine plays it — say so explicitly (file + ext),
     // not "download failed", and report the song. `messenger`/`l10n` were
     // captured at entry, so the snackbar shows even if the triggering context
@@ -542,9 +554,10 @@ Future<void> downloadAndPlay(
         if (fresh != null && context.mounted) {
           debugPrint('[search] ${r.filename} source refreshed after 404 — retrying');
           return downloadAndPlay(context, fresh, onFileReady,
-              afterSourceRefresh: true);
+              afterSourceRefresh: true, showUI: showUI);
         }
       }
+      if (!showUI) rethrow;
       AppSnack.showOn(messenger, l10n.playbackFileGone(p.basename(r.filename)),
           duration: const Duration(seconds: 3));
       final songId = r.songId.split('#').first.split('?').first;
@@ -556,18 +569,22 @@ Future<void> downloadAndPlay(
           detail:       'HTTP ${e.statusCode} at ${e.url}',
         );
       }
+    } else if (!showUI) {
+      rethrow;
     } else if (context.mounted) {
-      AppSnack.showOn(messenger, l10n.searchError(e.toString()));
+      AppSnack.showOn(messenger, netErrorMessageOrNull(l10n, e) ?? l10n.searchError(e.toString()));
     }
   } on DownloadCancelledException {
     // The user's own gesture — close the dialog and say nothing.
+    if (!showUI) rethrow;
     debugPrint('[search] download cancelled: ${r.filename}');
     dismiss();
   } catch (e, st) {
+    if (!showUI) rethrow;
     debugPrint('[search] download error: $e\n$st');
     dismiss();
     if (context.mounted) {
-      AppSnack.showOn(messenger, l10n.searchError(e.toString()));
+      AppSnack.showOn(messenger, netErrorMessageOrNull(l10n, e) ?? l10n.searchError(e.toString()));
     }
   } finally {
     // Ultimate safety net: whatever happened above (an early return, an
@@ -656,7 +673,7 @@ Future<void> playAlbumFromList(
       await hand(expanded);
     } catch (e) {
       if (ctx.mounted) {
-        AppSnack.show(ctx, ctx.l10n.searchError(e.toString()));
+        AppSnack.show(ctx, netErrorMessageOrNull(ctx.l10n, e) ?? ctx.l10n.searchError(e.toString()));
       }
     }
     return;
@@ -942,6 +959,8 @@ class _SearchScreenState extends State<SearchScreen>
   // as long as the screen sidesteps that entirely.
   final _tagSearchCtrl = TextEditingController();
   final _focus      = FocusNode();
+  // Android TV: OK sur le champ ouvre le clavier, le focus seul non.
+  final _tvText     = TvTextGate();
   Timer? _debounce;
 
   final _resultsNotifier = ValueNotifier<List<SearchResult>>([]);
@@ -1052,6 +1071,8 @@ class _SearchScreenState extends State<SearchScreen>
     widget.resetTick?.addListener(_resetAllCriteria);
     widget.focusTick?.addListener(_focusField);
     widget.queryRequest?.addListener(_onQueryRequest);
+    _tvText.attach(_focus);
+    _tvText.addListener(_onTvTextGate);
     if (widget.queryRequest?.value != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _onQueryRequest());
     }
@@ -1087,6 +1108,10 @@ class _SearchScreenState extends State<SearchScreen>
     _resetAllCriteria();
     _controller.text = r.$2;
     _search(r.$2);
+  }
+
+  void _onTvTextGate() {
+    if (mounted) setState(() {});
   }
 
   void _focusField() {
@@ -1423,6 +1448,7 @@ class _SearchScreenState extends State<SearchScreen>
     _tabs.dispose();
     _controller.dispose();
     _tagSearchCtrl.dispose();
+    _tvText.dispose();
     _focus.dispose();
     _debounce?.cancel();
     _resultsNotifier.dispose();
@@ -1965,7 +1991,9 @@ class _SearchScreenState extends State<SearchScreen>
                 CancelField(
                   controller: tagCtrl,
                   onCleared: fetchTags,
-                  builder: (_) => TextField(
+                  builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                     controller: tagCtrl,
                     textInputAction: TextInputAction.search,
                     decoration: InputDecoration(
@@ -1976,7 +2004,7 @@ class _SearchScreenState extends State<SearchScreen>
                       border: const OutlineInputBorder(),
                     ),
                     onChanged: fetchTags,
-                  ),
+                  )),
                 ),
                 const SizedBox(height: 8),
                 ConstrainedBox(
@@ -2633,8 +2661,11 @@ class _SearchScreenState extends State<SearchScreen>
             builder: (_) => TextField(
             controller: _controller,
             focusNode: _focus,
+            readOnly: _tvText.readOnly,
             // Opened as a tag browse: show the results, don't pop the keyboard.
-            autofocus: widget.initialTags.isEmpty,
+            // Android TV: never on arrival — the on-screen keyboard covered the
+            // screen the moment the tab opened; OK on the field opens it.
+            autofocus: widget.initialTags.isEmpty && !TvFocus.enabled,
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
               hintText: l10n.searchHint,
@@ -3170,7 +3201,7 @@ class _SearchScreenState extends State<SearchScreen>
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(_error!, style: const TextStyle(color: Colors.red)),
+          child: LoadErrorView(error: _error!, onRetry: () => _search(_currentQuery)),
         ),
       );
     }
@@ -3706,7 +3737,7 @@ class _DedicatedResultsScreenState extends State<DedicatedResultsScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+              ? Center(child: LoadErrorView(error: _error!, onRetry: () { setState(() { _error = null; _loading = true; }); _load(); }))
               : ValueListenableBuilder<List<SearchResult>>(
                   valueListenable: _notifier,
                   builder: (_, all, __) {
@@ -3850,6 +3881,19 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
   final Set<String> _optPlatforms   = {};
 
   // Songs — first page on open, then lazy scroll
+  // Filtre TEXTE (titre): les albums sont filtrés ici (liste complète), les
+  // morceaux par le SERVEUR (search_music borné à l'artiste — la liste est
+  // paginée, filtrer la page chargée mentirait). Exact d'abord, flou en repli
+  // si rien (règle de l'app: le flou n'est pas un sur-ensemble de l'exact).
+  String _query = '';
+  bool   _queryFuzzy = false;
+  // Une fois montré, le champ RESTE: un rechargement remet le compte à 0 et le
+  // champ disparaissait sous le doigt, focus perdu, en effaçant le filtre.
+  bool   _filterShown = false;
+  Timer? _queryDebounce;
+  // Une réponse d'une requête périmée (frappe suivante) est jetée.
+  int    _songsGen = 0;
+
   int    _total       = 0;   // lignes SERVEUR (browse_music.total_count)
   int    _offset      = 0;   // décalage SERVEUR, jamais la longueur affichée
   // Pistes gagnées en dépliant les archives d'album (une ligne serveur → N
@@ -3974,6 +4018,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
   @override
   void dispose() {
     RewampDb.serverLacksChanged.removeListener(_onServerCapabilities);
+    _queryDebounce?.cancel();
     _tabs.dispose();
     _scroll.dispose();
     _notifier.dispose();
@@ -4016,23 +4061,20 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
       // AND artist_name forced the full FTS/cross-entity match (title ∪ artist ∪
       // album + aggregates) which timed out for prolific artists. browse_music
       // filters by artist with no text search → fast. (guide §8)
-      final res = await RewampDb.browse(
-        artistName:   widget.artistName,
-        artistId:     widget.artistId, // homonym-proof (p_artist_id, mig 146)
-        collection:   _fCollection ?? widget.collection,
-        formatFilter: _fFormat,
-        platform:     _fPlatform,
-        podium:       _podiumOnServer,
-        sortBy:       'name',
-        limit:        50,
-        offset:       0,
-      );
-      if (!mounted) return;
+      final gen = ++_songsGen;
+      var res = await _songsPage(0, fuzzy: false);
+      if (!mounted || gen != _songsGen) return;
+      _queryFuzzy = false;
+      if (res.isEmpty && _query.isNotEmpty) {
+        res = await _songsPage(0, fuzzy: true);
+        if (!mounted || gen != _songsGen) return;
+        _queryFuzzy = true;
+      }
       _accumulateOpts(res);
       // Une liste de MORCEAUX: une archive d'album (jw_psf…) y devient ses
       // pistes, sinon l'onglet répète l'onglet Albums ligne pour ligne.
       final shown = await RewampDb.expandArchiveAlbumRows(res);
-      if (!mounted) return;
+      if (!mounted || gen != _songsGen) return;
       _notifier.value = shown;
       _total  = res.isEmpty ? 0 : res.first.totalCount;
       _offset = res.length;
@@ -4048,22 +4090,13 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
   Future<void> _loadMoreSongs() async {
     if (_loadingMore || !_hasMore) return;
     setState(() => _loadingMore = true);
+    final gen = _songsGen;
     try {
-      final more = await RewampDb.browse(
-        artistName:   widget.artistName,
-        artistId:     widget.artistId,
-        collection:   _fCollection ?? widget.collection,
-        formatFilter: _fFormat,
-        platform:     _fPlatform,
-        podium:       _podiumOnServer,
-        sortBy:       'name',
-        limit:        50,
-        offset:       _offset,
-      );
-      if (!mounted) return;
+      final more = await _songsPage(_offset, fuzzy: _queryFuzzy);
+      if (!mounted || gen != _songsGen) return;
       _accumulateOpts(more);
       final shown = await RewampDb.expandArchiveAlbumRows(more);
-      if (!mounted) return;
+      if (!mounted || gen != _songsGen) return;
       _notifier.value = [..._notifier.value, ...shown];
       _offset  += more.length;
       _archiveExtra += shown.length - more.length;
@@ -4072,6 +4105,44 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
     } catch (_) {
       if (mounted) setState(() => _loadingMore = false);
     }
+  }
+
+  /// Une page de morceaux: browse_music sans texte (rapide, voir _loadSongs),
+  /// search_music borné à l'artiste quand le filtre texte est posé.
+  Future<List<SearchResult>> _songsPage(int offset, {required bool fuzzy}) {
+    if (_query.isEmpty) {
+      return RewampDb.browse(
+        artistName:   widget.artistName,
+        artistId:     widget.artistId,
+        collection:   _fCollection ?? widget.collection,
+        formatFilter: _fFormat,
+        platform:     _fPlatform,
+        podium:       _podiumOnServer,
+        sortBy:       'name',
+        limit:        50,
+        offset:       offset,
+      );
+    }
+    return RewampDb.search(
+      _query,
+      fuzzy:        fuzzy,
+      artistName:   widget.artistId == null ? widget.artistName : null,
+      artistId:     widget.artistId,
+      collection:   _fCollection ?? widget.collection,
+      formatFilter: _fFormat,
+      platform:     _fPlatform,
+      podium:       _podiumOnServer,
+      sortBy:       'name',
+      limit:        50,
+      offset:       offset,
+    );
+  }
+
+  void _onQuery(String v) {
+    final q = v.trim();
+    setState(() => _query = q);   // albums: tout de suite
+    _queryDebounce?.cancel();
+    _queryDebounce = Timer(const Duration(milliseconds: 350), _applyFilters);
   }
 
   void _pushAlbum(ArtistAlbum album) {
@@ -4125,7 +4196,8 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
         _fCollection != null ||
         _fFormat != null ||
         _fPlatform != null ||
-        _fPodium != null;
+        _fPodium != null ||
+        _query.isNotEmpty;
     final songN = (!scoped && (_details?.songCount ?? 0) > 0)
         ? _details!.songCount
         : _songTotal;
@@ -4177,7 +4249,7 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+              ? Center(child: LoadErrorView(error: _error!, onRetry: () { setState(() => _error = null); _applyFilters(); }))
               : Column(
                   children: [
                     if (_details != null) _buildHeader(_details!),
@@ -4186,6 +4258,18 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
                     // reachable when the artist has no facet to filter by —
                     // which is why that row is always built now.
                     _buildFilterBar(),
+                    // Le champ n'apparaît que pour une œuvre trop longue pour
+                    // l'œil (kListFilterThreshold), ou tant qu'il filtre.
+                    if (_filterShown = _filterShown ||
+                        _query.isNotEmpty ||
+                        _songTotal > kListFilterThreshold ||
+                        (_details?.songCount ?? 0) > kListFilterThreshold ||
+                        _albums.length > kListFilterThreshold)
+                      ListFilterField(
+                        query: _query,
+                        onQuery: _onQuery,
+                        hintText: l10n.browseFilterByTitle,
+                      ),
                     TabBar(
                       controller: _tabs,
                       tabs: [Tab(text: songsLabel), Tab(text: albumLabel)],
@@ -4457,7 +4541,8 @@ class _ArtistResultsScreenState extends State<ArtistResultsScreen>
           if ((_fCollection == null || a.collection == _fCollection) &&
               (_fPlatform == null || a.platform == _fPlatform) &&
               (_fFormat == null || a.format?.toLowerCase() == _fFormat) &&
-              podiumMatches(a.podium, _fPodium))
+              podiumMatches(a.podium, _fPodium) &&
+              matchesFilterQuery(_query, [a.name, a.qualifier]))
             a,
       ];
 
@@ -5390,7 +5475,9 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
                 child: CancelField(
                   hasText: _query.isNotEmpty,
                   onCleared: (_) => setState(() => _query = ''),
-                  builder: (_) => TextField(
+                  builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                     autofocus: false,
                     decoration: InputDecoration(
                       isDense: true,
@@ -5399,7 +5486,7 @@ class _CollectionPickerSheetState extends State<_CollectionPickerSheet> {
                       border: const OutlineInputBorder(),
                     ),
                     onChanged: (v) => setState(() => _query = v),
-                  ),
+                  )),
                 ),
               ),
             Flexible(

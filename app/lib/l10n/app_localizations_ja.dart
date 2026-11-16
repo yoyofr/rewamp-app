@@ -649,6 +649,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get videoWatchDemo => 'デモを見る';
 
   @override
+  String get albumVideo => '動画';
+
+  @override
   String searchFacetSelected(String label, String value) {
     return '$label: $value';
   }
@@ -1042,6 +1045,26 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get commonRetry => '再試行';
+
+  @override
+  String get netErrorOffline =>
+      'オフラインです。ダウンロード済みの音楽は再生できます。オンラインのコンテンツは接続が戻ると表示されます。';
+
+  @override
+  String get netErrorSlow =>
+      'サーバーの応答に時間がかかりすぎています。ネットワークが不安定か、サーバーが混雑している可能性があります。応答が戻り次第、自動で再読み込みします。';
+
+  @override
+  String get netErrorServer => 'サーバーで問題が発生しています。しばらくしてからもう一度お試しください。';
+
+  @override
+  String get netErrorGeneric => 'このコンテンツを読み込めませんでした。しばらくしてからもう一度お試しください。';
+
+  @override
+  String get netBannerOffline => 'オフライン — ダウンロード済みの音楽は再生できます';
+
+  @override
+  String get netBannerSlow => 'サーバーが応答しません — 自動で再試行中';
 
   @override
   String get commonOptions => 'オプション';
@@ -1856,6 +1879,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get sortDateAdded => '追加日';
+
+  @override
+  String get sortDateModified => '変更日';
 
   @override
   String get commonClear => 'クリア';
@@ -5173,6 +5199,10 @@ class AppLocalizationsJa extends AppLocalizations {
       'すべてのアルバム画面とサブソング画面で作曲者をタップできます。読み込んだファイルからタイトルと作者を読み取ります。';
 
   @override
+  String get releaseNotesV11AlbumNotes =>
+      'アルバム：アルバム画面にノートと動画（ゲームプレイ、スーパープレイ…）を表示。プレーヤーでも曲のノート・動画と一緒に表示します。';
+
+  @override
   String get releaseNotesV11Hindi =>
       'ヒンディー語に対応（19言語）。右から左に書く言語にもインターフェースが対応しました。';
 
@@ -5182,9 +5212,56 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get releaseNotesV11Visualizers =>
-      'ビジュアライザー：オシロスコープは最大64ボイス、MIDIのドラム楽器ごとに色分け、2SFファイルの音符、FMバンクの楽器名。';
+      'ビジュアライザー：オシロスコープは最大64ボイス、MIDIのドラム楽器ごとに色分け、2SFファイルの音符、FMバンクの楽器名、メガドライブで素早く連打される音符。';
+
+  @override
+  String get releaseNotesV11AndroidTv =>
+      'Android TV：全画面表示、リモコン操作（矢印キーとOK、OK長押しでメニュー）、32ビットのTVボックス向けビルド。';
+
+  @override
+  String get releaseNotesV11Network =>
+      'サーバーが遅い・つながらない場合：技術的なエラーではなく分かりやすいメッセージ、その間はバナーを表示し、復旧すると画面が自動で再読み込みされます。';
+
+  @override
+  String get releaseNotesV11ArtistFilter => 'アーティストページ：長いリストから曲やアルバムを探せるフィルター。';
+
+  @override
+  String get releaseNotesV11ChpPatterns =>
+      'CHIPNSFX（.chp、Amstrad CPC）の曲にパターン表示、楽器名つき。';
 
   @override
   String get releaseNotesV11Fixes =>
-      '修正：一部のSSFファイルが拒否される問題、無音のWonderSwanリップ、複数のアーカイブに分かれたアルバムが不完全になる問題、プレーヤーを閉じた後のprojectMプリセット。';
+      '修正：一部のSSFファイルが拒否される問題、無音のWonderSwanリップ、複数のアーカイブに分かれたアルバムが不完全になる問題、一部のアルバムでフォルダーが曲として表示され再生に失敗する問題、プレーヤーを閉じた後のprojectMプリセット。';
+
+  @override
+  String get settingsRenderBackend => 'レンダリングエンジン';
+
+  @override
+  String get settingsRenderBackendAuto => '自動';
+
+  @override
+  String get settingsRenderBackendAutoHint =>
+      'Apple Silicon搭載MacではImpeller、Intel MacではSkia';
+
+  @override
+  String get settingsRenderBackendImpellerHint =>
+      '最新のレンダラー。ガラス効果をフルに表示。一部のIntel Macで文字が崩れることがあります。';
+
+  @override
+  String get settingsRenderBackendSkiaHint =>
+      '従来のレンダラー。Intel Macでより安全。ガラス効果は簡略化されます。';
+
+  @override
+  String settingsRenderBackendActive(String name) {
+    return '使用中：$name';
+  }
+
+  @override
+  String get settingsRenderBackendRestart => '次回の起動時に適用されます';
+
+  @override
+  String get carPlayNext => '次の曲';
+
+  @override
+  String get carPlayPrevious => '前の曲';
 }

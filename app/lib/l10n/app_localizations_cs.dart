@@ -672,6 +672,9 @@ class AppLocalizationsCs extends AppLocalizations {
   String get videoWatchDemo => 'Přehrát demo';
 
   @override
+  String get albumVideo => 'Video';
+
+  @override
   String searchFacetSelected(String label, String value) {
     return '$label: $value';
   }
@@ -1117,6 +1120,28 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get commonRetry => 'Zkusit znovu';
+
+  @override
+  String get netErrorOffline =>
+      'Jste offline. Stažená hudba dál hraje; online obsah se vrátí s připojením.';
+
+  @override
+  String get netErrorSlow =>
+      'Server odpovídá příliš pomalu – síť může být nestabilní nebo server přetížený. Obsah se načte sám, jakmile znovu odpoví.';
+
+  @override
+  String get netErrorServer =>
+      'Server má právě potíže. Zkuste to za chvíli znovu.';
+
+  @override
+  String get netErrorGeneric =>
+      'Tento obsah se nepodařilo načíst. Zkuste to za chvíli znovu.';
+
+  @override
+  String get netBannerOffline => 'Offline – stažená hudba zůstává k dispozici';
+
+  @override
+  String get netBannerSlow => 'Server neodpovídá – automatický nový pokus';
 
   @override
   String get commonOptions => 'Možnosti';
@@ -1978,6 +2003,9 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get sortDateAdded => 'Datum přidání';
+
+  @override
+  String get sortDateModified => 'Datum změny';
 
   @override
   String get commonClear => 'Vymazat';
@@ -5485,6 +5513,10 @@ class AppLocalizationsCs extends AppLocalizations {
       'Skladatelé jsou klikatelní na všech obrazovkách alb a podskladeb; název a autor se čtou z importovaných souborů.';
 
   @override
+  String get releaseNotesV11AlbumNotes =>
+      'Alba: poznámky a videa (gameplay, superplaye…) na obrazovce alba, také v přehrávači vedle těch ke skladbě.';
+
+  @override
   String get releaseNotesV11Hindi =>
       'Aplikace mluví hindsky (19 jazyků) a rozhraní je připravené na jazyky psané zprava doleva.';
 
@@ -5494,9 +5526,57 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get releaseNotesV11Visualizers =>
-      'Vizualizace: až 64 hlasů v osciloskopech, barva pro každý bicí nástroj MIDI, noty souborů 2SF, názvy nástrojů z FM bank.';
+      'Vizualizace: až 64 hlasů v osciloskopech, barva pro každý bicí nástroj MIDI, noty souborů 2SF, názvy nástrojů z FM bank, rychle opakované noty na Mega Drive.';
+
+  @override
+  String get releaseNotesV11AndroidTv =>
+      'Android TV: zobrazení přes celou obrazovku, ovládání dálkovým ovladačem (šipky a OK, podržením OK se otevře nabídka) a verze pro 32bitové TV boxy.';
+
+  @override
+  String get releaseNotesV11Network =>
+      'Pomalý nebo nedostupný server: srozumitelná zpráva místo technické chyby, lišta po dobu výpadku a obrazovky se po návratu samy znovu načtou.';
+
+  @override
+  String get releaseNotesV11ArtistFilter =>
+      'Stránka interpreta: filtr pro nalezení skladby nebo alba v dlouhém seznamu.';
+
+  @override
+  String get releaseNotesV11ChpPatterns =>
+      'Vizualizace patternů pro skladby CHIPNSFX (.chp, Amstrad CPC) s názvy nástrojů.';
 
   @override
   String get releaseNotesV11Fixes =>
-      'Opraveno: některé odmítané soubory SSF, němé ripy WonderSwan, neúplná alba rozdělená do více archivů a presety projectM po zavření přehrávače.';
+      'Opraveno: některé odmítané soubory SSF, němé ripy WonderSwan, neúplná alba rozdělená do více archivů, selhávající položky některých alb (složka uvedená jako skladba) a presety projectM po zavření přehrávače.';
+
+  @override
+  String get settingsRenderBackend => 'Vykreslovací jádro';
+
+  @override
+  String get settingsRenderBackendAuto => 'Automaticky';
+
+  @override
+  String get settingsRenderBackendAutoHint =>
+      'Impeller na Macích s Apple Silicon, Skia na Macích s Intelem';
+
+  @override
+  String get settingsRenderBackendImpellerHint =>
+      'Moderní vykreslování, plný skleněný efekt. Na některých Macích s Intelem může poškodit text.';
+
+  @override
+  String get settingsRenderBackendSkiaHint =>
+      'Klasické vykreslování, bezpečnější na Macích s Intelem. Zjednodušený skleněný efekt.';
+
+  @override
+  String settingsRenderBackendActive(String name) {
+    return 'Aktivní: $name';
+  }
+
+  @override
+  String get settingsRenderBackendRestart => 'Projeví se při příštím spuštění';
+
+  @override
+  String get carPlayNext => 'Další skladba';
+
+  @override
+  String get carPlayPrevious => 'Předchozí skladba';
 }

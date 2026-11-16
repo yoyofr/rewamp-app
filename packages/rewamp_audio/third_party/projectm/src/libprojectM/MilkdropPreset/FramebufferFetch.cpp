@@ -67,7 +67,14 @@ FramebufferFetchMode Detect()
     {
         return FramebufferFetchMode::Arm;
     }
+#if defined(__EMSCRIPTEN__)
+    // WebGL: no framebuffer fetch, and the multi-draw path is the slow one.
+    // Native targets without fetch keep the upstream path until HwBlend has
+    // been checked there.
+    return FramebufferFetchMode::HwBlend;
+#else
     return FramebufferFetchMode::None;
+#endif
 #endif
 }
 

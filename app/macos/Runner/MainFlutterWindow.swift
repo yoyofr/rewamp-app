@@ -24,6 +24,8 @@ class MainFlutterWindow: NSWindow {
         AppDelegate.revealLaunchWindow()
       }
     }
+    // Impeller ou Skia: lu par le moteur à sa création (AppDelegate.swift).
+    RendererChoice.apply()
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
     self.contentViewController = flutterViewController

@@ -659,6 +659,9 @@ class AppLocalizationsHi extends AppLocalizations {
   String get videoWatchDemo => 'डेमो देखें';
 
   @override
+  String get albumVideo => 'वीडियो';
+
+  @override
   String searchFacetSelected(String label, String value) {
     return '$label: $value';
   }
@@ -1073,6 +1076,29 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get commonRetry => 'फिर से कोशिश करें';
+
+  @override
+  String get netErrorOffline =>
+      'आप ऑफ़लाइन हैं। डाउनलोड किया गया संगीत चलता रहेगा; ऑनलाइन सामग्री कनेक्शन लौटने पर वापस आएगी।';
+
+  @override
+  String get netErrorSlow =>
+      'सर्वर जवाब देने में बहुत समय ले रहा है — नेटवर्क अस्थिर हो सकता है या सर्वर व्यस्त। सर्वर के फिर से जवाब देते ही यह अपने आप फिर से लोड हो जाएगा।';
+
+  @override
+  String get netErrorServer =>
+      'सर्वर में अभी समस्या है। थोड़ी देर बाद फिर से कोशिश करें।';
+
+  @override
+  String get netErrorGeneric =>
+      'यह सामग्री लोड नहीं हो सकी। थोड़ी देर बाद फिर से कोशिश करें।';
+
+  @override
+  String get netBannerOffline => 'ऑफ़लाइन — डाउनलोड किया गया संगीत उपलब्ध है';
+
+  @override
+  String get netBannerSlow =>
+      'सर्वर जवाब नहीं दे रहा — अपने आप फिर से कोशिश हो रही है';
 
   @override
   String get commonOptions => 'विकल्प';
@@ -1910,6 +1936,9 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get sortDateAdded => 'जोड़ने की तारीख';
+
+  @override
+  String get sortDateModified => 'संशोधन की तारीख';
 
   @override
   String get commonClear => 'साफ़ करें';
@@ -5349,6 +5378,10 @@ class AppLocalizationsHi extends AppLocalizations {
       'हर एल्बम और सबसॉन्ग स्क्रीन पर संगीतकार टैप किए जा सकते हैं; इंपोर्ट की गई फ़ाइलों से शीर्षक और लेखक पढ़े जाते हैं।';
 
   @override
+  String get releaseNotesV11AlbumNotes =>
+      'एल्बम: एल्बम स्क्रीन पर नोट्स और वीडियो (गेमप्ले, सुपरप्ले…), जो प्लेयर में भी ट्रैक के नोट्स और वीडियो के साथ दिखते हैं।';
+
+  @override
   String get releaseNotesV11Hindi =>
       'ऐप अब हिंदी बोलता है (19 भाषाएँ), और इंटरफ़ेस दाएँ से बाएँ लिखी जाने वाली भाषाओं के लिए तैयार है।';
 
@@ -5358,9 +5391,57 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get releaseNotesV11Visualizers =>
-      'विज़ुअलाइज़र: ऑसिलोस्कोप में 64 तक आवाज़ें, हर MIDI ड्रम वाद्य का अलग रंग, 2SF फ़ाइलों के नोट्स, FM बैंकों से वाद्यों के नाम।';
+      'विज़ुअलाइज़र: ऑसिलोस्कोप में 64 तक आवाज़ें, हर MIDI ड्रम वाद्य का अलग रंग, 2SF फ़ाइलों के नोट्स, FM बैंकों से वाद्यों के नाम, Mega Drive पर तेज़ी से दोहराए जाने वाले नोट्स।';
+
+  @override
+  String get releaseNotesV11AndroidTv =>
+      'Android TV: पूरी स्क्रीन पर डिस्प्ले, रिमोट से नेविगेशन (तीर और OK, मेन्यू के लिए OK दबाकर रखें) और 32-बिट टीवी बॉक्स के लिए एक संस्करण।';
+
+  @override
+  String get releaseNotesV11Network =>
+      'सर्वर धीमा या पहुँच से बाहर हो तो: तकनीकी त्रुटि की जगह साफ़ संदेश, जब तक ऐसा रहे एक बैनर, और सर्वर लौटते ही स्क्रीन अपने आप फिर से लोड होती हैं।';
+
+  @override
+  String get releaseNotesV11ArtistFilter =>
+      'कलाकार पेज: लंबी सूची में कोई ट्रैक या एल्बम खोजने के लिए फ़िल्टर।';
+
+  @override
+  String get releaseNotesV11ChpPatterns =>
+      'CHIPNSFX गानों (.chp, Amstrad CPC) के लिए पैटर्न विज़ुअलाइज़र, वाद्ययंत्रों के नामों के साथ।';
 
   @override
   String get releaseNotesV11Fixes =>
-      'ठीक किया गया: कुछ अस्वीकृत SSF फ़ाइलें, मूक WonderSwan रिप, कई आर्काइव में बँटे अधूरे एल्बम, और प्लेयर बंद करने के बाद projectM प्रीसेट।';
+      'ठीक किया गया: कुछ अस्वीकृत SSF फ़ाइलें, मूक WonderSwan रिप, कई आर्काइव में बँटे अधूरे एल्बम, कुछ एल्बमों में विफल प्रविष्टियाँ (ट्रैक के रूप में सूचीबद्ध फ़ोल्डर), और प्लेयर बंद करने के बाद projectM प्रीसेट।';
+
+  @override
+  String get settingsRenderBackend => 'रेंडरिंग इंजन';
+
+  @override
+  String get settingsRenderBackendAuto => 'स्वचालित';
+
+  @override
+  String get settingsRenderBackendAutoHint =>
+      'Apple Silicon वाले Mac पर Impeller, Intel Mac पर Skia';
+
+  @override
+  String get settingsRenderBackendImpellerHint =>
+      'आधुनिक रेंडरर, पूरा ग्लास प्रभाव। कुछ Intel Mac पर टेक्स्ट बिगाड़ सकता है।';
+
+  @override
+  String get settingsRenderBackendSkiaHint =>
+      'पारंपरिक रेंडरर, Intel Mac पर अधिक सुरक्षित। सरल ग्लास प्रभाव।';
+
+  @override
+  String settingsRenderBackendActive(String name) {
+    return 'सक्रिय: $name';
+  }
+
+  @override
+  String get settingsRenderBackendRestart => 'अगली बार ऐप खोलने पर लागू होगा';
+
+  @override
+  String get carPlayNext => 'अगला ट्रैक';
+
+  @override
+  String get carPlayPrevious => 'पिछला ट्रैक';
 }

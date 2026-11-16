@@ -34,6 +34,10 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<!-- 2026-11-11: valeur PAR DÉFAUT seulement. Le runner intercepte la
+	     lecture de cette clé (RendererChoice, AppDelegate.swift) selon le
+	     réglage « Moteur de rendu »: auto = Impeller sur Apple Silicon, Skia
+	     sur Intel (texte corrompu sous Impeller sur des Mac Intel). -->
 	<!-- RETEST 2026-07-31 (branche feat/liquid-glass-chrome): le moteur macOS
 	     tournait sous Skia, ce que le kit « liquid glass » signale lui-même
 	     (« Skipping Impeller warm-up (Skia/Web detected) ») — son chemin haut

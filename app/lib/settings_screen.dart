@@ -11,9 +11,11 @@ import 'picker_memory.dart';
 import 'package:share_plus/share_plus.dart';
 import 'home_sections.dart';
 import 'shell_tabs.dart';
+import 'load_error.dart';
 import 'l10n.dart';
 import 'media_direction.dart';
 import 'launch_window.dart';
+import 'render_backend.dart';
 import 'mini_window.dart';
 import 'play_start.dart';
 import 'release_notes.dart'
@@ -722,6 +724,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _pickLaunchWindow(context),
         ),
+      // macOS: Impeller ou Skia (render_backend.dart). Le runner le lit
+      // AVANT Dart, d'où « au prochain lancement » quand le choix diffère de
+      // ce qui tourne.
+      if (renderBackendSupported)
+        FutureBuilder<RenderBackendInfo?>(
+          future: renderBackendInfo(),
+          builder: (context, snap) {
+            final info = snap.data;
+            final choice = _settings.renderBackend;
+            final parts = <String>[choice.label(l10n)];
+            if (info != null) {
+              parts.add(l10n.settingsRenderBackendActive(
+                  info.impeller ? 'Impeller' : 'Skia'));
+              if (renderBackendWantsImpeller(choice, info) != info.impeller) {
+                parts.add(l10n.settingsRenderBackendRestart);
+              }
+            }
+            return ListTile(
+              leading: const _ResetDot('renderBackend'),
+              title: Text(l10n.settingsRenderBackend),
+              subtitle: Text(parts.join(' · ')),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _pickRenderBackend(context),
+            );
+          },
+        ),
       SwitchListTile(
         secondary: const _ResetDot('artworkTintedPlayer'),
         title: Text(l10n.settingsArtworkTintTitle),
@@ -856,6 +884,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // MiniWindow écoute le réglage et le recopie chez le natif — y compris
     // quand une remise à zéro EFFACE la clé sans passer par ici.
     setState(() => _settings.launchWindow = chosen);
+  }
+
+  Future<void> _pickRenderBackend(BuildContext context) async {
+    final l10n = context.l10n;
+    final current = _settings.renderBackend;
+    final chosen = await showDialog<RenderBackend>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(l10n.settingsRenderBackend),
+        children: [
+          for (final b in RenderBackend.values)
+            ListTile(
+              title: Text(b.label(l10n)),
+              subtitle: Text(b.hint(l10n)),
+              trailing: current == b ? const Icon(Icons.check) : null,
+              selected: current == b,
+              onTap: () => Navigator.pop(ctx, b),
+            ),
+        ],
+      ),
+    );
+    if (chosen == null) return;
+    // MiniWindow écoute le réglage et le recopie chez le runner.
+    setState(() => _settings.renderBackend = chosen);
   }
 
   Future<void> _pickAutoplayMode(BuildContext context) async {
@@ -3640,7 +3692,7 @@ class _SoundfontPickerState extends State<_SoundfontPicker> {
             ListTile(
                 dense: true,
                 leading: const Icon(Icons.cloud_off),
-                title: Text(l10n.settingsSoundfontCatalogueError(_error!)))
+                title: Text(loadErrorMessage(l10n, _error!)))
           else if (assets == null)
             ListTile(
                 dense: true,

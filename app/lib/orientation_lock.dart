@@ -11,11 +11,29 @@ class OrientationLock {
 
   static bool? _isPhoneMemo;
 
+  /// Android TV (leanback / UI_MODE_TYPE_TELEVISION), lu au natif par
+  /// [initTv] avant le premier verrou. Un téléviseur rend souvent en
+  /// 960×540 dp: sans ce drapeau il passait pour un téléphone, verrouillé en
+  /// portrait, et l'app s'affichait dans une bande verticale (Shield TV).
+  static bool isTv = false;
+
+  static Future<void> initTv() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    try {
+      isTv = await const MethodChannel('rewamp/device')
+              .invokeMethod<bool>('isTv') ??
+          false;
+    } catch (_) {
+      isTv = false;
+    }
+    if (isTv) _isPhoneMemo = false;
+  }
+
   /// Phone = mobile OS + shortest side < 600 dp (the Material tablet cutoff).
   static bool get isPhone {
     final memo = _isPhoneMemo;
     if (memo != null) return memo;
-    if (kIsWeb || !(Platform.isIOS || Platform.isAndroid)) {
+    if (isTv || kIsWeb || !(Platform.isIOS || Platform.isAndroid)) {
       return _isPhoneMemo = false;
     }
     final view = ui.PlatformDispatcher.instance.implicitView;

@@ -284,6 +284,13 @@ class AppDelegate: FlutterAppDelegate {
       case "revealWindow":
         AppDelegate.revealLaunchWindow()
         result(nil)
+      case "setRenderer":
+        UserDefaults.standard.set(call.arguments as? String ?? "auto",
+                                  forKey: RendererChoice.key)
+        result(nil)
+      case "rendererInfo":
+        result(["impeller": RendererChoice.impeller,
+                "appleSilicon": RendererChoice.appleSilicon])
       case "setLaunchMini":
         UserDefaults.standard.set(call.arguments as? Bool ?? false,
                                   forKey: AppDelegate.launchMiniKey)
@@ -479,5 +486,67 @@ class AppDelegate: FlutterAppDelegate {
         if granted { post() }
       }
     }
+  }
+}
+
+// MARK: - Moteur de rendu (Impeller / Skia)
+
+/// Réglage « Moteur de rendu » (lib/render_backend.dart). Impeller corrompt le
+/// TEXTE sur des Mac Intel (rapporté le 2026-11-11: MacBook Pro 16" 2019, UHD
+/// 630 comme Radeon Pro, glyphes mélangés dès le lancement); Skia n'a pas ce
+/// défaut. `auto` = Impeller sur Apple Silicon, Skia sur Intel.
+///
+/// En release, le moteur ne connaît QU'UNE source pour ce choix:
+/// `-[FlutterDartProject enableImpeller]` lit `FLTEnableImpeller` par
+/// `[[NSBundle mainBundle] objectForInfoDictionaryKey:]` (absent ⇒ OUI), et
+/// `FLUTTER_ENGINE_SWITCHES` n'est lu qu'en debug/profile. On intercepte donc
+/// CETTE lecture, pour CETTE clé et le bundle principal seulement — l'Info.plist
+/// reste intact (signature) et le réglage vaut au lancement suivant, puisque
+/// le moteur lit la clé à son démarrage. À poser AVANT `FlutterViewController()`.
+enum RendererChoice {
+  /// Copie native du réglage Dart (`setRenderer`): `auto` | `impeller` | `skia`.
+  static let key = "rewampRenderer"
+  /// Ce que CE lancement a choisi (relu par Dart: `rendererInfo`).
+  private(set) static var impeller = true
+
+  /// Vrai aussi sous Rosetta (le processus x86_64 tourne sur un GPU Apple).
+  static let appleSilicon: Bool = {
+    var v: Int32 = 0
+    var n = MemoryLayout<Int32>.size
+    return sysctlbyname("hw.optional.arm64", &v, &n, nil, 0) == 0 && v == 1
+  }()
+
+  private static var installed = false
+
+  static func apply() {
+    let pref = UserDefaults.standard.string(forKey: key) ?? "auto"
+    switch pref {
+    case "impeller": impeller = true
+    case "skia":     impeller = false
+    default:         impeller = appleSilicon
+    }
+    Bundle.rewampImpellerOverride = NSNumber(value: impeller)
+    guard !installed else { return }
+    installed = true
+    if let a = class_getInstanceMethod(Bundle.self, #selector(Bundle.object(forInfoDictionaryKey:))),
+       let b = class_getInstanceMethod(Bundle.self, #selector(Bundle.rewamp_object(forInfoDictionaryKey:))) {
+      method_exchangeImplementations(a, b)
+    }
+    NSLog("[rewamp] renderer: %@ (réglage %@, %@)", impeller ? "Impeller" : "Skia",
+          pref, appleSilicon ? "Apple Silicon" : "Intel")
+  }
+}
+
+extension Bundle {
+  static var rewampImpellerOverride: NSNumber?
+
+  /// Échangée avec `object(forInfoDictionaryKey:)`: l'appel « à soi-même »
+  /// atteint donc l'implémentation d'ORIGINE.
+  @objc func rewamp_object(forInfoDictionaryKey key: String) -> Any? {
+    if key == "FLTEnableImpeller", self == Bundle.main,
+       let v = Bundle.rewampImpellerOverride {
+      return v
+    }
+    return rewamp_object(forInfoDictionaryKey: key)
   }
 }

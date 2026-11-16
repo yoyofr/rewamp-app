@@ -57,10 +57,15 @@ const pack = dirs => {
 const out = { packs: {} };
 out.wasm = put('rewamp_audio', 'wasm', fs.readFileSync(path.join(build, 'rewamp_audio.wasm')));
 out.js = put('rewamp_audio', 'js', fs.readFileSync(path.join(build, 'rewamp_audio.js')));
+// Module de dépliage (site/extract-worker.js), s'il a été construit.
+if (fs.existsSync(path.join(build, 'rewamp_extract.wasm'))) {
+  out.extractWasm = put('rewamp_extract', 'wasm', fs.readFileSync(path.join(build, 'rewamp_extract.wasm')));
+  out.extractJs = put('rewamp_extract', 'js', fs.readFileSync(path.join(build, 'rewamp_extract.js')));
+}
 for (const [g, dirs] of Object.entries(groups)) out.packs[g] = put(g, 'pack', pack(dirs));
 fs.writeFileSync(path.join(dist, 'build.json'), JSON.stringify(out, null, 1));
 
-for (const n of [out.js, out.wasm, ...Object.values(out.packs)]) {
+for (const n of [out.js, out.wasm, out.extractJs, out.extractWasm, ...Object.values(out.packs)].filter(Boolean)) {
   const a = fs.statSync(path.join(dist, n)).size, b = fs.statSync(path.join(dist, n + '.br')).size;
   console.log(`${n.padEnd(36)} ${(a / 1e6).toFixed(2).padStart(6)} Mo → ${(b / 1e6).toFixed(2).padStart(5)} Mo br`);
 }

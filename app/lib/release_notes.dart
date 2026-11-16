@@ -1,9 +1,11 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'data_reset.dart' show dataWasReset;
 import 'l10n.dart';
+import 'remote_scroll.dart';
 import 'splash_intro.dart' show kSplashBg;
 import 'user_settings.dart';
 
@@ -47,12 +49,12 @@ import 'user_settings.dart';
 /// corrections (crash `.mtc`, crossfade, pochette republiée). Le navigateur
 /// Podiums en tête. Le libellé n'est plus « Beta N » mais le numéro.
 ///
-/// **11 = 1.1** (`1.1.0+19`, 2026-11-09). La 1.0 a été PUBLIÉE (tag v1.0.0),
-/// ses douze puces sont vues et RETIRÉES. Quatorze puces: les nouveautés qui
+/// **11 = 1.1** (`1.1.0+19`, 2026-11-09, complétée le 2026-11-11). La 1.0 a été PUBLIÉE (tag v1.0.0),
+/// ses douze puces sont vues et RETIRÉES. Quinze puces: les nouveautés qui
 /// changent l'usage d'abord (lecture automatique, dossiers liés, « Lire
 /// avec… », moteurs neufs et mis à jour, minuteur de sommeil, bureau,
 /// artistes synchronisés, appui long), puis les finitions (compositeurs,
-/// hindi, boucle infinie, visualiseurs), les corrections en dernier.
+/// notes et vidéos d'album, hindi, boucle infinie, visualiseurs), les corrections en dernier.
 const kReleaseNotesVersion = 11;
 
 const kReleaseNotesLabel = '1.1';
@@ -65,17 +67,22 @@ const kReleaseNotesLabel = '1.1';
 List<String> releaseNotesBullets(AppLocalizations l10n) => [
       l10n.releaseNotesV11Autoplay,
       l10n.releaseNotesV11LinkedFolders,
+      l10n.releaseNotesV11AndroidTv,
       l10n.releaseNotesV11PlayWith,
       l10n.releaseNotesV11NewEngines,
       l10n.releaseNotesV11EngineUpdates,
       l10n.releaseNotesV11Sleep,
+      l10n.releaseNotesV11Network,
       l10n.releaseNotesV11Desktop,
       l10n.releaseNotesV11ArtistSync,
       l10n.releaseNotesV11PlayNext,
       l10n.releaseNotesV11Composers,
+      l10n.releaseNotesV11ArtistFilter,
+      l10n.releaseNotesV11AlbumNotes,
       l10n.releaseNotesV11Hindi,
       l10n.releaseNotesV11Loops,
       l10n.releaseNotesV11Visualizers,
+      l10n.releaseNotesV11ChpPatterns,
       l10n.releaseNotesV11Fixes,
     ];
 
@@ -85,20 +92,67 @@ List<String> releaseNotesBullets(AppLocalizations l10n) => [
 /// PROLONGE l'intro — l'animation se termine, le logo remonte, le texte
 /// apparaît. Basculer sur une surface Material ferait un deuxième écran là où
 /// il n'y a qu'un seul moment.
-class ReleaseNotesSplash extends StatelessWidget {
+class ReleaseNotesSplash extends StatefulWidget {
   final ui.Image? image;
   final VoidCallback onDismiss;
 
   const ReleaseNotesSplash({super.key, this.image, required this.onDismiss});
 
   @override
+  State<ReleaseNotesSplash> createState() => _ReleaseNotesSplashState();
+}
+
+class _ReleaseNotesSplashState extends State<ReleaseNotesSplash> {
+  // Le texte peut dépasser l'écran (téléviseur 960×540 dp): ↑ / ↓ le font
+  // défiler à la télécommande (remote_scroll.dart), la barre de défilement
+  // TOUJOURS visible dit qu'il y a une suite.
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final onDismiss = widget.onDismiss;
+    // Télécommande / clavier: le focus est PRIS par cet écran (FocusScope
+    // autofocus) et OK / Entrée / bouton A le ferment de n'importe où dedans —
+    // même si le bouton n'a pas (encore) le focus. Retour aussi.
+    //
+    // ⚠️ Seulement quand sa route est AU SOMMET: au premier lancement la
+    // visite guidée (Onboarding, une route poussée PAR-DESSUS) peut couvrir la
+    // note, et un autofocus ici VOLE le focus de la route du dessus (Flutter ne
+    // vérifie que « ce scope n'a rien de focalisé ») — le bouton de la visite
+    // devenait inactivable à la télécommande. La clé REMONTE le scope quand la
+    // route redevient courante, ce qui rejoue l'autofocus à ce moment-là.
+    final current = ModalRoute.isCurrentOf(context) ?? true;
+    return FocusScope(
+      key: ValueKey<bool>(current),
+      autofocus: current,
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.select): onDismiss,
+          const SingleActivator(LogicalKeyboardKey.enter): onDismiss,
+          const SingleActivator(LogicalKeyboardKey.numpadEnter): onDismiss,
+          const SingleActivator(LogicalKeyboardKey.gameButtonA): onDismiss,
+          const SingleActivator(LogicalKeyboardKey.goBack): onDismiss,
+          const SingleActivator(LogicalKeyboardKey.escape): onDismiss,
+          ...remoteScrollBindings(() => _scroll),
+        },
+        child: _body(context, current),
+      ),
+    );
+  }
+
+  Widget _body(BuildContext context, bool current) {
     final l10n = context.l10n;
-    final img  = image;
+    final img  = widget.image;
+    final onDismiss = widget.onDismiss;
     // Texte clair imposé: le fond est sombre quel que soit le thème système.
     const fg  = Colors.white;
     final dim = Colors.white.withValues(alpha: 0.72);
-
     return Material(
       color: kSplashBg,
       child: SafeArea(
@@ -109,7 +163,11 @@ class ReleaseNotesSplash extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Flexible(
-                  child: SingleChildScrollView(
+                  child: Scrollbar(
+                   controller: _scroll,
+                   thumbVisibility: true,
+                   child: SingleChildScrollView(
+                    controller: _scroll,
                     padding: const EdgeInsetsDirectional.fromSTEB(28, 32, 28, 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -149,12 +207,18 @@ class ReleaseNotesSplash extends StatelessWidget {
                       ],
                     ),
                   ),
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsetsDirectional.fromSTEB(28, 8, 28, 24),
                   child: SizedBox(
                     width: double.infinity,
                     child: FilledButton(
+                      // Focus d'entrée: sans lui une télécommande (Android
+                      // TV) n'avait RIEN à activer — la croix directionnelle
+                      // ne part que d'un nœud focalisé, et ce bouton est le
+                      // seul de l'écran. OK / Entrée le valide.
+                      autofocus: current,
                       onPressed: onDismiss,
                       child: Text(l10n.releaseNotesDismiss),
                     ),

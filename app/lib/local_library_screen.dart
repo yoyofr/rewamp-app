@@ -5,6 +5,7 @@
 // après le préfixe) + les pistes posées à ce niveau; la recherche est plate
 // sur tout le sous-arbre courant.
 
+import 'tv_focus.dart';
 import 'dart:math' show Random;
 import 'dart:io';
 
@@ -17,6 +18,7 @@ import 'artwork_image.dart' show ArtworkCache, ArtworkImage, RailArtwork;
 import 'cancel_field.dart';
 import 'l10n.dart';
 import 'formats.dart';
+import 'local_browse_view.dart';
 import 'local_db.dart';
 import 'rewamp_db.dart';
 import 'local_delete.dart'
@@ -111,6 +113,16 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
   /// Nom de sous-dossier (niveau affiché) → sa pochette sur le disque.
   Map<String, String> _folderArt = const {};
 
+  /// Tri (nom / date de modification, sens) et disposition (liste / icônes),
+  /// réglage commun aux navigateurs locaux (local_browse_view.dart).
+  LocalBrowseOrder _order = LocalBrowseOrder.read();
+  /// Date de modification sur le DISQUE, en ms: sous-dossiers du niveau par
+  /// nom, fichiers par chemin relatif. Lue avec le listing du niveau; une
+  /// piste plus profonde (résultat de filtre) l'est à la demande.
+  Map<String, int> _folderMtimes = const {};
+  final Map<String, int> _fileMtimes = {};
+  String? _root;
+
   /// Sélection multiple, même modèle que Stockage: active dès qu'un élément
   /// est coché (pas de mode à part). Des CLÉS, jamais des positions: un
   /// rechargement (la base notifie à chaque suppression) ne doit pas déplacer
@@ -152,15 +164,22 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
     // invisible, donc ni renommable ni supprimable: on offrait un geste dont
     // le résultat n'apparaissait nulle part.
     final diskFolders = <String>{};
+    final folderMtimes = <String, int>{};
+    final fileMtimes = <String, int>{};
+    final root = await _rootPath();
     try {
-      final dir = Directory(joinPortable(await _rootPath(), widget.prefix));
+      final dir = Directory(joinPortable(root, widget.prefix));
       if (await dir.exists()) {
         await for (final e in dir.list(followLinks: false)) {
           if (e is Directory) {
             diskFolders.add(p.basename(e.path));
+            final m = await localMtimeMs(e.path);
+            if (m != null) folderMtimes[p.basename(e.path)] = m;
             continue;
           }
           if (e is! File) continue;
+          final m = await localMtimeMs(e.path);
+          if (m != null) fileMtimes['${widget.prefix}${p.basename(e.path)}'] = m;
           final ext = p.extension(e.path).replaceFirst('.', '').toLowerCase();
           if (ext == 'm3u' || ext == 'm3u8') playlists.add(e.path);
         }
@@ -170,6 +189,9 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
         p.basename(a).toLowerCase().compareTo(p.basename(b).toLowerCase()));
     if (!mounted) return;
     setState(() {
+      _root = root;
+      _folderMtimes = folderMtimes;
+      _fileMtimes.addAll(fileMtimes);
       _albumNames = names;
       _playlists = playlists;
       _diskFolders = diskFolders;
@@ -654,8 +676,26 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
     // dossier lu sur le DISQUE, ajouté après la boucle, atterrissait en fin de
     // liste (un dossier « 00 » après « midimt32 »). Un ordre d'affichage se
     // décide ici, il ne s'hérite pas d'une clause SQL trois couches plus bas.
-    final folderList = folders.values.toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final o = _order;
+    final folderList = sortLocalEntries(folders.values,
+        name: (f) => f.name, mtime: (f) => _folderMtimes[f.name],
+        sort: o.sort, ascending: o.ascending);
+    final shownTracks = sortLocalEntries(tracks,
+        // Trié sur ce que la ligne AFFICHE (titre, ou nom du conteneur), pas
+        // sur le nom de fichier: sinon l'ordre « par nom » paraît aléatoire.
+        name: (e) => (e.$2.subsongCount ?? 1) > 1
+            ? e.$2.containerName
+            : e.$2.displayTitle,
+        mtime: (e) => _fileMtimes[e.$1],
+        sort: o.sort, ascending: o.ascending);
+    tracks
+      ..clear()
+      ..addAll(shownTracks);
+    final playlists = sortLocalEntries(_playlists,
+        name: p.basename,
+        mtime: (m) => _fileMtimes['${widget.prefix}${p.basename(m)}'],
+        sort: o.sort, ascending: o.ascending);
+    if (o.byDate) _fillMtimes([for (final (rel, _) in tracks) rel]);
 
     // « Ce qui est affiché »: sous filtre, les pistes qui matchent; sinon le
     // sous-arbre entier (les dossiers listés le représentent). C'est ce que
@@ -745,6 +785,8 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
         // croire qu'on importe LÀ, or un import va toujours sous `local/` en
         // préservant sa propre arborescence.
         actions: [
+          LocalBrowseActions(
+              order: _order, onChanged: (o) => setState(() => _order = o)),
           // Entrée en sélection sans appui long (bureau, souris): coche
           // tout ce qui est affiché, on décoche ensuite.
           if (shownKeys.isNotEmpty)
@@ -780,7 +822,9 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
-              builder: (_) => TextField(
+              builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                 controller: _filterCtrl,
                 decoration: InputDecoration(
                   hintText: l10n.browseFilterByTitle,
@@ -789,7 +833,7 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
                   border: const OutlineInputBorder(),
                 ),
                 onChanged: _onFilterChanged,
-              ),
+              )),
             ),
           ),
           // Compteur + « Tout lire » + la paire Radio/Surprise habituelle —
@@ -842,16 +886,19 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
                           ),
                         ),
                       )
-                    : ListView.builder(
+                    : o.isGrid
+                        ? _grid(context, q.isEmpty ? playlists : const [],
+                            q.isEmpty ? folderList : const [], tracks, cs)
+                        : ListView.builder(
                         // Les playlists d'abord: elles décrivent le dossier
                         // qu'on vient d'ouvrir, et elles sont peu nombreuses.
                         // Écartées sous filtre — la recherche porte sur des
                         // PISTES.
-                        itemCount: (q.isEmpty ? _playlists.length : 0) +
+                        itemCount: (q.isEmpty ? playlists.length : 0) +
                             folderList.length +
                             tracks.length,
                         itemBuilder: (ctx, i) {
-                          final pls = q.isEmpty ? _playlists : const <String>[];
+                          final pls = q.isEmpty ? playlists : const <String>[];
                           if (i < pls.length) {
                             final m3u = pls[i];
                             return ListTile(
@@ -968,6 +1015,94 @@ class _LocalLibraryScreenState extends State<LocalLibraryScreen> {
         ],
       ),
       ),
+    );
+  }
+
+
+  /// Dates des fichiers qui n'ont pas été lues avec le niveau (résultats de
+  /// filtre plus profonds). Une fois par chemin; un seul `setState` à la fin.
+  bool _filling = false;
+  void _fillMtimes(List<String> rels) {
+    final root = _root;
+    if (_filling || root == null) return;
+    final missing = [for (final r in rels) if (!_fileMtimes.containsKey(r)) r];
+    if (missing.isEmpty) return;
+    _filling = true;
+    Future(() async {
+      for (final r in missing.take(500)) {
+        _fileMtimes[r] = await localMtimeMs(joinPortable(root, r)) ?? 0;
+      }
+      _filling = false;
+      if (mounted) setState(() {});
+    });
+  }
+
+  /// La vue « icônes »: playlists, dossiers puis pistes, comme la liste.
+  /// Pas de balayage (rien à balayer dans une grille): l'appui long entre en
+  /// sélection, d'où lire, renommer, déplacer, supprimer.
+  Widget _grid(BuildContext context, List<String> pls,
+      List<_FolderEntry> folders, List<(String, TrackRecord)> tracks,
+      ColorScheme cs) {
+    final l10n = context.l10n;
+    Widget glyph(IconData icon) => Container(
+          decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8)),
+          child: Icon(icon, size: 40, color: cs.onSurfaceVariant),
+        );
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+      gridDelegate: localGridDelegate(_order.view),
+      itemCount: pls.length + folders.length + tracks.length,
+      itemBuilder: (ctx, i) {
+        if (i < pls.length) {
+          final m3u = pls[i];
+          return LocalGridTile(
+            art: glyph(Icons.queue_music),
+            title: p.basenameWithoutExtension(m3u),
+            subtitle: p.extension(m3u).replaceFirst('.', '').toUpperCase(),
+            onTap: () => globalOpenLocalPaths?.call([m3u]),
+          );
+        }
+        i -= pls.length;
+        if (i < folders.length) {
+          final f = folders[i];
+          final childPrefix = '${widget.prefix}${f.name}/';
+          final key = _dirKey(childPrefix);
+          return LocalGridTile(
+            art: LocalFolderArt(art: _folderArt[f.name]),
+            title: _segmentLabel(f.name),
+            subtitle: l10n.albumTrackCount(f.count),
+            selecting: _selecting,
+            selected: _selected.contains(key),
+            onLongPress: () => _toggle(key),
+            onTap: _selecting
+                ? () => _toggle(key)
+                : () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => LocalLibraryScreen(
+                        prefix: childPrefix,
+                        title: _segmentLabel(f.name),
+                        source: widget.source,
+                      ),
+                    )),
+          );
+        }
+        final (_, t) = tracks[i - folders.length];
+        final key = _trackKey(t);
+        return LocalGridTile(
+          art: RailArtwork(
+            url: t.artworkUrl,
+            localFilePath: t.filePath,
+            formatHint: t.formatExt,
+            platformName: t.platformName,
+          ),
+          title: (t.subsongCount ?? 1) > 1 ? t.containerName : t.displayTitle,
+          selecting: _selecting,
+          selected: _selected.contains(key),
+          onLongPress: () => _toggle(key),
+          onTap: _selecting ? () => _toggle(key) : () => _playAll([t]),
+        );
+      },
     );
   }
 }

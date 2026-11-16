@@ -7,8 +7,10 @@ import 'dart:ui';
 import 'dart:io';
 import 'dart:typed_data' show Uint8List;
 
+import 'tv_focus.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kReleaseMode, listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:path/path.dart' as p;
 import 'package:rewamp_audio/rewamp_audio.dart';
 import 'app_snack.dart';
@@ -17,6 +19,8 @@ import 'formats.dart' show kDosMidiExts;
 import 'fm_bank_screen.dart' show importFmBanks;
 import 'frame_stats.dart';
 import 'onboarding.dart';
+import 'load_error.dart';
+import 'network_status.dart';
 import 'l10n.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'local_tab_screen.dart';
@@ -37,6 +41,7 @@ import 'local_roots.dart' show LocalRoots;
 import 'queue_shuffle.dart';
 import 'transport_log.dart';
 import 'media_session.dart';
+import 'carplay.dart';
 import 'glass_chrome.dart';
 import 'mini_player.dart';
 import 'mini_window.dart';
@@ -166,6 +171,173 @@ final class _LocalItem extends _QueueItem {
 class _AppShellState extends State<AppShell>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   late final PlayerController _controller;
+  CarPlaySession? _carPlay;
+  Future<void> _initCarPlayAndMedia() async {
+    await initMediaSession(_controller,
+        armAppleCommands: !await CarPlaySession.isConnected());
+    if (!Platform.isIOS || !mounted) return;
+    _carPlay = CarPlaySession(_controller, CarPlayBrowser(
+      library: LocalCarPlayLibrary(),
+      queue: () => _controller.queue,
+      queueIndex: () => _controller.queueIdx,
+      playQueueIndex: (index) => _playAt(index),
+      playTracks: (tracks, index) =>
+          _startLocalTrackQueue(context, tracks, startIndex: index),
+      playPlaylist: (tracks, shuffle) async {
+        // Set the mode explicitly: Play preserves playlist order, including
+        // when the previous queue had shuffle enabled.
+        _shuffleEnabled = shuffle;
+        _controller.setShuffleEnabled(shuffle);
+        UserSettings.instance.transportShuffle = shuffle;
+        await _startLocalTrackQueue(context, tracks);
+      },
+      playOnline: (song) => _startCarPlayOnlineQueue([song], 0),
+      playOnlineQueue: _startCarPlayOnlineQueue,
+    ), () => context.l10n);
+    await _carPlay!.start();
+  }
+
+  Future<void> _startCarPlayOnlineQueue(List<SearchResult> songs, int index) async {
+    _exitRadio();
+    _queue
+      ..clear()
+      ..addAll([for (final song in songs) _OnlineItem(song, _seq())]);
+    _queueAlbumId = null;
+    _queueAlbumName = null;
+    _prefetchFailed.clear();
+    _prefetchDone.clear();
+    _queueIdx = index;
+    _syncControllerQueue();
+    _refreshQueueNav();
+    await _playAt(index);
+  }
+
+  void _carPlayPlaybackFailed() {
+    if (!(_carPlay?.playback.busy ?? false)) _carPlay?.reportPlaybackError();
+  }
+
+  Future<void> _playCarPlayAt(int index) async {
+    if (index < 0 || index >= _queue.length) return;
+    final item = _queue[index];
+    final previous = _lastGoodIdx;
+    _queueIdx = index;
+    _controller.updateQueueIdx(index);
+    _refreshQueueNav(); // Transport skips work before the first byte arrives.
+    final cancel = DownloadCancelToken.current!;
+    try {
+      TrackRecord track;
+      if (item is _OnlineItem) {
+        final song = await RewampDb.resolveMatchedTrack(item.result);
+        cancel.throwIfCancelled();
+        // An ALBUM archive (jw_spc, jw_2sf…: a .7z holding one file per
+        // track) — what Siri hands over for an album — is never downloaded as
+        // one "song": that played an arbitrary member titled "Album (1)".
+        // Its server tracklist becomes the queue BEFORE any download, each
+        // track resolving its own file when reached, like the phone's album
+        // queue; playback starts on the first track.
+        if (RewampDb.isArchiveAlbumRow(song)) {
+          final tracks = await RewampDb.expandArchiveAlbumRows([song]);
+          cancel.throwIfCancelled();
+          if (tracks.length > 1 || !identical(tracks.first, song)) {
+            _queue.replaceRange(index, index + 1,
+                [for (final r in tracks) _OnlineItem(r, _seq())]);
+            _syncControllerQueue();
+            _refreshQueueNav();
+            await _playCarPlayAt(index);
+            return;
+          }
+        }
+        track = await _prepareCarPlayOnline(song);
+        cancel.throwIfCancelled();
+        final rows = _rotateToTopEntry(song, await _subsongEntries(
+            song.copyWith(localPath: track.filePath)));
+        cancel.throwIfCancelled();
+        // Expanded rows naming DIFFERENT files (an album container that is
+        // not an archive row): each track is its own file. Rebuilt WITHOUT
+        // the downloaded file's localPath — rows carrying it all replayed
+        // that one file (downloadAndPlay plays a row's localPath as is).
+        if (carPlayRowsSpanFiles(rows)) {
+          final fresh = _rotateToTopEntry(song, await _subsongEntries(song));
+          cancel.throwIfCancelled();
+          _queue.replaceRange(index, index + 1,
+              [for (final r in fresh) _OnlineItem(r, _seq())]);
+          _syncControllerQueue();
+          _refreshQueueNav();
+          await _playCarPlayAt(index);
+          return;
+        }
+        // One row: the download already resolved it (file AND subsong — an
+        // RSN member's real index comes from the archive, not from the row).
+        final expanded =
+            rows.length < 2 ? const <TrackRecord>[] : carPlayResolvedSubsongs(track, rows);
+        if (expanded.isNotEmpty) {
+          track = expanded.first;
+          _queue.replaceRange(index, index + 1,
+              [for (final t in expanded) _LocalItem(t, _seq())]);
+          _syncControllerQueue();
+          _refreshQueueNav();
+        }
+      } else {
+        track = (item as _LocalItem).track;
+        if (track.filePath.isNotEmpty && !await File(track.filePath).exists()) {
+          await LocalRoots.instance.materialize([track.filePath]);
+          cancel.throwIfCancelled();
+        }
+        if (track.filePath.isNotEmpty && !await File(track.filePath).exists()) {
+          await RewampDb.reExtractForMissingLocalPath(track.filePath);
+        }
+        cancel.throwIfCancelled();
+        if (!await File(track.filePath).exists()) {
+          if (track.onlineId == null) throw StateError('File is unavailable');
+          final song = await RewampDb.getSongEntry(track.onlineId!,
+              fileName: track.filePath.isEmpty ? null : p.basename(track.filePath));
+          cancel.throwIfCancelled();
+          if (song == null) throw StateError('Catalogue track unavailable');
+          track = await _prepareCarPlayOnline(
+              song.withSubsong(track.subsongIdx, title: track.displayTitle));
+          cancel.throwIfCancelled();
+          _queue[index] = _LocalItem(track, item.seq);
+          _syncControllerQueue();
+        }
+      }
+      cancel.throwIfCancelled();
+      if (!mounted) throw const DownloadCancelledException();
+      await _playResolvedLocal(track);
+      cancel.throwIfCancelled();
+      if (!_controller.isPlaying) throw StateError('Unable to decode track');
+      _afterQueuePlayback();
+    } catch (_) {
+      // A superseded download must not restore the old highlight or playback.
+      if (cancel.isCancelled && (_carPlay?.playback.ownsCurrent ?? false)) {
+        _restoreQueueIdx(previous); // Explicit Cancel, with no newer selection.
+      }
+      cancel.throwIfCancelled();
+      _restoreQueueIdx(previous);
+      rethrow;
+    }
+  }
+
+  Future<TrackRecord> _prepareCarPlayOnline(SearchResult song) async {
+    TrackRecord? track;
+    // Use exactly the phone's resolver: mirrors, cached files, album archives,
+    // auxiliary PSF files and subsong identities follow the same code path.
+    await downloadAndPlay(context, song, (path, title, {
+      artist, album, albumId, formatExt, onlineId, artworkUrl, artworkTargetDir,
+      int subsongIdx = 0, durationS, subsongCount,
+    }) {
+      DownloadCancelToken.current?.throwIfCancelled();
+      track = TrackRecord(id: '${onlineId ?? song.songId}?subsong=$subsongIdx',
+        filePath: path, entryPath: '', subsongIdx: subsongIdx,
+        title: title, artist: artist, metaAlbum: album, albumId: albumId,
+        formatExt: formatExt, onlineId: onlineId, artworkUrl: artworkUrl,
+        durationS: durationS, subsongCount: subsongCount,
+        source: 'online', collectionSlug: song.collection,
+        platformName: song.platform, year: song.year,
+        isFavorite: false, inLibrary: false, playCount: 0);
+    }, showUI: false);
+    if (track == null) throw StateError('Download produced no playable track');
+    return track!;
+  }
   late final List<Widget> _screens;
   Timer? _ticker;
   /// L'onglet affiché. Initialisé au réglage « onglet au lancement » — lu ICI
@@ -547,6 +719,7 @@ class _AppShellState extends State<AppShell>
     globalRunCliCommand   = _runCliCommand;
     // Raccourcis clavier du bureau: UN répartiteur global (app_shortcuts.dart).
     AppShortcuts.install(_ShellShortcutActions(this));
+    TvFocus.railSelectedIndex = () => _index;
     // Dock drop / Open With / double-click. Set the hook FIRST:
     // the native buffer is drained immediately and its contents
     // are cleared on the native side by that very call.
@@ -666,7 +839,7 @@ class _AppShellState extends State<AppShell>
     // System media session (lock screen / Control Center / artwork / remote).
     // Playback stays in the C engine; this only mirrors state + forwards
     // commands. No-op on Windows/Linux. Fire-and-forget.
-    initMediaSession(_controller);
+    unawaited(_initCarPlayAndMedia());
 
     // Restore recently-played list from the local DB.
     _controller.loadHistory();
@@ -851,6 +1024,9 @@ class _AppShellState extends State<AppShell>
       _controller.audio.projectmSetActive(true);
       // iOS: des fichiers ont pu être déposés dans Fichiers › Rewamp.
       LocalRoots.instance.onResumed();
+      // Le serveur est-il revenu pendant qu'on était ailleurs? (Sonde légère,
+      // sans effet quand tout va bien — network_status.dart.)
+      NetworkStatus.instance.probeNow();
       // Mode veille: une suspension a pu dépasser l'échéance (les minuteurs
       // Dart ne tournent pas pendant qu'iOS gèle l'app).
       SleepTimer.instance.check();
@@ -874,6 +1050,7 @@ class _AppShellState extends State<AppShell>
   void dispose() {
     AppShortcuts.uninstall();
     _unwireSleepTimer();
+    _carPlay?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     SyncService.instance.stopPolling();
     _playerCtrl.dispose();
@@ -1707,7 +1884,7 @@ class _AppShellState extends State<AppShell>
       return;
     } catch (e) {
       messenger.clearSnackBars();
-      AppSnack.showOn(messenger, l10n.shellDownloadFailed(e.toString()), duration: const Duration(seconds: 4));
+      AppSnack.showOn(messenger, netErrorMessageOrNull(l10n, e) ?? l10n.shellDownloadFailed(e.toString()), duration: const Duration(seconds: 4));
       return;
     }
 
@@ -1937,7 +2114,7 @@ class _AppShellState extends State<AppShell>
   /// Same as [_onFileReady] but records the play against the album
   /// (updates recent_albums.last_played_at, not track.last_played_at).
   /// Used by all album-queue play paths.
-  void _onFileReadyAsAlbum(
+  Future<void> _onFileReadyAsAlbum(
     String path,
     String label, {
     String? artist,
@@ -1956,7 +2133,7 @@ class _AppShellState extends State<AppShell>
     // PlayerController.loadFile's adoptHandoff) — metadata only, and the
     // missing-file recovery is moot (the file is being DECODED right now).
     bool adopt = false,
-  }) {
+  }) async {
     // The file may simply not be HERE. An account syncs its history and its
     // library between devices, so a row can name a track this device never
     // downloaded - and this path used to hand that path straight to the
@@ -1981,7 +2158,8 @@ class _AppShellState extends State<AppShell>
     )) {
       return;
     }
-    _controller.loadFile(
+    DownloadCancelToken.current?.throwIfCancelled();
+    final loaded = await _controller.loadFile(
       path,
       label,
       subsongIdx:       subsongIdx,
@@ -2000,6 +2178,9 @@ class _AppShellState extends State<AppShell>
       recordAsAlbum:    true,
       adoptHandoff:     adopt,
     );
+    if (!loaded && (_carPlay?.playback.busy ?? false)) {
+      throw StateError('Unable to decode track');
+    }
   }
 
   static const _kSidExts = {
@@ -3427,7 +3608,7 @@ class _AppShellState extends State<AppShell>
   }
 
   /// Same for a LOCAL queue entry whose file exists.
-  void _playResolvedLocal(TrackRecord track, {bool adopt = false}) {
+  Future<void> _playResolvedLocal(TrackRecord track, {bool adopt = false}) async {
     final artworkDir = track.source == 'online' ? p.dirname(track.filePath) : null;
     // TEMP (diagnostic « écritures croisées »): d'OÙ vient l'album qu'on va
     // attacher à cette piste. `_queueAlbumId` survit à l'album qui l'a posé —
@@ -3437,7 +3618,7 @@ class _AppShellState extends State<AppShell>
           'sur ${p.basename(track.filePath)} '
           '(meta="${track.metaAlbum ?? ''}")');
     }
-    _onFileReadyAsAlbum(
+    await _onFileReadyAsAlbum(
       track.filePath,
       track.displayTitle,
       artist:           track.artist,
@@ -3607,6 +3788,19 @@ class _AppShellState extends State<AppShell>
   }
 
   Future<void> _playAt(int i, {int? revertTo}) async {
+    final carPlay = _carPlay;
+    if (carPlay != null && (carPlay.connected || carPlay.playback.busy)) {
+      try {
+        await carPlay.playback.run(() => _playCarPlayAt(i));
+      } on DownloadCancelledException {
+        if (DownloadCancelToken.current != null) rethrow;
+      } catch (error, stack) {
+        if (DownloadCancelToken.current != null) rethrow;
+        debugPrint('[carplay] playback failed: $error\n$stack');
+        carPlay.reportPlaybackError();
+      }
+      return;
+    }
     final prevIdx = revertTo ?? _queueIdx;
     _queueIdx = i;
     _controller.updateQueueIdx(i);
@@ -3703,6 +3897,7 @@ class _AppShellState extends State<AppShell>
           // Genuinely unsupported — say so explicitly (not "download failed")
           // and report the song. Advance so the queue keeps flowing, WITHOUT
           // counting toward the network-down threshold.
+          _carPlayPlaybackFailed();
           debugPrint('[queue] unsupported format at $i: ${e.filename} .${e.ext}');
           _reportUnsupportedFormat(
             file: e.filename,
@@ -3737,6 +3932,7 @@ class _AppShellState extends State<AppShell>
                 return _playAt(i, revertTo: prevIdx);
               }
             }
+            _carPlayPlaybackFailed();
             debugPrint('[queue] file gone at $i (HTTP ${e.statusCode}): ${e.url}');
             _reportDownloadGone(result, e);
             if (i + 1 < _queue.length) return _playAt(i + 1, revertTo: prevIdx);
@@ -3767,6 +3963,7 @@ class _AppShellState extends State<AppShell>
           // Download failed (network down/slow, timeout, 5xx…). Surface it and
           // auto-advance so the radio/queue keeps flowing — but stop after 3
           // consecutive failures (network is likely fully down).
+          _carPlayPlaybackFailed();
           debugPrint('[queue] download error at $i: $e');
           _consecutiveDlFailures++;
           if (mounted) {
@@ -3795,9 +3992,6 @@ class _AppShellState extends State<AppShell>
         if (!await File(track.filePath).exists()) {
           await RewampDb.reExtractForMissingLocalPath(track.filePath);
         }
-        // Playlist/library trace whose file was deleted: re-resolve through
-        // the online download machinery (get_song_context et al) instead of
-        // failing the load and silently skipping.
         if (track.onlineId != null &&
             !await File(track.filePath).exists()) {
           // The collection is derivable from where the file lives/lived
@@ -3851,7 +4045,8 @@ class _AppShellState extends State<AppShell>
           );
           if (!mounted) return; // File.exists() was awaited above
           final before = _controller.filePath;
-          await downloadAndPlay(context, r, _onFileReadyAsAlbum);
+          await downloadAndPlay(context, r, _onFileReadyAsAlbum,
+              showUI: !(_carPlay?.connected ?? false));
           // ⚠️ downloadAndPlay returns once the load is REQUESTED (the decoder
           // opens off the UI thread): without this wait `filePath` is always
           // still `before`, and a track that did start had its counter put
@@ -3870,8 +4065,12 @@ class _AppShellState extends State<AppShell>
           _prefetchNextDownload();
           return;
         }
-        _playResolvedLocal(track);
+        await _playResolvedLocal(track);
     }
+    _afterQueuePlayback();
+  }
+
+  void _afterQueuePlayback() {
     // A backfill may have just resolved the album id for this queue — keep it
     // so the NEXT track gets the link without its own lookup. ⚠️ Read once
     // THIS entry's load has settled: right after the request the controller
@@ -3927,6 +4126,8 @@ class _AppShellState extends State<AppShell>
   }
 
   void _onLoadResult(bool ok) {
+    if (!ok && (_carPlay?.playback.busy ?? false)) return;
+    if (!ok) _carPlayPlaybackFailed();
     if (ok) {
       _consecutiveLoadFailures = 0;
       _lastGoodIdx = _queueIdx;   // this entry is now genuinely playing
@@ -5694,10 +5895,26 @@ class _AppShellState extends State<AppShell>
     // free. As an overlay it needs saying. Only fires when THIS route is the
     // one being popped — a sheet opened from inside the player is a route above
     // it and still closes first, which is the order we want.
+    //
+    // Android: the tabs are NESTED Navigators, and the system back only ever
+    // asks the ROOT one — which holds a single route, so back from a detail
+    // screen, or from a menu opened inside a tab (the library sort menu),
+    // QUIT THE APP (seen on Android TV, where back is the only way out of a
+    // menu). Back is therefore always intercepted here on Android and routed:
+    // player first, then the current tab's own stack, and only then out.
+    final routeBack = Platform.isAndroid;
     return PopScope(
-      canPop: !_playerOpen,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _closePlayerOverlay();
+      canPop: !routeBack && !_playerOpen,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (_playerOpen) {
+          _closePlayerOverlay();
+          return;
+        }
+        if (!routeBack) return;
+        final nav = _navKeys[_index].currentState;
+        if (nav != null && await nav.maybePop()) return;
+        await SystemNavigator.pop();
       },
       child: DropTarget(
       onDragEntered: (_) { if (mounted) setState(() => _dragOver = true); },
@@ -5707,13 +5924,22 @@ class _AppShellState extends State<AppShell>
         await _openDroppedItems(detail.files);
       },
       child: Stack(children: [
-        Scaffold(
+        // Android TV: sous le lecteur ouvert, menu, contenu et mini lecteur
+        // restent MONTÉS — et focalisables: ↑ depuis les contrôles du
+        // lecteur tombait sur le mini lecteur ou le menu, cachés dessous.
+        // `excluding` change, la forme de l'arbre non.
+        ExcludeFocus(
+        excluding: TvFocus.enabled && _playerMounted,
+        child: Scaffold(
         // Top-level Row: nav rail (desktop) | content stack
         body: Row(
           children: [
             // Left nav rail — separate from Stack so it's never covered by overlay.
             if (isDesktop) ...[
-              NavigationRail(
+              // Android TV: le menu est son propre scope de focus — ↑/↓ y
+              // restent, et ↓ au bout mène au mini lecteur (tv_focus.dart).
+              _tvRailScope(
+                NavigationRail(
                 extended: extendRail,
                 // 160 suffisait aux six onglets (« Bibliothèque » est le plus
                 // long) mais pas à « Téléchargements », qui sortait tronqué.
@@ -5730,7 +5956,7 @@ class _AppShellState extends State<AppShell>
                 // libellé sélectionné perdait le repli CJK (font_fallback.dart).
                 selectedLabelTextStyle: withCjkFallback(const TextStyle(
                     color: _kBrandPink, fontWeight: FontWeight.w600)),
-              ),
+              )),
               const VerticalDivider(width: 1, thickness: 1),
             ],
 
@@ -6001,6 +6227,7 @@ class _AppShellState extends State<AppShell>
         // mini-lecteur, dans une boîte dont nous fixons la hauteur — plus
         // aucune couche intermédiaire ne peut la gonfler.
         extendBody: true,
+        ),
         ),
         // The FULL PLAYER — last, so it covers the nav bar, the mini player and
         // the drop feedback, exactly as its route used to. It is the real
@@ -6491,3 +6718,10 @@ class _ShellShortcutActions implements AppShortcutActions {
   @override
   void showHelp() => KeyboardShortcutsScreen.show(_ctx);
 }
+
+/// Android TV: le menu latéral devient son propre scope de focus (↑/↓ y
+/// restent, ↓ au bout mène au mini lecteur — tv_focus.dart). Ailleurs, rien:
+/// sur le bureau un scope piégerait la touche Tab dans le menu.
+Widget _tvRailScope(Widget rail) => TvFocus.enabled
+    ? FocusScope(node: TvFocus.railScope, child: rail)
+    : rail;

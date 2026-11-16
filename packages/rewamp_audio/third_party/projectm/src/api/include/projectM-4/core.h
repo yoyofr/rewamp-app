@@ -98,6 +98,26 @@ PROJECTM_EXPORT void projectm_loadpreload_preset_file(projectm_handle instance, 
 PROJECTM_EXPORT int projectm_preloaded_random_texture_count(projectm_handle instance, uint64_t randSeed);
 
 /**
+ * Runs the GL-free, costly part of a preset's shader translation for
+ * @p filename and keeps the result for its next load (rewamp). Callable from
+ * any thread once a first preset has been loaded; makes no GL call. For
+ * platforms without a shared preload context (the web).
+ */
+PROJECTM_EXPORT void projectm_prewarm_preset_shaders(const char* filename);
+
+/**
+ * Loads a preset in two halves (rewamp, for the web): builds it and starts its
+ * shader compiles WITHOUT waiting for them; projectm_poll_preset_load, called
+ * once per frame before rendering, applies it once every program has linked
+ * (or after @p max_frames). The current preset keeps rendering meanwhile.
+ *
+ * @return begin: true when a load is pending. poll: 0 nothing pending,
+ *         1 still compiling, 2 applied.
+ */
+PROJECTM_EXPORT bool projectm_begin_load_preset_file(projectm_handle instance, const char* filename, bool smooth_transition);
+PROJECTM_EXPORT int projectm_poll_preset_load(projectm_handle instance, int max_frames);
+
+/**
  * @brief Returns the GL program ids of the built-in transition shaders (rewamp).
  *
  * They are compiled once at instance creation, but on backends that build their

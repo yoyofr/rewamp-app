@@ -661,6 +661,9 @@ class AppLocalizationsNo extends AppLocalizations {
   String get videoWatchDemo => 'Se demoen';
 
   @override
+  String get albumVideo => 'Video';
+
+  @override
   String searchFacetSelected(String label, String value) {
     return '$label: $value';
   }
@@ -1077,6 +1080,29 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get commonRetry => 'Prøv igjen';
+
+  @override
+  String get netErrorOffline =>
+      'Du er frakoblet. Nedlastet musikk spiller fortsatt; nettinnhold kommer tilbake med tilkoblingen.';
+
+  @override
+  String get netErrorSlow =>
+      'Serveren bruker for lang tid på å svare – nettverket kan være ustabilt eller serveren overbelastet. Innholdet lastes inn på nytt av seg selv når den svarer igjen.';
+
+  @override
+  String get netErrorServer =>
+      'Serveren har problemer akkurat nå. Prøv igjen om et øyeblikk.';
+
+  @override
+  String get netErrorGeneric =>
+      'Innholdet kunne ikke lastes inn. Prøv igjen om et øyeblikk.';
+
+  @override
+  String get netBannerOffline =>
+      'Frakoblet – nedlastet musikk er fortsatt tilgjengelig';
+
+  @override
+  String get netBannerSlow => 'Serveren svarer ikke – prøver igjen automatisk';
 
   @override
   String get commonOptions => 'Alternativer';
@@ -1912,6 +1938,9 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get sortDateAdded => 'Lagt til';
+
+  @override
+  String get sortDateModified => 'Endringsdato';
 
   @override
   String get commonClear => 'Tøm';
@@ -5363,6 +5392,10 @@ class AppLocalizationsNo extends AppLocalizations {
       'Komponister kan trykkes på i alle album- og underspor-skjermer; tittel og opphav leses fra importerte filer.';
 
   @override
+  String get releaseNotesV11AlbumNotes =>
+      'Album: notater og videoer (gameplay, superplays…) på albumskjermen, også i spilleren sammen med sporets egne.';
+
+  @override
   String get releaseNotesV11Hindi =>
       'Appen snakker hindi (19 språk), og grensesnittet er klart for språk som skrives fra høyre mot venstre.';
 
@@ -5372,9 +5405,57 @@ class AppLocalizationsNo extends AppLocalizations {
 
   @override
   String get releaseNotesV11Visualizers =>
-      'Visualiseringer: opptil 64 stemmer i oscilloskopene, én farge per MIDI-trommeinstrument, noter for 2SF-filer, instrumentnavn fra FM-banker.';
+      'Visualiseringer: opptil 64 stemmer i oscilloskopene, én farge per MIDI-trommeinstrument, noter for 2SF-filer, instrumentnavn fra FM-banker, raskt gjentatte noter på Mega Drive.';
+
+  @override
+  String get releaseNotesV11AndroidTv =>
+      'Android TV: fullskjermvisning, navigering med fjernkontrollen (piler og OK, hold inne OK for menyen) og en versjon for 32-biters TV-bokser.';
+
+  @override
+  String get releaseNotesV11Network =>
+      'Treg eller utilgjengelig server: en tydelig melding i stedet for en teknisk feil, et banner så lenge det varer, og skjermene lastes inn på nytt av seg selv når den er tilbake.';
+
+  @override
+  String get releaseNotesV11ArtistFilter =>
+      'Artistsiden: et filter for å finne et spor eller et album i en lang liste.';
+
+  @override
+  String get releaseNotesV11ChpPatterns =>
+      'Mønstervisualisering for CHIPNSFX-låter (.chp, Amstrad CPC), med instrumentnavn.';
 
   @override
   String get releaseNotesV11Fixes =>
-      'Rettet: noen avviste SSF-filer, stille WonderSwan-ripper, ufullstendige album fordelt på flere arkiver og projectM-forhåndsinnstillinger etter at spilleren er lukket.';
+      'Rettet: noen avviste SSF-filer, stille WonderSwan-ripper, ufullstendige album fordelt på flere arkiver, mislykkede oppføringer i noen album (en mappe oppført som spor) og projectM-forhåndsinnstillinger etter at spilleren er lukket.';
+
+  @override
+  String get settingsRenderBackend => 'Gjengivelsesmotor';
+
+  @override
+  String get settingsRenderBackendAuto => 'Automatisk';
+
+  @override
+  String get settingsRenderBackendAutoHint =>
+      'Impeller på Mac med Apple Silicon, Skia på Intel-Mac';
+
+  @override
+  String get settingsRenderBackendImpellerHint =>
+      'Moderne gjengivelse, full glasseffekt. Kan forvrenge tekst på enkelte Intel-Mac.';
+
+  @override
+  String get settingsRenderBackendSkiaHint =>
+      'Klassisk gjengivelse, tryggere på Intel-Mac. Forenklet glasseffekt.';
+
+  @override
+  String settingsRenderBackendActive(String name) {
+    return 'Aktiv: $name';
+  }
+
+  @override
+  String get settingsRenderBackendRestart => 'Gjelder fra neste oppstart';
+
+  @override
+  String get carPlayNext => 'Neste spor';
+
+  @override
+  String get carPlayPrevious => 'Forrige spor';
 }

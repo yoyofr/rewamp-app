@@ -8,6 +8,7 @@
 const B = (() => { const x = new XMLHttpRequest(); x.open('GET', 'dist/build.json', false); x.send(); return JSON.parse(x.responseText); })();
 self.__filename = new URL('dist/' + B.js, self.location.href).href;
 importScripts(self.__filename);
+importScripts('opfs-store.js');   // fichiers dépliés sur disque (OpfsStore)
 
 let M, api, queue = [], cur = -1, serial = '', wantPlay = false, ended = false, viz = null, vizCanvas = null, vizGl = 0, vizMode = 3;
 const vizStats = { ms: 0, n: 0 };
@@ -46,6 +47,11 @@ async function boot() {
     pos: c('rewamp_get_position_seconds', 'number', []),
     dur: c('rewamp_get_duration_seconds', 'number', []),
     seek: c('rewamp_seek_seconds', 'number', ['number']),
+    // Un seek tourne sur son propre fil (rewamp_seek_thread_main); les moteurs
+    // qui émulent un CPU (SID, PSF…) l'avancent en rendant à vide et publient
+    // où ils en sont — c'est ce que la barre montre pendant ce temps.
+    seeking: c('rewamp_is_seeking', 'number', []),
+    seekProgress: c('rewamp_seek_progress_seconds', 'number', []),
     backend: c('rewamp_get_backend_name', 'string', []),
     setNext: c('rewamp_set_next_file', null, ['string', 'number', 'number', 'number', 'number', 'number']),
     clearNext: c('rewamp_clear_next_file', null, []),
@@ -81,7 +87,9 @@ async function boot() {
   // La mémoire wasm EST un SharedArrayBuffer: l'AudioWorklet lit l'anneau en
   // place. Le buffer d'aujourd'hui couvre l'anneau (alloué à l'init); une
   // croissance ultérieure fait un nouvel objet mais l'ancien reste valide.
+  await OpfsStore.init(M);
   postMessage({ type: 'ready', buffer: M.HEAPF32.buffer, ring: api.ring() });
+  peers.hello();
 }
 
 // ── Réglages de lecture (Réglages → Lecture, poussés par la page: op 'playback')
@@ -136,6 +144,45 @@ function producerEnd(e) { const x = endOf(e); return x && isFinite(x) && !generi
 // Position ENTENDUE, en temps écoulé à travers les passes génériques.
 const elapsed = e => generic() ? trk.restarts * baseOf(e) + api.pos() : api.pos();
 
+// ── « Lire avec… » (app/lib/engine_choices.dart) ─────────────────────────────
+// Quel moteur joue un fichier quand plusieurs le peuvent, la BANQUE des moteurs
+// FM-MIDI, la SoundFont de FluidLite, le modèle du MT-32. La page tient la
+// table (webapp/playwith.js) et la pousse ici (op 'choices'); on la rejoue
+// devant CHAQUE ouverture (tables natives repartant de zéro) et CHAQUE
+// armement gapless (ajout) — c'est ce qui permet une file mêlant les moteurs.
+// Espaces de noms: '' moteur, 'b.<moteur>/' banque, 'o.<greffon>/' option;
+// clés 'f:<chemin sans ?subsong>' (le fichier) et 'd:<album>' (l'album:
+// e.a = son album_id, sinon le dossier). '' = « Automatique » dit
+// explicitement (un fichier qui contredit le choix de son album).
+let choices = { m: {}, once: {} };
+const chPath = p => p.replace(/\?.*$/, '');
+function chValue(ns, e) {
+  const path = chPath(e.p), o = choices.once[ns];
+  let v = o && o[0] === path ? o[1] : choices.m[ns + 'f:' + path];
+  if (v == null) v = choices.m[ns + 'd:' + (e.a || path.slice(0, path.lastIndexOf('/')))];
+  return v || null;
+}
+function chApply(e, fresh) {
+  if (!e) return;
+  const call = (n, types, args) => { try { M.ccall(n, null, types, args); } catch {} };
+  const path = chPath(e.p);
+  if (fresh) {
+    // Un choix « pour cette lecture » ne survit pas à un autre fichier.
+    for (const ns in choices.once) if (choices.once[ns][0] !== path) delete choices.once[ns];
+    call('rewamp_registry_clear_path_plugins', [], []); call('rewamp_registry_clear_path_options', [], []);
+    for (const en of ['adlmidi', 'opnmidi']) call(`rewamp_${en}_clear_path_banks`, [], []);
+  }
+  call('rewamp_registry_set_path_plugin', ['string', 'string'], [path, chValue('', e) || '']);
+  for (const en of ['adlmidi', 'opnmidi']) {
+    const v = chValue(`b.${en}/`, e), i = v && v[0] === '#' ? parseInt(v.slice(1), 10) : -1;
+    if (i >= 0) call(`rewamp_${en}_set_path_bank`, ['string', 'number', 'string'], [path, i, '']);
+  }
+  const sf = chValue('o.fluidlite/', e), sfPath = sf && `/data/soundfonts/${sf}.sf2`;
+  if (sfPath && ops.exists(sfPath)) call('rewamp_registry_set_path_option', ['string', 'string', 'string'], [path, 'fluidlite', sfPath]);
+  const model = chValue('o.mt32/', e);
+  if (model) call('rewamp_registry_set_path_option', ['string', 'string', 'string'], [path, 'mt32', model]);
+}
+
 // Le relais armé: l'entrée suivante, ou la MÊME en répétition d'un morceau
 // (relais vers soi-même: le morceau repart de zéro sans blanc). `armed` dit
 // laquelle sera promue — la promotion ne suppose plus « cur + 1 ».
@@ -146,7 +193,7 @@ function arm() {
   const j = repeatOne ? cur : cur + 1;
   const n = (trk && !repeatOne && (generic() || (trk.native && trk.mode === 2))) ? null : queue[j];
   armed = n ? j : -1;
-  if (n) api.setNext(n.p, ...loopArgs(n)); else api.clearNext();
+  if (n) { chApply(n, false); api.setNext(n.p, ...loopArgs(n)); } else api.clearNext();
 }
 
 // `play` = lancer après le chargement; faux quand l'utilisateur a demandé la
@@ -165,6 +212,7 @@ function start(i, play = true) {
   wakeViz();   // nouvelle piste: l'image change même si elle arrive en pause
   const t0 = performance.now();
   api.forcedLoop(...loopArgs(queue[i]));
+  chApply(queue[i], true);
   const r = api.load(queue[i].p);
   if (r !== 0) { say('échec ' + queue[i].t + ' (' + r + ')'); return start(i + 1); }
   serial = String(api.serial());
@@ -189,14 +237,22 @@ function postState() {
   // à zéro prétendrait savoir où la musique repart).
   const e = queue[cur];
   let pos = api.pos();
-  if (!api.handoffPending()) {
+  // Seek en cours: la position du décodeur est figée jusqu'à l'arrivée — on
+  // montre l'AVANCEMENT du seek (même timeline: une passe, décalée des passes
+  // génériques déjà rejouées), comme l'app (player_controller, isSeeking).
+  const seeking = !!api.seeking();
+  if (seeking) {
+    const prog = api.seekProgress();
+    if (prog > 0) pos = generic() ? trk.restarts * baseOf(e) + prog : prog;
+  }
+  if (!seeking && !api.handoffPending()) {
     const end = endOf(e);
     if (generic()) { const base = baseOf(e); pos = elapsed(e); shownDur = isFinite(end) ? end : base; if (!isFinite(end)) pos = Math.min(pos, base); }
     else if (end === Infinity) { shownDur = baseOf(e); pos = Math.min(pos, shownDur); }
     else shownDur = api.dur() > 0 ? api.dur() : (end || 0);
   }
   postMessage({
-    type: 'state', pos, dur: shownDur, playing: !!api.playing(),
+    type: 'state', pos, dur: shownDur, playing: !!api.playing(), seeking,
     title: (queue[cur] && queue[cur].t) || '', key: (queue[cur] && queue[cur].k) ?? null, backend: api.backend() || '', idx: cur, n: queue.length,
     underruns: Number(api.underruns()), devGapMs: Number(api.devGap()) / 1000,
     vizMs: vizStats.n ? vizStats.ms / vizStats.n : 0, vizFps: vizStats.n * 4,
@@ -227,6 +283,9 @@ setInterval(() => {
 const advance = () => start(repeatOne ? cur : cur + 1);
 function tickTrack() {
   const e = queue[cur]; if (!e || !trk) return;
+  // Un seek long (SID: rendu à vide jusqu'à la cible) n'est ni une fin ni un
+  // silence: la sortie se tait le temps qu'il arrive.
+  if (api.seeking()) { api.resetSilence(); return; }
   const playing = api.playing(), now = performance.now();
   if (generic()) {
     const base = baseOf(e), end = endOf(e), el = elapsed(e);
@@ -294,12 +353,79 @@ function vizFrame(ts) {
 // sait jouer. Un .rsn n'est PAS une archive ici: il joue en place (RAR de .spc).
 const ARCHIVE = /\.(zip|7z|lha|lzh|rar|tar|gz|tgz|xz|bz2|lzx)$/i;
 const COMPANION = /lib$|^smpl\.|\.smpl$|\.(ins|txt|nfo|diz|m3u|m3u8|jpg|jpeg|png|gif|pdf|htm|html|doc)$/i;
-function expandArchive(path, name, pushFile) {
+// Dépliage dans un Worker JETABLE (extract-worker.js, module rewamp_extract.wasm):
+// le pic de mémoire des gros 7z part avec lui au lieu de rester réservé dans
+// CE module jusqu'à la fermeture de l'onglet. L'archive lui est TRANSFÉRÉE sans
+// copie (la vue de MEMFS); les fichiers reviennent UN PAR UN, chacun écrit sur
+// disque (OpfsStore) et monté paresseux — en mémoire seulement sans OPFS.
+// `drop`: l'archive quitte MEMFS dès l'envoi (elle revient si le Worker échoue).
+// Rend true si c'est fait; lève l'erreur de libarchive (archive illisible);
+// rend false quand le Worker lui-même n'a pas pu (mémoire, navigateur) — à
+// l'appelant de déplier ici, comme avant.
+let extractSeq = 0;
+const restoring = new Map();   // dest → remontage en cours (op restore)
+async function extractIsolated(archive, dest, drop) {
+  let node;
+  try { node = M.FS.lookupPath(archive).node; } catch { throw new Error('archive introuvable: ' + archive); }
+  let bytes = node.contents.subarray(0, node.usedBytes);
+  const size = bytes.byteLength;
+  const store = await OpfsStore.begin(dest, size);
+  if (drop) M.FS.unlink(archive); else bytes = bytes.slice();
+  return new Promise((resolve, reject) => {
+    const restore = (buf, off, len) => { if (drop && buf) { mkdirs(archive); M.FS.writeFile(archive, new Uint8Array(buf, off, len), { canOwn: true }); } };
+    let w;
+    try { w = new Worker('extract-worker.js?' + (++extractSeq)); }
+    catch { restore(bytes.buffer, bytes.byteOffset, bytes.byteLength); OpfsStore.abort(store); return resolve(false); }
+    const t0 = performance.now();
+    let chain = Promise.resolve(), n = 0, onDisk = 0;
+    // Un fichier sur disque est lâché ici: le Worker n'en tient jamais qu'un.
+    const keep = async f => {
+      const q = dest + '/' + f.rel, u8 = new Uint8Array(f.buf);
+      if (await OpfsStore.put(store, f.rel, u8, mkdirs)) { onDisk++; return; }
+      mkdirs(q); M.FS.writeFile(q, u8, { canOwn: true });
+    };
+    // Dépliage raté après des fichiers déjà reçus: on ne laisse rien de partiel.
+    const undo = async () => { if (n) { OpfsStore.unmountUnder(dest); rmTree(dest); try { M.FS.mkdir(dest); } catch {} } await OpfsStore.abort(store); };
+    w.onmessage = e => {
+      const m = e.data;
+      if (m.file) { n++; chain = chain.then(() => keep(m.file)); return; }
+      w.terminate();
+      chain = chain.then(async () => {
+        if (m.ok) {
+          await OpfsStore.finish(store);
+          say(`archive dépliée à part: ${n} fichiers${onDisk ? ` (${onDisk} sur disque)` : ''}, ${(size / 1e6).toFixed(1)} Mo en ${Math.round(performance.now() - t0)} ms`);
+          return resolve(true);
+        }
+        await undo();
+        restore(m.buf, m.off, m.len);
+        if (m.rc != null) return reject(new Error(m.error));   // archive illisible: inutile de réessayer
+        say(`dépliage à part impossible (${m.error}), dans le moteur`);
+        resolve(false);
+      }).catch(reject);
+    };
+    w.onerror = e => {
+      w.terminate(); e.preventDefault?.();
+      say(`dépliage à part interrompu (${e.message || 'Worker'})${drop ? '' : ', dans le moteur'}`);
+      // L'archive transférée est perdue avec le Worker: sans copie gardée, on ne peut que lever.
+      chain = chain.then(undo).then(() => drop ? reject(new Error('dépliage interrompu')) : resolve(false));
+    };
+    w.postMessage({ buf: bytes.buffer, off: bytes.byteOffset, len: bytes.byteLength }, [bytes.buffer]);
+  });
+}
+// Déplie `archive` dans `dest`: à part d'abord, dans le moteur en repli.
+async function extractTo(archive, dest, drop = false) {
+  mkdirs(dest + '/x'); try { M.FS.mkdir(dest); } catch {}
+  if (B.extractJs && await extractIsolated(archive, dest, drop)) return;
+  const rc = api.extract(archive, dest);
+  if (rc !== 0) throw new Error(`extraction ${rc}: ${api.extractErr()}`);
+  if (drop) try { M.FS.unlink(archive); } catch {}
+}
+
+async function expandArchive(path, name, pushFile) {
   const dest = path + '.d';
   try { M.FS.mkdir(dest); } catch {}
   const t0 = performance.now();
-  const rc = api.extract(path, dest);
-  if (rc !== 0) { say(`archive ${name}: échec ${rc} ${api.extractErr()}`); return; }
+  try { await extractTo(path, dest); } catch (err) { say(`archive ${name}: échec ${err.message}`); return; }
   const files = [];
   const walk = d => { for (const f of M.FS.readdir(d)) { if (f === '.' || f === '..') continue;
     const q = d + '/' + f; if (M.FS.isDir(M.FS.stat(q).mode)) walk(q); else files.push(q); } };
@@ -339,7 +465,7 @@ const rmTree = d => { try { for (const f of M.FS.readdir(d)) { if (f === '.' || 
 // complète la file sur 'ended' (ou avant, pour le gapless).
 const ops = {
   // Écrit un fichier (dossiers créés).
-  put(path, data) { mkdirs(path); M.FS.writeFile(path, new Uint8Array(data)); },
+  put(path, data) { mkdirs(path); M.FS.writeFile(path, new Uint8Array(data), { canOwn: true }); },   // transféré: MEMFS garde ces octets sans copie
   exists(path) { try { M.FS.stat(path); return true; } catch { return false; } },
   // Appel C direct, borné aux exports du moteur (réglages des visualiseurs:
   // palettes, aspect du piano…). La page n'appelle que des noms qu'elle connaît.
@@ -360,14 +486,33 @@ const ops = {
   // Octets d'un fichier du FS (copie): MD5 d'un fichier extrait, pour les durées.
   read(path) { const d = M.FS.readFile(path); return d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength); },
   // Déplie une archive dans dest; rend [{path, playable}] trié.
-  extract(archive, dest) {
-    mkdirs(dest + '/x'); try { M.FS.mkdir(dest); } catch {}
-    const rc = api.extract(archive, dest);
-    if (rc !== 0) throw new Error(`extraction ${rc}: ${api.extractErr()}`);
+  // `drop`: l'archive est EFFACÉE une fois dépliée — sinon elle reste à côté
+  // de son contenu (un album PSF2 de 292 Mo en occupait 585). Archive déjà
+  // dépliée puis effacée: on rend simplement ce que dest contient.
+  async extract(archive, dest, drop = false) {
+    let have = true; try { M.FS.stat(archive); } catch { have = false; }
+    if (have || !walkFiles(dest).length) await extractTo(archive, dest, drop);
     return walkFiles(dest).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
       .map(path => ({ path, playable: !COMPANION.test(path.slice(path.lastIndexOf('/') + 1)) && !!api.canPlay(path) }));
   },
   canPlay(path) { return !!api.canPlay(path); },
+  // Feuille des voix (comme voices_sheet.dart): puces, noms, masque de coupure
+  // (bit v = voix v coupée; 64 bits, donc en CHAÎNE côté page) et mécanisme de
+  // la vitesse en vigueur (0 = 1×, 1 = tempo du moteur, 2 = rééchantillonnage).
+  // `raw` = 0: le moteur n'expose aucune voix (flux déjà mixé) — la page offre
+  // alors gauche/droite, que la source coupe sur les bits 0/1.
+  voices() {
+    const str = (fn, i) => { const p = M._malloc(256); try { M.ccall(fn, 'number', ['number', 'number', 'number'], [i, p, 256]); return M.UTF8ToString(p); } finally { M._free(p); } };
+    const raw = M.ccall('rewamp_voice_count_raw', 'number', [], []);
+    const n = raw ? M.ccall('rewamp_voice_count', 'number', [], []) : 0;
+    const chips = [];
+    if (n) for (let c = 0, k = M.ccall('rewamp_chip_count', 'number', [], []); c < k; c++)
+      chips.push({ name: str('rewamp_chip_name', c), start: M.ccall('rewamp_chip_voice_start', 'number', ['number'], [c]), count: M.ccall('rewamp_chip_voice_count', 'number', ['number'], [c]) });
+    const names = []; for (let v = 0; v < n; v++) names.push(str('rewamp_voice_name', v));
+    return { n, chips, names, mask: String(M.ccall('rewamp_get_voice_mute_mask', 'number', [], [])),
+      speedMode: M.ccall('rewamp_get_playback_speed_mode', 'number', [], []) };
+  },
+  mute(mask) { M.ccall('rewamp_set_voice_mute_mask', null, ['number'], [BigInt.asIntN(64, BigInt(mask))]); wakeViz(); },
   // Sous-chansons d'un fichier: [{p, idx, title}] (une seule entrée, idx null, si aucune).
   entries(path) { return subsongEntries(path, '').map(e => ({ p: e.p, idx: e.idx, title: e.title || '' })); },
   // Remplace la file ([{p, t, k}]) et lance l'entrée `start`.
@@ -379,6 +524,16 @@ const ops = {
   // repartir la musique (sur la piste d'après) pendant une pause.
   append(entries) { const first = queue.length; queue.push(...entries); if (cur < 0 || ended) start(first); else arm(); },
   jump(i) { start(i); },
+  // « Lire avec… »: la table des choix (webapp/playwith.js), les moteurs
+  // capables d'un fichier (ordre par défaut: le premier joue sans choix), les
+  // banques intégrées d'un moteur FM-MIDI.
+  choices(c) { choices = { m: c?.m || {}, once: c?.once || {} }; },
+  candidates(path) { const s = M.ccall('rewamp_registry_candidates', 'string', ['string'], [chPath(path)]) || ''; return s ? s.split('\n') : []; },
+  banks(engine) {
+    if (!/^(adlmidi|opnmidi)$/.test(engine)) return [];
+    const n = M.ccall(`rewamp_${engine}_bank_count`, 'number', [], []);
+    return Array.from({ length: n }, (_, i) => M.ccall(`rewamp_${engine}_bank_name`, 'string', ['number'], [i]) || `#${i}`);
+  },
   // La page a réordonné / retiré des unités derrière la piste en cours: on
   // coupe la file du moteur après l'entrée n-1 (jamais la piste en cours, ni un
   // relais déjà ouvert par le producteur, qui sera promu quoi qu'il arrive).
@@ -409,17 +564,75 @@ const ops = {
   // pour la boucle native, tout de suite pour le reste.
   playback(o) { pb = { ...pb, ...o }; if (cur >= 0) { api.trackEnd(producerEnd(queue[cur])); arm(); } },
   // Retire un dossier du FS (mémoire): un album qu'on n'écoute plus.
-  drop(dir) { rmTree(dir); },
+  drop(dir) { OpfsStore.unmountUnder(dir); rmTree(dir); },
+  // Remonte depuis le disque un dossier déplié lors d'une visite précédente
+  // (OpfsStore). true = ses fichiers sont là, inutile de retélécharger.
+  // Deux lignes d'un même album peuvent le demander en même temps: UN remontage.
+  restore(dest) {
+    try { if (M.FS.readdir(dest).length > 2) return true; } catch {}
+    if (!restoring.has(dest)) restoring.set(dest, OpfsStore.restore(dest, mkdirs).finally(() => restoring.delete(dest)));
+    return restoring.get(dest);
+  },
   // Fichiers d'un dossier du FS (presets intégrés de projectM: le navigateur de presets).
   ls(dir) { try { return M.FS.readdir(dir).filter(f => f !== '.' && f !== '..'); } catch { return []; } },
+  // Diagnostic mémoire: taille de la mémoire wasm (elle ne rétrécit JAMAIS),
+  // octets des fichiers de MEMFS (morceaux sous /r et /m, données du moteur sous /data).
+  // files = octets EN MÉMOIRE; un fichier monté depuis le disque (OpfsStore) compte à part.
+  mem() {
+    const sum = d => { let b = 0, n = 0, disk = 0; try { for (const f of M.FS.readdir(d)) { if (f === '.' || f === '..') continue; const q = d + '/' + f, nd = M.FS.lookupPath(q).node;
+      if (M.FS.isDir(nd.mode)) { const r = sum(q); b += r.b; n += r.n; disk += r.disk; } else if (nd.opfs) { disk += nd.usedBytes; n++; } else { b += nd.usedBytes || 0; n++; } } } catch {} return { b, n, disk }; };
+    const m = sum('/r'), mm = sum('/m'), data = sum('/data'); m.b += mm.b; m.n += mm.n;
+    return { heap: M.HEAPF32.buffer.byteLength, files: m.b, fileCount: m.n, onDisk: m.disk + mm.disk, data: data.b, opfs: OpfsStore.stats() };
+  },
 };
 
+// ── Moteurs ORPHELINS (2026-11-14) ────────────────────────────────────────────
+// Sur iPhone, recharger 2-3 fois la page fait arriver ~2 s de retard du son,
+// et seule la fermeture des onglets le fait partir: Safari garde dans le même
+// processus le moteur de la page d'avant (déjà mesuré: 25 AudioWorklets et
+// 61 Workers dans un onglet de dev), malgré `terminate()` au `pagehide`.
+// Chaque moteur s'annonce sur un BroadcastChannel; un moteur PLUS ANCIEN qui
+// l'entend demande à SA page si elle est encore là — un autre onglet vivant
+// répond et garde son moteur, un orphelin n'a plus personne: il arrête son
+// pipeline (pthreads joints: producteur, pompe) et se ferme.
+const peers = (() => {
+  const me = Math.random().toString(36).slice(2), born = performance.timeOrigin + performance.now();
+  let bc = null, pong = 0, ping = 0;
+  try { bc = new BroadcastChannel('rewamp-engine'); } catch {}
+  function retire() {
+    try { api?.pause(); } catch {}
+    try { M?.ccall('rewamp_uninit', null, [], []); } catch {}
+    try { bc.close(); } catch {}
+    close();
+  }
+  if (bc) bc.onmessage = e => {
+    const m = e.data || {};
+    if (m.id === me) return;
+    if (m.type === 'hello' && m.born > born) {
+      const n = ++ping;
+      postMessage({ type: 'ownerping', n });
+      setTimeout(() => { if (pong < n) retire(); }, 3000);
+    }
+  };
+  return {
+    hello() { bc?.postMessage({ type: 'hello', id: me, born }); },
+    pong(n) { pong = Math.max(pong, n); },
+  };
+})();
+
 const handlers = {
+  ownerpong(m) { peers.pong(m.n); },
+  // Une requête peut rendre une promesse (extract: dépliage dans un Worker à part);
+  // les autres répondent tout de suite, comme avant.
   call(m) {
-    try { postMessage({ type: 'reply', id: m.id, ok: true, value: ops[m.op](...(m.args || [])) }); }
-    catch (err) { postMessage({ type: 'reply', id: m.id, ok: false, error: String(err && err.message || err) }); }
+    const ko = err => postMessage({ type: 'reply', id: m.id, ok: false, error: String(err && err.message || err) });
+    try {
+      const v = ops[m.op](...(m.args || []));
+      if (v && typeof v.then === 'function') v.then(value => postMessage({ type: 'reply', id: m.id, ok: true, value }), ko);
+      else postMessage({ type: 'reply', id: m.id, ok: true, value: v });
+    } catch (err) { ko(err); }
   },
-  add(m) {
+  async add(m) {
     for (const f of m.files) M.FS.writeFile('/m/' + f.name, new Uint8Array(f.data));
     const entries = [];
     const pushFile = (p, label) => {
@@ -428,7 +641,7 @@ const handlers = {
       if (e.length > 1) say(`${label}: ${e.length} sous-chansons`);
     };
     for (const name of m.tracks) {
-      if (ARCHIVE.test(name)) { expandArchive('/m/' + name, name, pushFile); continue; }
+      if (ARCHIVE.test(name)) { await expandArchive('/m/' + name, name, pushFile); continue; }
       pushFile('/m/' + name, name);
     }
     if (!entries.length) return say('rien de jouable: la file ne change pas');
@@ -497,6 +710,50 @@ const handlers = {
   // afficher le relance, sans recréer le canvas.
   vizpause() { if (viz) { viz = null; M.ccall('rewamp_web_viz_idle', null, [], []); } },
   vizresume() { if (!viz && vizCanvas) { viz = vizCanvas; vizAsleep = false; M.ccall('rewamp_viz_wake', null, [], []); handlers.vizmode({ mode: vizMode }); vizFrame(); } },
+  // Pochette en fond des visualiseurs (viz_selector_widget.dart, _uploadFrame):
+  // RGBA décodé par la page; le C la COPIE (rewamp_viz_set_artwork), le tampon
+  // wasm se libère aussitôt. Sans rgba: plus de pochette.
+  vizart(m) {
+    if (!m.rgba) { M.ccall('rewamp_viz_clear_artwork', null, [], []); return wakeViz(); }
+    const n = m.w * m.h * 4, p = M._malloc(n);
+    if (!p) return;
+    new Uint8Array(M.HEAPF32.buffer, p, n).set(new Uint8Array(m.rgba));   // après malloc: la mémoire a pu grandir
+    M.ccall('rewamp_viz_set_artwork', null, ['number', 'number', 'number', 'number'], [p, m.w, m.h, m.opacity]);
+    M._free(p);
+    wakeViz();
+  },
+  // Vue de la notation (hauteurs, log2 Hz) et du piano (touches blanches),
+  // gestes de notes_scope_widget.dart / piano_widget.dart. La page envoie des
+  // DELTAS (fractions de la vue): le calcul part de la vue EN VIGUEUR, lue ici
+  // de façon synchrone, sans aller-retour. op: 'pan' {d}, 'zoom' {a, k}
+  // (k > 1 = rapprocher, a = point fixe), 'auto'.
+  vizview(m) {
+    const n = (f, t = [], a = []) => M.ccall(f, 'number', t, a);
+    if (m.kind === 'notes') {
+      if (m.op === 'auto') M.ccall('rewamp_noteviz_set_auto', null, [], []);
+      else {
+        let lo = n('rewamp_noteviz_range_lo'), hi = n('rewamp_noteviz_range_hi');
+        const span0 = hi - lo;
+        if (m.op === 'pan') { lo += m.d * span0; hi += m.d * span0; }
+        else {
+          const span = Math.min(15, Math.max(0.5, span0 / m.k)), pitch = hi - m.a * span0;
+          hi = pitch + m.a * span; lo = hi - span;
+        }
+        M.ccall('rewamp_noteviz_set_range', null, ['number', 'number'], [lo, hi]);
+      }
+    } else if (m.kind === 'piano') {
+      if (m.op === 'auto') M.ccall('rewamp_pianoviz_set_auto', null, [], []);
+      else {
+        const lo0 = n('rewamp_pianoviz_view_lo'), span0 = n('rewamp_pianoviz_view_span');
+        let lo = lo0, span = span0;
+        if (m.op === 'pan') lo = lo0 - m.d * span0;
+        else { span = Math.min(75, Math.max(7, span0 / m.k)); lo = lo0 + m.a * span0 - m.a * span; }
+        span = Math.min(75, Math.max(7, span)); lo = Math.min(75 - span, Math.max(0, lo));
+        M.ccall('rewamp_pianoviz_set_view', null, ['number', 'number'], [lo, span]);
+      }
+    } else if (m.kind === 'pattern') M.ccall('rewamp_patternviz_set_xscroll', null, ['number'], [m.x]);
+    wakeViz();
+  },
   nextpreset() { M.ccall('rewamp_projectm_next_preset', null, [], []); postPreset(); wakeViz(); },
   prevpreset() { M.ccall('rewamp_projectm_prev_preset', null, [], []); postPreset(); wakeViz(); },
 };

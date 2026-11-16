@@ -23,6 +23,7 @@ import 'app_snack.dart';
 import 'artwork_image.dart';
 import 'browse_screen.dart' show PlaylistTracksScreen;
 import 'collection_families.dart' show collectionFamilyOf;
+import 'load_error.dart';
 import 'l10n.dart';
 import 'library_toolbar.dart' show ListFilterField, kListFilterThreshold,
     matchesFilterQuery;
@@ -118,7 +119,7 @@ class _ChartsScreenState extends State<ChartsScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(l10n.browseCharts)),
       body: _error != null
-          ? Center(child: Text(_error!, style: TextStyle(color: cs.error)))
+          ? Center(child: LoadErrorView(error: _error!, onRetry: () { setState(() => _error = null); _load(); }))
           : ListView(
               padding: shellInset(context, EdgeInsets.zero),
               children: [
@@ -273,7 +274,7 @@ class _CollectionChartsScreenState extends State<CollectionChartsScreen> {
           title: Text(widget.name,
               maxLines: 1, overflow: TextOverflow.ellipsis)),
       body: _error != null
-          ? Center(child: Text(_error!, style: TextStyle(color: cs.error)))
+          ? Center(child: LoadErrorView(error: _error!, onRetry: () { setState(() => _error = null); _load(); }))
           : o == null
               ? const Center(child: CircularProgressIndicator())
               : ListView(
@@ -637,7 +638,7 @@ class _ChartResultsScreenState extends State<ChartResultsScreen> {
           title: Text(widget.title,
               maxLines: 1, overflow: TextOverflow.ellipsis)),
       body: _error != null
-          ? Center(child: Text(_error!, style: TextStyle(color: cs.error)))
+          ? Center(child: LoadErrorView(error: _error!, onRetry: () { setState(() => _error = null); _load(); }))
           : loading
               ? const Center(child: CircularProgressIndicator())
               : empty
@@ -800,7 +801,7 @@ class _ChartPlaylistScreenState extends State<ChartPlaylistScreen> {
           title: Text(widget.chart.name,
               maxLines: 1, overflow: TextOverflow.ellipsis)),
       body: _error != null
-          ? Center(child: Text(_error!, style: TextStyle(color: cs.error)))
+          ? Center(child: LoadErrorView(error: _error!, onRetry: () { setState(() => _error = null); _load(); }))
           : albums == null
               ? const Center(child: CircularProgressIndicator())
               : ListView.builder(

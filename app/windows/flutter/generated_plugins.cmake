@@ -9,8 +9,8 @@ list(APPEND FLUTTER_PLUGIN_LIST
   permission_handler_windows
   rewamp_audio
   screen_retriever_windows
-  share_plus
   url_launcher_windows
+  share_plus
   window_manager
 )
 

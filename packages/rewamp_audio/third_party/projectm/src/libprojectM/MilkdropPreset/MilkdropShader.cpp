@@ -129,6 +129,34 @@ MilkdropShader::MilkdropShader(ShaderType type)
     } while (index < sizeof(m_randTranslation) / sizeof(m_randTranslation[0]));
 }
 
+MilkdropShader::MilkdropShader(ShaderType type, Renderer::Shader::NoGl)
+    : m_type(type)
+    , m_shader(Renderer::Shader::NoGl{})
+{
+    // Deliberately NOT the random setup of the public constructor: nothing here
+    // is ever drawn, and rand() is not ours to consume from another thread.
+}
+
+void MilkdropShader::PrewarmPreprocessor(ShaderType type, const std::string& presetShaderCode)
+{
+    if (presetShaderCode.empty())
+    {
+        return;
+    }
+    try
+    {
+        MilkdropShader shader(type, Renderer::Shader::NoGl{});
+        shader.LoadCode(presetShaderCode);
+        // The very call TranspileHLSLShader makes, on the very same text: the
+        // cache is keyed on it (ShaderPreprocessor::preprocess).
+        ShaderPreprocessor preProcessor(ShaderLanguage::HLSL);
+        (void) preProcessor.preprocess(shader.m_preprocessedCode);
+    }
+    catch (...)
+    {
+    }
+}
+
 void MilkdropShader::LoadCode(const std::string& presetShaderCode)
 {
     m_fragmentShaderCode = presetShaderCode;

@@ -1,6 +1,9 @@
 package com.rewamp.app
 
+import android.app.UiModeManager
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -50,6 +53,26 @@ class MainActivity : AudioServiceActivity() {
     // « l'app tournait déjà ».
     private val pendingOpen = mutableListOf<String>()
     private var openFilesChannel: MethodChannel? = null
+
+    // ── Android TV ───────────────────────────────────────────────────────────
+    //
+    // Un téléviseur rend souvent son interface en 960×540 dp (1080p à xhdpi,
+    // même sur un écran 4K): côté Dart le plus petit côté < 600 dp en fait un
+    // « téléphone », verrouillé en PORTRAIT — et Android affiche alors l'app
+    // dans une bande verticale au milieu de l'écran (constaté sur Shield TV,
+    // 2026-11-14). Sur un téléviseur l'orientation n'a pas de sens: toute
+    // demande est ignorée ici, quel que soit l'appelant, et Dart le sait par
+    // `rewamp/device` `isTv` (OrientationLock).
+    private val isTv: Boolean by lazy {
+        val ui = getSystemService(UI_MODE_SERVICE) as? UiModeManager
+        ui?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+            packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+    }
+
+    override fun setRequestedOrientation(requestedOrientation: Int) {
+        if (isTv) return
+        super.setRequestedOrientation(requestedOrientation)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -182,6 +205,11 @@ class MainActivity : AudioServiceActivity() {
                     else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
                 result.success(null)
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "rewamp/device")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "isTv") result.success(isTv) else result.notImplemented()
             }
 
         // Fichiers ouverts depuis l'extérieur — voir `pendingOpen`.

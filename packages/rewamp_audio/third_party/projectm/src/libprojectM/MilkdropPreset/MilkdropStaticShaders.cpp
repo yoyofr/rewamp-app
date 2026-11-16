@@ -610,6 +610,35 @@ void main(){
 }
 )";
 
+// No framebuffer fetch (rewamp, FramebufferFetchMode::HwBlend): the GPU blends
+// with ONE, ONE_MINUS_SRC_ALPHA (alpha: SRC_ALPHA, ONE_MINUS_SRC_ALPHA), so the
+// output is premultiplied and its alpha says how much of the destination stays:
+// 0 = additive, a = alpha blend.
+static std::string kTexturedBorderedDrawFragmentShaderHwBlendGlsl330 = R"(
+precision mediump float;
+
+in vec4 fragment_color;
+in vec2 fragment_texture;
+in vec4 fragment_borderColor;
+in vec2 fragment_renderFlag;
+in float fragment_borderFlag;
+
+uniform sampler2D texture_sampler;
+
+layout(location = 0) out vec4 color;
+
+void main(){
+    vec4 newColor;
+    if (fragment_borderFlag>=1.0) {
+            newColor = fragment_borderColor;
+    } else {
+        if (fragment_renderFlag.y==1.0) newColor = fragment_color * texture(texture_sampler, fragment_texture.st);
+        else newColor=fragment_color;
+    }
+    color = vec4(newColor.rgb * newColor.a, fragment_renderFlag.x==1.0 ? 0.0 : newColor.a);
+}
+)";
+
 static std::string kTexturedBorderedDrawVertexShaderGlsl330 = R"(
 precision mediump float;
 
@@ -733,9 +762,12 @@ DECLARE_SHADER_ACCESSOR(TexturedDrawVertexShader);
 // PresetState skips compiling this program entirely in that case.
 std::string MilkdropStaticShaders::GetTexturedBorderedDrawFragmentShader()
 {
-    return AddVersionHeader(FramebufferFetch() == FramebufferFetchMode::Arm
-                                ? kTexturedBorderedDrawFragmentShaderArmGlsl330
-                                : kTexturedBorderedDrawFragmentShaderGlsl330);
+    switch (FramebufferFetch())
+    {
+        case FramebufferFetchMode::Arm: return AddVersionHeader(kTexturedBorderedDrawFragmentShaderArmGlsl330);
+        case FramebufferFetchMode::HwBlend: return AddVersionHeader(kTexturedBorderedDrawFragmentShaderHwBlendGlsl330);
+        default: return AddVersionHeader(kTexturedBorderedDrawFragmentShaderGlsl330);
+    }
 }
 DECLARE_SHADER_ACCESSOR(TexturedBorderedDrawVertexShader);
 DECLARE_SHADER_ACCESSOR(UntexturedDrawFragmentShader);

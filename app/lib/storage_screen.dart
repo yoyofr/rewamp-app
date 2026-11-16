@@ -1,3 +1,4 @@
+import 'tv_focus.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -770,7 +771,9 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
                   child: CancelField(
                     controller: _filterCtrl,
                     onCleared: (_) => setState(() {}),
-                    builder: (_) => TextField(
+                    builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                       controller: _filterCtrl,
                       decoration: InputDecoration(
                         isDense: true,
@@ -779,7 +782,7 @@ class _StorageCategoryScreenState extends State<StorageCategoryScreen> {
                         border: const OutlineInputBorder(),
                       ),
                       onChanged: (_) => setState(() {}),
-                    ),
+                    )),
                   ),
                 ),
                 Padding(

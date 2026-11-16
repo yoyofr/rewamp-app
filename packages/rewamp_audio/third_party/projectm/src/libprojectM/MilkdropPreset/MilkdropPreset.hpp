@@ -68,6 +68,14 @@ public:
      * @param presetOutputs initialized and filled with data parsed from a MilkdropPreset
      */
     MilkdropPreset(std::istream& presetData);
+
+    /**
+     * @brief rewamp: reads a preset file and runs its warp and composite shader
+     * text through the costly, GL-free part of their translation, filling the
+     * cache the next load of this preset will hit (see
+     * MilkdropShader::PrewarmPreprocessor). Any thread; no instance needed.
+     */
+    static void PrewarmShaders(const std::string& absoluteFilePath);
     
     
 

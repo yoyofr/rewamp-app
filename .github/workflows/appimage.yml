@@ -28,7 +28,7 @@ env:
   # ⚠️ ÉPINGLÉE, pas « stable »: une CI dont la chaîne d'outils bouge toute
   # seule finit par échouer un jour où l'on n'a rien changé, et il faut alors
   # chercher la cause dans le mauvais dépôt. À monter à la main.
-  FLUTTER_VERSION: '3.47.5'
+  FLUTTER_VERSION: '3.50.0'
 
 jobs:
   build:

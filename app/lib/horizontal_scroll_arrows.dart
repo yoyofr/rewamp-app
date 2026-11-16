@@ -143,7 +143,12 @@ class _HorizontalScrollArrowsState extends State<HorizontalScrollArrows> {
 
   Widget _arrow(ColorScheme cs, {required bool left, required bool visible}) {
     const pillH = 72.0;
-    final pill = IgnorePointer(
+    // Invisible ⇒ pas focalisable non plus: sinon la flèche (cachée tant que
+    // la souris ne survole pas la rangée — donc TOUJOURS sur une TV) était
+    // une cible de la télécommande, et ↓ y envoyait le focus — invisible.
+    final pill = ExcludeFocus(
+      excluding: !visible,
+      child: IgnorePointer(
       ignoring: !visible,
       child: AnimatedOpacity(
         opacity: visible ? 1.0 : 0.0,
@@ -164,7 +169,7 @@ class _HorizontalScrollArrowsState extends State<HorizontalScrollArrows> {
           ),
         ),
       ),
-    );
+    ));
     // Centre on centerY (artwork middle) when provided, else full height.
     if (widget.centerY != null) {
       // Directional: `left` means "toward the START" (min scroll extent),

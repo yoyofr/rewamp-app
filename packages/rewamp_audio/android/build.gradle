@@ -36,18 +36,14 @@ android {
                 arguments '-DANDROID_STL=c++_shared',
                           '-DREWAMP_WITH_OPENMPT=ON',
                           '-DREWAMP_WITH_VGM=ON'
-                // 64-BIT ONLY, and it is a feature decision, not a build one.
-                // Only android-arm64 and android-x86_64 ffmpeg-kit slices are
-                // vendored, and CMakeLists.txt leaves REWAMP_FFMPEG_DIR unset
-                // for every other ABI — so an armeabi-v7a build links fine and
-                // runs fine (no ffmpeg DT_NEEDED at all) but silently loses the
-                // vgmstream formats whose codec goes through FFmpeg, since our
-                // config also turns vgmstream's own MPEG/Vorbis/G719 off in
-                // favour of it. Shipping a variant that is quietly degraded on
-                // a handful of formats costs more in support than not shipping
-                // it: a 64-bit phone gets the arm64 slice anyway, and only
-                // 32-bit-ONLY devices (pre-2018, low end) would have taken it.
-                abiFilters 'arm64-v8a', 'x86_64'
+                // armeabi-v7a since 2026-11-14 (box Android TV, often 32-bit
+                // userland even on a 64-bit SoC). Every ABI built here MUST
+                // have its FFmpeg — without it vgmstream silently loses MP3,
+                // Vorbis, AAC, Opus, ATRAC, WMA, XMA…; CMakeLists.txt fails the
+                // build instead. arm64/x86_64 come from ffmpeg-kit, armeabi-v7a
+                // from scripts/android/build_ffmpeg_android.sh. x86 (32-bit
+                // emulators only) stays out.
+                abiFilters 'arm64-v8a', 'x86_64', 'armeabi-v7a'
             }
         }
     }
@@ -61,11 +57,12 @@ android {
 
 // FFmpeg (ffmpeg-kit prebuilt) — package the per-ABI .so into jniLibs so the
 // DT_NEEDED entries linked by CMake (cmake/rewamp.cmake vgmstream block) resolve
-// at runtime. Only 64-bit slices are vendored (arm64/x86_64); ffmpeg-kit's dir
-// names (android-arm64/android-x86_64) are remapped to Android ABI names.
+// at runtime. arm64/x86_64 are ffmpeg-kit slices, armeabi-v7a ours
+// (scripts/android/build_ffmpeg_android.sh, dir android-arm); dir names are
+// remapped to Android ABI names.
 def copyFfmpegLibs = tasks.register('copyFfmpegLibs', Copy) {
     def ffk = file("${projectDir}/../third_party/ffmpeg-kit")
-    def abiMap = ['android-arm64': 'arm64-v8a', 'android-x86_64': 'x86_64']
+    def abiMap = ['android-arm64': 'arm64-v8a', 'android-x86_64': 'x86_64', 'android-arm': 'armeabi-v7a']
     into "${projectDir}/src/main/jniLibs"
     abiMap.each { srcAbi, dstAbi ->
         def libDir = file("${ffk}/${srcAbi}/ffmpeg/lib")

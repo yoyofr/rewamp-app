@@ -647,6 +647,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get videoWatchDemo => '观看演示';
 
   @override
+  String get albumVideo => '视频';
+
+  @override
   String searchFacetSelected(String label, String value) {
     return '$label: $value';
   }
@@ -1037,6 +1040,24 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commonRetry => '重试';
+
+  @override
+  String get netErrorOffline => '你已离线。已下载的音乐仍可播放；在线内容将在恢复连接后回来。';
+
+  @override
+  String get netErrorSlow => '服务器响应过慢——网络可能不稳定或服务器繁忙。服务器恢复响应后会自动重新加载。';
+
+  @override
+  String get netErrorServer => '服务器目前出现问题。请稍后再试。';
+
+  @override
+  String get netErrorGeneric => '无法加载此内容。请稍后再试。';
+
+  @override
+  String get netBannerOffline => '离线——已下载的音乐仍可播放';
+
+  @override
+  String get netBannerSlow => '服务器无响应——正在自动重试';
 
   @override
   String get commonOptions => '选项';
@@ -1851,6 +1872,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get sortDateAdded => '添加日期';
+
+  @override
+  String get sortDateModified => '修改日期';
 
   @override
   String get commonClear => '清除';
@@ -5134,6 +5158,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get releaseNotesV11Composers => '所有专辑和子曲目页面中的作曲者都可点击；导入的文件会读取标题和作者。';
 
   @override
+  String get releaseNotesV11AlbumNotes =>
+      '专辑：专辑页面显示说明和视频（游戏实况、超级玩法…），播放器中也会与曲目的说明和视频一起显示。';
+
+  @override
   String get releaseNotesV11Hindi => '新增印地语（19 种语言），界面已支持从右到左书写的语言。';
 
   @override
@@ -5141,9 +5169,55 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get releaseNotesV11Visualizers =>
-      '可视化：示波器最多 64 个声部、每种 MIDI 打击乐器一种颜色、2SF 文件的音符、来自 FM 音色库的乐器名称。';
+      '可视化：示波器最多 64 个声部、每种 MIDI 打击乐器一种颜色、2SF 文件的音符、来自 FM 音色库的乐器名称、Mega Drive 上快速重复的音符。';
+
+  @override
+  String get releaseNotesV11AndroidTv =>
+      'Android TV：全屏显示、遥控器导航（方向键和 OK，长按 OK 打开菜单），并提供适用于 32 位电视盒的版本。';
+
+  @override
+  String get releaseNotesV11Network =>
+      '服务器缓慢或无法访问时：显示清晰的提示而不是技术错误，期间显示横幅，恢复后页面会自动重新加载。';
+
+  @override
+  String get releaseNotesV11ArtistFilter => '艺术家页面：用于在长列表中查找曲目或专辑的筛选框。';
+
+  @override
+  String get releaseNotesV11ChpPatterns =>
+      '为 CHIPNSFX 歌曲（.chp，Amstrad CPC）提供乐谱视图，并显示乐器名称。';
 
   @override
   String get releaseNotesV11Fixes =>
-      '已修复：部分被拒绝的 SSF 文件、无声的 WonderSwan 音轨、分成多个压缩包的专辑不完整，以及关闭播放器后的 projectM 预设。';
+      '已修复：部分被拒绝的 SSF 文件、无声的 WonderSwan 音轨、分成多个压缩包的专辑不完整、部分专辑中文件夹被列为曲目而播放失败，以及关闭播放器后的 projectM 预设。';
+
+  @override
+  String get settingsRenderBackend => '渲染引擎';
+
+  @override
+  String get settingsRenderBackendAuto => '自动';
+
+  @override
+  String get settingsRenderBackendAutoHint =>
+      'Apple Silicon Mac 使用 Impeller，Intel Mac 使用 Skia';
+
+  @override
+  String get settingsRenderBackendImpellerHint =>
+      '新式渲染，完整玻璃效果。在部分 Intel Mac 上可能导致文字错乱。';
+
+  @override
+  String get settingsRenderBackendSkiaHint => '传统渲染，在 Intel Mac 上更稳定。玻璃效果简化。';
+
+  @override
+  String settingsRenderBackendActive(String name) {
+    return '当前：$name';
+  }
+
+  @override
+  String get settingsRenderBackendRestart => '下次启动时生效';
+
+  @override
+  String get carPlayNext => '下一首';
+
+  @override
+  String get carPlayPrevious => '上一首';
 }

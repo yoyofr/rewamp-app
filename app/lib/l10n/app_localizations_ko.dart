@@ -649,6 +649,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get videoWatchDemo => '데모 보기';
 
   @override
+  String get albumVideo => '동영상';
+
+  @override
   String searchFacetSelected(String label, String value) {
     return '$label: $value';
   }
@@ -1039,6 +1042,26 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commonRetry => '다시 시도';
+
+  @override
+  String get netErrorOffline =>
+      '오프라인 상태입니다. 다운로드한 음악은 계속 재생되며, 온라인 콘텐츠는 연결이 돌아오면 다시 표시됩니다.';
+
+  @override
+  String get netErrorSlow =>
+      '서버 응답이 너무 느립니다. 네트워크가 불안정하거나 서버가 혼잡할 수 있습니다. 서버가 다시 응답하면 자동으로 새로 고칩니다.';
+
+  @override
+  String get netErrorServer => '지금 서버에 문제가 있습니다. 잠시 후 다시 시도하세요.';
+
+  @override
+  String get netErrorGeneric => '이 콘텐츠를 불러오지 못했습니다. 잠시 후 다시 시도하세요.';
+
+  @override
+  String get netBannerOffline => '오프라인 — 다운로드한 음악은 계속 재생됩니다';
+
+  @override
+  String get netBannerSlow => '서버가 응답하지 않음 — 자동으로 다시 시도 중';
 
   @override
   String get commonOptions => '옵션';
@@ -1855,6 +1878,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get sortDateAdded => '추가한 날짜';
+
+  @override
+  String get sortDateModified => '수정한 날짜';
 
   @override
   String get commonClear => '지우기';
@@ -5171,6 +5197,10 @@ class AppLocalizationsKo extends AppLocalizations {
       '모든 앨범 및 하위 곡 화면에서 작곡가를 탭할 수 있으며, 가져온 파일에서 제목과 작곡가를 읽습니다.';
 
   @override
+  String get releaseNotesV11AlbumNotes =>
+      '앨범: 앨범 화면에 노트와 동영상(게임플레이, 슈퍼플레이…)을 표시하고, 플레이어에서도 트랙의 노트·동영상과 함께 보여 줍니다.';
+
+  @override
   String get releaseNotesV11Hindi =>
       '힌디어 지원(19개 언어), 오른쪽에서 왼쪽으로 쓰는 언어에도 인터페이스가 대응합니다.';
 
@@ -5180,9 +5210,56 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get releaseNotesV11Visualizers =>
-      '비주얼라이저: 오실로스코프 최대 64개 보이스, MIDI 드럼 악기별 색상, 2SF 파일의 음표, FM 뱅크의 악기 이름.';
+      '비주얼라이저: 오실로스코프 최대 64개 보이스, MIDI 드럼 악기별 색상, 2SF 파일의 음표, FM 뱅크의 악기 이름, 메가 드라이브에서 빠르게 반복되는 음표.';
+
+  @override
+  String get releaseNotesV11AndroidTv =>
+      'Android TV: 전체 화면 표시, 리모컨 탐색(방향키와 OK, OK를 길게 눌러 메뉴), 32비트 TV 박스용 빌드.';
+
+  @override
+  String get releaseNotesV11Network =>
+      '서버가 느리거나 연결되지 않을 때: 기술적인 오류 대신 알기 쉬운 메시지, 그동안 배너 표시, 복구되면 화면이 자동으로 다시 로드됩니다.';
+
+  @override
+  String get releaseNotesV11ArtistFilter => '아티스트 페이지: 긴 목록에서 곡이나 앨범을 찾는 필터.';
+
+  @override
+  String get releaseNotesV11ChpPatterns =>
+      'CHIPNSFX 곡(.chp, Amstrad CPC)의 패턴 시각화, 악기 이름 포함.';
 
   @override
   String get releaseNotesV11Fixes =>
-      '수정: 일부 SSF 파일이 거부되던 문제, 무음 WonderSwan 립, 여러 압축 파일로 나뉜 앨범이 불완전하던 문제, 플레이어를 닫은 뒤의 projectM 프리셋.';
+      '수정: 일부 SSF 파일이 거부되던 문제, 무음 WonderSwan 립, 여러 압축 파일로 나뉜 앨범이 불완전하던 문제, 일부 앨범에서 폴더가 트랙으로 표시되어 재생에 실패하던 문제, 플레이어를 닫은 뒤의 projectM 프리셋.';
+
+  @override
+  String get settingsRenderBackend => '렌더링 엔진';
+
+  @override
+  String get settingsRenderBackendAuto => '자동';
+
+  @override
+  String get settingsRenderBackendAutoHint =>
+      'Apple Silicon Mac에서는 Impeller, Intel Mac에서는 Skia';
+
+  @override
+  String get settingsRenderBackendImpellerHint =>
+      '최신 렌더러, 완전한 유리 효과. 일부 Intel Mac에서 글자가 깨질 수 있습니다.';
+
+  @override
+  String get settingsRenderBackendSkiaHint =>
+      '기존 렌더러, Intel Mac에서 더 안정적. 유리 효과가 단순해집니다.';
+
+  @override
+  String settingsRenderBackendActive(String name) {
+    return '사용 중: $name';
+  }
+
+  @override
+  String get settingsRenderBackendRestart => '다음 실행 시 적용됩니다';
+
+  @override
+  String get carPlayNext => '다음 곡';
+
+  @override
+  String get carPlayPrevious => '이전 곡';
 }

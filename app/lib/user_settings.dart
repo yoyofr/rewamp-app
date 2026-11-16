@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'autoplay.dart' show AutoplayMode;
 import 'home_sections.dart';
 import 'launch_window.dart';
+import 'render_backend.dart';
 import 'play_start.dart';
 import 'shell_tabs.dart';
 import 'token_file.dart';
@@ -190,6 +191,18 @@ class UserSettings extends ChangeNotifier {
   void setMiniWindowOrigin(double x, double y) {
     _p.setDouble('ui.mini_window_x', x);
     _p.setDouble('ui.mini_window_y', y);
+  }
+
+  static const _kRenderBackend = 'ui.render_backend';
+
+  /// macOS: moteur de rendu — `auto` (Impeller sur Apple Silicon, Skia sur
+  /// Intel), `impeller` ou `skia`. Lu par le RUNNER avant Dart, qui en garde
+  /// une copie (render_backend.dart); vaut au prochain lancement.
+  RenderBackend get renderBackend =>
+      RenderBackend.fromName(_p.getString(_kRenderBackend));
+  set renderBackend(RenderBackend v) {
+    _p.setString(_kRenderBackend, v.name);
+    notifyListeners();
   }
 
   static const _kLaunchWindow = 'ui.launch_window';
@@ -942,7 +955,7 @@ class UserSettings extends ChangeNotifier {
     'themeMode': _kThemeMode, 'artworkTintedPlayer': _kArtworkTintedPlayer,
     'notifyTrackChange': _kNotifyTrackChange,
     'windowAlwaysOnTop': _kWindowAlwaysOnTop, 'glassEffect': _kGlassEffect,
-    'launchWindow': _kLaunchWindow,
+    'launchWindow': _kLaunchWindow, 'renderBackend': _kRenderBackend,
     // Visualisation
     'showVisualizer': _kShowVisualizer, 'vizArtworkOpacity': _kVizArtworkOpacity,
     'vizKeepAwake': _kVizKeepAwake,
@@ -1104,7 +1117,7 @@ class UserSettings extends ChangeNotifier {
   /// setting), _kUserId, search/browse history.
   static const Map<String, List<String>> kSectionKeys = {
     'general': [_kThemeMode, _kArtworkTintedPlayer, _kWindowAlwaysOnTop,
-        _kLaunchWindow],
+        _kLaunchWindow, _kRenderBackend],
     'visualisation': [
       _kShowVisualizer, _kVizArtworkOpacity, _kVizMaxFps,
       _kVizVoiceGrid, _kVizVoiceNames, _kVizVoiceNameSource, _kVizLineThickness,
@@ -1558,6 +1571,13 @@ class UserSettings extends ChangeNotifier {
     _p.setString('library.sort.$kind', field);
     _p.setBool('library.sort_asc.$kind', ascending);
   }
+
+  /// Disposition des navigateurs de FICHIERS locaux (imports, téléchargements,
+  /// dossiers liés): 'list' | 'grid' | 'grid_small'. Le tri, lui, passe par
+  /// `librarySort('local')` (local_browse_view.dart).
+  String get localBrowserViewMode =>
+      _p.getString('local.view_mode') ?? 'list';
+  set localBrowserViewMode(String v) => _p.setString('local.view_mode', v);
 
   static const _kAlbumMaterialisedReset = 'sync.album_materialised_reset';
 

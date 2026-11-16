@@ -8,6 +8,8 @@
 #include "ShaderPreprocessor.h"
 #include <HLSLTypeFixer.h>
 #include <regex>
+#include <list>
+#include <mutex>
 #include <algorithm>
 #include <iostream>
 
@@ -979,7 +981,41 @@ void ShaderPreprocessor::removeEmptyLines(std::string& str) {
     str.erase(newEnd, str.end());
 }
 
+namespace {
+// Most recently used last. Small: a preset has two shaders, the worker runs one
+// preset ahead, and the default shaders come back often.
+constexpr size_t kPreprocessCacheSize = 24;
+std::mutex g_preprocessCacheMutex;
+std::list<std::pair<std::string, std::string>> g_preprocessCache;
+} // namespace
+
 std::string ShaderPreprocessor::preprocess(const std::string& shaderSource) {
+    std::string key;
+    key.reserve(shaderSource.size() + 1);
+    key.push_back(static_cast<char>('0' + static_cast<int>(m_language)));
+    key.append(shaderSource);
+    {
+        std::lock_guard<std::mutex> lock(g_preprocessCacheMutex);
+        for (auto it = g_preprocessCache.begin(); it != g_preprocessCache.end(); ++it) {
+            if (it->first == key) {
+                g_preprocessCache.splice(g_preprocessCache.end(), g_preprocessCache, it);
+                return g_preprocessCache.back().second;
+            }
+        }
+    }
+    std::string result = preprocessUncached(shaderSource);
+    {
+        std::lock_guard<std::mutex> lock(g_preprocessCacheMutex);
+        for (const auto& entry : g_preprocessCache) {
+            if (entry.first == key) return result;   // raced with another thread
+        }
+        g_preprocessCache.emplace_back(std::move(key), result);
+        while (g_preprocessCache.size() > kPreprocessCacheSize) g_preprocessCache.pop_front();
+    }
+    return result;
+}
+
+std::string ShaderPreprocessor::preprocessUncached(const std::string& shaderSource) {
     std::string result = shaderSource;
 
     // Step 0: Process #define directives (expand macros and remove directives)

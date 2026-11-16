@@ -46,6 +46,37 @@ static void ensure_parents(const char* path) {
     }
 }
 
+// Chemin relatif SÛR d'une entrée d'archive, écrit dans out: séparateurs en '/',
+// slashes de tête retirés; NULL pour une entrée à sauter (composant ".." = sortie
+// du dossier, entrée de dossier pur, "." / ".."). Partagé avec le module de
+// dépliage web (web/rewamp_extract_main.c), qui écrit vers JS au lieu du disque.
+const char* rewamp_extract_safe_relpath(const char* raw, char* out, size_t n) {
+    if (!raw || raw[0] == '\0' || n == 0) return NULL;
+    strncpy(out, raw, n - 1);
+    out[n - 1] = '\0';
+    for (char* q = out; *q; q++) if (*q == '\\') *q = '/';
+
+    // Strip any leading slashes (convert absolute → relative).
+    const char* relp = out;
+    while (*relp == '/') relp++;
+
+    // Reject path traversal — only a literal ".." path *component* is unsafe,
+    // not any "type with '..'.psf" filename, so match component boundaries.
+    for (const char* c = relp; c; ) {
+        if (c[0] == '.' && c[1] == '.' && (c[2] == '/' || c[2] == '\0')) return NULL;
+        const char* slash = strchr(c, '/');
+        c = slash ? slash + 1 : NULL;
+    }
+
+    // Skip pure directory entries (path ends with '/') and . / ..
+    const char* base = strrchr(relp, '/');
+    base = base ? base + 1 : relp;
+    if (base[0] == '\0'
+            || (base[0] == '.' && (base[1] == '\0' || (base[1] == '.' && base[2] == '\0'))))
+        return NULL;
+    return relp;
+}
+
 // Last extraction error string — written by rewamp_extract_archive, read by accessor.
 static char s_extract_error[512] = "";
 
@@ -89,38 +120,9 @@ int rewamp_extract_archive(const char* archive_path, const char* dest_dir) {
         }
 
         const char* raw = archive_entry_pathname(entry);
-        if (!raw || raw[0] == '\0') { archive_read_data_skip(a); continue; }
-
-        // Normalise separators to '/'.
         char rel[4096];
-        strncpy(rel, raw, sizeof(rel) - 1);
-        rel[sizeof(rel) - 1] = '\0';
-        for (char* q = rel; *q; q++) if (*q == '\\') *q = '/';
-
-        // Strip any leading slashes (convert absolute → relative).
-        const char* relp = rel;
-        while (*relp == '/') relp++;
-
-        // Reject path traversal — only a literal ".." path *component* is unsafe,
-        // not any "type with '..'.psf" filename, so match component boundaries.
-        int traversal = 0;
-        for (const char* c = relp; c; ) {
-            if (c[0] == '.' && c[1] == '.' && (c[2] == '/' || c[2] == '\0')) {
-                traversal = 1; break;
-            }
-            const char* slash = strchr(c, '/');
-            c = slash ? slash + 1 : NULL;
-        }
-        if (traversal) { archive_read_data_skip(a); continue; }
-
-        // Skip pure directory entries (path ends with '/') and . / ..
-        const char* base = strrchr(relp, '/');
-        base = base ? base + 1 : relp;
-        if (base[0] == '\0'
-                || (base[0] == '.' && (base[1] == '\0' || (base[1] == '.' && base[2] == '\0')))) {
-            archive_read_data_skip(a);
-            continue;
-        }
+        const char* relp = rewamp_extract_safe_relpath(raw, rel, sizeof(rel));
+        if (!relp) { archive_read_data_skip(a); continue; }
 
         // Build full dest path preserving subdirectory structure.
         char dest[4096];

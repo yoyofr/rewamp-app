@@ -661,6 +661,9 @@ class AppLocalizationsSv extends AppLocalizations {
   String get videoWatchDemo => 'Se demon';
 
   @override
+  String get albumVideo => 'Video';
+
+  @override
   String searchFacetSelected(String label, String value) {
     return '$label: $value';
   }
@@ -1078,6 +1081,28 @@ class AppLocalizationsSv extends AppLocalizations {
 
   @override
   String get commonRetry => 'Försök igen';
+
+  @override
+  String get netErrorOffline =>
+      'Du är offline. Nedladdad musik spelas fortfarande; onlineinnehåll kommer tillbaka med anslutningen.';
+
+  @override
+  String get netErrorSlow =>
+      'Servern svarar för långsamt – nätverket kan vara instabilt eller servern överbelastad. Det laddas om automatiskt när den svarar igen.';
+
+  @override
+  String get netErrorServer =>
+      'Servern har problem just nu. Försök igen om en stund.';
+
+  @override
+  String get netErrorGeneric =>
+      'Innehållet kunde inte läsas in. Försök igen om en stund.';
+
+  @override
+  String get netBannerOffline => 'Offline – nedladdad musik finns kvar';
+
+  @override
+  String get netBannerSlow => 'Servern svarar inte – nytt försök automatiskt';
 
   @override
   String get commonOptions => 'Alternativ';
@@ -1915,6 +1940,9 @@ class AppLocalizationsSv extends AppLocalizations {
 
   @override
   String get sortDateAdded => 'Tillagd';
+
+  @override
+  String get sortDateModified => 'Ändringsdatum';
 
   @override
   String get commonClear => 'Rensa';
@@ -5362,6 +5390,10 @@ class AppLocalizationsSv extends AppLocalizations {
       'Kompositörer går att trycka på i alla album- och underlåtsvyer; titel och upphovsperson läses från importerade filer.';
 
   @override
+  String get releaseNotesV11AlbumNotes =>
+      'Album: anteckningar och videor (gameplay, superplays…) på albumskärmen, även i spelaren bredvid spårets egna.';
+
+  @override
   String get releaseNotesV11Hindi =>
       'Appen talar hindi (19 språk), och gränssnittet är redo för språk som skrivs från höger till vänster.';
 
@@ -5371,9 +5403,57 @@ class AppLocalizationsSv extends AppLocalizations {
 
   @override
   String get releaseNotesV11Visualizers =>
-      'Visualiseringar: upp till 64 röster i oscilloskopen, en färg per MIDI-trumljud, noter för 2SF-filer, instrumentnamn från FM-banker.';
+      'Visualiseringar: upp till 64 röster i oscilloskopen, en färg per MIDI-trumljud, noter för 2SF-filer, instrumentnamn från FM-banker, snabbt upprepade toner på Mega Drive.';
+
+  @override
+  String get releaseNotesV11AndroidTv =>
+      'Android TV: helskärmsläge, navigering med fjärrkontrollen (pilar och OK, håll in OK för menyn) och en version för 32-bitars tv-boxar.';
+
+  @override
+  String get releaseNotesV11Network =>
+      'Långsam eller onåbar server: ett tydligt meddelande i stället för ett tekniskt fel, en banner så länge det varar, och vyerna laddas om av sig själva när den är tillbaka.';
+
+  @override
+  String get releaseNotesV11ArtistFilter =>
+      'Artistsidan: ett filter för att hitta ett spår eller ett album i en lång lista.';
+
+  @override
+  String get releaseNotesV11ChpPatterns =>
+      'Mönstervisualisering för CHIPNSFX-låtar (.chp, Amstrad CPC), med instrumentnamn.';
 
   @override
   String get releaseNotesV11Fixes =>
-      'Åtgärdat: vissa SSF-filer som vägrades, tysta WonderSwan-rippar, ofullständiga album uppdelade på flera arkiv och projectM-förinställningar efter att spelaren stängts.';
+      'Åtgärdat: vissa SSF-filer som vägrades, tysta WonderSwan-rippar, ofullständiga album uppdelade på flera arkiv, misslyckade poster i vissa album (en mapp listad som spår) och projectM-förinställningar efter att spelaren stängts.';
+
+  @override
+  String get settingsRenderBackend => 'Renderingsmotor';
+
+  @override
+  String get settingsRenderBackendAuto => 'Automatiskt';
+
+  @override
+  String get settingsRenderBackendAutoHint =>
+      'Impeller på Mac med Apple Silicon, Skia på Intel-Mac';
+
+  @override
+  String get settingsRenderBackendImpellerHint =>
+      'Modern rendering, full glaseffekt. Kan förvränga text på vissa Intel-Mac.';
+
+  @override
+  String get settingsRenderBackendSkiaHint =>
+      'Klassisk rendering, säkrare på Intel-Mac. Förenklad glaseffekt.';
+
+  @override
+  String settingsRenderBackendActive(String name) {
+    return 'Aktiv: $name';
+  }
+
+  @override
+  String get settingsRenderBackendRestart => 'Gäller från nästa start';
+
+  @override
+  String get carPlayNext => 'Nästa spår';
+
+  @override
+  String get carPlayPrevious => 'Föregående spår';
 }

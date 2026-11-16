@@ -661,6 +661,9 @@ class AppLocalizationsFi extends AppLocalizations {
   String get videoWatchDemo => 'Katso demo';
 
   @override
+  String get albumVideo => 'Video';
+
+  @override
   String searchFacetSelected(String label, String value) {
     return '$label: $value';
   }
@@ -1080,6 +1083,30 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get commonRetry => 'Yritä uudelleen';
+
+  @override
+  String get netErrorOffline =>
+      'Olet offline-tilassa. Ladattu musiikki soi edelleen; verkkosisältö palaa yhteyden myötä.';
+
+  @override
+  String get netErrorSlow =>
+      'Palvelin vastaa liian hitaasti – verkko voi olla epävakaa tai palvelin ruuhkautunut. Sisältö latautuu itsestään, kun palvelin vastaa taas.';
+
+  @override
+  String get netErrorServer =>
+      'Palvelimella on juuri nyt ongelmia. Yritä hetken kuluttua uudelleen.';
+
+  @override
+  String get netErrorGeneric =>
+      'Sisältöä ei voitu ladata. Yritä hetken kuluttua uudelleen.';
+
+  @override
+  String get netBannerOffline =>
+      'Offline – ladattu musiikki on yhä käytettävissä';
+
+  @override
+  String get netBannerSlow =>
+      'Palvelin ei vastaa – yritetään automaattisesti uudelleen';
 
   @override
   String get commonOptions => 'Valinnat';
@@ -1918,6 +1945,9 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get sortDateAdded => 'Lisäyspäivä';
+
+  @override
+  String get sortDateModified => 'Muokkauspäivä';
 
   @override
   String get commonClear => 'Tyhjennä';
@@ -5379,6 +5409,10 @@ class AppLocalizationsFi extends AppLocalizations {
       'Säveltäjiä voi napauttaa kaikissa albumi- ja alikappalenäkymissä; nimi ja tekijä luetaan tuoduista tiedostoista.';
 
   @override
+  String get releaseNotesV11AlbumNotes =>
+      'Albumit: muistiinpanot ja videot (pelikuvaa, superplay-videoita…) albuminäkymässä ja myös soittimessa kappaleen omien rinnalla.';
+
+  @override
   String get releaseNotesV11Hindi =>
       'Sovellus puhuu hindiä (19 kieltä), ja käyttöliittymä on valmis oikealta vasemmalle kirjoitettaville kielille.';
 
@@ -5388,9 +5422,58 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get releaseNotesV11Visualizers =>
-      'Visualisoinnit: jopa 64 ääntä oskilloskoopeissa, oma väri jokaiselle MIDI-rumpusoittimelle, nuotit 2SF-tiedostoille, soitinnimet FM-pankeista.';
+      'Visualisoinnit: jopa 64 ääntä oskilloskoopeissa, oma väri jokaiselle MIDI-rumpusoittimelle, nuotit 2SF-tiedostoille, soitinnimet FM-pankeista, nopeasti toistuvat nuotit Mega Drivella.';
+
+  @override
+  String get releaseNotesV11AndroidTv =>
+      'Android TV: koko näytön näkymä, kaukosäädinohjaus (nuolet ja OK, pidä OK pohjassa valikkoa varten) ja versio 32-bittisille TV-bokseille.';
+
+  @override
+  String get releaseNotesV11Network =>
+      'Hidas tai saavuttamaton palvelin: selkeä viesti teknisen virheen sijaan, ilmoituspalkki sen ajan ja näkymät latautuvat itsestään, kun yhteys palaa.';
+
+  @override
+  String get releaseNotesV11ArtistFilter =>
+      'Artistisivu: suodatin kappaleen tai albumin löytämiseen pitkästä listasta.';
+
+  @override
+  String get releaseNotesV11ChpPatterns =>
+      'Pattern-visualisointi CHIPNSFX-kappaleille (.chp, Amstrad CPC) soitinten nimineen.';
 
   @override
   String get releaseNotesV11Fixes =>
-      'Korjattu: jotkin hylätyt SSF-tiedostot, äänettömät WonderSwan-ripit, useaan arkistoon jaetut vajaat albumit ja projectM-esiasetukset soittimen sulkemisen jälkeen.';
+      'Korjattu: jotkin hylätyt SSF-tiedostot, äänettömät WonderSwan-ripit, useaan arkistoon jaetut vajaat albumit, epäonnistuvat merkinnät joissakin albumeissa (kansio listattuna kappaleeksi) ja projectM-esiasetukset soittimen sulkemisen jälkeen.';
+
+  @override
+  String get settingsRenderBackend => 'Renderöintimoottori';
+
+  @override
+  String get settingsRenderBackendAuto => 'Automaattinen';
+
+  @override
+  String get settingsRenderBackendAutoHint =>
+      'Impeller Apple Silicon -Maceissa, Skia Intel-Maceissa';
+
+  @override
+  String get settingsRenderBackendImpellerHint =>
+      'Moderni renderöinti, täysi lasitehoste. Voi sotkea tekstin joissakin Intel-Maceissa.';
+
+  @override
+  String get settingsRenderBackendSkiaHint =>
+      'Perinteinen renderöinti, varmempi Intel-Maceissa. Yksinkertaistettu lasitehoste.';
+
+  @override
+  String settingsRenderBackendActive(String name) {
+    return 'Käytössä: $name';
+  }
+
+  @override
+  String get settingsRenderBackendRestart =>
+      'Tulee voimaan seuraavalla käynnistyskerralla';
+
+  @override
+  String get carPlayNext => 'Seuraava kappale';
+
+  @override
+  String get carPlayPrevious => 'Edellinen kappale';
 }

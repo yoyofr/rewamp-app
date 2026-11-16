@@ -660,6 +660,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get videoWatchDemo => 'Watch the demo';
 
   @override
+  String get albumVideo => 'Video';
+
+  @override
   String searchFacetSelected(String label, String value) {
     return '$label: $value';
   }
@@ -1075,6 +1078,28 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commonRetry => 'Retry';
+
+  @override
+  String get netErrorOffline =>
+      'You\'re offline. Downloaded music still plays; online content will come back with the connection.';
+
+  @override
+  String get netErrorSlow =>
+      'The server is taking too long to respond — the network may be unstable or the server busy. This will reload by itself once it answers again.';
+
+  @override
+  String get netErrorServer =>
+      'The server is having trouble right now. Try again in a moment.';
+
+  @override
+  String get netErrorGeneric =>
+      'This content couldn\'t be loaded. Try again in a moment.';
+
+  @override
+  String get netBannerOffline => 'Offline — downloaded music still plays';
+
+  @override
+  String get netBannerSlow => 'Server not responding — retrying automatically';
 
   @override
   String get commonOptions => 'Options';
@@ -1910,6 +1935,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sortDateAdded => 'Date added';
+
+  @override
+  String get sortDateModified => 'Date modified';
 
   @override
   String get commonClear => 'Clear';
@@ -5348,6 +5376,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Composers are tappable on every album and subsong screen; title and author are read from imported files.';
 
   @override
+  String get releaseNotesV11AlbumNotes =>
+      'Albums: notes and videos (gameplay, superplays…) on the album screen, also shown in the player alongside the track\'s own.';
+
+  @override
   String get releaseNotesV11Hindi =>
       'The app speaks Hindi (19 languages), and the interface is ready for right-to-left languages.';
 
@@ -5357,9 +5389,57 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get releaseNotesV11Visualizers =>
-      'Visualizers: up to 64 voices in the oscilloscopes, one colour per MIDI drum instrument, notes for 2SF files, instrument names from FM banks.';
+      'Visualizers: up to 64 voices in the oscilloscopes, one colour per MIDI drum instrument, notes for 2SF files, instrument names from FM banks, fast repeated notes on Mega Drive.';
+
+  @override
+  String get releaseNotesV11AndroidTv =>
+      'Android TV: full-screen layout, remote navigation (arrows and OK, hold OK for the menu) and a build for 32-bit TV boxes.';
+
+  @override
+  String get releaseNotesV11Network =>
+      'Slow or unreachable server: a clear message instead of a technical error, a banner while it lasts, and screens reload on their own when it is back.';
+
+  @override
+  String get releaseNotesV11ArtistFilter =>
+      'Artist page: a filter to find a track or an album in a long list.';
+
+  @override
+  String get releaseNotesV11ChpPatterns =>
+      'Patterns visualizer for CHIPNSFX songs (.chp, Amstrad CPC), with instrument names.';
 
   @override
   String get releaseNotesV11Fixes =>
-      'Fixed: some SSF files refused, silent WonderSwan rips, incomplete albums split over several archives, and projectM presets after closing the player.';
+      'Fixed: some SSF files refused, silent WonderSwan rips, incomplete albums split over several archives, a failing entry in some albums (a folder listed as a track), and projectM presets after closing the player.';
+
+  @override
+  String get settingsRenderBackend => 'Rendering engine';
+
+  @override
+  String get settingsRenderBackendAuto => 'Automatic';
+
+  @override
+  String get settingsRenderBackendAutoHint =>
+      'Impeller on Apple Silicon Macs, Skia on Intel Macs';
+
+  @override
+  String get settingsRenderBackendImpellerHint =>
+      'Modern renderer, full glass effect. Can garble text on some Intel Macs.';
+
+  @override
+  String get settingsRenderBackendSkiaHint =>
+      'Classic renderer, safer on Intel Macs. Simplified glass effect.';
+
+  @override
+  String settingsRenderBackendActive(String name) {
+    return 'Active: $name';
+  }
+
+  @override
+  String get settingsRenderBackendRestart => 'Takes effect at next launch';
+
+  @override
+  String get carPlayNext => 'Next track';
+
+  @override
+  String get carPlayPrevious => 'Previous track';
 }

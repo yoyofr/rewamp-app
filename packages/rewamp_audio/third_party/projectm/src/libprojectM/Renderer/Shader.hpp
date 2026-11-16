@@ -14,6 +14,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 namespace libprojectM {
 namespace Renderer {
@@ -60,6 +61,12 @@ public:
      */
     Shader();
 
+    //! rewamp: tag for a Shader that owns NO program (m_shaderProgram = 0) and
+    //! makes no GL call — used to run MilkdropShader's text pipeline on a thread
+    //! without a GL context (MilkdropShader::PrewarmPreprocessor).
+    struct NoGl {};
+    explicit Shader(NoGl) : m_shaderProgram(0) {}
+
     /**
      * Destructor.
      */
@@ -73,6 +80,28 @@ public:
      */
     void CompileProgram(const std::string& vertexShaderSource,
                         const std::string& fragmentShaderSource,uint32_t shaderP=NULL);
+
+    /**
+     * rewamp: DEFERRED link status, for the web (WebGL has no shared preload
+     * context, so presets compile on the render thread). Between Begin and End,
+     * CompileProgram on the render thread issues compile + link and RETURNS
+     * without querying any status - the query is what blocks the frame until
+     * the browser has compiled. The links are handed back by End; the caller
+     * polls them across frames (PendingLinksDone, cheap with
+     * KHR_parallel_shader_compile) and settles them (FinishPendingLinks).
+     */
+    struct PendingLink {
+        GLuint program{};
+        GLuint vertexShader{};
+        GLuint fragmentShader{};
+    };
+    static void BeginDeferredLinks();
+    static auto EndDeferredLinks() -> std::vector<PendingLink>;
+    //! True when every link has completed (or the driver cannot tell).
+    static bool PendingLinksDone(const std::vector<PendingLink>& links);
+    //! Frees the shader objects and reports whether EVERY program linked.
+    //! Blocks if a link is still running. Clears @p links.
+    static bool FinishPendingLinks(std::vector<PendingLink>& links);
 
     /**
      * @brief Validates that the program can run in the current state.

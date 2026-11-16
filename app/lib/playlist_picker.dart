@@ -1,9 +1,11 @@
+import 'tv_focus.dart';
 import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'app_snack.dart';
 
+import 'load_error.dart';
 import 'l10n.dart';
 import 'local_db.dart';
 import 'playlist_sync.dart';
@@ -268,7 +270,7 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
         unawaited(PlaylistSync.pushIfLinked(id));
       }
     } catch (e) {
-      AppSnack.showOn(messenger, l10n.playlistAddFailed(e.toString()));
+      AppSnack.showOn(messenger, netErrorMessageOrNull(l10n, e) ?? l10n.playlistAddFailed(e.toString()));
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -305,7 +307,9 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
               child: CancelField(
                 controller: _searchCtrl,
                 onCleared: (_) => _reload(),
-                builder: (_) => TextField(
+                builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                   controller: _searchCtrl,
                   decoration: InputDecoration(
                     hintText: l10n.playlistFilterHint,
@@ -315,7 +319,7 @@ class _PlaylistPickerSheetState extends State<_PlaylistPickerSheet> {
                         borderRadius: BorderRadius.circular(10)),
                   ),
                   onChanged: (_) => _reload(),
-                ),
+                )),
               ),
             ),
             // Breadcrumb (folder navigation).

@@ -7007,6 +7007,9 @@ class LocalDb extends ChangeNotifier {
       linkedEntriesUnder(String rootId, String relDir) =>
           linkedEntriesUnderOn(_database, rootId, relDir);
 
+  Future<Map<String, int>> linkedFolderMtimes(String rootId, String relDir) =>
+      linkedFolderMtimesOn(_database, rootId, relDir);
+
   Future<List<LinkedEntry>> linkedSubtree(String rootId, String relDir,
           {int limit = 5000}) =>
       linkedSubtreeOn(_database, rootId, relDir, limit: limit);
@@ -7082,6 +7085,27 @@ class LocalDb extends ChangeNotifier {
       {for (final r in folderRows) r['d'] as String: (r['n'] as int?) ?? 0},
       [for (final r in fileRows) _linkedEntryOf(rootId, r)],
     );
+  }
+
+  /// Date de modification des sous-dossiers du niveau [relDir], en ms: la
+  /// plus récente de ce qu'ils contiennent (la table ne connaît que des
+  /// FICHIERS, et une racine Android n'a pas de dossier à interroger). Pour le
+  /// tri « date de modification » du navigateur (local_browse_view.dart).
+  @visibleForTesting
+  static Future<Map<String, int>> linkedFolderMtimesOn(
+      DatabaseExecutor db, String rootId, String relDir) async {
+    final rest = 'substr(rel_path, ${relDir.length + 1})';
+    final rows = await db.rawQuery('''
+      SELECT substr($rest, 1, instr($rest, '/') - 1) AS d, max(mtime_ms) AS m
+      FROM   linked_entries
+      WHERE  root_id = ? AND rel_path LIKE ? ESCAPE '\\'
+             AND instr($rest, '/') > 0
+      GROUP BY d
+    ''', [rootId, '${_likeEscape(relDir)}%']);
+    return {
+      for (final r in rows)
+        if (r['m'] != null) r['d'] as String: (r['m'] as num).toInt(),
+    };
   }
 
   /// Tout le sous-arbre de [relDir], dans l'ordre des chemins — « tout lire ».

@@ -43,33 +43,34 @@ android {
         versionName = flutter.versionName
     }
 
-    // 64-BIT ONLY — and this is the mechanism that actually works.
+    // ABI choisies AU MOMENT DE L'EMPAQUETAGE — le seul mécanisme qui tient.
     //
-    // Why drop 32-bit: only android-arm64 and android-x86_64 FFmpeg slices are
-    // vendored, so an armeabi-v7a build silently loses the vgmstream formats
-    // whose codec goes through FFmpeg (our config also turns vgmstream's own
-    // MPEG/Vorbis/G719 off in its favour). A 64-bit phone takes the arm64 slice
-    // anyway; only 32-bit-ONLY devices, pre-2018 and low end, would get it.
+    // arm64-v8a, x86_64 et, depuis le 2026-11-14, armeabi-v7a (box Android TV:
+    // souvent un userland 32 bits seul, même sur un SoC 64 bits). Une ABI n'est
+    // livrable que si son FFmpeg existe: sans lui vgmstream y perd EN SILENCE
+    // MP3, Vorbis, AAC, Opus, ATRAC, WMA, XMA… — le CMakeLists du plugin fait
+    // désormais ÉCHOUER le build dans ce cas. x86 (émulateurs 32 bits) reste
+    // exclu: aucun appareil réel, et aucun FFmpeg pour lui.
     //
-    // Three mechanisms were tried before this one, and the failures are the
-    // reason it is worth writing down:
-    //   - the PLUGIN's cmake abiFilters stop librewamp_audio.so being built for
-    //     armeabi-v7a, but Flutter then packaged a 32-bit slice with
-    //     libflutter/libapp and NO engine — installs, dies at the first FFI call;
-    //   - `ndk { abiFilters }` here is silently overridden by Flutter's Gradle
-    //     plugin: the APK still came out with all three ABIs;
-    //   - `--target-platform` gets most of the way but leaves libdartjni.so and
-    //     libdatastore_shared_counter.so behind, from third-party AARs — enough
-    //     for Play to keep advertising an armeabi-v7a variant.
-    // Excluding at PACKAGING time is the one thing nothing downstream re-adds.
+    // Trois mécanismes ont été essayés avant celui-ci, et leurs échecs sont la
+    // raison de l'écrire:
+    //   - les abiFilters du PLUGIN empêchent librewamp_audio.so d'être bâtie
+    //     pour une ABI, mais Flutter empaquetait quand même la tranche avec
+    //     libflutter/libapp et SANS moteur — s'installe, meurt au 1er appel FFI;
+    //   - `ndk { abiFilters }` ici est écrasé en silence par le plugin Gradle
+    //     de Flutter: l'APK sortait avec toutes les ABI;
+    //   - `--target-platform` fait presque tout mais laisse libdartjni.so et
+    //     libdatastore_shared_counter.so (AAR tiers) — assez pour que Play
+    //     annonce encore la variante.
+    // Exclure à l'EMPAQUETAGE est la seule chose que rien en aval ne rajoute.
+    // ⚠️ La liste ci-dessous et les abiFilters du plugin doivent concorder.
     //
-    // Overridable, so the direct-distribution APK can be arm64 alone instead of
-    // carrying x86_64 for a phone that cannot use it:
+    // Surchargeable, p.ex. un APK de distribution directe en arm64 seul:
     //   flutter build apk --release -Prewamp.excludeAbis=armeabi-v7a,x86,x86_64
     packaging {
         jniLibs {
             excludes += (project.findProperty("rewamp.excludeAbis") as String?
-                ?: "armeabi-v7a,x86").split(",").map { "lib/$it/**" }
+                ?: "x86").split(",").map { "lib/$it/**" }
         }
     }
 

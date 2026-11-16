@@ -256,7 +256,13 @@ class _AlbumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HoverGrow(child: GestureDetector(
+    return HoverGrow(
+        onTap: onTap,
+        onLongPress: onRemove == null
+            ? null
+            : () => showLibraryItemMenu(context,
+                title: item.name, onRemove: onRemove!),
+        child: GestureDetector(
       onTap: onTap,
       onLongPress: onRemove == null
           ? null

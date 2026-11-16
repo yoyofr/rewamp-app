@@ -3576,6 +3576,15 @@ class AlbumDetails {
   /// album screen simply never read it.
   final CompoPodium? podium;
 
+  /// Texte ÉDITORIAL de l'album (mig serveur 303): HTML restreint posé depuis
+  /// l'admin (p br b i u a ul ol li blockquote h3 h4), jamais réécrit par un
+  /// importeur. Affiché APRÈS [description] (les deux se combinent).
+  final String? notes;
+  /// Vidéos attachées à l'album (mig 303, `album_videos`), dans leur ordre.
+  /// Même forme qu'une vidéo de morceau, sans production ni morceau derrière:
+  /// l'embed se construit depuis `video_id` (+ `start_seconds`).
+  final List<SongVideo> videos;
+
   const AlbumDetails({
     required this.albumId,
     required this.name,
@@ -3598,6 +3607,8 @@ class AlbumDetails {
     this.aliases = const [],
     this.productions = const [],
     this.podium,
+    this.notes,
+    this.videos = const [],
   });
 
   factory AlbumDetails.fromJson(Map<String, dynamic> j) => AlbumDetails(
@@ -3622,6 +3633,10 @@ class AlbumDetails {
         collection: j['collection'] as String,
         aliases: ArtistAlbum._toAliasList(j['aliases']),
         productions: ProductionRef.listFrom(j['productions']),
+        // Lus PAR NOM: absents d'un serveur d'avant la mig 303 = null / [].
+        notes: (j['notes'] as String?)?.trim().isEmpty ?? true
+            ? null : (j['notes'] as String).trim(),
+        videos: SongVideo.listFrom(j['videos']),
       );
 
   /// Les uuid de `composer_ids` recalés sur les noms que [_toStrList] GARDE:
@@ -9777,8 +9792,12 @@ class RewampDb {
     }
     final hash = songId.indexOf('#');
     if (hash >= 0) {
-      final i = int.tryParse(songId.substring(hash + 1));
-      if (i != null && i >= 0 && i < rows.length) return rows[i];
+      // Par IDENTITÉ, pas par position: une entrée-DOSSIER sautée par
+      // [subsongRowsFromServer] décale les positions, jamais les rangs.
+      final want = '${container.songId}${songId.substring(hash)}';
+      for (final r in rows) {
+        if (r.songId == want) return r;
+      }
     }
     return container;
   }
@@ -9792,6 +9811,26 @@ class RewampDb {
   /// jamais.
   static bool expandsFromServerTracklist(SearchResult r) =>
       !(r.songId.contains('#') || r.resolvedSubsong) && r.subsongs.isNotEmpty;
+
+  /// Rangs des entrées de tracklist qui sont des DOSSIERS de l'archive et non
+  /// des pistes: l'import liste parfois le dossier lui-même (« music » de
+  /// DoDonPachi Saidaioujou, jw_x360, suivi de « music/01_select.xma »…). Une
+  /// telle ligne n'a rien à jouer et finissait en échec dans la file.
+  /// Critère: pas d'extension, et une autre entrée vit SOUS elle. Ces rangs
+  /// sont SAUTÉS, jamais retirés de la numérotation: `<uuid>#<i>` est une
+  /// identité de compte, et le serveur compte le dossier.
+  @visibleForTesting
+  static Set<int> tracklistFolderEntries(List<AlbumSubsong> subs) {
+    final files = [for (final s in subs) (s.file ?? '').replaceAll('\\', '/')];
+    final out = <int>{};
+    for (var i = 0; i < files.length; i++) {
+      final f = files[i];
+      if (f.isEmpty || p.posix.basename(f).contains('.')) continue;
+      final prefix = f.endsWith('/') ? f : '$f/';
+      if (files.any((o) => o.startsWith(prefix))) out.add(i);
+    }
+    return out;
+  }
 
   static List<SearchResult> subsongRowsFromServer(SearchResult container,
       {String? extractedDir}) {
@@ -9819,8 +9858,10 @@ class RewampDb {
     // unique est prise telle quelle: le serveur la publie 0-based.
     final subOffset =
         (isAbsolute || subs.length < 2) ? 0 : (minSub == 0 ? 0 : 1);
+    final folder = tracklistFolderEntries(subs);
     return [
       for (var i = 0; i < subs.length; i++)
+        if (!folder.contains(i))
         () {
           final file = subs[i].file;
           final fileExt = (file != null && file.contains('.'))

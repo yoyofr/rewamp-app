@@ -1236,6 +1236,12 @@ abstract class AppLocalizations {
   /// **'Watch the demo'**
   String get videoWatchDemo;
 
+  /// Label of a video attached to an album when it has no title of its own (album screen chip).
+  ///
+  /// In en, this message translates to:
+  /// **'Video'**
+  String get albumVideo;
+
   /// No description provided for @searchFacetSelected.
   ///
   /// In en, this message translates to:
@@ -1758,6 +1764,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Retry'**
   String get commonRetry;
+
+  /// No description provided for @netErrorOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re offline. Downloaded music still plays; online content will come back with the connection.'**
+  String get netErrorOffline;
+
+  /// No description provided for @netErrorSlow.
+  ///
+  /// In en, this message translates to:
+  /// **'The server is taking too long to respond — the network may be unstable or the server busy. This will reload by itself once it answers again.'**
+  String get netErrorSlow;
+
+  /// No description provided for @netErrorServer.
+  ///
+  /// In en, this message translates to:
+  /// **'The server is having trouble right now. Try again in a moment.'**
+  String get netErrorServer;
+
+  /// No description provided for @netErrorGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'This content couldn\'t be loaded. Try again in a moment.'**
+  String get netErrorGeneric;
+
+  /// No description provided for @netBannerOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline — downloaded music still plays'**
+  String get netBannerOffline;
+
+  /// No description provided for @netBannerSlow.
+  ///
+  /// In en, this message translates to:
+  /// **'Server not responding — retrying automatically'**
+  String get netBannerSlow;
 
   /// No description provided for @commonOptions.
   ///
@@ -3114,6 +3156,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Date added'**
   String get sortDateAdded;
+
+  /// No description provided for @sortDateModified.
+  ///
+  /// In en, this message translates to:
+  /// **'Date modified'**
+  String get sortDateModified;
 
   /// No description provided for @commonClear.
   ///
@@ -8833,6 +8881,12 @@ abstract class AppLocalizations {
   /// **'Composers are tappable on every album and subsong screen; title and author are read from imported files.'**
   String get releaseNotesV11Composers;
 
+  /// Release note: album notes and videos on the album screen and in the player
+  ///
+  /// In en, this message translates to:
+  /// **'Albums: notes and videos (gameplay, superplays…) on the album screen, also shown in the player alongside the track\'s own.'**
+  String get releaseNotesV11AlbumNotes;
+
   /// Release note: Hindi added (19 languages), UI ready for right-to-left languages
   ///
   /// In en, this message translates to:
@@ -8845,17 +8899,95 @@ abstract class AppLocalizations {
   /// **'Infinite loop turned on mid-track: the tune carries on through its own loop point, and a tune without one starts over.'**
   String get releaseNotesV11Loops;
 
-  /// Release note: visualizers — 64 voices, MIDI drum colours per instrument, 2SF notes, FM bank instrument names
+  /// Release note: visualizers — 64 voices, MIDI drum colours per instrument, 2SF notes, FM bank instrument names, fast repeated Mega Drive notes
   ///
   /// In en, this message translates to:
-  /// **'Visualizers: up to 64 voices in the oscilloscopes, one colour per MIDI drum instrument, notes for 2SF files, instrument names from FM banks.'**
+  /// **'Visualizers: up to 64 voices in the oscilloscopes, one colour per MIDI drum instrument, notes for 2SF files, instrument names from FM banks, fast repeated notes on Mega Drive.'**
   String get releaseNotesV11Visualizers;
 
-  /// Release note: fixes — SSF refused, silent WonderSwan, multi-archive albums, projectM presets after closing the player
+  /// Release note: Android TV — full-screen layout, remote (D-pad) navigation, 32-bit build
   ///
   /// In en, this message translates to:
-  /// **'Fixed: some SSF files refused, silent WonderSwan rips, incomplete albums split over several archives, and projectM presets after closing the player.'**
+  /// **'Android TV: full-screen layout, remote navigation (arrows and OK, hold OK for the menu) and a build for 32-bit TV boxes.'**
+  String get releaseNotesV11AndroidTv;
+
+  /// Release note: clear messages and banner when the server is slow or unreachable, auto reload
+  ///
+  /// In en, this message translates to:
+  /// **'Slow or unreachable server: a clear message instead of a technical error, a banner while it lasts, and screens reload on their own when it is back.'**
+  String get releaseNotesV11Network;
+
+  /// Release note: text filter on the artist page
+  ///
+  /// In en, this message translates to:
+  /// **'Artist page: a filter to find a track or an album in a long list.'**
+  String get releaseNotesV11ArtistFilter;
+
+  /// Release note: patterns visualizer for CHIPNSFX .chp songs with instrument names
+  ///
+  /// In en, this message translates to:
+  /// **'Patterns visualizer for CHIPNSFX songs (.chp, Amstrad CPC), with instrument names.'**
+  String get releaseNotesV11ChpPatterns;
+
+  /// Release note: fixes — SSF refused, silent WonderSwan, multi-archive albums, folder listed as an album track, projectM presets after closing the player
+  ///
+  /// In en, this message translates to:
+  /// **'Fixed: some SSF files refused, silent WonderSwan rips, incomplete albums split over several archives, a failing entry in some albums (a folder listed as a track), and projectM presets after closing the player.'**
   String get releaseNotesV11Fixes;
+
+  /// Settings (macOS): rendering engine choice (Impeller / Skia)
+  ///
+  /// In en, this message translates to:
+  /// **'Rendering engine'**
+  String get settingsRenderBackend;
+
+  /// Settings (macOS): rendering engine choice (Impeller / Skia)
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic'**
+  String get settingsRenderBackendAuto;
+
+  /// Settings (macOS): rendering engine choice (Impeller / Skia)
+  ///
+  /// In en, this message translates to:
+  /// **'Impeller on Apple Silicon Macs, Skia on Intel Macs'**
+  String get settingsRenderBackendAutoHint;
+
+  /// Settings (macOS): rendering engine choice (Impeller / Skia)
+  ///
+  /// In en, this message translates to:
+  /// **'Modern renderer, full glass effect. Can garble text on some Intel Macs.'**
+  String get settingsRenderBackendImpellerHint;
+
+  /// Settings (macOS): rendering engine choice (Impeller / Skia)
+  ///
+  /// In en, this message translates to:
+  /// **'Classic renderer, safer on Intel Macs. Simplified glass effect.'**
+  String get settingsRenderBackendSkiaHint;
+
+  /// Settings (macOS): which renderer this launch uses; name is Impeller or Skia
+  ///
+  /// In en, this message translates to:
+  /// **'Active: {name}'**
+  String settingsRenderBackendActive(String name);
+
+  /// Settings (macOS): rendering engine choice (Impeller / Skia)
+  ///
+  /// In en, this message translates to:
+  /// **'Takes effect at next launch'**
+  String get settingsRenderBackendRestart;
+
+  /// CarPlay download screen: skip to the next queue entry.
+  ///
+  /// In en, this message translates to:
+  /// **'Next track'**
+  String get carPlayNext;
+
+  /// CarPlay download screen: go back to the previous queue entry.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous track'**
+  String get carPlayPrevious;
 }
 
 class _AppLocalizationsDelegate

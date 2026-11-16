@@ -8,7 +8,10 @@ version: 1.1.0+19
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
-  flutter: '>=3.41.0'   # liquid_glass_easy (chemin shader du chrome en verre)
+  # 3.50: la chaîne Android est réglée pour lui (Gradle 9.5, AGP 9.3.1, Kotlin
+  # 2.4.20 — ses minimums bloquants sont 9.3.1 / 9.1.1 / 2.4.10); le CI construit
+  # en 3.50.0. (liquid_glass_easy, lui, demandait 3.41.)
+  flutter: '>=3.50.0'
 
 dependencies:
   flutter:

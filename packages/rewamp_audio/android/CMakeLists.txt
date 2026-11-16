@@ -11,13 +11,35 @@ set(REWAMP_WITH_ZXTUNE ON CACHE BOOL "" FORCE)
 # per-ABI ffmpeg-kit slice. rewamp.cmake does NOT feed this to vgmstream's own
 # USE_FFMPEG (which would ./configure-build FFmpeg from source); it uses the
 # prebuilt-bypass (VGM_USE_FFMPEG + link the .so). Only 64-bit slices are
-# vendored — armeabi-v7a / x86 fall through to USE_FFMPEG off (no ogg via
-# vgmstream on those ABIs). build.gradle's copyFfmpegLibs packages the .so.
+# vendored by ffmpeg-kit; armeabi-v7a (box Android TV) gets OURS, built by
+# scripts/android/build_ffmpeg_android.sh into android-arm/. build.gradle's
+# copyFfmpegLibs packages the .so.
 set(_ffk "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/ffmpeg-kit")
 if(ANDROID_ABI STREQUAL "arm64-v8a")
   set(REWAMP_FFMPEG_DIR "${_ffk}/android-arm64/ffmpeg" CACHE PATH "" FORCE)
 elseif(ANDROID_ABI STREQUAL "x86_64")
   set(REWAMP_FFMPEG_DIR "${_ffk}/android-x86_64/ffmpeg" CACHE PATH "" FORCE)
+elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
+  set(REWAMP_FFMPEG_DIR "${_ffk}/android-arm/ffmpeg" CACHE PATH "" FORCE)
+endif()
+# ⚠️ Sans FFmpeg une ABI compile et TOURNE, mais vgmstream y perd en silence
+# MP3, Vorbis, AAC, Opus, ATRAC, WMA, XMA… — l'échec doit se VOIR ici, pas dans
+# un rapport de bug des mois plus tard.
+# Échappatoire, comme sous Linux/Windows: REWAMP_ALLOW_NO_FFMPEG=1 (environnement
+# ou -D) construit SANS FFmpeg, en connaissance de cause — c'est le cas d'un
+# clone du dépôt PUBLIC, où les tranches ffmpeg-kit ne sont pas redistribuées.
+if(NOT REWAMP_FFMPEG_DIR OR NOT EXISTS "${REWAMP_FFMPEG_DIR}/lib/libavcodec.so")
+  if(REWAMP_ALLOW_NO_FFMPEG OR "$ENV{REWAMP_ALLOW_NO_FFMPEG}" STREQUAL "1")
+    message(WARNING "FFmpeg absent pour ${ANDROID_ABI}: vgmstream SANS MP3/Vorbis/AAC/Opus/ATRAC/WMA/XMA (REWAMP_ALLOW_NO_FFMPEG).")
+    set(REWAMP_FFMPEG_DIR "" CACHE PATH "" FORCE)
+  else()
+    message(FATAL_ERROR
+      "FFmpeg absent pour ${ANDROID_ABI} (${REWAMP_FFMPEG_DIR}).\n"
+      "Construire: scripts/android/build_ffmpeg_android.sh ${ANDROID_ABI}\n"
+      "(arm64/x86_64: ou les tranches ffmpeg-kit sous third_party/ffmpeg-kit).\n"
+      "Ou, en connaissance de cause: REWAMP_ALLOW_NO_FFMPEG=1 (vgmstream perd\n"
+      "alors MP3, Vorbis, AAC, Opus, ATRAC, WMA, XMA).")
+  endif()
 endif()
 
 get_filename_component(REWAMP_ANDROID_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../src/android" ABSOLUTE)

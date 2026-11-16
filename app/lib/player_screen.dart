@@ -1,3 +1,4 @@
+import 'tv_focus.dart';
 import 'dart:math' as math;
 import 'dart:io' show File, Platform;
 import 'dart:ui';
@@ -5,6 +6,7 @@ import 'app_snack.dart';
 import 'sheet_handle.dart';
 import 'transport_log.dart';
 import 'sync_service.dart';
+import 'track_membership.dart';
 import 'artist_links.dart';
 import 'dart:async';
 
@@ -2817,6 +2819,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         const SizedBox(width: 4),
         IconButton(
           key: const ValueKey('ps-play'),
+          // Android TV: le focus d'entrée du lecteur (la coquille dessous est
+          // exclue du focus tant qu'il est ouvert — app_shell.dart).
+          autofocus: TvFocus.enabled,
           iconSize: 52,
           icon: LoadingRing(
             loading: ctrl.loadingTrack,
@@ -4730,28 +4735,7 @@ class _LibraryToggleButtonState extends State<_LibraryToggleButton> {
       if (!mounted) return;
     }
     setState(() => _inLibrary = next);
-    if (next) {
-      await LocalDb.instance.addToLibrary(
-        type:       'track',
-        refId:      refId,
-        name:       ctrl.displayTitle,
-        artist:     ctrl.currentArtist,
-        album:      ctrl.currentAlbum,
-        albumId:    ctrl.currentAlbumId,
-        artworkUrl: ctrl.artworkUrl,
-        formatExt:  ctrl.currentFormatExt,
-      );
-    } else {
-      await LocalDb.instance.removeFromLibrary('track', refId);
-    }
-    await SyncService.recordTrackMembership(
-      refId:     refId,
-      value:     next,
-      title:     ctrl.displayTitle,
-      artist:    ctrl.currentArtist,
-      album:     ctrl.currentAlbum,
-      formatExt: ctrl.currentFormatExt,
-    );
+    await setCurrentTrackInLibrary(ctrl, refId, next);
     AppSnack.showOn(messenger, next
           ? l10n.playerAddedToLibrary
           : l10n.playerRemovedFromLibrary, duration: const Duration(seconds: 2));
@@ -4778,3 +4762,4 @@ class _LibraryToggleButtonState extends State<_LibraryToggleButton> {
 /// l'exclusion que l'arène aurait faite, dans le seul sens qui compte — le
 /// vertical, une fois revendiqué, garde le geste jusqu'au relâchement.
 bool _playerDismissDragActive = false;
+

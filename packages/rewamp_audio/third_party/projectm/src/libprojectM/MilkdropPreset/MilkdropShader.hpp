@@ -43,6 +43,16 @@ public:
     explicit MilkdropShader(ShaderType type);
 
     /**
+     * @brief rewamp: runs the text pipeline that LoadCode and
+     * TranspileHLSLShader feed into ShaderPreprocessor::preprocess, so its
+     * result is already in that function's cache when the preset is applied.
+     * Pure CPU, NO GL call: safe on any thread once MilkdropStaticShaders has
+     * been built on the render thread (it is, by the first preset). Errors are
+     * swallowed - the render thread will meet them and handle them as before.
+     */
+    static void PrewarmPreprocessor(ShaderType type, const std::string& presetShaderCode);
+
+    /**
      * @brief Translates and compiles the shader code.
      * @param presetShaderCode The preset shader code.
      */
@@ -96,6 +106,9 @@ public:
     GLuint m_shaderP;
 
 private:
+    //! rewamp: a shader holding no GL program, for PrewarmPreprocessor only.
+    MilkdropShader(ShaderType type, Renderer::Shader::NoGl);
+
     /**
      * @brief Prepares the shader code to be translated into GLSL.
      * @param program The program code to work on.

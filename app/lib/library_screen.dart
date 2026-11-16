@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -603,7 +604,7 @@ class _RecentCard extends StatelessWidget {
     final second     = elsewhere
         ? libraryElsewhereLabel(context)
         : _secondLine(item);
-    return HoverGrow(child: PlayChoiceHold(onTap: onTap, child: GestureDetector(
+    return HoverGrow(onTap: onTap, onLongPress: onTap == null ? null : () => unawaited(withPlayChoiceSheet(onTap!)), child: PlayChoiceHold(onTap: onTap, child: GestureDetector(
       onTap: onTap,
       child: Opacity(
         opacity: elsewhere ? 0.45 : 1.0,

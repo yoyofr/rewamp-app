@@ -1,3 +1,4 @@
+import 'tv_focus.dart';
 import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 import 'media_direction.dart';
@@ -266,6 +267,9 @@ class _MiniPlayerBar extends StatelessWidget {
           children: [
             InkWell(
               onTap: onTap,
+              // Android TV: la cible que ↓ au bout du menu latéral atteint
+              // (tv_focus.dart); OK ouvre le lecteur.
+              focusNode: TvFocus.enabled ? TvFocus.miniPlayerNode : null,
               child: Padding(
                 // Dalle plus basse: la vignette et les marges verticales sont
                 // ce qui donnait sa hauteur (44 + 2×8 + 2 px de progression).

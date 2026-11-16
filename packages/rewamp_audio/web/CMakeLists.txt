@@ -91,3 +91,29 @@ option(REWAMP_WEB_NAMES "web: garder les noms de fonctions dans le wasm" OFF)
 if(REWAMP_WEB_NAMES)
   target_link_options(rewamp_audio PRIVATE --profiling-funcs)
 endif()
+
+# ── Module de DÉPLIAGE, à part (site/extract-worker.js) ──────────────────────
+# Déplier un gros 7z fait grandir la mémoire wasm des tampons de décompression
+# (64 → 303 Mo pour un album PSF2 de 292 Mo, mesuré), et une mémoire wasm ne
+# rétrécit JAMAIS: dans le module du moteur, ce pic restait réservé jusqu'à la
+# fermeture de l'onglet. Ce module-ci ne contient que rewamp_extract.c +
+# libarchive + zlib; la page le lance dans un Worker JETABLE par archive, que
+# l'on détruit une fois les fichiers rendus — sa mémoire part avec lui.
+# -pthread: les objets de rewamp_archive sont compilés avec (drapeaux globaux
+# ci-dessus), mais aucun thread n'est créé (pool vide). MAXIMUM_MEMORY: une
+# mémoire partagée est RÉSERVÉE d'emblée (voir plus haut), d'où 512 Mo — au-delà,
+# l'échec retombe sur le dépliage dans le moteur (engine-worker.js).
+if(TARGET rewamp_archive)
+  add_executable(rewamp_extract
+    "${REWAMP_SRC_DIR}/rewamp_extract.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/rewamp_extract_main.c")
+  target_include_directories(rewamp_extract PRIVATE "${REWAMP_SRC_DIR}")
+  target_compile_definitions(rewamp_extract PRIVATE REWAMP_WITH_ARCHIVE=1)
+  target_link_libraries(rewamp_extract PRIVATE rewamp_archive z)
+  target_link_options(rewamp_extract PRIVATE
+    -pthread -sPTHREAD_POOL_SIZE=0
+    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=16MB -sMAXIMUM_MEMORY=512MB -sSTACK_SIZE=1MB
+    -sMODULARIZE=1 -sEXPORT_NAME=RewampExtract -sENVIRONMENT=worker,node
+    -sEXPORTED_RUNTIME_METHODS=FS,ccall
+    -sEXPORTED_FUNCTIONS=_main,_rewamp_extract_to_js,_rewamp_extract_js_last_error)
+endif()

@@ -1,3 +1,4 @@
+import 'tv_focus.dart';
 import 'package:flutter/material.dart';
 
 import 'l10n.dart';
@@ -9,25 +10,27 @@ import 'cancel_field.dart';
 
 /// Sur quoi trier une liste de bibliothèque. Chaque écran n'en propose que ce
 /// qui a un sens chez lui (un artiste n'a pas d'album).
-enum LibrarySort { name, artist, album, added }
+enum LibrarySort { name, artist, album, added, modified }
 
 extension LibrarySortLabel on LibrarySort {
   String label(AppLocalizations l10n, {bool asTitle = false}) => switch (this) {
         // « Nom » pour un artiste ou un album, « Titre » pour un morceau: c'est
         // le même champ, pas le même mot.
-        LibrarySort.name   => asTitle ? l10n.sortTitle : l10n.sortName,
+        LibrarySort.name => asTitle ? l10n.sortTitle : l10n.sortName,
         LibrarySort.artist => l10n.sortArtist,
-        LibrarySort.album  => l10n.sortAlbum,
-        LibrarySort.added  => l10n.sortDateAdded,
+        LibrarySort.album => l10n.sortAlbum,
+        LibrarySort.added => l10n.sortDateAdded,
+        LibrarySort.modified => l10n.sortDateModified,
       };
 
   /// Valeur persistée (les noms d'enum ne doivent pas fuir dans les préfs:
   /// renommer un cas casserait le réglage de l'utilisateur).
   String get pref => switch (this) {
-        LibrarySort.name   => 'name',
+        LibrarySort.name => 'name',
         LibrarySort.artist => 'artist',
-        LibrarySort.album  => 'album',
-        LibrarySort.added  => 'added',
+        LibrarySort.album => 'album',
+        LibrarySort.added => 'added',
+        LibrarySort.modified => 'modified',
       };
 
   static LibrarySort fromPref(String? v, LibrarySort fallback) =>
@@ -104,25 +107,30 @@ class ListFilterField extends StatelessWidget {
         child: CancelField(
           hasText: query.isNotEmpty,
           onCleared: (_) => onQuery(''),
-          builder: (_) => TextField(
-            // Même règle que [LibraryToolbar]: un `controller` recréé à chaque
-            // build replacerait le curseur au début à la frappe. L'état vit
-            // chez l'appelant, la valeur initiale suffit ici.
-            controller: TextEditingController(text: query)
-              ..selection = TextSelection.collapsed(offset: query.length),
-            onChanged: onQuery,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: hintText ?? l10n.searchFilterPlaceholder,
-              prefixIcon: const Icon(Icons.search, size: 18),
-              prefixIconConstraints:
-                  const BoxConstraints(minWidth: 34, minHeight: 34),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
-            ),
-          ),
+          builder: (_) => TvGatedText(
+              // Android TV: OK ouvre le clavier, le focus seul non.
+              builder: (node, readOnly) => TextField(
+                    focusNode: node,
+                    readOnly: readOnly,
+                    // Même règle que [LibraryToolbar]: un `controller` recréé à chaque
+                    // build replacerait le curseur au début à la frappe. L'état vit
+                    // chez l'appelant, la valeur initiale suffit ici.
+                    controller: TextEditingController(text: query)
+                      ..selection =
+                          TextSelection.collapsed(offset: query.length),
+                    onChanged: onQuery,
+                    textInputAction: TextInputAction.search,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: hintText ?? l10n.searchFilterPlaceholder,
+                      prefixIcon: const Icon(Icons.search, size: 18),
+                      prefixIconConstraints:
+                          const BoxConstraints(minWidth: 34, minHeight: 34),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20)),
+                    ),
+                  )),
         ),
       ),
     );
@@ -136,11 +144,14 @@ List<LibraryItem> sortLibraryItems(
   final out = [...items];
   int cmp(LibraryItem a, LibraryItem b) {
     final r = switch (by) {
-      LibrarySort.name   => _fold(a.name).compareTo(_fold(b.name)),
+      LibrarySort.name => _fold(a.name).compareTo(_fold(b.name)),
       LibrarySort.artist =>
         _fold(a.artist ?? '').compareTo(_fold(b.artist ?? '')),
-      LibrarySort.album  => _fold(a.album ?? '').compareTo(_fold(b.album ?? '')),
-      LibrarySort.added  => a.addedAt.compareTo(b.addedAt),
+      LibrarySort.album => _fold(a.album ?? '').compareTo(_fold(b.album ?? '')),
+      // Une entrée de bibliothèque n'a pas de date de fichier: jamais proposé ici.
+      LibrarySort.added ||
+      LibrarySort.modified =>
+        a.addedAt.compareTo(b.addedAt),
     };
     if (r != 0) return r;
     return _fold(a.name).compareTo(_fold(b.name));
@@ -155,7 +166,7 @@ List<LibraryItem> sortLibraryItems(
 /// que les diacritiques latins, rien d'autre.
 String _fold(String s) {
   const from = 'àáâãäåçèéêëìíîïñòóôõöùúûüýÿœæ';
-  const to   = 'aaaaaaceeeeiiiinooooouuuuyyoa';
+  const to = 'aaaaaaceeeeiiiinooooouuuuyyoa';
   final b = StringBuffer();
   for (final r in s.toLowerCase().runes) {
     final c = String.fromCharCode(r);
@@ -169,7 +180,7 @@ String _fold(String s) {
 /// (balayage) et ne se défait pas: ce qui se retire vite doit se confirmer.
 Future<bool> confirmLibraryRemoval(BuildContext context, String name) async {
   final l10n = context.l10n;
-  final cs   = Theme.of(context).colorScheme;
+  final cs = Theme.of(context).colorScheme;
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -270,7 +281,7 @@ class LibraryToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final cs   = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 4, 4),
       child: Row(children: [
@@ -280,25 +291,31 @@ class LibraryToolbar extends StatelessWidget {
             child: CancelField(
               hasText: query.isNotEmpty,
               onCleared: (_) => onQuery(''),
-              builder: (_) => TextField(
-              // Un `controller` recréé à chaque build replacerait le curseur au
-              // début à la frappe: l'état vit chez l'appelant, la valeur
-              // initiale suffit ici.
-              controller: TextEditingController(text: query)
-                ..selection = TextSelection.collapsed(offset: query.length),
-              onChanged: onQuery,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: hintText,
-                prefixIcon: const Icon(Icons.search, size: 18),
-                prefixIconConstraints:
-                    const BoxConstraints(minWidth: 34, minHeight: 34),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20)),
-              ),
-              ),
+              builder: (_) => TvGatedText(
+                  // Android TV: OK ouvre le clavier, le focus seul non.
+                  builder: (node, readOnly) => TextField(
+                        focusNode: node,
+                        readOnly: readOnly,
+                        // Un `controller` recréé à chaque build replacerait le curseur au
+                        // début à la frappe: l'état vit chez l'appelant, la valeur
+                        // initiale suffit ici.
+                        controller: TextEditingController(text: query)
+                          ..selection =
+                              TextSelection.collapsed(offset: query.length),
+                        onChanged: onQuery,
+                        textInputAction: TextInputAction.search,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: hintText,
+                          prefixIcon: const Icon(Icons.search, size: 18),
+                          prefixIconConstraints:
+                              const BoxConstraints(minWidth: 34, minHeight: 34),
+                          contentPadding:
+                              const EdgeInsets.symmetric(horizontal: 8),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20)),
+                        ),
+                      )),
             ),
           ),
         ),
@@ -321,7 +338,8 @@ class LibraryToolbar extends StatelessWidget {
               CheckedPopupMenuItem(
                 value: s.pref,
                 checked: s == sort,
-                child: Text(s.label(l10n, asTitle: titleWording && s == LibrarySort.name)),
+                child: Text(s.label(l10n,
+                    asTitle: titleWording && s == LibrarySort.name)),
               ),
             const PopupMenuDivider(),
             // Le SENS, que l'écran des playlists ne proposait pas: choisir

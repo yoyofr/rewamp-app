@@ -315,23 +315,42 @@ class LocalRoots extends ChangeNotifier {
     }
     _roots = resolved;
     notifyListeners();
-    // Ce qui a pu être déposé dans Fichiers depuis le dernier lancement.
-    if (Platform.isIOS) unawaited(scan(appFolderId));
+    // Ce qui a changé dans chaque racine depuis le dernier lancement (dont
+    // Fichiers › Rewamp sur iOS). Un parcours à la fois par racine, en tâche
+    // de fond: l'écran montre l'instantané précédent en attendant.
+    for (final r in List.of(_roots)) {
+      if (r.available) unawaited(scan(r.id));
+    }
   }
 
-  DateTime? _appFolderScannedAt;
+  /// Dernier parcours LANCÉ, par racine. La table des noms est un INSTANTANÉ:
+  /// sans parcours, ce qu'on a ajouté au dossier depuis n'existe pas pour
+  /// l'app (constaté sur macOS le 2026-11-14 avec ~/Downloads lié: seuls le
+  /// geste de liaison et « Reparcourir » parcouraient une racine du bureau).
+  final _scannedAt = <String, DateTime>{};
+  final _again = <String>{};
 
-  /// Retour au premier plan (iOS): l'utilisateur a peut-être déposé des
-  /// fichiers dans Fichiers entre-temps. Borné: pas plus d'un parcours par
-  /// 30 s, un aller-retour d'app rapide ne relance rien.
-  void onResumed() {
-    if (!Platform.isIOS || byId(appFolderId) == null) return;
-    final last = _appFolderScannedAt;
-    if (last != null &&
-        DateTime.now().difference(last) < const Duration(seconds: 30)) {
+  /// Reparcourt [rootId] si son dernier parcours date de plus de [minGap].
+  void refresh(String rootId, {Duration minGap = const Duration(seconds: 30)}) {
+    if (byId(rootId) == null) return;
+    // Pendant un parcours, ce qui change peut lui échapper: on en refera un.
+    if (_scanning.contains(rootId)) {
+      _again.add(rootId);
       return;
     }
-    unawaited(scan(appFolderId));
+    final last = _scannedAt[rootId];
+    if (last != null && DateTime.now().difference(last) < minGap) return;
+    unawaited(scan(rootId));
+  }
+
+  /// Retour au premier plan: des fichiers ont pu arriver (Fichiers › Rewamp
+  /// sur iOS, un téléchargement dans un dossier lié du bureau). Borné: pas
+  /// plus d'un parcours par 30 s et par racine, un aller-retour rapide ne
+  /// relance rien.
+  void onResumed() {
+    for (final r in List.of(_roots)) {
+      refresh(r.id);
+    }
   }
 
   Future<LocalRoot> _reopen(LocalRoot r) async {
@@ -531,6 +550,7 @@ class LocalRoots extends ChangeNotifier {
   Future<void> scan(String rootId) async {
     final r = byId(rootId);
     if (r == null || !_scanning.add(rootId)) return;
+    _scannedAt[rootId] = DateTime.now();
     notifyListeners();
     final ops = LocalOps.instance;
     try {
@@ -556,7 +576,6 @@ class LocalRoots extends ChangeNotifier {
       // et l'écran restait vide sans un mot (mesuré sur macOS le 2026-10-27).
       final exts = Set<String>.of(_kIndexedExts);
       final skip = r.id == appFolderId ? _appFolderSkip : const <String>{};
-      if (r.id == appFolderId) _appFolderScannedAt = DateTime.now();
       final entries = await _runWalk(r.path, exts, skip, port.sendPort);
       port.close();
       ops.phase(LocalOpPhase.registering, total: entries.length);
@@ -576,6 +595,7 @@ class LocalRoots extends ChangeNotifier {
       ops.end();
       _scanning.remove(rootId);
       notifyListeners();
+      if (_again.remove(rootId)) unawaited(scan(rootId));
     }
   }
 

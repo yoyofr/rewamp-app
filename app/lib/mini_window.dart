@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:rewamp_audio/rewamp_audio.dart';
 import 'launch_window.dart';
+import 'render_backend.dart';
 import 'user_settings.dart';
 
 /// Mode « mini lecteur » du bureau (macOS, Linux, Windows) + « toujours au
@@ -227,6 +228,9 @@ class MiniWindow extends ChangeNotifier with WindowListener {
       // remise à zéro comprise, et à chaque bascule du mini lecteur.
       UserSettings.instance.addListener(() => unawaited(syncLaunchWindow()));
       unawaited(syncLaunchWindow());
+      // Même chose pour le moteur de rendu (macOS, render_backend.dart).
+      UserSettings.instance.addListener(() => unawaited(syncRenderBackend()));
+      unawaited(syncRenderBackend());
       // Le RÉGLAGE fait foi et le natif le suit — y compris quand il change
       // sans passer par nous (remise à zéro de la section « Général », qui
       // EFFACE la clé): sans cet écouteur la fenêtre resterait épinglée alors

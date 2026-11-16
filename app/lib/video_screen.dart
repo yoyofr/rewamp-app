@@ -156,6 +156,9 @@ class VideoEmbedController {
     final reason = _reasonFor(raw);
     if (failure.value == null) failure.value = reason;
     if (_reported) return;
+    // Vidéo d'ALBUM (mig serveur 303): ni production ni morceau à qui la
+    // rattacher — surtout pas le morceau en cours, qui n'y est pour rien.
+    if (video.kind == 'album') return;
     final prodId = _productionId;
     // A manual video has no production: it is keyed on the song instead.
     final songId = prodId == null ? _songId : null;

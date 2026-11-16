@@ -59,6 +59,20 @@ MilkdropPreset::MilkdropPreset(std::istream& presetData)
     Load(presetData);
 }
 
+void MilkdropPreset::PrewarmShaders(const std::string& absoluteFilePath)
+{
+    ::libprojectM::PresetFileParser parser;
+    if (!parser.Read(absoluteFilePath))
+    {
+        return;
+    }
+    // Same keys as PresetState::Initialize. The shader version gates are not
+    // replicated: warming a shader the preset ends up not using only costs this
+    // thread some time.
+    MilkdropShader::PrewarmPreprocessor(MilkdropShader::ShaderType::WarpShader, parser.GetCode("warp_"));
+    MilkdropShader::PrewarmPreprocessor(MilkdropShader::ShaderType::CompositeShader, parser.GetCode("comp_"));
+}
+
 void MilkdropPreset::Initialize(const Renderer::RenderContext& renderContext)
 {
     assert(renderContext.textureManager);

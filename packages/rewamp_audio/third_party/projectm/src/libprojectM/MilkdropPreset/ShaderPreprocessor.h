@@ -101,6 +101,16 @@ public:
     [[nodiscard]] std::string preprocess(const std::string& shaderSource);
 
     /**
+     * rewamp: preprocess() is a pure function of its input text (and the
+     * language), and it is the costly part of a preset load — HLSLTypeFixer's
+     * std::regex passes, 20-30 ms per preset in wasm, measured. Results are
+     * kept in a small process-wide cache (thread-safe), which a background
+     * thread fills for the NEXT preset (MilkdropShader::PrewarmPreprocessor).
+     * A miss computes exactly as before, so the cache cannot change a result.
+     */
+    [[nodiscard]] std::string preprocessUncached(const std::string& shaderSource);
+
+    /**
      * @brief Rewrites bare sampler declarations to the "sampler_" convention.
      * Milkdrop accepts "sampler MyTexture;" with matching uses, while the rest of
      * the pipeline keys on that prefix (reference scan, descriptor names, the

@@ -663,6 +663,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get videoWatchDemo => 'Ver la demo';
 
   @override
+  String get albumVideo => 'Vídeo';
+
+  @override
   String searchFacetSelected(String label, String value) {
     return '$label: $value';
   }
@@ -1082,6 +1085,29 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get commonRetry => 'Reintentar';
+
+  @override
+  String get netErrorOffline =>
+      'Estás sin conexión. La música descargada sigue sonando; el contenido en línea volverá con la conexión.';
+
+  @override
+  String get netErrorSlow =>
+      'El servidor tarda demasiado en responder: la red puede ser inestable o el servidor estar saturado. Se recargará solo en cuanto responda.';
+
+  @override
+  String get netErrorServer =>
+      'El servidor tiene problemas en este momento. Inténtalo de nuevo en un momento.';
+
+  @override
+  String get netErrorGeneric =>
+      'No se pudo cargar este contenido. Inténtalo de nuevo en un momento.';
+
+  @override
+  String get netBannerOffline =>
+      'Sin conexión: la música descargada sigue disponible';
+
+  @override
+  String get netBannerSlow => 'El servidor no responde: reintento automático';
 
   @override
   String get commonOptions => 'Opciones';
@@ -1919,6 +1945,9 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get sortDateAdded => 'Fecha de adición';
+
+  @override
+  String get sortDateModified => 'Fecha de modificación';
 
   @override
   String get commonClear => 'Borrar';
@@ -5393,6 +5422,10 @@ class AppLocalizationsEs extends AppLocalizations {
       'Los compositores se pueden tocar en todas las pantallas de álbum y de subcanciones; título y autor se leen de los archivos importados.';
 
   @override
+  String get releaseNotesV11AlbumNotes =>
+      'Álbumes: notas y vídeos (gameplay, superplays…) en la pantalla del álbum, también en el reproductor junto a los de la pista.';
+
+  @override
   String get releaseNotesV11Hindi =>
       'La app habla hindi (19 idiomas) y la interfaz está lista para idiomas que se escriben de derecha a izquierda.';
 
@@ -5402,9 +5435,57 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get releaseNotesV11Visualizers =>
-      'Visualizadores: hasta 64 voces en los osciloscopios, un color por instrumento de percusión MIDI, notas de archivos 2SF, nombres de instrumentos de los bancos FM.';
+      'Visualizadores: hasta 64 voces en los osciloscopios, un color por instrumento de percusión MIDI, notas de archivos 2SF, nombres de instrumentos de los bancos FM, notas repetidas rápidamente en Mega Drive.';
+
+  @override
+  String get releaseNotesV11AndroidTv =>
+      'Android TV: pantalla completa, navegación con el mando (flechas y OK, mantener OK para el menú) y una versión para decodificadores de 32 bits.';
+
+  @override
+  String get releaseNotesV11Network =>
+      'Servidor lento o inaccesible: un mensaje claro en lugar de un error técnico, un aviso mientras dura y las pantallas se recargan solas al volver.';
+
+  @override
+  String get releaseNotesV11ArtistFilter =>
+      'Página de artista: un filtro para encontrar una pista o un álbum en una lista larga.';
+
+  @override
+  String get releaseNotesV11ChpPatterns =>
+      'Visualizador de patrones para las canciones CHIPNSFX (.chp, Amstrad CPC), con los nombres de los instrumentos.';
 
   @override
   String get releaseNotesV11Fixes =>
-      'Corregido: algunos SSF rechazados, rips de WonderSwan mudos, álbumes repartidos en varios archivos incompletos y presets de projectM tras cerrar el reproductor.';
+      'Corregido: algunos SSF rechazados, rips de WonderSwan mudos, álbumes repartidos en varios archivos incompletos, entradas fallidas en algunos álbumes (una carpeta listada como pista) y presets de projectM tras cerrar el reproductor.';
+
+  @override
+  String get settingsRenderBackend => 'Motor de renderizado';
+
+  @override
+  String get settingsRenderBackendAuto => 'Automático';
+
+  @override
+  String get settingsRenderBackendAutoHint =>
+      'Impeller en Mac con Apple Silicon, Skia en Mac Intel';
+
+  @override
+  String get settingsRenderBackendImpellerHint =>
+      'Renderizado moderno, efecto cristal completo. Puede corromper el texto en algunos Mac Intel.';
+
+  @override
+  String get settingsRenderBackendSkiaHint =>
+      'Renderizado clásico, más seguro en Mac Intel. Efecto cristal simplificado.';
+
+  @override
+  String settingsRenderBackendActive(String name) {
+    return 'Activo: $name';
+  }
+
+  @override
+  String get settingsRenderBackendRestart => 'Se aplica en el próximo inicio';
+
+  @override
+  String get carPlayNext => 'Pista siguiente';
+
+  @override
+  String get carPlayPrevious => 'Pista anterior';
 }

@@ -62,6 +62,7 @@ void ProjectM::PresetSwitchFailedEvent(const std::string&, const std::string&) c
 
 void ProjectM::LoadPresetFile(const std::string& presetFilename, bool smoothTransition)
 {
+    DropDeferredPresetLoad();   // rewamp: an explicit load supersedes a pending one
     try
     {
         const auto curPresetDir = std::filesystem::path{ presetFilename }.parent_path().string();
@@ -74,6 +75,85 @@ void ProjectM::LoadPresetFile(const std::string& presetFilename, bool smoothTran
     {
         PresetSwitchFailedEvent(presetFilename, ex.what());
     }
+}
+
+bool ProjectM::BeginDeferredPresetLoad(const std::string& presetFilename, bool smoothTransition)
+{
+    DropDeferredPresetLoad();
+    try
+    {
+        const auto curPresetDir = std::filesystem::path{ presetFilename }.parent_path().string();
+        m_textureManager->SetCurrentPresetPath(curPresetDir);
+        m_textureManager->PurgeTextures();
+
+        auto preset = m_presetFactoryManager->CreatePresetFromFile(presetFilename);
+        if (preset == nullptr)
+        {
+            return false;
+        }
+        Renderer::Shader::BeginDeferredLinks();
+        try
+        {
+            preset->Initialize(GetRenderContext());
+        }
+        catch (...)
+        {
+            auto links = Renderer::Shader::EndDeferredLinks();
+            Renderer::Shader::FinishPendingLinks(links);
+            throw;
+        }
+        m_deferredLinks = Renderer::Shader::EndDeferredLinks();
+        m_deferredPreset = std::move(preset);
+        m_deferredFilename = presetFilename;
+        m_deferredSmooth = smoothTransition;
+        m_deferredFrames = 0;
+        return true;
+    }
+    catch (const std::exception& ex)
+    {
+        PresetSwitchFailedEvent(presetFilename, ex.what());
+        return false;
+    }
+}
+
+int ProjectM::PollDeferredPresetLoad(int maxFrames)
+{
+    if (m_deferredPreset == nullptr)
+    {
+        return 0;
+    }
+    // Bounded: a driver that never reports completion gets the blocking
+    // queries after maxFrames, i.e. the old behaviour, a little later.
+    if (++m_deferredFrames < maxFrames && !Renderer::Shader::PendingLinksDone(m_deferredLinks))
+    {
+        return 1;
+    }
+    const bool linked = Renderer::Shader::FinishPendingLinks(m_deferredLinks);
+    auto preset = std::move(m_deferredPreset);
+    const std::string filename = m_deferredFilename;
+    const bool smooth = m_deferredSmooth;
+    m_deferredFilename.clear();
+    if (!linked)
+    {
+        // A shader that does not link: the synchronous path knows what to do
+        // with it (each MilkdropShader catches its own failure and falls back).
+        preset.reset();
+        LoadPresetFile(filename, smooth);
+        return 2;
+    }
+    StartPresetTransition(std::move(preset), !smooth, true);
+    return 2;
+}
+
+void ProjectM::DropDeferredPresetLoad()
+{
+    if (m_deferredPreset == nullptr && m_deferredLinks.empty())
+    {
+        return;
+    }
+    Renderer::Shader::FinishPendingLinks(m_deferredLinks);
+    m_deferredPreset.reset();
+    m_deferredFilename.clear();
 }
 
 void ProjectM::PreLoadPresetFile(const std::string& presetFilename,uint32_t *warpP,uint32_t *compP,uint64_t *randSeed)
@@ -139,6 +219,7 @@ void ProjectM::PreLoadPresetFile(const std::string& presetFilename,uint32_t *war
 
 void ProjectM::LoadPreLoadPresetFile(const std::string& presetFilename,uint32_t warpP,uint32_t compP, bool smoothTransition,uint64_t randSeed)
 {
+    DropDeferredPresetLoad();   // rewamp: an explicit load supersedes a pending one
     try
     {
         const auto curPresetDir = std::filesystem::path{ presetFilename }.parent_path().string();
@@ -408,7 +489,7 @@ void ProjectM::SetWindowSize(uint32_t width, uint32_t height)
     m_windowHeight = height;
 }
 
-void ProjectM::StartPresetTransition(std::unique_ptr<Preset>&& preset, bool hardCut)
+void ProjectM::StartPresetTransition(std::unique_ptr<Preset>&& preset, bool hardCut, bool initialized)
 {
     m_presetChangeNotified = m_presetLocked;
 
@@ -417,7 +498,10 @@ void ProjectM::StartPresetTransition(std::unique_ptr<Preset>&& preset, bool hard
         return;
     }
 
-    preset->Initialize(GetRenderContext());
+    if (!initialized)
+    {
+        preset->Initialize(GetRenderContext());
+    }
 
     // If already in a transition, force immediate completion.
     if (m_transitioningPreset != nullptr)

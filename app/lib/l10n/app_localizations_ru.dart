@@ -676,6 +676,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get videoWatchDemo => 'Смотреть демо';
 
   @override
+  String get albumVideo => 'Видео';
+
+  @override
   String searchFacetSelected(String label, String value) {
     return '$label: $value';
   }
@@ -1121,6 +1124,28 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get commonRetry => 'Повторить';
+
+  @override
+  String get netErrorOffline =>
+      'Вы не в сети. Скачанная музыка продолжает играть; онлайн-контент вернётся вместе с подключением.';
+
+  @override
+  String get netErrorSlow =>
+      'Сервер отвечает слишком долго — сеть может быть нестабильной или сервер перегружен. Контент загрузится сам, как только сервер ответит.';
+
+  @override
+  String get netErrorServer =>
+      'На сервере сейчас проблемы. Повторите попытку чуть позже.';
+
+  @override
+  String get netErrorGeneric =>
+      'Не удалось загрузить этот контент. Повторите попытку чуть позже.';
+
+  @override
+  String get netBannerOffline => 'Нет сети — скачанная музыка доступна';
+
+  @override
+  String get netBannerSlow => 'Сервер не отвечает — автоматический повтор';
 
   @override
   String get commonOptions => 'Опции';
@@ -1983,6 +2008,9 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get sortDateAdded => 'Дата добавления';
+
+  @override
+  String get sortDateModified => 'Дата изменения';
 
   @override
   String get commonClear => 'Очистить';
@@ -5507,6 +5535,10 @@ class AppLocalizationsRu extends AppLocalizations {
       'Композиторы кликабельны на всех экранах альбомов и подпесен; название и автор считываются из импортированных файлов.';
 
   @override
+  String get releaseNotesV11AlbumNotes =>
+      'Альбомы: заметки и видео (геймплей, суперплеи…) на экране альбома, а также в плеере рядом с материалами трека.';
+
+  @override
   String get releaseNotesV11Hindi =>
       'Приложение говорит на хинди (19 языков), а интерфейс готов к языкам с письмом справа налево.';
 
@@ -5516,9 +5548,58 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get releaseNotesV11Visualizers =>
-      'Визуализации: до 64 голосов в осциллографах, свой цвет для каждого ударного инструмента MIDI, ноты для файлов 2SF, названия инструментов из FM-банков.';
+      'Визуализации: до 64 голосов в осциллографах, свой цвет для каждого ударного инструмента MIDI, ноты для файлов 2SF, названия инструментов из FM-банков, быстро повторяющиеся ноты на Mega Drive.';
+
+  @override
+  String get releaseNotesV11AndroidTv =>
+      'Android TV: полноэкранный режим, управление пультом (стрелки и OK, удержание OK — меню) и версия для 32-битных ТВ-приставок.';
+
+  @override
+  String get releaseNotesV11Network =>
+      'Медленный или недоступный сервер: понятное сообщение вместо технической ошибки, баннер, пока это длится, а экраны сами перезагружаются, когда сервер вернётся.';
+
+  @override
+  String get releaseNotesV11ArtistFilter =>
+      'Страница исполнителя: фильтр, чтобы найти трек или альбом в длинном списке.';
+
+  @override
+  String get releaseNotesV11ChpPatterns =>
+      'Визуализация паттернов для композиций CHIPNSFX (.chp, Amstrad CPC) с названиями инструментов.';
 
   @override
   String get releaseNotesV11Fixes =>
-      'Исправлено: некоторые отклонённые файлы SSF, беззвучные рипы WonderSwan, неполные альбомы из нескольких архивов и пресеты projectM после закрытия плеера.';
+      'Исправлено: некоторые отклонённые файлы SSF, беззвучные рипы WonderSwan, неполные альбомы из нескольких архивов, ошибочные записи в некоторых альбомах (папка в списке как трек) и пресеты projectM после закрытия плеера.';
+
+  @override
+  String get settingsRenderBackend => 'Движок отрисовки';
+
+  @override
+  String get settingsRenderBackendAuto => 'Автоматически';
+
+  @override
+  String get settingsRenderBackendAutoHint =>
+      'Impeller на Mac с Apple Silicon, Skia на Mac с Intel';
+
+  @override
+  String get settingsRenderBackendImpellerHint =>
+      'Современная отрисовка, полный эффект стекла. На некоторых Mac с Intel может искажать текст.';
+
+  @override
+  String get settingsRenderBackendSkiaHint =>
+      'Классическая отрисовка, надёжнее на Mac с Intel. Упрощённый эффект стекла.';
+
+  @override
+  String settingsRenderBackendActive(String name) {
+    return 'Активен: $name';
+  }
+
+  @override
+  String get settingsRenderBackendRestart =>
+      'Вступит в силу при следующем запуске';
+
+  @override
+  String get carPlayNext => 'Следующий трек';
+
+  @override
+  String get carPlayPrevious => 'Предыдущий трек';
 }

@@ -415,6 +415,10 @@
   "searchPlatform": "Platform",
   "filterCollection": "Collection",
   "videoWatchDemo": "Watch the demo",
+  "albumVideo": "Video",
+  "@albumVideo": {
+    "description": "Label of a video attached to an album when it has no title of its own (album screen chip)."
+  },
   "searchFacetSelected": "{label}: {value}",
   "@searchFacetSelected": {
     "placeholders": {
@@ -739,6 +743,12 @@
     }
   },
   "commonRetry": "Retry",
+  "netErrorOffline": "You're offline. Downloaded music still plays; online content will come back with the connection.",
+  "netErrorSlow": "The server is taking too long to respond — the network may be unstable or the server busy. This will reload by itself once it answers again.",
+  "netErrorServer": "The server is having trouble right now. Try again in a moment.",
+  "netErrorGeneric": "This content couldn't be loaded. Try again in a moment.",
+  "netBannerOffline": "Offline — downloaded music still plays",
+  "netBannerSlow": "Server not responding — retrying automatically",
   "commonOptions": "Options",
   "commonDownload": "Download",
   "commonDeleteDownload": "Delete download",
@@ -1305,6 +1315,7 @@
   "sortArtist": "Artist",
   "sortAlbum": "Album",
   "sortDateAdded": "Date added",
+  "sortDateModified": "Date modified",
   "commonClear": "Clear",
   "sortRecentlyModified": "Recently modified",
   "sortCreationDate": "Creation date",
@@ -3405,6 +3416,10 @@
   "@releaseNotesV11Composers": {
     "description": "Release note: composers tappable everywhere; title/author read from imported files"
   },
+  "releaseNotesV11AlbumNotes": "Albums: notes and videos (gameplay, superplays…) on the album screen, also shown in the player alongside the track's own.",
+  "@releaseNotesV11AlbumNotes": {
+    "description": "Release note: album notes and videos on the album screen and in the player"
+  },
   "releaseNotesV11Hindi": "The app speaks Hindi (19 languages), and the interface is ready for right-to-left languages.",
   "@releaseNotesV11Hindi": {
     "description": "Release note: Hindi added (19 languages), UI ready for right-to-left languages"
@@ -3413,12 +3428,69 @@
   "@releaseNotesV11Loops": {
     "description": "Release note: infinite loop armed mid-track continues through the tune loop point"
   },
-  "releaseNotesV11Visualizers": "Visualizers: up to 64 voices in the oscilloscopes, one colour per MIDI drum instrument, notes for 2SF files, instrument names from FM banks.",
+  "releaseNotesV11Visualizers": "Visualizers: up to 64 voices in the oscilloscopes, one colour per MIDI drum instrument, notes for 2SF files, instrument names from FM banks, fast repeated notes on Mega Drive.",
   "@releaseNotesV11Visualizers": {
-    "description": "Release note: visualizers \u2014 64 voices, MIDI drum colours per instrument, 2SF notes, FM bank instrument names"
+    "description": "Release note: visualizers \u2014 64 voices, MIDI drum colours per instrument, 2SF notes, FM bank instrument names, fast repeated Mega Drive notes"
   },
-  "releaseNotesV11Fixes": "Fixed: some SSF files refused, silent WonderSwan rips, incomplete albums split over several archives, and projectM presets after closing the player.",
+  "releaseNotesV11AndroidTv": "Android TV: full-screen layout, remote navigation (arrows and OK, hold OK for the menu) and a build for 32-bit TV boxes.",
+  "@releaseNotesV11AndroidTv": {
+    "description": "Release note: Android TV \u2014 full-screen layout, remote (D-pad) navigation, 32-bit build"
+  },
+  "releaseNotesV11Network": "Slow or unreachable server: a clear message instead of a technical error, a banner while it lasts, and screens reload on their own when it is back.",
+  "@releaseNotesV11Network": {
+    "description": "Release note: clear messages and banner when the server is slow or unreachable, auto reload"
+  },
+  "releaseNotesV11ArtistFilter": "Artist page: a filter to find a track or an album in a long list.",
+  "@releaseNotesV11ArtistFilter": {
+    "description": "Release note: text filter on the artist page"
+  },
+  "releaseNotesV11ChpPatterns": "Patterns visualizer for CHIPNSFX songs (.chp, Amstrad CPC), with instrument names.",
+  "@releaseNotesV11ChpPatterns": {
+    "description": "Release note: patterns visualizer for CHIPNSFX .chp songs with instrument names"
+  },
+  "releaseNotesV11Fixes": "Fixed: some SSF files refused, silent WonderSwan rips, incomplete albums split over several archives, a failing entry in some albums (a folder listed as a track), and projectM presets after closing the player.",
   "@releaseNotesV11Fixes": {
-    "description": "Release note: fixes \u2014 SSF refused, silent WonderSwan, multi-archive albums, projectM presets after closing the player"
+    "description": "Release note: fixes \u2014 SSF refused, silent WonderSwan, multi-archive albums, folder listed as an album track, projectM presets after closing the player"
+  },
+  "settingsRenderBackend": "Rendering engine",
+  "@settingsRenderBackend": {
+    "description": "Settings (macOS): rendering engine choice (Impeller / Skia)"
+  },
+  "settingsRenderBackendAuto": "Automatic",
+  "@settingsRenderBackendAuto": {
+    "description": "Settings (macOS): rendering engine choice (Impeller / Skia)"
+  },
+  "settingsRenderBackendAutoHint": "Impeller on Apple Silicon Macs, Skia on Intel Macs",
+  "@settingsRenderBackendAutoHint": {
+    "description": "Settings (macOS): rendering engine choice (Impeller / Skia)"
+  },
+  "settingsRenderBackendImpellerHint": "Modern renderer, full glass effect. Can garble text on some Intel Macs.",
+  "@settingsRenderBackendImpellerHint": {
+    "description": "Settings (macOS): rendering engine choice (Impeller / Skia)"
+  },
+  "settingsRenderBackendSkiaHint": "Classic renderer, safer on Intel Macs. Simplified glass effect.",
+  "@settingsRenderBackendSkiaHint": {
+    "description": "Settings (macOS): rendering engine choice (Impeller / Skia)"
+  },
+  "settingsRenderBackendActive": "Active: {name}",
+  "@settingsRenderBackendActive": {
+    "description": "Settings (macOS): which renderer this launch uses; name is Impeller or Skia",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsRenderBackendRestart": "Takes effect at next launch",
+  "@settingsRenderBackendRestart": {
+    "description": "Settings (macOS): rendering engine choice (Impeller / Skia)"
+  },
+  "carPlayNext": "Next track",
+  "@carPlayNext": {
+    "description": "CarPlay download screen: skip to the next queue entry."
+  },
+  "carPlayPrevious": "Previous track",
+  "@carPlayPrevious": {
+    "description": "CarPlay download screen: go back to the previous queue entry."
   }
 }

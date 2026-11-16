@@ -1,0 +1,7 @@
+// CarPlay audio and Siri require a matching signing profile. Opt in with 1.
+REWAMP_WITH_CARPLAY = 0
+REWAMP_IOS_ENTITLEMENTS_0 = Runner/Runner.entitlements
+REWAMP_IOS_ENTITLEMENTS_1 = Runner/CarPlay.entitlements
+
+// Machine-specific preferences; command-line build settings take precedence.
+#include? "Local.xcconfig"

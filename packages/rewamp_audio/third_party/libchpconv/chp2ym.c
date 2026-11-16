@@ -120,7 +120,7 @@ int strint(const char *s,int i) // perform strchr(s,i) and sanitize the output
 
 INLINE void keepwithin(int *i,int l,int h) { if (*i<l) *i=l; else if (*i>h) *i=h; }
 
-int flag_q=0,flag_q_last,flag_q_next; // onscreen percentage counters
+int flag_q=1,flag_q_last,flag_q_next; // onscreen percentage counters (REWAMP: muets, 1 — on convertit en mémoire, pas en console)
 #define flag_q_init(i) flag_q_last=(i)+1
 void flag_q_loop(int i) { if (!flag_q&&!(7&++flag_q_next)) fprintf(stderr,"%02d%%\x0D",100*i/flag_q_last); }
 void flag_q_exit(int i) { if (!flag_q) fprintf(stderr,"%d.\n",i); }
@@ -488,6 +488,9 @@ void snd_playchan(int c) // update channel `c`
 }
 
 // read one frame of score
+/* REWAMP: la ligne qui joue, posée à chaque déclenchement de ligne (grille de
+ * motifs du visualiseur; voir chp2ym_song). */
+static int chp_cur_order=-1,chp_cur_row=-1;
 int snd_frame(int h) // returns 0 if SONG OVER
 {
 	int c,i,q=3;
@@ -510,6 +513,7 @@ int snd_frame(int h) // returns 0 if SONG OVER
 					snd_stop();
 			if (snd_playing)
 			{
+				chp_cur_order=snd_order; chp_cur_row=snd_score; // REWAMP
 				for (q=c=0;c<3;++c) // walk thru the scores
 				{
 					i=order[c][snd_order][0];
@@ -541,6 +545,9 @@ int snd_frame(int h) // returns 0 if SONG OVER
 int fputiiii(int x) { fputc(x,f); fputc(x>>8,f); fputc(x>>16,f); return fputc(x>>24,f); }
 
 
+/* REWAMP: tables (ordre, ligne) par image YM3, remplies si non NULL. */
+static int16_t **chp_rec_order=NULL,**chp_rec_row=NULL;
+static int *chp_rec_frames=NULL,*chp_rec_loop=NULL;
 int generate_ym3(uint8_t **out_data,int i) // exports the current song as an YM3B file; 0 is ERROR
 {
 	int l=0,o=0;
@@ -583,12 +590,22 @@ int generate_ym3(uint8_t **out_data,int i) // exports the current song as an YM3
     out_data_ptr+=4;
     
 	//loopto=-1; // forbid looping
+	if (chp_rec_order) // REWAMP
+	{
+		*chp_rec_order=(int16_t*)malloc(sizeof(int16_t)*(l>0?l:1));
+		*chp_rec_row=(int16_t*)malloc(sizeof(int16_t)*(l>0?l:1));
+		*chp_rec_frames=(*chp_rec_order&&*chp_rec_row)?l:0;
+		*chp_rec_loop=o;
+	}
+	chp_cur_order=chp_cur_row=-1;
 	snd_play(i=0);
 	flag_q_init(l);
 	while (i<l)
 	{
 		flag_q_loop(i);
 		snd_frame(!0); snd_frame(!0); // reduce 100 Hz to 50 Hz
+		if (chp_rec_order&&*chp_rec_frames) // REWAMP
+			(*chp_rec_order)[i]=chp_cur_order,(*chp_rec_row)[i]=chp_cur_row;
 		int j;
 		//y[i     ]=j=((int)(snd_freq0[0]*1.7734/2)>>(SND_FIXED)); // YM3B @ 2 MHz
         y[i     ]=j=((int)(snd_freq0[0])>>(SND_FIXED)); // YM3B @ 2 MHz
@@ -648,4 +665,32 @@ int chp2ym(char *filename,uint8_t **ym_data)
     
     return generate_ym3(ym_data,flag_y>1?loopto:0);
 // the tracker itself ----------------------------------------- //
+}
+
+/* REWAMP — la chanson pour la grille de motifs du visualiseur: ordres, scores,
+ * longueurs, et la position (ordre, ligne) de CHAQUE image YM3 produite, prise
+ * au rejeu même qui fabrique le YM3 (donc juste par construction: tempo,
+ * fin de score de la voie C, boucle). */
+int chp2ym_song(char *filename,uint8_t **ym_data,ChpSong *song)
+{
+	int r;
+	if (!song) return chp2ym(filename,ym_data);
+	memset(song,0,sizeof(*song));
+	chp_rec_order=&song->cur_order; chp_rec_row=&song->cur_row;
+	chp_rec_frames=&song->frames; chp_rec_loop=&song->loop_frame;
+	r=chp2ym(filename,ym_data);
+	chp_rec_order=chp_rec_row=NULL; chp_rec_frames=chp_rec_loop=NULL;
+	if (r<=0) { chp_song_free(song); return r; }
+	song->orders=orders; song->loopto=loopto; song->hertz=hertz;
+	song->divisor=divisor; song->transpose=transpose;
+	memcpy(song->order,order,sizeof(song->order));
+	memcpy(song->scrln,scrln,sizeof(song->scrln));
+	memcpy(song->score,score,sizeof(song->score));
+	return r;
+}
+void chp_song_free(ChpSong *song)
+{
+	if (!song) return;
+	free(song->cur_order); free(song->cur_row);
+	song->cur_order=song->cur_row=NULL; song->frames=0;
 }

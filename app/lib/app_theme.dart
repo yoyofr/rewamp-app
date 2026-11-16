@@ -9,6 +9,7 @@
 // thème teinté. Tout thème passe donc par ici; `app_theme_test.dart` fait
 // échouer la suite si un `ThemeData(` réapparaît ailleurs.
 
+import 'tv_focus.dart';
 import 'package:flutter/material.dart';
 
 import 'font_fallback.dart';
@@ -20,4 +21,9 @@ ThemeData rewampThemeData(ColorScheme colorScheme) => ThemeData(
       // Linux: sans ce repli NOMMÉ, tout texte CJK sort en rectangles —
       // interface comprise. Voir font_fallback.dart.
       fontFamilyFallback: platformCjkFontFallback(),
+      // Android TV: le surlignage de focus d'un ListTile / bouton / rail se
+      // voit à peine de loin; plus marqué (tv_focus.dart). Défaut ailleurs.
+      focusColor: TvFocus.enabled
+          ? colorScheme.primary.withValues(alpha: 0.32)
+          : null,
     );

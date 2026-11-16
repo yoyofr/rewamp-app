@@ -6,6 +6,8 @@
 // Jouer passe par le routage commun (`globalOpenLocalPaths`): dépliage des
 // sous-chansons, feuille « quand l'entendre », filtrage du lot — tout ce que
 // la ligne ne sait pas faire.
+import 'tv_focus.dart';
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' show Random;
 
@@ -17,6 +19,7 @@ import 'app_snack.dart';
 import 'artwork_image.dart' show ArtworkCache;
 import 'cancel_field.dart';
 import 'l10n.dart';
+import 'local_browse_view.dart';
 import 'local_db.dart';
 import 'local_open.dart' show globalOpenLocalPaths;
 import 'local_ops.dart' show LocalOpsBanner;
@@ -46,6 +49,8 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
   List<LinkedEntry> _files = const [];
   List<LinkedEntry>? _search; // non nul = résultats de recherche affichés
   Map<String, String> _folderArt = const {};
+  Map<String, int> _folderMtimes = const {};
+  LocalBrowseOrder _order = LocalBrowseOrder.read();
 
   LocalRoot? get _root => LocalRoots.instance.byId(widget.rootId);
 
@@ -55,10 +60,38 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
     _load();
     LocalDb.instance.addListener(_load);
     LocalRoots.instance.addListener(_onRoots);
+    // Le niveau vient d'un INSTANTANÉ (la table des noms): on le remet à jour
+    // en ouvrant, puis on SURVEILLE le dossier affiché tant que l'écran est
+    // là (bureau) — un fichier qui arrive dans ~/Downloads apparaît seul.
+    LocalRoots.instance.refresh(widget.rootId, minGap: const Duration(seconds: 5));
+    _watch();
+  }
+
+  StreamSubscription<FileSystemEvent>? _watchSub;
+  Timer? _watchDebounce;
+
+  void _watch() {
+    final root = _root;
+    if (root == null || !root.available || root.kind == LocalRootKind.saf) return;
+    if (!(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) return;
+    try {
+      _watchSub = Directory(joinPortable(root.path, widget.relDir))
+          .watch()
+          .listen((_) {
+        _watchDebounce?.cancel();
+        _watchDebounce = Timer(const Duration(milliseconds: 1500), () {
+          if (mounted) {
+            LocalRoots.instance.refresh(widget.rootId, minGap: Duration.zero);
+          }
+        });
+      }, onError: (_) {});
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _watchSub?.cancel();
+    _watchDebounce?.cancel();
     LocalDb.instance.removeListener(_load);
     LocalRoots.instance.removeListener(_onRoots);
     _filterCtrl.dispose();
@@ -77,9 +110,12 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
   Future<void> _load() async {
     final (folders, files) =
         await LocalDb.instance.linkedEntriesUnder(widget.rootId, widget.relDir);
+    final mtimes =
+        await LocalDb.instance.linkedFolderMtimes(widget.rootId, widget.relDir);
     if (!mounted) return;
     setState(() {
       _folders = folders;
+      _folderMtimes = mtimes;
       _files = files;
       _loading = false;
     });
@@ -200,13 +236,21 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
         ? (isAppFolder ? l10n.linkedRootAppFolder : (root?.label ?? ''))
         : p.basename(widget.relDir.substring(0, widget.relDir.length - 1));
     final searching = _search != null;
-    final folderNames = _folders.keys.toList();
+    final o = _order;
+    // Le niveau se trie selon le réglage (nom / date, sens); des RÉSULTATS de
+    // recherche gardent leur classement de pertinence.
+    final folderNames = sortLocalEntries(_folders.keys,
+        name: (n) => n, mtime: (n) => _folderMtimes[n],
+        sort: o.sort, ascending: o.ascending);
+    final levelFiles = sortLocalEntries(_files,
+        name: (e) => e.name, mtime: (e) => e.mtimeMs,
+        sort: o.sort, ascending: o.ascending);
     final shownFiles = searching
         ? _search!
         : (_query.isEmpty
-            ? _files
+            ? levelFiles
             : [
-                for (final f in _files)
+                for (final f in levelFiles)
                   if (f.name.toLowerCase().contains(_query.toLowerCase())) f,
               ]);
     final shownFolders = searching
@@ -222,6 +266,8 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
       appBar: AppBar(
         title: Text(title),
         actions: [
+          LocalBrowseActions(
+              order: _order, onChanged: (o) => setState(() => _order = o)),
           if (widget.relDir.isEmpty && root != null && isAppFolder)
             IconButton(
               icon: const Icon(Icons.refresh),
@@ -275,7 +321,9 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
             child: CancelField(
               controller: _filterCtrl,
               onCleared: _onFilterChanged,
-              builder: (_) => TextField(
+              builder: (_) => TvGatedText(builder: (tvNode, tvReadOnly) => TextField(
+              focusNode: tvNode,
+              readOnly: tvReadOnly,
                 controller: _filterCtrl,
                 decoration: InputDecoration(
                   hintText: l10n.linkedRootSearchHint,
@@ -284,7 +332,7 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
                   border: const OutlineInputBorder(),
                 ),
                 onChanged: _onFilterChanged,
-              ),
+              )),
             ),
           ),
           Padding(
@@ -339,7 +387,24 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
                           ),
                         ),
                       )
-                    : ListView.builder(
+                    : o.isGrid
+                        ? GridView.builder(
+                            padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+                            gridDelegate: localGridDelegate(o.view),
+                            itemCount: shownFolders.length + shownFiles.length,
+                            itemBuilder: (ctx, i) => i < shownFolders.length
+                                ? LocalGridTile(
+                                    art: LocalFolderArt(
+                                        art: _folderArt[shownFolders[i]]),
+                                    title: shownFolders[i],
+                                    subtitle: l10n.albumTrackCount(
+                                        _folders[shownFolders[i]] ?? 0),
+                                    onTap: () => _openFolder(ctx, shownFolders[i]),
+                                  )
+                                : _fileGridTile(ctx,
+                                    shownFiles[i - shownFolders.length], root),
+                          )
+                        : ListView.builder(
                         itemCount: shownFolders.length + shownFiles.length,
                         itemBuilder: (ctx, i) {
                           if (i < shownFolders.length) {
@@ -353,14 +418,7 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
                                   style:
                                       TextStyle(color: cs.onSurfaceVariant)),
                               trailing: const Icon(Icons.chevron_right),
-                              onTap: () => Navigator.of(ctx).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => LinkedRootScreen(
-                                    rootId: widget.rootId,
-                                    relDir: '${widget.relDir}$name/',
-                                  ),
-                                ),
-                              ),
+                              onTap: () => _openFolder(ctx, name),
                             );
                           }
                           final e = shownFiles[i - shownFolders.length];
@@ -382,18 +440,53 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
                                     text: dir,
                                     style: TextStyle(color: cs.onSurfaceVariant))
                                 : null,
-                            onTap: () {
-                              if (root != null && !root.available) {
-                                AppSnack.show(ctx, l10n.linkedRootUnavailable);
-                                return;
-                              }
-                              _play([e]);
-                            },
+                            onTap: () => _tapFile(ctx, e, root),
                           ));
                         },
                       ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openFolder(BuildContext ctx, String name) => Navigator.of(ctx).push(
+        MaterialPageRoute<void>(
+          builder: (_) => LinkedRootScreen(
+            rootId: widget.rootId,
+            relDir: '${widget.relDir}$name/',
+          ),
+        ),
+      );
+
+  void _tapFile(BuildContext ctx, LinkedEntry e, LocalRoot? root) {
+    if (root != null && !root.available) {
+      AppSnack.show(ctx, ctx.l10n.linkedRootUnavailable);
+      return;
+    }
+    _play([e]);
+  }
+
+  Widget _fileGridTile(BuildContext ctx, LinkedEntry e, LocalRoot? root) {
+    final cs = Theme.of(ctx).colorScheme;
+    final glyph = Container(
+      decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8)),
+      child: Icon(Icons.music_note_outlined, size: 40, color: cs.onSurfaceVariant),
+    );
+    return PlayChoiceHold(
+      onTap: () => _tapFile(ctx, e, root),
+      child: LocalGridTile(
+        art: root != null && root.available
+            ? _FileArt(
+                key: ValueKey(e.relPath),
+                path: LocalRoots.instance.absolutePathOf(e),
+                fill: true,
+                placeholder: glyph)
+            : glyph,
+        title: e.name,
+        onTap: () => _tapFile(ctx, e, root),
       ),
     );
   }
@@ -425,8 +518,13 @@ class _LinkedRootScreenState extends State<LinkedRootScreen> {
 /// de la bibliothèque), résolue après l'affichage; sinon la note. Rien n'est
 /// lu dans le fichier lui-même (un parcours, pas un import).
 class _FileArt extends StatefulWidget {
-  const _FileArt({super.key, required this.path});
+  const _FileArt(
+      {super.key, required this.path, this.fill = false, this.placeholder});
   final String path;
+
+  /// Vue icônes: remplit la tuile (carrée) au lieu des 40 px d'une ligne.
+  final bool fill;
+  final Widget? placeholder;
 
   @override
   State<_FileArt> createState() => _FileArtState();
@@ -458,9 +556,19 @@ class _FileArtState extends State<_FileArt> {
 
   @override
   Widget build(BuildContext context) {
-    const icon = Icon(Icons.music_note_outlined);
+    final Widget icon = widget.placeholder ?? const Icon(Icons.music_note_outlined);
     final art = _art;
     if (art == null) return icon;
+    if (widget.fill) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.file(File(art),
+            fit: BoxFit.cover,
+            cacheWidth: 300,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => icon),
+      );
+    }
     return SizedBox(
       width: 40,
       height: 40,
