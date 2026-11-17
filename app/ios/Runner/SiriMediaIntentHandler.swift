@@ -53,7 +53,7 @@ enum SiriVocabulary {
     var seen = Set<String>()
     return strings.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty && $0.count < 200 && seen.insert($0.lowercased()).inserted }
-      .prefix(100).map { $0 }
+      .prefix(300).map { $0 }  // artistes suivis + récents + appris (carplay.dart)
   }
   static func update(_ fields: [String: Any]) {
     recentArtists = bounded(fields["artists"] as? [String] ?? [])

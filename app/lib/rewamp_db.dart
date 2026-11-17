@@ -5602,7 +5602,51 @@ class RewampDb {
     _ambientCancel.cancel();
     _ambientCancel = DownloadCancelToken();
     _statusClear();
+    ambientCancelTick.value++;
+    debugPrint('[download] annulé par l\'utilisateur (n°${ambientCancelTick.value})');
   }
+
+  /// Monte à chaque « Annuler » de l'utilisateur sur le chemin de lecture.
+  /// AppShell y suspend le pré-téléchargement de la file: sans ça, la piste
+  /// SUIVANTE d'un album dont on venait d'annuler l'archive la redemandait
+  /// aussitôt — la bannière revenait (iOS, jw_psf « Wipeout », 2026-11-17).
+  static final ValueNotifier<int> ambientCancelTick = ValueNotifier<int>(0);
+
+  /// Attache une chaîne de téléchargement du chemin de LECTURE au jeton
+  /// ambiant COURANT, dès son entrée — au lieu de le relire à chaque
+  /// descente. Sans ça, une chaîne commencée avant « Annuler » qui lançait une
+  /// NOUVELLE descente après (repli miroir → origine, ou un rejoignant de
+  /// l'archive partagée dont la descente venait d'être annulée) prenait le
+  /// jeton NEUF et repartait: l'album « annulé » revenait dans la bannière,
+  /// pourcentage en hausse (constaté sur iOS, 2026-11-17). Une chaîne qui a
+  /// déjà son jeton (file du DownloadManager, CarPlay) le garde.
+  ///
+  /// Public: a GESTURE that leads to downloads (play a search row, start an
+  /// album queue) binds at its very start — a cancel pressed while it is
+  /// still resolving metadata (album details, tracklist RPCs) must reach the
+  /// download it then starts, not leave it born on the fresh token.
+  ///
+  /// The gesture gets its OWN token, cancelled together with the ambient one
+  /// and EXPIRED when the gesture's future completes — so continuations it
+  /// leaves behind (prefetch, gapless arming) fall back on the ambient token
+  /// of their time instead of carrying a dead one forever.
+  static Future<T> playPathScope<T>(Future<T> Function() body) async {
+    if (DownloadCancelToken.current != null) return body();
+    final ambient = _ambientCancel;
+    final gesture = DownloadCancelToken();
+    if (ambient.isCancelled) gesture.cancel();
+    void link() => gesture.cancel();
+    ambient.register(link);
+    try {
+      return await gesture.run(body);
+    } finally {
+      ambient.unregister(link);
+      gesture.expire();
+    }
+  }
+
+  static Future<T> _boundToCancel<T>(Future<T> Function() body) =>
+      playPathScope(body);
 
   static void _statusFail(String label, Object e) {
     downloadStatus.value = DownloadInfo(label, error: e.toString());
@@ -6181,9 +6225,16 @@ class RewampDb {
           final path = await inflight;
           final head = await _readHead(path);
           if (head != null) return (head, path);
+        } on DownloadCancelledException {
+          // Annulée: si c'est NOTRE chaîne qui l'est (même geste « Annuler »,
+          // même jeton), on s'arrête là — relancer la descente nous-mêmes
+          // était exactement le « téléchargement annulé qui revient ».
+          // Annulée par SON auteur seulement (une autre chaîne): on descend.
+          (DownloadCancelToken.current ?? _ambientCancel)
+              .throwIfCancelled(label);
         } catch (_) {
-          // Celle d'en face a échoué (ou a été annulée par SON auteur): ce
-          // n'est pas notre échec, on descend nous-mêmes.
+          // Celle d'en face a échoué: ce n'est pas notre échec, on descend
+          // nous-mêmes.
         }
       }
     }
@@ -6638,6 +6689,10 @@ class RewampDb {
   }
 
   static Future<String> downloadToLibrary(SearchResult rowIn,
+          {bool force = false}) =>
+      _boundToCancel(() => _downloadToLibraryEntry(rowIn, force: force));
+
+  static Future<String> _downloadToLibraryEntry(SearchResult rowIn,
       {bool force = false}) async {
     // L'OVERRIDE fait autorité: une ligne de bibliothèque peut porter encore
     // l'url de l'ORIGINE (voir _preferRecordedOverride). Corrigé AVANT toute
@@ -8695,7 +8750,7 @@ class RewampDb {
     List<SearchResult> tracks, {
     bool force = false,
   }) =>
-      BackgroundTask.guard(() async {
+      _boundToCancel(() => BackgroundTask.guard(() async {
         try {
           final res = await _downloadPsfAlbumImpl(tracks, force: force);
           _statusClear();
@@ -8707,7 +8762,7 @@ class RewampDb {
           _statusFail(tracks.isEmpty ? 'album' : (tracks.first.album ?? 'album'), e);
           rethrow;
         }
-      });
+      }));
 
   /// Single entry point that makes an album's real per-track files exist on
   /// disk and returns the tracklist in the archive's true order. Dispatches to
@@ -8836,6 +8891,12 @@ class RewampDb {
   }
 
   static Future<List<SearchResult>> ensureAlbumExtracted(
+    List<SearchResult> songs, {
+    bool force = false,
+  }) =>
+      _boundToCancel(() => _ensureAlbumExtractedEntry(songs, force: force));
+
+  static Future<List<SearchResult>> _ensureAlbumExtractedEntry(
     List<SearchResult> songs, {
     bool force = false,
   }) async {

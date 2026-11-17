@@ -32,13 +32,23 @@ class DownloadCancelToken {
   static const Object _key = #rewampDownloadCancel;
 
   bool _cancelled = false;
+  bool _expired = false;
   final List<void Function()> _closers = [];
 
   bool get isCancelled => _cancelled;
 
   /// The token of the chain the current async context belongs to, if any.
-  static DownloadCancelToken? get current =>
-      Zone.current[_key] as DownloadCancelToken?;
+  /// An [expire]d token no longer counts: the gesture it scoped is over, and
+  /// whatever its async continuations start LATER (a prefetch armed by the
+  /// track it played) is a new download — it must not inherit a cancel aimed
+  /// at the gesture, nor stay dead forever after one.
+  static DownloadCancelToken? get current {
+    final t = Zone.current[_key] as DownloadCancelToken?;
+    return (t == null || t._expired) ? null : t;
+  }
+
+  /// Ends this token's scope (see [current]).
+  void expire() => _expired = true;
 
   /// Runs [body] with this token installed for the whole async chain.
   Future<T> run<T>(Future<T> Function() body) =>

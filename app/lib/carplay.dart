@@ -105,8 +105,15 @@ List<TrackRecord> carPlayResolvedSubsongs(
 
 class LocalCarPlayLibrary implements CarPlayLibrary {
   @override
-  Future<List<SearchResult>> voiceSearch(CarPlayVoiceQuery query) =>
-      CarPlayVoiceSearcher().search(query);
+  Future<List<SearchResult>> voiceSearch(CarPlayVoiceQuery query) async {
+    final rows = await CarPlayVoiceSearcher().search(query);
+    // Ce que Siri a RÉELLEMENT transmis, et ce qu'on en a tiré: sans ça un
+    // « mauvais morceau » ne se diagnostique pas (console Xcode: « [siri] »).
+    debugPrint('[siri] text="${query.text}" artist="${query.artist ?? ''}" '
+        'album="${query.album ?? ''}" → ${rows.length} result(s)'
+        '${rows.isEmpty ? '' : ': ${rows.take(3).map((r) => '"${r.displayTitle}"').join(', ')}'}');
+    return rows;
+  }
   @override
   Future<List<Collection>> collections() => RewampDb.fetchCollections();
 
@@ -635,12 +642,22 @@ class CarPlaySession {
     try {
       final recent = await browser.library.tracks('recent');
       final playlists = await browser.library.playlists();
+      // Les artistes SUIVIS de la bibliothèque d'abord: c'est d'eux qu'on
+      // parle, et Siri transcrit mal un nom étranger dans la langue de
+      // l'utilisateur (« Koji Kondo » dicté en français) tant qu'on ne le
+      // lui a pas appris — le vocabulaire de l'app vaut pour TOUTES les
+      // langues de Siri.
+      final followed = await LocalDb.instance
+          .getLibraryItems(type: 'artist')
+          .catchError((Object _) => <LibraryItem>[]);
       if (_disposed) return;
       await channel.invokeMethod<void>('vocabulary', {
         'artists': {
+          for (final a in followed)
+            if (a.name.isNotEmpty) a.name,
           for (final t in recent)
             if ((t.artist ?? '').isNotEmpty) t.artist!
-        }.take(100).toList(),
+        }.take(200).toList(),
         'playlists': playlists.map((p) => p.name).take(100).toList(),
       });
     } catch (error) {

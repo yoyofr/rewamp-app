@@ -71,6 +71,20 @@ Future<void> downloadAndPlay(
   OnFileReady     onFileReady, {
   bool            afterSourceRefresh = false,
   bool            showUI = true,
+}) =>
+    // Lié au jeton d'annulation DÈS le geste: « Annuler » pressé pendant la
+    // résolution (détails d'album, tracklist) annulait un jeton que la
+    // descente, lancée juste après, ne portait pas — il fallait annuler une
+    // seconde fois (jw_psf « Wipeout », 2026-11-17).
+    RewampDb.playPathScope(() => _downloadAndPlay(context, r, onFileReady,
+        afterSourceRefresh: afterSourceRefresh, showUI: showUI));
+
+Future<void> _downloadAndPlay(
+  BuildContext    context,
+  SearchResult    r,
+  OnFileReady     onFileReady, {
+  bool            afterSourceRefresh = false,
+  bool            showUI = true,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   final nav       = Navigator.of(context);

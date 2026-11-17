@@ -720,6 +720,7 @@ class _AppShellState extends State<AppShell>
     // Raccourcis clavier du bureau: UN répartiteur global (app_shortcuts.dart).
     AppShortcuts.install(_ShellShortcutActions(this));
     TvFocus.railSelectedIndex = () => _index;
+    RewampDb.ambientCancelTick.addListener(_onAmbientCancel);
     // Dock drop / Open With / double-click. Set the hook FIRST:
     // the native buffer is drained immediately and its contents
     // are cleared on the native side by that very call.
@@ -1049,6 +1050,7 @@ class _AppShellState extends State<AppShell>
   @override
   void dispose() {
     AppShortcuts.uninstall();
+    RewampDb.ambientCancelTick.removeListener(_onAmbientCancel);
     _unwireSleepTimer();
     _carPlay?.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -3788,6 +3790,7 @@ class _AppShellState extends State<AppShell>
   }
 
   Future<void> _playAt(int i, {int? revertTo}) async {
+    _prefetchHeld = false;
     final carPlay = _carPlay;
     if (carPlay != null && (carPlay.connected || carPlay.playback.busy)) {
       try {
@@ -4280,7 +4283,18 @@ class _AppShellState extends State<AppShell>
     unawaited(_prefetchNextDownload());
   }
 
+  /// Vrai après un « Annuler » de l'utilisateur, jusqu'au prochain morceau
+  /// qu'il lance lui-même (_playAt): pré-télécharger la suite d'une file dont
+  /// il vient d'arrêter le téléchargement, c'est le refaire dans son dos.
+  bool _prefetchHeld = false;
+
+  void _onAmbientCancel() => _prefetchHeld = true;
+
   Future<void> _prefetchNextDownload() async {
+    if (_prefetchHeld) {
+      debugPrint('[prefetch] suspendu (annulation de l\'utilisateur)');
+      return;
+    }
     for (var j = _queueIdx + 1; j < _queue.length; j++) {
       final it = _queue[j];
       // A local row whose file is NOT on disk but which carries a catalogue id
@@ -4551,6 +4565,17 @@ class _AppShellState extends State<AppShell>
     BuildContext ctx,
     List<SearchResult> songs, {
     int? startIndex,
+  }) =>
+      // Extraction de l'album PUIS lecture de la 1re piste: une seule chaîne
+      // d'annulation — « Annuler » pendant l'extraction ne doit pas laisser la
+      // lecture relancer une descente sur un jeton neuf.
+      RewampDb.playPathScope(
+          () => _startAlbumQueueImpl(ctx, songs, startIndex: startIndex));
+
+  Future<void> _startAlbumQueueImpl(
+    BuildContext ctx,
+    List<SearchResult> songs, {
+    int? startIndex,
   }) async {
     if (songs.isEmpty) return;
     // « … → ensuite / à la fin » d'une rangée tout lire (withQueuePlacement):
@@ -4662,6 +4687,10 @@ class _AppShellState extends State<AppShell>
     // have been disposed meanwhile (downloadAndPlay shows SnackBars with it).
     if (!ctx.mounted) return;
     await downloadAndPlay(ctx, songs[idx], _onFileReadyAsAlbum);
+    // Annulé par l'utilisateur pendant ce geste: rien de plus — ni la
+    // relecture du chemin ci-dessous (un SECOND downloadToLibrary, qui
+    // relançait la descente), ni le pré-téléchargement de la suite.
+    if (DownloadCancelToken.current?.isCancelled ?? false) return;
     // downloadAndPlay is a generic helper with no controller access, so set the
     // album context here. Use the on-disk path for platform — server browse
     // often returns null platform per track (jw_psf), so songs[idx].platform

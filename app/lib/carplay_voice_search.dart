@@ -1,4 +1,5 @@
 import 'rewamp_db.dart';
+import 'voice_text.dart';
 
 typedef VoiceSongSearch = Future<List<SearchResult>> Function(String query,
     {String? artistName,
@@ -46,11 +47,37 @@ class CarPlayVoiceSearcher {
         limit: _candidates);
     if (exact.isNotEmpty) return _rank(exact, query.text);
 
-    final by = RegExp(r'^(.+)\s+by\s+(.+)$', caseSensitive: false)
-        .firstMatch(query.text);
-    if (by != null && (query.artist == null || _close(query.artist!, by[2]!))) {
-      return search(CarPlayVoiceQuery(by[1]!,
-          artist: query.artist ?? by[2], album: query.album));
+    // Siri a laissé « titre + artiste » ENTIER dans le titre. Découpage
+    // INDÉPENDANT de la langue: aucun connecteur connu d'avance (« by », « par »,
+    // « von », « の »…) — on essaie les quelques derniers puis premiers mots
+    // comme artiste (l'artiste vient AVANT le titre en japonais, chinois,
+    // coréen), en retirant le petit mot de liaison qui les sépare, et c'est le
+    // CATALOGUE qui tranche: seul un nom que la recherche d'artistes reconnaît
+    // est retenu. La forme intacte a déjà été essayée juste au-dessus.
+    if (query.artist == null) {
+      final split = await _searchSplit(query);
+      if (split.isNotEmpty) return split;
+    } else {
+      // Siri a rempli l'artiste ET l'a laissé dans le titre (« The Bullet by
+      // Randall », artiste « Randal »): le découpage dont l'artiste lui
+      // ressemble suffit, sans requête d'artistes.
+      for (final (title, who) in splitCandidates(query.text)) {
+        if (!_close(query.artist!, who)) continue;
+        final rows = await search(
+            CarPlayVoiceQuery(title, artist: query.artist, album: query.album));
+        if (rows.isNotEmpty) return rows;
+      }
+    }
+    // Écriture non latine (cyrillique, grec, kana): le catalogue est surtout
+    // latin — un second essai sous la forme translittérée (« Тетрис » → tetris).
+    if (hasTransliterableScript(query.text)) {
+      final latin = foldVoiceText(query.text);
+      final rows = await _songs(latin,
+          artistName: query.artist,
+          albumName: query.album,
+          fuzzy: true,
+          limit: _candidates);
+      if (rows.isNotEmpty) return _rank(rows, latin);
     }
     if (query.artist == null) {
       return _fuzzyTitle(query);
@@ -81,6 +108,71 @@ class CarPlayVoiceSearcher {
     return _rank(matches, query.text);
   }
 
+  Future<List<SearchResult>> _searchSplit(CarPlayVoiceQuery query) async {
+    final candidates = splitCandidates(query.text);
+    if (candidates.isEmpty) return [];
+    // Les noms candidats, validés EN PARALLÈLE (Siri n'attend pas): un nom
+    // n'est gardé que si la recherche d'artistes en rend un proche.
+    final names = {for (final c in candidates) c.$2}.take(8).toList();
+    final known = <String>{};
+    await Future.wait(names.map((name) async {
+      final hits = await _artists(name, fuzzy: true, limit: 5);
+      if (hits.any((a) => _close(name, a.name))) known.add(name);
+    }));
+    for (final (title, who) in candidates) {
+      if (!known.contains(who)) continue;
+      final rows =
+          await search(CarPlayVoiceQuery(title, artist: who, album: query.album));
+      if (rows.isNotEmpty) return rows;
+    }
+    return [];
+  }
+
+  /// Les découpages (titre, artiste) plausibles d'une phrase, du plus au moins
+  /// probable. Pur et testé.
+  static List<(String, String)> splitCandidates(String text) {
+    final out = <(String, String)>[];
+    void add(String title, String who) {
+      title = title.trim();
+      // Élision collée à l'artiste: « d'AC/DC », « l'Orchestre ».
+      who = who.trim().replaceFirst(RegExp(r"^\p{L}['’]", unicode: true), '');
+      if (title.isEmpty || who.isEmpty) return;
+      if (!out.contains((title, who))) out.add((title, who));
+    }
+    // CJK: pas d'espaces — on coupe à la particule possessive (の 的 의),
+    // artiste AVANT (« 久石譲の… »), sinon après.
+    final cjk = RegExp(r'[のの的의]').allMatches(text).toList();
+    if (cjk.isNotEmpty) {
+      final m = cjk.first;
+      add(text.substring(m.end), text.substring(0, m.start));
+      add(text.substring(0, m.start), text.substring(m.end));
+    }
+    final words = text.trim().split(RegExp(r'\s+'));
+    final n = words.length;
+    bool small(String w) => w.runes.length <= 3;
+    for (var k = 1; k <= 3 && k < n; k++) {
+      // Artiste à la FIN, mot de liaison retiré (« … par Koji Kondo »).
+      final head = words.sublist(0, n - k);
+      final tail = words.sublist(n - k).join(' ');
+      if (head.length > 1 && small(head.last)) {
+        add(head.sublist(0, head.length - 1).join(' '), tail);
+      }
+      // Élision collée: « Thunderstruck d'AC/DC ».
+      if (k == 1 && RegExp(r"^\p{L}['’]", unicode: true).hasMatch(tail)) {
+        add(head.join(' '), tail);
+      }
+    }
+    for (var k = 1; k <= 3 && k < n; k++) {
+      // Artiste au DÉBUT (« Koji Kondo – Ocarina », ordre japonais romanisé).
+      final who = words.sublist(0, k).join(' ');
+      final rest = words.sublist(k);
+      if (rest.length > 1 && small(rest.first)) {
+        add(rest.sublist(1).join(' '), who);
+      }
+    }
+    return out;
+  }
+
   Future<List<SearchResult>> _fuzzyTitle(CarPlayVoiceQuery query,
       {String? artistId}) async {
     if (query.text.isEmpty) return [];
@@ -97,25 +189,39 @@ class CarPlayVoiceSearcher {
 
   static List<SearchResult> _rank(List<SearchResult> rows, String title) {
     final normalized = _normal(title);
-    // The server can rank album matches ahead of exact track names. Retrieve
-    // a bounded candidate page, then prefer the requested title for Siri's five
-    // disambiguation choices, retaining the server order among equal matches.
-    final indexed = rows.indexed.toList();
+    // The server can rank album matches ahead of exact track names, and its
+    // order is POPULARITY among rows that merely contain the words. Rank by
+    // how well the TITLE matches what was said: exact first, then the share
+    // of spoken words the title contains, then the closest length — and only
+    // then the server order. Exact-only ranking let the most popular row with
+    // a shared word win whenever Siri's transcription differed by an accent
+    // or a word (« souvent ça ne trouve pas le bon morceau », iOS FR).
+    final want = normalized.split(' ').where((w) => w.isNotEmpty).toSet();
+    double score(SearchResult r) {
+      final t = _normal(r.displayTitle);
+      if (t == normalized) return 0;
+      final have = t.split(' ').toSet();
+      final hit = want.isEmpty ? 0 : want.where(have.contains).length / want.length;
+      final extra = have.length > want.length ? have.length - want.length : 0;
+      return 2 - hit + extra * 0.05;
+    }
+    final indexed = rows.indexed.map((e) => (e.$1, e.$2, score(e.$2))).toList();
     indexed.sort((a, b) {
-      final aExact = _normal(a.$2.displayTitle) == normalized;
-      final bExact = _normal(b.$2.displayTitle) == normalized;
-      if (aExact != bExact) return aExact ? -1 : 1;
+      final c = a.$3.compareTo(b.$3);
+      if (c != 0) return c;
       return a.$1.compareTo(b.$1);
     });
     final seen = <String>{};
     return [
-      for (final (_, row) in indexed)
+      for (final (_, row, _) in indexed)
         if (seen.add('${row.songId}:${row.subsongIdx}')) row
     ].take(5).toList();
   }
 
-  static String _normal(String value) => value
-      .toLowerCase()
+  /// Minuscules, sans diacritiques, translittéré quand c'est possible
+  /// (voice_text.dart), « & » = « and », ponctuation en espaces.
+  static String _normal(String value) => foldVoiceText(value)
+      .replaceAll(RegExp(r'\s*&\s*'), ' and ')
       .replaceAll(RegExp(r'''[\s_.,\-!?'"“”‘’/\\:;()\[\]{}]+'''), ' ')
       .trim();
 
