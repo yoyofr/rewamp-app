@@ -87,7 +87,12 @@ done
 [[ -n "$PID" ]] || { tail -20 /tmp/rewamp-reloc.log; die "l'app n'a pas démarré"; }
 
 sleep 4
-MAPS="$(cat /proc/$PID/maps)"
+# Mort pendant l'attente: dire POURQUOI plutôt qu'un « cat: /proc/…/maps: No
+# such file » (CI du 2026-11-17: « Aborted (core dumped) » sans un mot de plus).
+MAPS="$(cat /proc/$PID/maps 2>/dev/null)" || {
+  echo "--- /tmp/rewamp-reloc.log ---"; tail -60 /tmp/rewamp-reloc.log
+  die "l'app est morte dans les 4 s qui ont suivi son démarrage"
+}
 
 bold "D'où viennent les bibliothèques embarquées"
 bad=0
