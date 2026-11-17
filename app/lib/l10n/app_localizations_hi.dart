@@ -5398,6 +5398,10 @@ class AppLocalizationsHi extends AppLocalizations {
       'Android TV: पूरी स्क्रीन पर डिस्प्ले, रिमोट से नेविगेशन (तीर और OK, मेन्यू के लिए OK दबाकर रखें) और 32-बिट टीवी बॉक्स के लिए एक संस्करण।';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay और Siri (iPhone): आपकी कतार, लाइब्रेरी और कैटलॉग कार की स्क्रीन पर, और Siri आपका माँगा हुआ ट्रैक चलाती है — Heine Kastbjerg (bstrr) के मूल योगदान पर आधारित।';
+
+  @override
   String get releaseNotesV11Network =>
       'सर्वर धीमा या पहुँच से बाहर हो तो: तकनीकी त्रुटि की जगह साफ़ संदेश, जब तक ऐसा रहे एक बैनर, और सर्वर लौटते ही स्क्रीन अपने आप फिर से लोड होती हैं।';
 
@@ -5444,4 +5448,11 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get carPlayPrevious => 'पिछला ट्रैक';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle =>
+      'मूल योगदान: Heine Kastbjerg (bstrr)';
 }

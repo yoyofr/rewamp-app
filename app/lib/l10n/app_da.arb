@@ -1470,6 +1470,7 @@
   "releaseNotesV11Loops": "Uendelig løkke slået til under afspilning: nummeret fortsætter gennem sit eget løkkepunkt, og et nummer uden løkke starter forfra.",
   "releaseNotesV11Visualizers": "Visualiseringer: op til 64 stemmer i oscilloskoperne, én farve pr. MIDI-trommeinstrument, noder til 2SF-filer, instrumentnavne fra FM-banker, hurtigt gentagne toner på Mega Drive.",
   "releaseNotesV11AndroidTv": "Android TV: fuldskærmsvisning, navigation med fjernbetjeningen (pile og OK, hold OK nede for menuen) og en version til 32-bit tv-bokse.",
+  "releaseNotesV11CarPlay": "CarPlay og Siri (iPhone): din kø, dit bibliotek og kataloget på bilens skærm, og Siri afspiller det nummer, du beder om — baseret på det oprindelige bidrag fra Heine Kastbjerg (bstrr).",
   "releaseNotesV11Network": "Langsom eller utilgængelig server: en tydelig besked i stedet for en teknisk fejl, et banner så længe det varer, og skærmene genindlæses af sig selv, når den er tilbage.",
   "releaseNotesV11ArtistFilter": "Kunstnersiden: et filter til at finde et nummer eller et album i en lang liste.",
   "releaseNotesV11ChpPatterns": "Mønstervisualisering til CHIPNSFX-numre (.chp, Amstrad CPC) med instrumentnavne.",
@@ -1482,5 +1483,7 @@
   "settingsRenderBackendActive": "Aktiv: {name}",
   "settingsRenderBackendRestart": "Gælder fra næste start",
   "carPlayNext": "Næste nummer",
-  "carPlayPrevious": "Forrige nummer"
+  "carPlayPrevious": "Forrige nummer",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "Oprindeligt bidrag: Heine Kastbjerg (bstrr)"
 }

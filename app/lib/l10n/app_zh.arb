@@ -1470,6 +1470,7 @@
   "releaseNotesV11Loops": "播放中开启无限循环：曲目会从自身的循环点继续，没有循环点的曲目则从头开始。",
   "releaseNotesV11Visualizers": "可视化：示波器最多 64 个声部、每种 MIDI 打击乐器一种颜色、2SF 文件的音符、来自 FM 音色库的乐器名称、Mega Drive 上快速重复的音符。",
   "releaseNotesV11AndroidTv": "Android TV：全屏显示、遥控器导航（方向键和 OK，长按 OK 打开菜单），并提供适用于 32 位电视盒的版本。",
+  "releaseNotesV11CarPlay": "CarPlay 与 Siri（iPhone）：在车载屏幕上查看播放队列、资料库和曲库，Siri 可播放你点名的曲目 —— 基于 Heine Kastbjerg（bstrr）的最初贡献。",
   "releaseNotesV11Network": "服务器缓慢或无法访问时：显示清晰的提示而不是技术错误，期间显示横幅，恢复后页面会自动重新加载。",
   "releaseNotesV11ArtistFilter": "艺术家页面：用于在长列表中查找曲目或专辑的筛选框。",
   "releaseNotesV11ChpPatterns": "为 CHIPNSFX 歌曲（.chp，Amstrad CPC）提供乐谱视图，并显示乐器名称。",
@@ -1482,5 +1483,7 @@
   "settingsRenderBackendActive": "当前：{name}",
   "settingsRenderBackendRestart": "下次启动时生效",
   "carPlayNext": "下一首",
-  "carPlayPrevious": "上一首"
+  "carPlayPrevious": "上一首",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "最初贡献：Heine Kastbjerg（bstrr）"
 }

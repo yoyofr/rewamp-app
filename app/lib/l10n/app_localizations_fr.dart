@@ -5441,6 +5441,10 @@ class AppLocalizationsFr extends AppLocalizations {
       'Android TV : affichage plein écran, navigation à la télécommande (flèches et OK, OK maintenu pour le menu) et une version pour les box TV 32 bits.';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay et Siri (iPhone) : votre file, votre bibliothèque et le catalogue sur l\'écran de la voiture, et Siri lance le morceau demandé — d\'après la contribution d\'origine de Heine Kastbjerg (bstrr).';
+
+  @override
   String get releaseNotesV11Network =>
       'Serveur lent ou injoignable : un message clair au lieu d\'une erreur technique, un bandeau tant que ça dure, et les écrans se rechargent seuls au retour.';
 
@@ -5488,4 +5492,11 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get carPlayPrevious => 'Morceau précédent';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle =>
+      'Contribution d\'origine : Heine Kastbjerg (bstrr)';
 }

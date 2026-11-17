@@ -5433,6 +5433,10 @@ class AppLocalizationsIt extends AppLocalizations {
       'Android TV: schermo intero, navigazione con il telecomando (frecce e OK, tieni premuto OK per il menu) e una versione per i TV box a 32 bit.';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay e Siri (iPhone): la coda, la libreria e il catalogo sullo schermo dell\'auto, e Siri riproduce il brano richiesto — dal contributo originale di Heine Kastbjerg (bstrr).';
+
+  @override
   String get releaseNotesV11Network =>
       'Server lento o irraggiungibile: un messaggio chiaro invece di un errore tecnico, un avviso finché dura, e le schermate si ricaricano da sole al ritorno.';
 
@@ -5479,4 +5483,11 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get carPlayPrevious => 'Brano precedente';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle =>
+      'Contributo originale: Heine Kastbjerg (bstrr)';
 }

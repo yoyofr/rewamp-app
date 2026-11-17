@@ -1470,6 +1470,7 @@
   "releaseNotesV11Loops": "Lejátszás közben bekapcsolt végtelen ismétlés: a szám a saját ismétlési pontján folytatódik, az ismétlés nélküli pedig elölről kezdődik.",
   "releaseNotesV11Visualizers": "Vizualizációk: akár 64 szólam az oszcilloszkópokon, saját szín minden MIDI ütőhangszernek, hangjegyek 2SF fájlokhoz, hangszernevek az FM-bankokból, gyorsan ismételt hangjegyek a Mega Drive-on.",
   "releaseNotesV11AndroidTv": "Android TV: teljes képernyős nézet, távirányítós navigáció (nyilak és OK, az OK nyomva tartásával a menü) és egy változat a 32 bites TV-boxokhoz.",
+  "releaseNotesV11CarPlay": "CarPlay és Siri (iPhone): a lejátszási sor, a könyvtár és a katalógus az autó kijelzőjén, és Siri lejátssza a kért számot — Heine Kastbjerg (bstrr) eredeti hozzájárulása alapján.",
   "releaseNotesV11Network": "Lassú vagy elérhetetlen szerver: érthető üzenet technikai hiba helyett, sáv, amíg tart, és a képernyők maguktól újratöltődnek, amikor visszatér.",
   "releaseNotesV11ArtistFilter": "Előadói oldal: szűrő egy szám vagy album megtalálásához egy hosszú listában.",
   "releaseNotesV11ChpPatterns": "Patternmegjelenítő a CHIPNSFX-dalokhoz (.chp, Amstrad CPC), hangszernevekkel.",
@@ -1482,5 +1483,7 @@
   "settingsRenderBackendActive": "Aktív: {name}",
   "settingsRenderBackendRestart": "A következő indításkor lép életbe",
   "carPlayNext": "Következő szám",
-  "carPlayPrevious": "Előző szám"
+  "carPlayPrevious": "Előző szám",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "Eredeti hozzájárulás: Heine Kastbjerg (bstrr)"
 }

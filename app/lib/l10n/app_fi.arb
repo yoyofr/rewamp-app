@@ -1470,6 +1470,7 @@
   "releaseNotesV11Loops": "Toiston aikana päälle kytketty ikuinen silmukka: kappale jatkuu omasta silmukkakohdastaan, ja silmukaton kappale alkaa alusta.",
   "releaseNotesV11Visualizers": "Visualisoinnit: jopa 64 ääntä oskilloskoopeissa, oma väri jokaiselle MIDI-rumpusoittimelle, nuotit 2SF-tiedostoille, soitinnimet FM-pankeista, nopeasti toistuvat nuotit Mega Drivella.",
   "releaseNotesV11AndroidTv": "Android TV: koko näytön näkymä, kaukosäädinohjaus (nuolet ja OK, pidä OK pohjassa valikkoa varten) ja versio 32-bittisille TV-bokseille.",
+  "releaseNotesV11CarPlay": "CarPlay ja Siri (iPhone): jono, kirjasto ja katalogi auton näytöllä, ja Siri soittaa pyytämäsi kappaleen — pohjana Heine Kastbjergin (bstrr) alkuperäinen kontribuutio.",
   "releaseNotesV11Network": "Hidas tai saavuttamaton palvelin: selkeä viesti teknisen virheen sijaan, ilmoituspalkki sen ajan ja näkymät latautuvat itsestään, kun yhteys palaa.",
   "releaseNotesV11ArtistFilter": "Artistisivu: suodatin kappaleen tai albumin löytämiseen pitkästä listasta.",
   "releaseNotesV11ChpPatterns": "Pattern-visualisointi CHIPNSFX-kappaleille (.chp, Amstrad CPC) soitinten nimineen.",
@@ -1482,5 +1483,7 @@
   "settingsRenderBackendActive": "Käytössä: {name}",
   "settingsRenderBackendRestart": "Tulee voimaan seuraavalla käynnistyskerralla",
   "carPlayNext": "Seuraava kappale",
-  "carPlayPrevious": "Edellinen kappale"
+  "carPlayPrevious": "Edellinen kappale",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "Alkuperäinen kontribuutio: Heine Kastbjerg (bstrr)"
 }

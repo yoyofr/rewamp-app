@@ -5217,6 +5217,10 @@ class AppLocalizationsKo extends AppLocalizations {
       'Android TV: 전체 화면 표시, 리모컨 탐색(방향키와 OK, OK를 길게 눌러 메뉴), 32비트 TV 박스용 빌드.';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay와 Siri(iPhone): 대기열, 보관함, 카탈로그를 자동차 화면에서 보고, Siri가 요청한 곡을 재생합니다 — Heine Kastbjerg(bstrr)의 최초 기여를 바탕으로 했습니다.';
+
+  @override
   String get releaseNotesV11Network =>
       '서버가 느리거나 연결되지 않을 때: 기술적인 오류 대신 알기 쉬운 메시지, 그동안 배너 표시, 복구되면 화면이 자동으로 다시 로드됩니다.';
 
@@ -5262,4 +5266,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get carPlayPrevious => '이전 곡';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle => '최초 기여: Heine Kastbjerg(bstrr)';
 }

@@ -5429,6 +5429,10 @@ class AppLocalizationsFi extends AppLocalizations {
       'Android TV: koko näytön näkymä, kaukosäädinohjaus (nuolet ja OK, pidä OK pohjassa valikkoa varten) ja versio 32-bittisille TV-bokseille.';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay ja Siri (iPhone): jono, kirjasto ja katalogi auton näytöllä, ja Siri soittaa pyytämäsi kappaleen — pohjana Heine Kastbjergin (bstrr) alkuperäinen kontribuutio.';
+
+  @override
   String get releaseNotesV11Network =>
       'Hidas tai saavuttamaton palvelin: selkeä viesti teknisen virheen sijaan, ilmoituspalkki sen ajan ja näkymät latautuvat itsestään, kun yhteys palaa.';
 
@@ -5476,4 +5480,11 @@ class AppLocalizationsFi extends AppLocalizations {
 
   @override
   String get carPlayPrevious => 'Edellinen kappale';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle =>
+      'Alkuperäinen kontribuutio: Heine Kastbjerg (bstrr)';
 }

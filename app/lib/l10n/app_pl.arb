@@ -1470,6 +1470,7 @@
   "releaseNotesV11Loops": "Pętla nieskończona włączona w trakcie odtwarzania: utwór gra dalej od własnego punktu pętli, a utwór bez pętli zaczyna od nowa.",
   "releaseNotesV11Visualizers": "Wizualizacje: do 64 głosów w oscyloskopach, kolor dla każdego instrumentu perkusyjnego MIDI, nuty plików 2SF, nazwy instrumentów z banków FM, szybko powtarzane nuty na Mega Drive.",
   "releaseNotesV11AndroidTv": "Android TV: tryb pełnoekranowy, obsługa pilotem (strzałki i OK, przytrzymaj OK, aby otworzyć menu) oraz wersja dla 32-bitowych przystawek TV.",
+  "releaseNotesV11CarPlay": "CarPlay i Siri (iPhone): kolejka, biblioteka i katalog na ekranie samochodu, a Siri odtwarza utwór, o który poprosisz — na podstawie pierwotnego wkładu Heinego Kastbjerga (bstrr).",
   "releaseNotesV11Network": "Wolny lub niedostępny serwer: czytelny komunikat zamiast błędu technicznego, pasek informacyjny, dopóki to trwa, a ekrany odświeżają się same po powrocie serwera.",
   "releaseNotesV11ArtistFilter": "Strona artysty: filtr, by znaleźć utwór lub album na długiej liście.",
   "releaseNotesV11ChpPatterns": "Wizualizacja patternów dla utworów CHIPNSFX (.chp, Amstrad CPC), z nazwami instrumentów.",
@@ -1482,5 +1483,7 @@
   "settingsRenderBackendActive": "Aktywny: {name}",
   "settingsRenderBackendRestart": "Zadziała przy następnym uruchomieniu",
   "carPlayNext": "Następny utwór",
-  "carPlayPrevious": "Poprzedni utwór"
+  "carPlayPrevious": "Poprzedni utwór",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "Pierwotny wkład: Heine Kastbjerg (bstrr)"
 }

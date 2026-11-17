@@ -5219,6 +5219,10 @@ class AppLocalizationsJa extends AppLocalizations {
       'Android TV：全画面表示、リモコン操作（矢印キーとOK、OK長押しでメニュー）、32ビットのTVボックス向けビルド。';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay と Siri（iPhone）：キュー、ライブラリ、カタログを車の画面に表示し、Siri が頼んだ曲を再生します — Heine Kastbjerg（bstrr）氏の最初の貢献をもとにしています。';
+
+  @override
   String get releaseNotesV11Network =>
       'サーバーが遅い・つながらない場合：技術的なエラーではなく分かりやすいメッセージ、その間はバナーを表示し、復旧すると画面が自動で再読み込みされます。';
 
@@ -5264,4 +5268,10 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get carPlayPrevious => '前の曲';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle => '最初の貢献：Heine Kastbjerg（bstrr）';
 }

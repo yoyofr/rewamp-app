@@ -8911,6 +8911,12 @@ abstract class AppLocalizations {
   /// **'Android TV: full-screen layout, remote navigation (arrows and OK, hold OK for the menu) and a build for 32-bit TV boxes.'**
   String get releaseNotesV11AndroidTv;
 
+  /// Release note: CarPlay audio + Siri, crediting the original contributor Heine Kastbjerg (bstrr) — keep the name as is
+  ///
+  /// In en, this message translates to:
+  /// **'CarPlay and Siri (iPhone): your queue, your library and the catalogue on the car screen, and Siri plays the track you ask for — based on the original contribution by Heine Kastbjerg (bstrr).'**
+  String get releaseNotesV11CarPlay;
+
   /// Release note: clear messages and banner when the server is slow or unreachable, auto reload
   ///
   /// In en, this message translates to:
@@ -8988,6 +8994,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Previous track'**
   String get carPlayPrevious;
+
+  /// No description provided for @settingsCarPlayCreditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'CarPlay & Siri'**
+  String get settingsCarPlayCreditTitle;
+
+  /// About > Credits: who originally contributed the CarPlay/Siri integration. Proper noun, keep as is.
+  ///
+  /// In en, this message translates to:
+  /// **'Original contribution: Heine Kastbjerg (bstrr)'**
+  String get settingsCarPlayCreditSubtitle;
 }
 
 class _AppLocalizationsDelegate

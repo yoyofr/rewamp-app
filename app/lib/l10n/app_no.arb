@@ -1470,6 +1470,7 @@
   "releaseNotesV11Loops": "Uendelig løkke slått på under avspilling: sporet fortsetter gjennom sitt eget løkkepunkt, og et spor uten løkke starter på nytt.",
   "releaseNotesV11Visualizers": "Visualiseringer: opptil 64 stemmer i oscilloskopene, én farge per MIDI-trommeinstrument, noter for 2SF-filer, instrumentnavn fra FM-banker, raskt gjentatte noter på Mega Drive.",
   "releaseNotesV11AndroidTv": "Android TV: fullskjermvisning, navigering med fjernkontrollen (piler og OK, hold inne OK for menyen) og en versjon for 32-biters TV-bokser.",
+  "releaseNotesV11CarPlay": "CarPlay og Siri (iPhone): køen, biblioteket og katalogen på bilens skjerm, og Siri spiller sporet du ber om — basert på det opprinnelige bidraget fra Heine Kastbjerg (bstrr).",
   "releaseNotesV11Network": "Treg eller utilgjengelig server: en tydelig melding i stedet for en teknisk feil, et banner så lenge det varer, og skjermene lastes inn på nytt av seg selv når den er tilbake.",
   "releaseNotesV11ArtistFilter": "Artistsiden: et filter for å finne et spor eller et album i en lang liste.",
   "releaseNotesV11ChpPatterns": "Mønstervisualisering for CHIPNSFX-låter (.chp, Amstrad CPC), med instrumentnavn.",
@@ -1482,5 +1483,7 @@
   "settingsRenderBackendActive": "Aktiv: {name}",
   "settingsRenderBackendRestart": "Gjelder fra neste oppstart",
   "carPlayNext": "Neste spor",
-  "carPlayPrevious": "Forrige spor"
+  "carPlayPrevious": "Forrige spor",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "Opprinnelig bidrag: Heine Kastbjerg (bstrr)"
 }

@@ -5176,6 +5176,10 @@ class AppLocalizationsZh extends AppLocalizations {
       'Android TV：全屏显示、遥控器导航（方向键和 OK，长按 OK 打开菜单），并提供适用于 32 位电视盒的版本。';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay 与 Siri（iPhone）：在车载屏幕上查看播放队列、资料库和曲库，Siri 可播放你点名的曲目 —— 基于 Heine Kastbjerg（bstrr）的最初贡献。';
+
+  @override
   String get releaseNotesV11Network =>
       '服务器缓慢或无法访问时：显示清晰的提示而不是技术错误，期间显示横幅，恢复后页面会自动重新加载。';
 
@@ -5220,4 +5224,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get carPlayPrevious => '上一首';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle => '最初贡献：Heine Kastbjerg（bstrr）';
 }

@@ -5533,6 +5533,10 @@ class AppLocalizationsCs extends AppLocalizations {
       'Android TV: zobrazení přes celou obrazovku, ovládání dálkovým ovladačem (šipky a OK, podržením OK se otevře nabídka) a verze pro 32bitové TV boxy.';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay a Siri (iPhone): fronta, knihovna a katalog na obrazovce auta a Siri přehraje skladbu, o kterou požádáte — na základě původního příspěvku Heineho Kastbjerga (bstrr).';
+
+  @override
   String get releaseNotesV11Network =>
       'Pomalý nebo nedostupný server: srozumitelná zpráva místo technické chyby, lišta po dobu výpadku a obrazovky se po návratu samy znovu načtou.';
 
@@ -5579,4 +5583,11 @@ class AppLocalizationsCs extends AppLocalizations {
 
   @override
   String get carPlayPrevious => 'Předchozí skladba';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle =>
+      'Původní příspěvek: Heine Kastbjerg (bstrr)';
 }

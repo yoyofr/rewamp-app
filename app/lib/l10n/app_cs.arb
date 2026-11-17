@@ -1470,6 +1470,7 @@
   "releaseNotesV11Loops": "Nekonečná smyčka zapnutá během přehrávání: skladba pokračuje přes vlastní bod smyčky a skladba bez smyčky začne znovu.",
   "releaseNotesV11Visualizers": "Vizualizace: až 64 hlasů v osciloskopech, barva pro každý bicí nástroj MIDI, noty souborů 2SF, názvy nástrojů z FM bank, rychle opakované noty na Mega Drive.",
   "releaseNotesV11AndroidTv": "Android TV: zobrazení přes celou obrazovku, ovládání dálkovým ovladačem (šipky a OK, podržením OK se otevře nabídka) a verze pro 32bitové TV boxy.",
+  "releaseNotesV11CarPlay": "CarPlay a Siri (iPhone): fronta, knihovna a katalog na obrazovce auta a Siri přehraje skladbu, o kterou požádáte — na základě původního příspěvku Heineho Kastbjerga (bstrr).",
   "releaseNotesV11Network": "Pomalý nebo nedostupný server: srozumitelná zpráva místo technické chyby, lišta po dobu výpadku a obrazovky se po návratu samy znovu načtou.",
   "releaseNotesV11ArtistFilter": "Stránka interpreta: filtr pro nalezení skladby nebo alba v dlouhém seznamu.",
   "releaseNotesV11ChpPatterns": "Vizualizace patternů pro skladby CHIPNSFX (.chp, Amstrad CPC) s názvy nástrojů.",
@@ -1482,5 +1483,7 @@
   "settingsRenderBackendActive": "Aktivní: {name}",
   "settingsRenderBackendRestart": "Projeví se při příštím spuštění",
   "carPlayNext": "Další skladba",
-  "carPlayPrevious": "Předchozí skladba"
+  "carPlayPrevious": "Předchozí skladba",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "Původní příspěvek: Heine Kastbjerg (bstrr)"
 }

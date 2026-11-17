@@ -4491,6 +4491,16 @@ List<Widget> _aboutChildren(BuildContext context) {
       )),
     ),
     const Divider(height: 1),
+    // Contribution: the CarPlay audio + Siri integration started as Heine
+    // Kastbjerg's (bstrr) pull request on the public repository, reworked and
+    // completed here — he is its origin and is credited as such.
+    _CreditTile(
+      icon: Icons.directions_car_outlined,
+      title: l10n.settingsCarPlayCreditTitle,
+      subtitle: l10n.settingsCarPlayCreditSubtitle,
+      url: 'https://github.com/yoyofr/rewamp-app/pull/4',
+    ),
+    const Divider(height: 1),
     // Data attribution (not an engine): UADE songlengths/metadata.
     _CreditTile(
       icon: Icons.badge_outlined,

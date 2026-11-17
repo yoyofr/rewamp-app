@@ -5449,6 +5449,10 @@ class AppLocalizationsDe extends AppLocalizations {
       'Android TV: Vollbilddarstellung, Bedienung per Fernbedienung (Pfeiltasten und OK, OK gedrückt halten für das Menü) und eine Version für 32-Bit-TV-Boxen.';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay und Siri (iPhone): Warteschlange, Bibliothek und Katalog auf dem Bildschirm im Auto, und Siri spielt den gewünschten Titel — auf Grundlage des ursprünglichen Beitrags von Heine Kastbjerg (bstrr).';
+
+  @override
   String get releaseNotesV11Network =>
       'Langsamer oder nicht erreichbarer Server: eine klare Meldung statt eines technischen Fehlers, ein Hinweisbalken, solange es dauert, und Ansichten laden sich danach von selbst neu.';
 
@@ -5495,4 +5499,11 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get carPlayPrevious => 'Vorheriger Titel';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle =>
+      'Ursprünglicher Beitrag: Heine Kastbjerg (bstrr)';
 }

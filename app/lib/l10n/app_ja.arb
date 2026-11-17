@@ -1470,6 +1470,7 @@
   "releaseNotesV11Loops": "再生中に無限ループをオンにすると、曲は自身のループポイントで続き、ループのない曲は最初から再生されます。",
   "releaseNotesV11Visualizers": "ビジュアライザー：オシロスコープは最大64ボイス、MIDIのドラム楽器ごとに色分け、2SFファイルの音符、FMバンクの楽器名、メガドライブで素早く連打される音符。",
   "releaseNotesV11AndroidTv": "Android TV：全画面表示、リモコン操作（矢印キーとOK、OK長押しでメニュー）、32ビットのTVボックス向けビルド。",
+  "releaseNotesV11CarPlay": "CarPlay と Siri（iPhone）：キュー、ライブラリ、カタログを車の画面に表示し、Siri が頼んだ曲を再生します — Heine Kastbjerg（bstrr）氏の最初の貢献をもとにしています。",
   "releaseNotesV11Network": "サーバーが遅い・つながらない場合：技術的なエラーではなく分かりやすいメッセージ、その間はバナーを表示し、復旧すると画面が自動で再読み込みされます。",
   "releaseNotesV11ArtistFilter": "アーティストページ：長いリストから曲やアルバムを探せるフィルター。",
   "releaseNotesV11ChpPatterns": "CHIPNSFX（.chp、Amstrad CPC）の曲にパターン表示、楽器名つき。",
@@ -1482,5 +1483,7 @@
   "settingsRenderBackendActive": "使用中：{name}",
   "settingsRenderBackendRestart": "次回の起動時に適用されます",
   "carPlayNext": "次の曲",
-  "carPlayPrevious": "前の曲"
+  "carPlayPrevious": "前の曲",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "最初の貢献：Heine Kastbjerg（bstrr）"
 }

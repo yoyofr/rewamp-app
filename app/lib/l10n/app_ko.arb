@@ -1470,6 +1470,7 @@
   "releaseNotesV11Loops": "재생 중에 무한 반복을 켜면 곡이 자체 루프 지점에서 이어지고, 루프가 없는 곡은 처음부터 다시 재생됩니다.",
   "releaseNotesV11Visualizers": "비주얼라이저: 오실로스코프 최대 64개 보이스, MIDI 드럼 악기별 색상, 2SF 파일의 음표, FM 뱅크의 악기 이름, 메가 드라이브에서 빠르게 반복되는 음표.",
   "releaseNotesV11AndroidTv": "Android TV: 전체 화면 표시, 리모컨 탐색(방향키와 OK, OK를 길게 눌러 메뉴), 32비트 TV 박스용 빌드.",
+  "releaseNotesV11CarPlay": "CarPlay와 Siri(iPhone): 대기열, 보관함, 카탈로그를 자동차 화면에서 보고, Siri가 요청한 곡을 재생합니다 — Heine Kastbjerg(bstrr)의 최초 기여를 바탕으로 했습니다.",
   "releaseNotesV11Network": "서버가 느리거나 연결되지 않을 때: 기술적인 오류 대신 알기 쉬운 메시지, 그동안 배너 표시, 복구되면 화면이 자동으로 다시 로드됩니다.",
   "releaseNotesV11ArtistFilter": "아티스트 페이지: 긴 목록에서 곡이나 앨범을 찾는 필터.",
   "releaseNotesV11ChpPatterns": "CHIPNSFX 곡(.chp, Amstrad CPC)의 패턴 시각화, 악기 이름 포함.",
@@ -1482,5 +1483,7 @@
   "settingsRenderBackendActive": "사용 중: {name}",
   "settingsRenderBackendRestart": "다음 실행 시 적용됩니다",
   "carPlayNext": "다음 곡",
-  "carPlayPrevious": "이전 곡"
+  "carPlayPrevious": "이전 곡",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "최초 기여: Heine Kastbjerg(bstrr)"
 }

@@ -5554,6 +5554,10 @@ class AppLocalizationsPl extends AppLocalizations {
       'Android TV: tryb pełnoekranowy, obsługa pilotem (strzałki i OK, przytrzymaj OK, aby otworzyć menu) oraz wersja dla 32-bitowych przystawek TV.';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay i Siri (iPhone): kolejka, biblioteka i katalog na ekranie samochodu, a Siri odtwarza utwór, o który poprosisz — na podstawie pierwotnego wkładu Heinego Kastbjerga (bstrr).';
+
+  @override
   String get releaseNotesV11Network =>
       'Wolny lub niedostępny serwer: czytelny komunikat zamiast błędu technicznego, pasek informacyjny, dopóki to trwa, a ekrany odświeżają się same po powrocie serwera.';
 
@@ -5601,4 +5605,11 @@ class AppLocalizationsPl extends AppLocalizations {
 
   @override
   String get carPlayPrevious => 'Poprzedni utwór';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle =>
+      'Pierwotny wkład: Heine Kastbjerg (bstrr)';
 }

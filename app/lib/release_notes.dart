@@ -68,6 +68,7 @@ List<String> releaseNotesBullets(AppLocalizations l10n) => [
       l10n.releaseNotesV11Autoplay,
       l10n.releaseNotesV11LinkedFolders,
       l10n.releaseNotesV11AndroidTv,
+      l10n.releaseNotesV11CarPlay,
       l10n.releaseNotesV11PlayWith,
       l10n.releaseNotesV11NewEngines,
       l10n.releaseNotesV11EngineUpdates,

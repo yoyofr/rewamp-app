@@ -38,6 +38,11 @@ Several playback engines customization are reusing the work I've done previously
 - **System media controls everywhere**: Now Playing on iOS and macOS, the media
   notification on Android, MPRIS on Linux, the media overlay and media keys on
   Windows.
+- **CarPlay and Siri** (iPhone, optional at build time): the queue, the library
+  and the online catalogue on the car screen, and Siri plays the track you ask
+  for. Started as [Heine Kastbjerg](https://github.com/bstrr)'s
+  [pull request #4](https://github.com/yoyofr/rewamp-app/pull/4), reworked and
+  completed in the main tree.
 - Queue with shuffle and repeat, playlists, favourites, listening statistics,
   and a library that survives a reinstall.
 - **Optional online catalogue** — browse and stream a large preservation
@@ -308,7 +313,7 @@ apart from the engines and libraries it bundles. Recomputed at every snapshot.
 C                   12,636    1,902,536    1,915,172
 C/C++ Header         2,220    1,423,249    1,425,469
 C++                 24,125    1,051,494    1,075,619
-Dart                98,503            0       98,503
+Dart                98,511            0       98,511
 Assembly                 0       36,627       36,627
 Objective-C++          767        3,044        3,811
 Swift                1,865            0        1,865
@@ -317,9 +322,16 @@ Kotlin                 688            0          688
 Objective-C             26            0           26
 Others              10,548      264,608      275,156
 
-TOTAL              151,740    4,682,547    4,834,287
+TOTAL              151,748    4,682,547    4,834,295
 ```
 <!-- CODE STATS END -->
+
+## Thanks
+
+- [Heine Kastbjerg (bstrr)](https://github.com/bstrr) — the CarPlay audio and
+  Siri integration originates in his
+  [pull request #4](https://github.com/yoyofr/rewamp-app/pull/4); it was
+  reworked and completed before landing, and remains his idea and his start.
 
 ## Star History
 

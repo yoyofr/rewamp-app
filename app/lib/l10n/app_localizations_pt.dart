@@ -5432,6 +5432,10 @@ class AppLocalizationsPt extends AppLocalizations {
       'Android TV: tela cheia, navegação pelo controle remoto (setas e OK, segure OK para o menu) e uma versão para TV boxes de 32 bits.';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay e Siri (iPhone): sua fila, sua biblioteca e o catálogo na tela do carro, e a Siri toca a faixa que você pedir — a partir da contribuição original de Heine Kastbjerg (bstrr).';
+
+  @override
   String get releaseNotesV11Network =>
       'Servidor lento ou inacessível: uma mensagem clara em vez de um erro técnico, um aviso enquanto durar, e as telas recarregam sozinhas quando ele volta.';
 
@@ -5479,4 +5483,11 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get carPlayPrevious => 'Faixa anterior';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle =>
+      'Contribuição original: Heine Kastbjerg (bstrr)';
 }

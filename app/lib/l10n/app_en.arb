@@ -3436,6 +3436,10 @@
   "@releaseNotesV11AndroidTv": {
     "description": "Release note: Android TV \u2014 full-screen layout, remote (D-pad) navigation, 32-bit build"
   },
+  "releaseNotesV11CarPlay": "CarPlay and Siri (iPhone): your queue, your library and the catalogue on the car screen, and Siri plays the track you ask for — based on the original contribution by Heine Kastbjerg (bstrr).",
+  "@releaseNotesV11CarPlay": {
+    "description": "Release note: CarPlay audio + Siri, crediting the original contributor Heine Kastbjerg (bstrr) — keep the name as is"
+  },
   "releaseNotesV11Network": "Slow or unreachable server: a clear message instead of a technical error, a banner while it lasts, and screens reload on their own when it is back.",
   "@releaseNotesV11Network": {
     "description": "Release note: clear messages and banner when the server is slow or unreachable, auto reload"
@@ -3492,5 +3496,10 @@
   "carPlayPrevious": "Previous track",
   "@carPlayPrevious": {
     "description": "CarPlay download screen: go back to the previous queue entry."
+  },
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "Original contribution: Heine Kastbjerg (bstrr)",
+  "@settingsCarPlayCreditSubtitle": {
+    "description": "About > Credits: who originally contributed the CarPlay/Siri integration. Proper noun, keep as is."
   }
 }

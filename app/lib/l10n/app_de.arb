@@ -1470,6 +1470,7 @@
   "releaseNotesV11Loops": "Endlosschleife während der Wiedergabe eingeschaltet: Das Stück läuft über seinen eigenen Schleifenpunkt weiter, ein Stück ohne Schleife beginnt von vorn.",
   "releaseNotesV11Visualizers": "Visualisierungen: bis zu 64 Stimmen in den Oszilloskopen, eine Farbe pro MIDI-Schlaginstrument, Noten für 2SF-Dateien, Instrumentennamen aus FM-Bänken, schnell wiederholte Noten auf dem Mega Drive.",
   "releaseNotesV11AndroidTv": "Android TV: Vollbilddarstellung, Bedienung per Fernbedienung (Pfeiltasten und OK, OK gedrückt halten für das Menü) und eine Version für 32-Bit-TV-Boxen.",
+  "releaseNotesV11CarPlay": "CarPlay und Siri (iPhone): Warteschlange, Bibliothek und Katalog auf dem Bildschirm im Auto, und Siri spielt den gewünschten Titel — auf Grundlage des ursprünglichen Beitrags von Heine Kastbjerg (bstrr).",
   "releaseNotesV11Network": "Langsamer oder nicht erreichbarer Server: eine klare Meldung statt eines technischen Fehlers, ein Hinweisbalken, solange es dauert, und Ansichten laden sich danach von selbst neu.",
   "releaseNotesV11ArtistFilter": "Künstlerseite: ein Filter, um einen Titel oder ein Album in einer langen Liste zu finden.",
   "releaseNotesV11ChpPatterns": "Pattern-Visualisierung für CHIPNSFX-Songs (.chp, Amstrad CPC), mit Instrumentennamen.",
@@ -1482,5 +1483,7 @@
   "settingsRenderBackendActive": "Aktiv: {name}",
   "settingsRenderBackendRestart": "Wirkt beim nächsten Start",
   "carPlayNext": "Nächster Titel",
-  "carPlayPrevious": "Vorheriger Titel"
+  "carPlayPrevious": "Vorheriger Titel",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "Ursprünglicher Beitrag: Heine Kastbjerg (bstrr)"
 }

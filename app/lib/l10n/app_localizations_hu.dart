@@ -5424,6 +5424,10 @@ class AppLocalizationsHu extends AppLocalizations {
       'Android TV: teljes képernyős nézet, távirányítós navigáció (nyilak és OK, az OK nyomva tartásával a menü) és egy változat a 32 bites TV-boxokhoz.';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay és Siri (iPhone): a lejátszási sor, a könyvtár és a katalógus az autó kijelzőjén, és Siri lejátssza a kért számot — Heine Kastbjerg (bstrr) eredeti hozzájárulása alapján.';
+
+  @override
   String get releaseNotesV11Network =>
       'Lassú vagy elérhetetlen szerver: érthető üzenet technikai hiba helyett, sáv, amíg tart, és a képernyők maguktól újratöltődnek, amikor visszatér.';
 
@@ -5471,4 +5475,11 @@ class AppLocalizationsHu extends AppLocalizations {
 
   @override
   String get carPlayPrevious => 'Előző szám';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle =>
+      'Eredeti hozzájárulás: Heine Kastbjerg (bstrr)';
 }

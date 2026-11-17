@@ -1463,6 +1463,7 @@
   "releaseNotesV11Loops": "चलते ट्रैक में अनंत लूप चालू करने पर ट्रैक अपने लूप पॉइंट से आगे चलता रहता है, और बिना लूप वाला ट्रैक शुरू से बजता है।",
   "releaseNotesV11Visualizers": "विज़ुअलाइज़र: ऑसिलोस्कोप में 64 तक आवाज़ें, हर MIDI ड्रम वाद्य का अलग रंग, 2SF फ़ाइलों के नोट्स, FM बैंकों से वाद्यों के नाम, Mega Drive पर तेज़ी से दोहराए जाने वाले नोट्स।",
   "releaseNotesV11AndroidTv": "Android TV: पूरी स्क्रीन पर डिस्प्ले, रिमोट से नेविगेशन (तीर और OK, मेन्यू के लिए OK दबाकर रखें) और 32-बिट टीवी बॉक्स के लिए एक संस्करण।",
+  "releaseNotesV11CarPlay": "CarPlay और Siri (iPhone): आपकी कतार, लाइब्रेरी और कैटलॉग कार की स्क्रीन पर, और Siri आपका माँगा हुआ ट्रैक चलाती है — Heine Kastbjerg (bstrr) के मूल योगदान पर आधारित।",
   "releaseNotesV11Network": "सर्वर धीमा या पहुँच से बाहर हो तो: तकनीकी त्रुटि की जगह साफ़ संदेश, जब तक ऐसा रहे एक बैनर, और सर्वर लौटते ही स्क्रीन अपने आप फिर से लोड होती हैं।",
   "releaseNotesV11ArtistFilter": "कलाकार पेज: लंबी सूची में कोई ट्रैक या एल्बम खोजने के लिए फ़िल्टर।",
   "releaseNotesV11ChpPatterns": "CHIPNSFX गानों (.chp, Amstrad CPC) के लिए पैटर्न विज़ुअलाइज़र, वाद्ययंत्रों के नामों के साथ।",
@@ -1475,5 +1476,7 @@
   "settingsRenderBackendActive": "सक्रिय: {name}",
   "settingsRenderBackendRestart": "अगली बार ऐप खोलने पर लागू होगा",
   "carPlayNext": "अगला ट्रैक",
-  "carPlayPrevious": "पिछला ट्रैक"
+  "carPlayPrevious": "पिछला ट्रैक",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "मूल योगदान: Heine Kastbjerg (bstrr)"
 }

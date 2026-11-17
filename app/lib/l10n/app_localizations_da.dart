@@ -5413,6 +5413,10 @@ class AppLocalizationsDa extends AppLocalizations {
       'Android TV: fuldskærmsvisning, navigation med fjernbetjeningen (pile og OK, hold OK nede for menuen) og en version til 32-bit tv-bokse.';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay og Siri (iPhone): din kø, dit bibliotek og kataloget på bilens skærm, og Siri afspiller det nummer, du beder om — baseret på det oprindelige bidrag fra Heine Kastbjerg (bstrr).';
+
+  @override
   String get releaseNotesV11Network =>
       'Langsom eller utilgængelig server: en tydelig besked i stedet for en teknisk fejl, et banner så længe det varer, og skærmene genindlæses af sig selv, når den er tilbage.';
 
@@ -5459,4 +5463,11 @@ class AppLocalizationsDa extends AppLocalizations {
 
   @override
   String get carPlayPrevious => 'Forrige nummer';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle =>
+      'Oprindeligt bidrag: Heine Kastbjerg (bstrr)';
 }

@@ -5434,6 +5434,10 @@ class AppLocalizationsNl extends AppLocalizations {
       'Android TV: schermvullende weergave, bediening met de afstandsbediening (pijltjes en OK, OK ingedrukt houden voor het menu) en een versie voor 32-bit tv-boxen.';
 
   @override
+  String get releaseNotesV11CarPlay =>
+      'CarPlay en Siri (iPhone): je wachtrij, je bibliotheek en de catalogus op het scherm in de auto, en Siri speelt het nummer dat je vraagt — gebaseerd op de oorspronkelijke bijdrage van Heine Kastbjerg (bstrr).';
+
+  @override
   String get releaseNotesV11Network =>
       'Trage of onbereikbare server: een duidelijke melding in plaats van een technische fout, een balk zolang het duurt, en schermen laden vanzelf opnieuw zodra hij terug is.';
 
@@ -5480,4 +5484,11 @@ class AppLocalizationsNl extends AppLocalizations {
 
   @override
   String get carPlayPrevious => 'Vorig nummer';
+
+  @override
+  String get settingsCarPlayCreditTitle => 'CarPlay & Siri';
+
+  @override
+  String get settingsCarPlayCreditSubtitle =>
+      'Oorspronkelijke bijdrage: Heine Kastbjerg (bstrr)';
 }

@@ -1470,6 +1470,7 @@
   "releaseNotesV11Loops": "Oneindige lus aangezet tijdens het afspelen: het nummer gaat verder via zijn eigen luspunt, een nummer zonder lus begint opnieuw.",
   "releaseNotesV11Visualizers": "Visualisaties: tot 64 stemmen in de oscilloscopen, één kleur per MIDI-drumsinstrument, noten voor 2SF-bestanden, instrumentnamen uit FM-banken, snel herhaalde noten op de Mega Drive.",
   "releaseNotesV11AndroidTv": "Android TV: schermvullende weergave, bediening met de afstandsbediening (pijltjes en OK, OK ingedrukt houden voor het menu) en een versie voor 32-bit tv-boxen.",
+  "releaseNotesV11CarPlay": "CarPlay en Siri (iPhone): je wachtrij, je bibliotheek en de catalogus op het scherm in de auto, en Siri speelt het nummer dat je vraagt — gebaseerd op de oorspronkelijke bijdrage van Heine Kastbjerg (bstrr).",
   "releaseNotesV11Network": "Trage of onbereikbare server: een duidelijke melding in plaats van een technische fout, een balk zolang het duurt, en schermen laden vanzelf opnieuw zodra hij terug is.",
   "releaseNotesV11ArtistFilter": "Artiestpagina: een filter om een nummer of album in een lange lijst te vinden.",
   "releaseNotesV11ChpPatterns": "Patroonvisualisatie voor CHIPNSFX-nummers (.chp, Amstrad CPC), met instrumentnamen.",
@@ -1482,5 +1483,7 @@
   "settingsRenderBackendActive": "Actief: {name}",
   "settingsRenderBackendRestart": "Geldt vanaf de volgende start",
   "carPlayNext": "Volgend nummer",
-  "carPlayPrevious": "Vorig nummer"
+  "carPlayPrevious": "Vorig nummer",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "Oorspronkelijke bijdrage: Heine Kastbjerg (bstrr)"
 }

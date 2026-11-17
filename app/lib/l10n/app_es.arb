@@ -1470,6 +1470,7 @@
   "releaseNotesV11Loops": "Bucle infinito activado durante la reproducción: el tema continúa por su propio punto de bucle, y uno sin bucle vuelve a empezar.",
   "releaseNotesV11Visualizers": "Visualizadores: hasta 64 voces en los osciloscopios, un color por instrumento de percusión MIDI, notas de archivos 2SF, nombres de instrumentos de los bancos FM, notas repetidas rápidamente en Mega Drive.",
   "releaseNotesV11AndroidTv": "Android TV: pantalla completa, navegación con el mando (flechas y OK, mantener OK para el menú) y una versión para decodificadores de 32 bits.",
+  "releaseNotesV11CarPlay": "CarPlay y Siri (iPhone): tu cola, tu biblioteca y el catálogo en la pantalla del coche, y Siri reproduce la pista que pidas — a partir de la contribución original de Heine Kastbjerg (bstrr).",
   "releaseNotesV11Network": "Servidor lento o inaccesible: un mensaje claro en lugar de un error técnico, un aviso mientras dura y las pantallas se recargan solas al volver.",
   "releaseNotesV11ArtistFilter": "Página de artista: un filtro para encontrar una pista o un álbum en una lista larga.",
   "releaseNotesV11ChpPatterns": "Visualizador de patrones para las canciones CHIPNSFX (.chp, Amstrad CPC), con los nombres de los instrumentos.",
@@ -1482,5 +1483,7 @@
   "settingsRenderBackendActive": "Activo: {name}",
   "settingsRenderBackendRestart": "Se aplica en el próximo inicio",
   "carPlayNext": "Pista siguiente",
-  "carPlayPrevious": "Pista anterior"
+  "carPlayPrevious": "Pista anterior",
+  "settingsCarPlayCreditTitle": "CarPlay & Siri",
+  "settingsCarPlayCreditSubtitle": "Contribución original: Heine Kastbjerg (bstrr)"
 }
