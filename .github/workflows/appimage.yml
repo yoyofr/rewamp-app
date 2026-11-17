@@ -141,6 +141,21 @@ jobs:
       - name: Vérifier que l'AppImage est relogeable
         run: xvfb-run -a dbus-run-session -- scripts/appimage/verify_relocatable.sh
 
+      # Diagnostic seulement quand l'oracle échoue: une exception C++ qui tue
+      # l'app (« terminate called after throwing … ») ne dit pas D'OÙ elle part.
+      # gdb arrête au lancer (`catch throw`) et à l'abandon, et imprime la pile.
+      - name: Pile d'appel du plantage (sur échec)
+        if: failure()
+        shell: bash
+        run: |
+          apt-get install -y --no-install-recommends gdb >/dev/null
+          D="$(mktemp -d)"; cd "$D"
+          "$(ls "$GITHUB_WORKSPACE"/app/build/appimage/Rewamp-*.AppImage | head -1)" --appimage-extract >/dev/null
+          timeout 60 xvfb-run -a dbus-run-session -- gdb -batch -nx \
+            -ex 'set pagination off' -ex 'catch throw' -ex run \
+            -ex 'thread apply all bt 30' -ex continue -ex 'bt 40' -ex continue -ex 'bt 40' \
+            --args squashfs-root/usr/rewamp/rewamp 2>&1 | grep -vE '^\[(New|Thread) ' | tail -200 || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: Rewamp-${{ matrix.arch }}.AppImage
