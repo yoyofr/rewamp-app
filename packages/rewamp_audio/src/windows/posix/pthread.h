@@ -57,6 +57,10 @@ int pthread_create(pthread_t* t, const pthread_attr_t* attr,
                    void* (*start)(void*), void* arg);
 /* `retval` doit être NULL: la valeur de retour du fil n'est pas conservée. */
 int pthread_join(pthread_t t, void** retval);
+/* Le fil continue seul: on rend sa poignée (sinon fuite), sans attendre.
+ * Ajouté pour le préchauffage des shaders projectM (rewamp_projectm_render.cpp),
+ * qui ne se rejoint jamais. */
+int pthread_detach(pthread_t t);
 
 /* Identité du fil courant — pour COMPARER (pthread_equal), pas pour joindre. */
 pthread_t pthread_self(void);

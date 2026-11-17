@@ -207,7 +207,14 @@ bold "Contrôle du partage embarqué / système"
 # et les caches de fontes de la MACHINE. En embarquer une autre version, c'est
 # se retrouver avec deux moteurs de rendu de texte dont un ne voit pas les
 # polices du système.
-SYSTEM_OK='^(libc|libm|libdl|libpthread|librt|libz|libstdc\+\+|libgcc_s|ld-linux.*|linux-vdso|libgtk-3|libgdk-3|libgdk_pixbuf-2\.0|libpango-1\.0|libpangocairo-1\.0|libcairo|libcairo-gobject|libatk-1\.0|libharfbuzz|libglib-2\.0|libgio-2\.0|libgobject-2\.0|libgmodule-2\.0|libEGL|libGLESv2|libepoxy|libasound|libfontconfig|libfreetype)\.so'
+#
+# ⚠️ libwayland-client / libwayland-egl: SYSTÈME aussi, même raisonnement que
+# libepoxy. Apparues « INATTENDU » sur la CI le 2026-11-17 avec Flutter 3.50,
+# dont l'embarqué Linux les réclame désormais directement. libgtk-3 les charge
+# déjà depuis le système (elles parlent au compositeur de l'utilisateur): en
+# embarquer une copie ferait DEUX libwayland-client dans le processus, et toute
+# distro qui a GTK 3 les a.
+SYSTEM_OK='^(libc|libm|libdl|libpthread|librt|libz|libstdc\+\+|libgcc_s|ld-linux.*|linux-vdso|libgtk-3|libgdk-3|libgdk_pixbuf-2\.0|libpango-1\.0|libpangocairo-1\.0|libcairo|libcairo-gobject|libatk-1\.0|libharfbuzz|libglib-2\.0|libgio-2\.0|libgobject-2\.0|libgmodule-2\.0|libEGL|libGLESv2|libepoxy|libwayland-client|libwayland-egl|libasound|libfontconfig|libfreetype)\.so'
 BUNDLED="$(cd "$APPDIR/usr/rewamp/lib" && ls)"
 unknown=0
 while read -r so; do

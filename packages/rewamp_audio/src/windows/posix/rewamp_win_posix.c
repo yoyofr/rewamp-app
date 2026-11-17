@@ -121,6 +121,12 @@ int pthread_join(pthread_t t, void** retval) {
     return 0;
 }
 
+int pthread_detach(pthread_t t) {
+    if (t.handle == NULL) return ESRCH;
+    CloseHandle((HANDLE)t.handle);   /* le fil vit jusqu'à son retour */
+    return 0;
+}
+
 /* ── horloge ───────────────────────────────────────────────────────────── */
 
 int clock_gettime(int clock_id, struct timespec* ts) {

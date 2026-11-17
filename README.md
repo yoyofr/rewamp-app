@@ -310,8 +310,8 @@ apart from the engines and libraries it bundles. Recomputed at every snapshot.
 [ LANGUAGES BREAKDOWN — lines of code ]
 
                     Rewamp      Bundled        Total
-C                   12,636    1,902,536    1,915,172
-C/C++ Header         2,220    1,423,249    1,425,469
+C                   12,641    1,902,536    1,915,177
+C/C++ Header         2,221    1,423,249    1,425,470
 C++                 24,125    1,051,494    1,075,619
 Dart                98,884            0       98,884
 Assembly                 0       36,627       36,627
@@ -322,7 +322,7 @@ Kotlin                 688            0          688
 Objective-C             26            0           26
 Others              10,548      264,608      275,156
 
-TOTAL              152,121    4,682,547    4,834,668
+TOTAL              152,127    4,682,547    4,834,674
 ```
 <!-- CODE STATS END -->
 
