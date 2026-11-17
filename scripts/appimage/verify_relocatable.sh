@@ -72,6 +72,15 @@ if [[ "${REWAMP_RELOC_FORCE_EXTRACT:-0}" == 1 ]] || [[ ! -e /dev/fuse ]] \
   [[ -x "$RUNNER" ]] || die "extraction ratée: pas d'AppRun dans $EXDIR"
 fi
 
+# Les exceptions C++ se rattrapent-elles? Sous Flutter 3.50 l'embarqué exporte
+# un unwinder LLVM qui, résolu avant libgcc_s, transformait TOUT throw en
+# « terminate » (voir app/linux/runner/CMakeLists.txt). Le binaire lance et
+# rattrape une exception puis sort: « eh ok » ou rien.
+bold "Exceptions C++"
+EH="$(REWAMP_SELFTEST_EH=1 "$RUNNER" 2>&1 || true)"
+grep -q '^eh ok' <<<"$EH" || { echo "$EH" | tail -5; die "une exception C++ rattrapée tue le processus — l'unwinder résolu n'est pas celui de libstdc++"; }
+echo "    $EH ✓"
+
 "$RUNNER" >/tmp/rewamp-reloc.log 2>&1 &
 PID=""
 for _ in $(seq 1 40); do
