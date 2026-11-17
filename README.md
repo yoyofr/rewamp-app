@@ -313,7 +313,7 @@ apart from the engines and libraries it bundles. Recomputed at every snapshot.
 C                   12,641    1,902,536    1,915,177
 C/C++ Header         2,221    1,423,249    1,425,470
 C++                 24,125    1,051,494    1,075,619
-Dart                98,884            0       98,884
+Dart                98,915            0       98,915
 Assembly                 0       36,627       36,627
 Objective-C++          767        3,044        3,811
 Swift                1,865            0        1,865
@@ -322,7 +322,7 @@ Kotlin                 688            0          688
 Objective-C             26            0           26
 Others              10,551      264,608      275,159
 
-TOTAL              152,130    4,682,547    4,834,677
+TOTAL              152,161    4,682,547    4,834,708
 ```
 <!-- CODE STATS END -->
 

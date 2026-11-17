@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'autoplay.dart' show AutoplayMode;
 import 'home_sections.dart';
 import 'launch_window.dart';
+import 'linux_secret_service.dart';
 import 'render_backend.dart';
 import 'play_start.dart';
 import 'shell_tabs.dart';
@@ -1793,10 +1794,12 @@ class UserSettings extends ChangeNotifier {
 
   Future<void> clearAuthToken() async {
     _authToken = null;
-    try {
-      await _secure.delete(key: _kSecureAuthToken);
-    } catch (e) {
-      debugPrint('[UserSettings] secure token delete failed: $e');
+    if (_secureOk) {
+      try {
+        await _secure.delete(key: _kSecureAuthToken);
+      } catch (e) {
+        debugPrint('[UserSettings] secure token delete failed: $e');
+      }
     }
     await TokenFile.delete();
     notifyListeners();
@@ -1807,10 +1810,12 @@ class UserSettings extends ChangeNotifier {
   /// for good.
   Future<void> clearUserId() async {
     _userId = null;
-    try {
-      await _secure.delete(key: _kSecureUserId);
-    } catch (e) {
-      debugPrint('[UserSettings] secure delete failed: $e');
+    if (_secureOk) {
+      try {
+        await _secure.delete(key: _kSecureUserId);
+      } catch (e) {
+        debugPrint('[UserSettings] secure delete failed: $e');
+      }
     }
     await _p.remove(_kLegacyUserId);
     // The token IS the account — leaving it behind would keep this device
@@ -1835,12 +1840,24 @@ class UserSettings extends ChangeNotifier {
 
   Future<void> _loadUserId() async {
     String? secure;
-    try {
-      secure = await _secure.read(key: _kSecureUserId);
-      _authToken = await _secure.read(key: _kSecureAuthToken);
-    } catch (e) {
-      debugPrint('[UserSettings] secure read failed: $e');
+    // Linux: no Secret Service on the bus ⇒ never call the plugin at all —
+    // under Flutter 3.50 its libsecret error KILLS the process instead of
+    // throwing a PlatformException (see linux_secret_service.dart). The
+    // fallbacks below (token file, clear-text id) are the ones a failed read
+    // already led to.
+    if (Platform.isLinux && !await linuxSecretServiceAvailable()) {
+      debugPrint('[UserSettings] no Secret Service on the session bus — '
+          'secure storage skipped');
       _secureOk = false;
+    }
+    if (_secureOk) {
+      try {
+        secure = await _secure.read(key: _kSecureUserId);
+        _authToken = await _secure.read(key: _kSecureAuthToken);
+      } catch (e) {
+        debugPrint('[UserSettings] secure read failed: $e');
+        _secureOk = false;
+      }
     }
     if (_authToken == null || _authToken!.isEmpty) {
       // Le repli fichier (voir setAuthToken). Lu aussi quand le service de
